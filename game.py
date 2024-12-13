@@ -19,6 +19,8 @@ class MapGenerator:
             "river",
             "plain",
             "city",
+            "forest",
+            "bridge",
             "R_ping",
             "R_shui",
             "R_shan",
@@ -50,28 +52,28 @@ class MapGenerator:
 
     # [弃用] : 改成静态环境地图 env_map 和 单位移动地图 unit_map, 方便控制与逻辑分离
     # TODO : 需要对 generate_map_data 进行修改，使其返回两个矩阵
-    def generate_map_matrix(self):
-        """Generate random map matrix with place types"""
-        map_matrix = generate_map_data(self.width)
-        return map_matrix
+    # def generate_map_matrix(self):
+    #     """Generate random map matrix with place types"""
+    #     map_matrix = generate_map_data(self.width)
+    #     return map_matrix
 
     # [暂用] : 生成环境地图和单位地图, 但属于增量修改的临时方案,
     #         有弊端 map init 时刻的地形无法获取, 未来需要修改 generate_map_data
-    def generate_maps(self):
+    def generate_maps(self, r_units, w_units):
         # 生成环境地图
-        environment_map = generate_map_data(self.width)
-        # unit_map 初始化为相同大小，全None
-        unit_map = np.full((self.height, self.width), None, dtype=object)
+        environment_map, unit_map = generate_map_data(self.width, r_units, w_units)
+        # # unit_map 初始化为相同大小，全None
+        # unit_map = np.full((self.height, self.width), None, dtype=object)
 
-        # 从environment_map中分离出单位
-        # 原本generate_map_data返回一个混合的地图，这里我们要把部队分离到unit_map中
-        for i in range(self.height):
-            for j in range(self.width):
-                cell = environment_map[i][j]
-                if cell.startswith("R_") or cell.startswith("W_"):
-                    unit_map[i][j] = cell
-                    # 单位位置原地形设为plain（或检查原地形）
-                    environment_map[i][j] = "plain"
+        # # 从environment_map中分离出单位
+        # # 原本generate_map_data返回一个混合的地图，这里我们要把部队分离到unit_map中
+        # for i in range(self.height):
+        #     for j in range(self.width):
+        #         cell = environment_map[i][j]
+        #         if cell.startswith("R_") or cell.startswith("W_"):
+        #             unit_map[i][j] = cell
+        #             # 单位位置原地形设为plain（或检查原地形）
+        #             environment_map[i][j] = "plain"
         return environment_map, unit_map
 
     def render_map(
@@ -149,6 +151,9 @@ def main():
     window_width = map_width * tile_size
     window_height = map_height * tile_size
 
+    r_units = 10
+    w_units = 10
+
     # 创建窗口（必须在加载图像前）
     screen = pygame.display.set_mode((window_width, window_height))
     pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
@@ -160,7 +165,9 @@ def main():
     # map_matrix = generator.generate_map_matrix()
 
     # 生成环境地图和单位地图
-    environment_map, unit_map = generator.generate_maps()
+    environment_map, unit_map = generator.generate_maps(
+        r_units=r_units, w_units=w_units
+    )
     # 创建单位控制器
     unit_controller = UnitController(environment_map, unit_map, tile_size=tile_size)
 
@@ -181,6 +188,7 @@ def main():
     #         break
 
     font = pygame.font.SysFont(None, 24)
+    win_font = pygame.font.SysFont(None, 72)
     vision_mode = 1
     winner = None
 
@@ -281,7 +289,7 @@ def main():
                 win_color = (255, 0, 0)  # 平局红色
             else:
                 win_color = (0, 255, 0)  # 获胜绿色
-            win_text = font.render(winner, True, win_color)
+            win_text = win_font.render(winner, True, win_color)
             win_rect = win_text.get_rect(center=(window_width // 2, window_height // 2))
             screen.blit(win_text, win_rect)
         # 更新显示

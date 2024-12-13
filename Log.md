@@ -3,6 +3,14 @@ same git commit but easy to read
 
 
 ## 2024-12-13
+feat: 增强地图生成逻辑与单位部署
+
+- 环境与单位数据分离：`generate_map_data` 现返回 `environment_map` 与 `unit_map` 两个矩阵
+- 支持自定义 R 与 W 两个阵营的单位数量，通过参数控制各方单位数量
+- 新增河流上添加桥的功能：在 `river` 上随机生成 1~3 个 `bridge`
+- 引入森林地形 `forest`：在地图上随机生成一定数量的森林格子
+- 调整逻辑使后续对单位移动、地形交互更灵活，为后续扩展（如视野、战争迷雾、战斗规则）奠定基础
+
 fix: 修复在所有单位阵亡时访问 selected_unit 导致 IndexError 的问题
 
 - 在 UnitController.selected_unit 属性中加入安全检查，当 units_positions 为空或 selected_unit_index 超界时返回 None
