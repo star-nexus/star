@@ -1,4 +1,5 @@
 # map_pygame.py
+import sys
 import pygame
 import numpy as np
 import os
@@ -73,7 +74,9 @@ class MapGenerator:
                     environment_map[i][j] = "plain"
         return environment_map, unit_map
 
-    def render_map(self, surface, environment_map, unit_map, highlight_pos=None):
+    def render_map(
+        self, surface, environment_map, unit_map, highlight_pos=None, visible_map=None
+    ):
         """Render the map onto the given Pygame surface"""
         for i in range(self.height):
             for j in range(self.width):
@@ -102,11 +105,30 @@ class MapGenerator:
                             s.set_alpha(100)
                             s.fill((255, 255, 0))
                             surface.blit(s, (x, y))
+        # 如果有 visible_map，进行战争迷雾处理
+        if visible_map is not None:
+            h, w = visible_map.shape
+            for i in range(h):
+                for j in range(w):
+                    if not visible_map[i][j]:
+                        # 不可见处盖一层黑色半透明遮罩
+                        x = j * self.tile_size
+                        y = i * self.tile_size
+                        fog = pygame.Surface((self.tile_size, self.tile_size))
+                        fog.fill((0, 0, 0))
+                        fog.set_alpha(200)
+                        surface.blit(fog, (x, y))
 
 
 def main():
     # 初始化 Pygame
     pygame.init()
+
+    # 判断玩家模式
+    if len(sys.argv) > 1 and sys.argv[1] == "ai":
+        player_mode = "ai"
+    else:
+        player_mode = "human"
 
     # 设置地图尺寸
     map_width, map_height = 25, 25  # 可以根据需要调整
@@ -148,6 +170,7 @@ def main():
     #         break
 
     font = pygame.font.SysFont(None, 24)
+    vision_mode = 1
 
     running = True
     clock = pygame.time.Clock()
@@ -174,6 +197,12 @@ def main():
                         unit_controller.units_positions
                     )
                     unit_controller.select_unit_by_index(new_index)
+                elif event.key == pygame.K_1:  # 上帝视角
+                    vision_mode = 1
+                elif event.key == pygame.K_2:  # R 阵营视角
+                    vision_mode = 2
+                elif event.key == pygame.K_3:  # W 阵营视角
+                    vision_mode = 3
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 左键选择单位
                     pos = pygame.mouse.get_pos()
@@ -185,9 +214,20 @@ def main():
         if selected:
             highlight_pos = (selected[0], selected[1])
 
+        # 根据vision_mode计算visible_map
+        if vision_mode == 1:
+            visible_map = None  # 上帝视角全部可见
+        else:
+            faction = "R" if vision_mode == 2 else "W"
+            visible_map = unit_controller.compute_visibility(faction)
+
         # 渲染地图
         generator.render_map(
-            screen, environment_map, unit_map, highlight_pos=highlight_pos
+            screen,
+            environment_map,
+            unit_map,
+            highlight_pos=highlight_pos,
+            visible_map=visible_map,
         )
 
         # 显示文字提示
@@ -202,6 +242,15 @@ def main():
         else:
             text = font.render("Cannot select", True, (255, 255, 255))
             screen.blit(text, (10, 10))
+        # 显示玩家模式
+        mode_text = font.render(f"Play Mode: {player_mode}", True, (255, 255, 255))
+        screen.blit(mode_text, (10, 30))
+
+        # 显示视角模式
+        vision_text = "God" if vision_mode == 1 else ("R" if vision_mode == 2 else "W")
+        v_text = font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
+        screen.blit(v_text, (10, 50))
+
         # 更新显示
         pygame.display.flip()
 
