@@ -4,11 +4,11 @@ import numpy as np
 # 定义部队数据与战斗规则
 UNIT_STATS = {
     # type: (克制谁, 被谁克制)
-    # 用字符串表示克制关系：ping克shan, shui克ping, shan克shui
-    # 此处简单定义一个优先级: ping>shan, shui>ping, shan>shui
-    "ping": {"strong_against": "shan", "weak_against": "shui"},
-    "shui": {"strong_against": "ping", "weak_against": "shan"},
-    "shan": {"strong_against": "shui", "weak_against": "ping"},
+    # 用字符串表示克制关系：ping克shui, shui克shan, shan克ping
+    # 此处简单定义一个优先级: ping>shui, shui>shan, shan>ping
+    "ping": {"strong_against": "shui", "weak_against": "shan"},
+    "shui": {"strong_against": "shan", "weak_against": "ping"},
+    "shan": {"strong_against": "ping", "weak_against": "shui"},
 }
 
 
