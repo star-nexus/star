@@ -78,6 +78,10 @@ class MapGenerator:
         self, surface, environment_map, unit_map, highlight_pos=None, visible_map=None
     ):
         """Render the map onto the given Pygame surface"""
+
+        # 在R/W模式下，仅渲染可见的单位。上帝视角仍渲染所有
+        # 判断是否是上帝视角（vision_mode=1）还是R/W视角（2或3）
+        # 可通过传入的visible_map是否为None判断，上帝视角visible_map=None
         for i in range(self.height):
             for j in range(self.width):
                 # 先渲染环境
@@ -93,18 +97,25 @@ class MapGenerator:
                 # 再渲染单位（如果有）
                 unit = unit_map[i][j]
                 if unit is not None:
-                    unit_tile = self.tile_images.get(unit, None)
-                    if unit_tile:
-                        x = j * self.tile_size
-                        y = i * self.tile_size
-                        surface.blit(unit_tile, (x, y))
-                        # 如果有高亮位置，并且此单位是被选中的单位，则高亮
-                        if highlight_pos and highlight_pos == (i, j):
-                            # 画一个半透明矩形以示高亮
-                            s = pygame.Surface((self.tile_size, self.tile_size))
-                            s.set_alpha(100)
-                            s.fill((255, 255, 0))
-                            surface.blit(s, (x, y))
+                    if visible_map is None or visible_map[i][j]:
+                        unit_tile = self.tile_images.get(unit, None)
+                        if unit_tile:
+                            surface.blit(unit_tile, (x, y))
+                            if highlight_pos and highlight_pos == (i, j):
+                                s = pygame.Surface((self.tile_size, self.tile_size))
+                                s.set_alpha(100)
+                                s.fill((255, 255, 0))
+                                surface.blit(s, (x, y))
+                            # x = j * self.tile_size
+                            # y = i * self.tile_size
+                            # surface.blit(unit_tile, (x, y))
+                            # # 如果有高亮位置，并且此单位是被选中的单位，则高亮
+                            # if highlight_pos and highlight_pos == (i, j):
+                            #     # 画一个半透明矩形以示高亮
+                            #     s = pygame.Surface((self.tile_size, self.tile_size))
+                            #     s.set_alpha(100)
+                            #     s.fill((255, 255, 0))
+                            #     surface.blit(s, (x, y))
         # 如果有 visible_map，进行战争迷雾处理
         if visible_map is not None:
             h, w = visible_map.shape
@@ -171,6 +182,7 @@ def main():
 
     font = pygame.font.SysFont(None, 24)
     vision_mode = 1
+    winner = None
 
     running = True
     clock = pygame.time.Clock()
@@ -208,6 +220,18 @@ def main():
                     pos = pygame.mouse.get_pos()
                     unit_controller.select_unit_by_mouse(pos)
 
+        # 战斗后检查两方剩余单位，如果无单位则另一方获胜
+        # 根据阵营计数单位
+        R_units = [u for u in unit_controller.units_positions if u[2].startswith("R_")]
+        W_units = [u for u in unit_controller.units_positions if u[2].startswith("W_")]
+        if not R_units and not W_units:
+            # 双方无单位？平局处理
+            winner = "Peace"
+        elif not R_units:
+            winner = "W win"
+        elif not W_units:
+            winner = "R Win"
+
         screen.fill((0, 0, 0))
         highlight_pos = None
         selected = unit_controller.selected_unit
@@ -219,7 +243,7 @@ def main():
             visible_map = None  # 上帝视角全部可见
         else:
             faction = "R" if vision_mode == 2 else "W"
-            visible_map = unit_controller.compute_visibility(faction)
+            visible_map = unit_controller.compute_visibility(faction, vision_range=2)
 
         # 渲染地图
         generator.render_map(
@@ -251,6 +275,10 @@ def main():
         v_text = font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
         screen.blit(v_text, (10, 50))
 
+        # 如果有胜者，显示胜利信息并停止交互
+        if winner is not None:
+            win_text = font.render(f"{winner}", True, (255, 255, 0))
+            screen.blit(win_text, (10, 70))
         # 更新显示
         pygame.display.flip()
 

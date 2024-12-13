@@ -146,9 +146,8 @@ class UnitController:
                     # 攻击方失败
                     self.unit_map[y][x] = None
                     self.remove_unit_from_positions(utype)
-                    # 当前选中单位已死，需要重新选择单位
-                    if self.selected_unit_index >= len(self.units_positions):
-                        self.selected_unit_index = max(0, len(self.units_positions) - 1)
+                    # 如果当前选中单位死了，需要重新选择本阵营单位，如果无则对方获胜
+                    self.adjust_selection_after_death(utype)
             else:
                 # 同阵营单位，不可进入
                 return
@@ -173,6 +172,23 @@ class UnitController:
             return True
         # 如果不符合规则则无法进入
         return False
+
+    def adjust_selection_after_death(self, dead_utype):
+        faction = dead_utype[0]  # 'R' or 'W'
+        # 从当前列表中找到与dead_utype同阵营的其他单位
+        same_faction_units = [
+            (i, (uy, ux, ut))
+            for i, (uy, ux, ut) in enumerate(self.units_positions)
+            if ut.startswith(faction + "_")
+        ]
+
+        if same_faction_units:
+            # 还有本阵营单位，则选中一个（如第一个）
+            self.selected_unit_index = same_faction_units[0][0]
+        else:
+            # 无本阵营单位，对方获胜
+            # 简单处理：在主程序中检查此条件后处理(由主程序在每帧中检查)
+            pass
 
     def remove_unit_from_positions(self, utype):
         # 移除指定类型的单位（仅移除一个，因为只会有一个该类型刚刚战死）
@@ -219,16 +235,14 @@ class UnitController:
                 return defender, attacker
 
     # 计算视野函数
-    def compute_visibility(self, faction):
-        # faction: 'R' or 'W'
-        # 返回一个与地图同尺寸的bool数组，True表示可见
+    def compute_visibility(self, faction, vision_range=1):
         h, w = self.environment_map.shape
         visible = np.full((h, w), False, dtype=bool)
-        # 对同阵营的所有单位计算3x3视野
+        # 使用vision_range参数决定视野范围，注意为5x5则range为2上下扩展
         for uy, ux, utype in self.units_positions:
             if utype.startswith(faction + "_"):
-                for dy in [-1, 0, 1]:
-                    for dx in [-1, 0, 1]:
+                for dy in range(-vision_range, vision_range + 1):  # 改为5x5，即-2到2
+                    for dx in range(-vision_range, vision_range + 1):
                         ny, nx = uy + dy, ux + dx
                         if 0 <= ny < h and 0 <= nx < w:
                             visible[ny][nx] = True
