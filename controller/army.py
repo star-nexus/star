@@ -12,55 +12,6 @@ UNIT_STATS = {
 }
 
 
-class Unit:
-    def __init__(self, unit_type, faction, y, x):
-        self.unit_type = unit_type  # ping/shui/shan
-        self.faction = faction  # 'R' or 'W'
-        self.y = y
-        self.x = x
-        self.health = self.default_health()
-
-    def default_health(self):
-        # 不同兵种可有不同血量设置
-        if self.unit_type == "ping":
-            return 100
-        elif self.unit_type == "shui":
-            return 80
-        elif self.unit_type == "shan":
-            return 120
-        return 100
-
-    def can_enter(self, terrain):
-        # 按之前的规则
-        if terrain in ["city", "plain", "forest"]:
-            return True
-        if self.unit_type == "shan" and terrain == "mountain":
-            return True
-        if self.unit_type == "shui" and terrain == "river":
-            return True
-        return False
-
-
-def calculate_battle_result(attacker, defender):
-    # 简单的战斗规则示例：
-    # 不同兵种间有克制关系
-    # 假设 ping克shui, shan克ping, shui克shan形成循环
-    # 可根据需要扩展
-    advantage = {"ping": "shui", "shan": "ping", "shui": "shan"}
-    if advantage[attacker.unit_type] == defender.unit_type:
-        # 攻击方有优势
-        defender.health -= 50
-    else:
-        # 无优势或防守方有优势
-        defender.health -= 30
-
-    # 检查防守方是否死亡
-    if defender.health <= 0:
-        # 移除defender
-        return "defender_dead"
-    return "ok"
-
-
 class UnitController:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
         self.environment_map = environment_map  # 不变的地形地图
@@ -171,7 +122,7 @@ class UnitController:
         # 根据类型解析出 ping/shui/shan
         force, u_kind = unit_type.split("_", 1)
         # 所有单位都可进入 city, plain, forest
-        if terrain in ["city", "plain", "forest"]:
+        if terrain in ["city", "plain", "forest", "bridge"]:
             return True
         if u_kind == "shan" and terrain in ["mountain"]:
             return True
