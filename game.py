@@ -277,8 +277,13 @@ def main():
 
         # 如果有胜者，显示胜利信息并停止交互
         if winner is not None:
-            win_text = font.render(f"{winner}", True, (255, 255, 0))
-            screen.blit(win_text, (10, 70))
+            if winner == "平局":
+                win_color = (255, 0, 0)  # 平局红色
+            else:
+                win_color = (0, 255, 0)  # 获胜绿色
+            win_text = font.render(winner, True, win_color)
+            win_rect = win_text.get_rect(center=(window_width // 2, window_height // 2))
+            screen.blit(win_text, win_rect)
         # 更新显示
         pygame.display.flip()
 
