@@ -1,4 +1,4 @@
-# map_pygame.py
+# game.py
 import sys
 import pygame
 import numpy as np
