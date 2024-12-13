@@ -42,17 +42,36 @@ def generate_map_data(size=50, r_units=3, w_units=3):
             cities_placed += 1
         attempts += 1
 
-    # Step 4.1: Add forests
-    # 随机生成一定数量的森林，如随机10~30个分布
-    num_forests = random.randint(10, 30)
-    forest_attempts = 0
-    while num_forests > 0 and forest_attempts < num_forests * 3:
-        fy = random.randint(0, size - 1)
-        fx = random.randint(0, size - 1)
-        if map_data[fy, fx] == "plain":
-            map_data[fy, fx] = "forest"
-            num_forests -= 1
-        forest_attempts += 1
+    # Step 4.1: Add forest clusters with enhanced natural distribution
+    num_forest_clusters = random.randint(4, 8)
+    for cluster in range(num_forest_clusters):
+        cluster_y = random.randint(0, size - 1)
+        cluster_x = random.randint(0, size - 1)
+        
+        # Increased forest count for denser forests
+        forest_count = random.randint(15, 25)
+        
+        # Use probability distribution for more natural-looking clusters
+        for _ in range(forest_count):
+            for attempt in range(3):  # Multiple attempts to place each forest tile
+                # Gaussian-like distribution for more natural spread
+                dx = int(random.gauss(0, 2))  # Standard deviation of 2
+                dy = int(random.gauss(0, 2))
+                
+                x = max(0, min(size - 1, cluster_x + dx))
+                y = max(0, min(size - 1, cluster_y + dy))
+                
+                # Check for nearby forests to encourage clustering
+                nearby_forests = 0
+                for ny in range(max(0, y-1), min(size, y+2)):
+                    for nx in range(max(0, x-1), min(size, x+2)):
+                        if map_data[ny, nx] == "forest":
+                            nearby_forests += 1
+                
+                # Higher chance to place forest if there are nearby forests
+                if map_data[y, x] == "plain" and (nearby_forests > 0 or random.random() < 0.7):
+                    map_data[y, x] = "forest"
+                    break
 
     # Step 4.5: Add bridges on river
     # 至少一个，最多三个桥
