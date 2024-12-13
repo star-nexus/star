@@ -3,6 +3,7 @@ import pygame
 import numpy as np
 import os
 from map_generator.map_data_generator import generate_map_data
+from controller.army import UnitController
 
 
 class MapGenerator:
@@ -46,23 +47,61 @@ class MapGenerator:
                 print(f"Error loading image {image_path}: {e}")
         return tile_images
 
+    # [弃用] : 改成静态环境地图 env_map 和 单位移动地图 unit_map, 方便控制与逻辑分离
+    # TODO : 需要对 generate_map_data 进行修改，使其返回两个矩阵
     def generate_map_matrix(self):
         """Generate random map matrix with place types"""
         map_matrix = generate_map_data(self.width)
         return map_matrix
 
-    def render_map(self, surface, map_matrix):
+    # [暂用] : 生成环境地图和单位地图, 但属于增量修改的临时方案,
+    #         有弊端 map init 时刻的地形无法获取, 未来需要修改 generate_map_data
+    def generate_maps(self):
+        # 生成环境地图
+        environment_map = generate_map_data(self.width)
+        # unit_map 初始化为相同大小，全None
+        unit_map = np.full((self.height, self.width), None, dtype=object)
+
+        # 从environment_map中分离出单位
+        # 原本generate_map_data返回一个混合的地图，这里我们要把部队分离到unit_map中
+        for i in range(self.height):
+            for j in range(self.width):
+                cell = environment_map[i][j]
+                if cell.startswith("R_") or cell.startswith("W_"):
+                    unit_map[i][j] = cell
+                    # 单位位置原地形设为plain（或检查原地形）
+                    environment_map[i][j] = "plain"
+        return environment_map, unit_map
+
+    def render_map(self, surface, environment_map, unit_map, highlight_pos=None):
         """Render the map onto the given Pygame surface"""
         for i in range(self.height):
             for j in range(self.width):
-                place_type = map_matrix[i][j]
-                tile_image = self.tile_images.get(
+                # 先渲染环境
+                place_type = environment_map[i][j]
+                base_tile = self.tile_images.get(
                     place_type, self.tile_images.get("plain")
-                )  # 默认使用 plain
-                if tile_image:
+                )
+                if base_tile:
                     x = j * self.tile_size
                     y = i * self.tile_size
-                    surface.blit(tile_image, (x, y))
+                    surface.blit(base_tile, (x, y))
+
+                # 再渲染单位（如果有）
+                unit = unit_map[i][j]
+                if unit is not None:
+                    unit_tile = self.tile_images.get(unit, None)
+                    if unit_tile:
+                        x = j * self.tile_size
+                        y = i * self.tile_size
+                        surface.blit(unit_tile, (x, y))
+                        # 如果有高亮位置，并且此单位是被选中的单位，则高亮
+                        if highlight_pos and highlight_pos == (i, j):
+                            # 画一个半透明矩形以示高亮
+                            s = pygame.Surface((self.tile_size, self.tile_size))
+                            s.set_alpha(100)
+                            s.fill((255, 255, 0))
+                            surface.blit(s, (x, y))
 
 
 def main():
@@ -79,81 +118,92 @@ def main():
 
     # 创建窗口（必须在加载图像前）
     screen = pygame.display.set_mode((window_width, window_height))
-    pygame.display.set_caption("Map Generator")
+    pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
 
     # 创建地图生成器
     generator = MapGenerator(map_width, map_height)
 
-    # 生成地图矩阵
-    map_matrix = generator.generate_map_matrix()
+    # 生成地图矩阵(弃用)
+    # map_matrix = generator.generate_map_matrix()
+
+    # 生成环境地图和单位地图
+    environment_map, unit_map = generator.generate_maps()
+    # 创建单位控制器
+    unit_controller = UnitController(environment_map, unit_map, tile_size=tile_size)
 
     # 填充背景为黑色
-    screen.fill((0, 0, 0))
+    # screen.fill((0, 0, 0))
 
     # 找到一个可控制的军队单位(示例：第一个R开头的单位)
-    selected_unit_pos = None
-    selected_unit_type = None
-    for i in range(map_height):
-        for j in range(map_width):
-            cell = map_matrix[i][j]
-            if cell.startswith("R_") or cell.startswith("W_"):
-                selected_unit_pos = [i, j]  # 保存行为列表以便修改
-                selected_unit_type = cell
-                break
-        if selected_unit_pos is not None:
-            break
+    # selected_unit_pos = None
+    # selected_unit_type = None
+    # for i in range(map_height):
+    #     for j in range(map_width):
+    #         cell = map_matrix[i][j]
+    #         if cell.startswith("R_") or cell.startswith("W_"):
+    #             selected_unit_pos = [i, j]  # 保存行为列表以便修改
+    #             selected_unit_type = cell
+    #             break
+    #     if selected_unit_pos is not None:
+    #         break
 
-    # 渲染地图
-    generator.render_map(screen, map_matrix)
-
-    # 更新显示
-    pygame.display.flip()
+    font = pygame.font.SysFont(None, 24)
 
     running = True
     clock = pygame.time.Clock()
 
     # 主循环
     while running:
-        clock.tick(30)  # 每秒30帧
-
+        clock.tick(30)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN and selected_unit_pos is not None:
-                # 控制单位移动
-                new_pos = selected_unit_pos.copy()
+            elif event.type == pygame.KEYDOWN:
+                # 移动或切换单位
                 if event.key == pygame.K_UP:
-                    new_pos[0] -= 1
+                    unit_controller.move_unit("up")
                 elif event.key == pygame.K_DOWN:
-                    new_pos[0] += 1
+                    unit_controller.move_unit("down")
                 elif event.key == pygame.K_LEFT:
-                    new_pos[1] -= 1
+                    unit_controller.move_unit("left")
                 elif event.key == pygame.K_RIGHT:
-                    new_pos[1] += 1
+                    unit_controller.move_unit("right")
+                elif event.key == pygame.K_TAB:
+                    # 循环切换当前选择的单位
+                    new_index = (unit_controller.selected_unit_index + 1) % len(
+                        unit_controller.units_positions
+                    )
+                    unit_controller.select_unit_by_index(new_index)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # 左键选择单位
+                    pos = pygame.mouse.get_pos()
+                    unit_controller.select_unit_by_mouse(pos)
 
-                # 检查新位置是否在地图范围内
-                if 0 <= new_pos[0] < map_height and 0 <= new_pos[1] < map_width:
-                    # 根据需求，可以检查一下新地形是否允许通过
-                    # 例如我们简单的规则：不要走到河流上
-                    target_cell = map_matrix[new_pos[0]][new_pos[1]]
-                    if target_cell not in [
-                        "river",
-                        "mountain",
-                    ]:  # 假设不能走到河流和山上
-                        # 将旧位置还原为plain（或其他记忆的原本地形，这里简化）
-                        old_y, old_x = selected_unit_pos
-                        # 假设单位之前所在的格子为plain（简单起见）
-                        # 如果希望恢复原本地形，需要额外记录或使用更复杂的逻辑
-                        map_matrix[old_y][old_x] = "plain"
+        screen.fill((0, 0, 0))
+        highlight_pos = None
+        selected = unit_controller.selected_unit
+        if selected:
+            highlight_pos = (selected[0], selected[1])
 
-                        # 更新新位置为单位
-                        map_matrix[new_pos[0]][new_pos[1]] = selected_unit_type
-                        selected_unit_pos = new_pos
+        # 渲染地图
+        generator.render_map(
+            screen, environment_map, unit_map, highlight_pos=highlight_pos
+        )
 
-                        # 移动后重新渲染地图
-                        screen.fill((0, 0, 0))
-                        generator.render_map(screen, map_matrix)
-                        pygame.display.flip()
+        # 显示文字提示
+        if selected:
+            u_type = selected[2]
+            text = font.render(
+                f"selected: {u_type} at ({selected[1]}, {selected[0]})",
+                True,
+                (255, 255, 255),
+            )
+            screen.blit(text, (10, 10))
+        else:
+            text = font.render("Cannot select", True, (255, 255, 255))
+            screen.blit(text, (10, 10))
+        # 更新显示
+        pygame.display.flip()
 
     pygame.quit()
 
