@@ -4,7 +4,7 @@ import pygame
 import numpy as np
 import os
 from map_generator.map_data_generator import generate_map_data
-from controller.army import UnitController
+from controller.unit import UnitController
 
 
 class MapGenerator:
