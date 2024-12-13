@@ -97,9 +97,16 @@ class UnitController:
 
     @property
     def selected_unit(self):
-        if self.units_positions:
-            return self.units_positions[self.selected_unit_index]
-        return None
+        # [MOD] 增加安全访问判断，避免IndexError
+        if not self.units_positions:
+            return None
+        if self.selected_unit_index < 0 or self.selected_unit_index >= len(
+            self.units_positions
+        ):
+            self.selected_unit_index = 0 if self.units_positions else 0
+            if not self.units_positions:
+                return None
+        return self.units_positions[self.selected_unit_index]
 
     def move_unit(self, direction):
         # direction: 'up', 'down', 'left', 'right'
@@ -186,8 +193,8 @@ class UnitController:
             # 还有本阵营单位，则选中一个（如第一个）
             self.selected_unit_index = same_faction_units[0][0]
         else:
-            # 无本阵营单位，对方获胜
-            # 简单处理：在主程序中检查此条件后处理(由主程序在每帧中检查)
+            # 无本阵营单位则不设置selected_unit_index，但selected_unit会返回None
+            # 后续由主循环判断胜负
             pass
 
     def remove_unit_from_positions(self, utype):

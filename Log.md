@@ -3,6 +3,13 @@ same git commit but easy to read
 
 
 ## 2024-12-13
+fix: 修复在所有单位阵亡时访问 selected_unit 导致 IndexError 的问题
+
+- 在 UnitController.selected_unit 属性中加入安全检查，当 units_positions 为空或 selected_unit_index 超界时返回 None
+- 确保当无单位可选时，不会再抛出 IndexError 异常
+- 修改获胜提示到屏幕中央
+
+
 feat: 扩大视野范围、隐藏不可见单位，并在阵营模式下实现胜负判定
 
 - 视野范围从3x3扩大至5x5，以单位为中心上下左右各2格（共5x5）
