@@ -1,3 +1,4 @@
+from collections import deque
 import random
 import numpy as np
 
@@ -22,6 +23,10 @@ class UnitController:
         self.units_positions = []  # 存所有单位的位置和类型 [(y, x, type), ...]
         self.player_mode = player_mode  # 存储玩家模式(human or ai)
         self._find_all_units()
+
+        # 路径缓存：key是unit索引，value是当前该单位的路径（队列）
+        self.unit_paths = {}
+        self.target_positions = {}  # 存储AI的目标位置
 
     def _find_all_units(self):
         # 扫描unit_map找出所有单位
@@ -205,3 +210,184 @@ class UnitController:
                         if 0 <= ny < h and 0 <= nx < w:
                             visible[ny][nx] = True
         return visible
+
+    # 寻路相关函数
+    def plan_path_to(self, target_y, target_x):
+        """
+        为当前选中的单位规划路径。如果无法到达目标点，则寻找最近的可到达点。
+        """
+        sel = self.selected_unit
+        if not sel:
+            return
+        sy, sx, utype = sel
+        path = self._find_path(utype, (sy, sx), (target_y, target_x))
+        if not path:
+            # 找不到直达路径，寻找最接近目标的点
+            path = self._find_closest_reachable_point(
+                utype, (sy, sx), (target_y, target_x)
+            )
+        self.unit_paths[self.selected_unit_index] = deque(path) if path else deque()
+        self.target_positions[self.selected_unit_index] = (
+            target_y,
+            target_x,
+        )  # 记录目标点
+
+    def step_along_path(self):
+        """
+        沿规划路径前进一步。如果路径已走完或无路径，则不动。
+        """
+        if self.selected_unit_index not in self.unit_paths:
+            return
+        if not self.unit_paths[self.selected_unit_index]:
+            return
+        # 取出下一个节点
+        ny, nx = self.unit_paths[self.selected_unit_index][0]
+        sy, sx, utype = self.units_positions[self.selected_unit_index]
+
+        # 检查能否前进到该点
+        if (ny, nx) == (sy, sx):
+            # 如果第一个节点就是当前点，弹出后再取下一个
+            self.unit_paths[self.selected_unit_index].popleft()
+            if self.unit_paths[self.selected_unit_index]:
+                ny, nx = self.unit_paths[self.selected_unit_index][0]
+            else:
+                return
+
+        # 检查动态阻挡：目标格子若有其他单位则需重新寻路
+        if not self._is_tile_free_for(utype, ny, nx):
+            # 尝试重新寻路
+            if self.selected_unit_index in self.target_positions:
+                ty, tx = self.target_positions[self.selected_unit_index]
+                new_path = self._find_path(utype, (sy, sx), (ty, tx))
+                if not new_path:
+                    new_path = self._find_closest_reachable_point(
+                        utype, (sy, sx), (ty, tx)
+                    )
+                self.unit_paths[self.selected_unit_index] = (
+                    deque(new_path) if new_path else deque()
+                )
+            return
+
+        # 前进到下一节点
+        terrain = self.environment_map[ny, nx]
+        if self.can_enter(utype, terrain) and self._is_tile_free_for(utype, ny, nx):
+            self.unit_map[sy, sx] = None
+            self.unit_map[ny, nx] = utype
+            self.units_positions[self.selected_unit_index] = (ny, nx, utype)
+            self.unit_paths[self.selected_unit_index].popleft()
+
+        # terrain = self.environment_map[ny, nx]
+        # if self.can_enter(utype, terrain) and self.unit_map[ny, nx] is None:
+        #     # 更新unit_map和units_positions
+        #     self.unit_map[sy, sx] = None
+        #     self.unit_map[ny, nx] = utype
+        #     self.units_positions[self.selected_unit_index] = (ny, nx, utype)
+        #     self.unit_paths[
+        #         self.selected_unit_index
+        #     ].popleft()  # 前进成功，移除已达到的点
+        # else:
+        #     # 无法前进，路径阻塞，尝试重新规划或放弃
+        #     self.unit_paths[self.selected_unit_index].clear()
+
+    def _is_tile_free_for(self, utype, y, x):
+        # 检查unit_map[y,x] 是否为空或是自己所在的格子
+        # 不允许穿过敌人或友方单位
+        # 找当前选中单位位置，如果(y,x)正是自己的位置也可通过
+        sy, sx, sutype = self.units_positions[self.selected_unit_index]
+        if (y, x) == (sy, sx):
+            return True
+        return self.unit_map[y, x] is None
+
+    def _find_path(self, utype, start, goal):
+        """
+        使用BFS寻找从start到goal的路径。
+        返回路径坐标列表(含起点和终点)，若不可达则返回None。
+        """
+        sy, sx = start
+        gy, gx = goal
+        h, w = self.environment_map.shape
+        visited = np.full((h, w), False, dtype=bool)
+        parent = dict()
+
+        queue = deque()
+        queue.append((sy, sx))
+        visited[sy, sx] = True
+
+        while queue:
+            y, x = queue.popleft()
+            if (y, x) == (gy, gx):
+                # 找到目标，回溯路径
+                return self._reconstruct_path(parent, start, goal)
+
+            for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
+                    terrain = self.environment_map[ny, nx]
+                    if self.can_enter(utype, terrain) and self._is_tile_free_for(
+                        utype, ny, nx
+                    ):
+                        visited[ny, nx] = True
+                        parent[(ny, nx)] = (y, x)
+                        queue.append((ny, nx))
+
+        # 未找到目标
+        return None
+
+    def _find_closest_reachable_point(self, utype, start, goal):
+        """
+        当目标不可达时，使用BFS扩张所有可达点，
+        在可达点中选择与goal曼哈顿距离最近的点。
+        然后返回到该点的路径。
+        """
+        sy, sx = start
+        gy, gx = goal
+        h, w = self.environment_map.shape
+        visited = np.full((h, w), False, dtype=bool)
+        parent = dict()
+
+        queue = deque()
+        queue.append((sy, sx))
+        visited[sy, sx] = True
+
+        reachable_points = []
+        while queue:
+            y, x = queue.popleft()
+            reachable_points.append((y, x))
+            for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
+                    terrain = self.environment_map[ny, nx]
+                    if self.can_enter(utype, terrain) and self._is_tile_free_for(
+                        utype, ny, nx
+                    ):
+                        visited[ny, nx] = True
+                        parent[(ny, nx)] = (y, x)
+                        queue.append((ny, nx))
+
+        # 从reachable_points中选与goal距离最近的
+        best_point = None
+        best_dist = float("inf")
+        for ry, rx in reachable_points:
+            dist = abs(ry - gy) + abs(rx - gx)
+            if dist < best_dist:
+                best_dist = dist
+                best_point = (ry, rx)
+        if best_point is not None and best_point != (sy, sx):
+            return self._reconstruct_path(parent, start, best_point)
+        return None
+
+    def _reconstruct_path(self, parent, start, goal):
+        path = []
+        cur = goal
+        while cur != start:
+            path.append(cur)
+            cur = parent[cur]
+        path.append(start)
+        path.reverse()
+        return path
+
+    def get_unit_path(self):
+        # 返回当前选中单位的路径列表（用于渲染）
+        if self.selected_unit_index in self.unit_paths:
+            return list(self.unit_paths[self.selected_unit_index])
+        return []

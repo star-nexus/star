@@ -4,7 +4,7 @@ import pygame
 import numpy as np
 import os
 from map_generator.map_data_generator import generate_map_data
-from controller.unit import UnitController
+from entity.unit import UnitController
 
 
 class MapGenerator:
@@ -77,7 +77,13 @@ class MapGenerator:
         return environment_map, unit_map
 
     def render_map(
-        self, surface, environment_map, unit_map, highlight_pos=None, visible_map=None
+        self,
+        surface,
+        environment_map,
+        unit_map,
+        highlight_pos=None,
+        visible_map=None,
+        path_to_show=None,
     ):
         """Render the map onto the given Pygame surface"""
 
@@ -118,6 +124,17 @@ class MapGenerator:
                             #     s.set_alpha(100)
                             #     s.fill((255, 255, 0))
                             #     surface.blit(s, (x, y))
+
+        # 如果有路径，要高亮路径
+        if path_to_show:
+            for py, px in path_to_show:
+                # 绘制半透明蓝色覆盖表示路径
+                x = px * self.tile_size
+                y = py * self.tile_size
+                s = pygame.Surface((self.tile_size, self.tile_size))
+                s.set_alpha(100)
+                s.fill((0, 0, 255))
+                surface.blit(s, (x, y))
         # 如果有 visible_map，进行战争迷雾处理
         if visible_map is not None:
             h, w = visible_map.shape
@@ -191,6 +208,8 @@ def main():
     win_font = pygame.font.SysFont(None, 72)
     vision_mode = 1
     winner = None
+    # 用于显示坐标信息
+    show_mouse_pos = True
 
     running = True
     clock = pygame.time.Clock()
@@ -198,6 +217,9 @@ def main():
     # 主循环
     while running:
         clock.tick(30)
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        mouse_grid_x = mouse_x // tile_size
+        mouse_grid_y = mouse_y // tile_size
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -223,6 +245,13 @@ def main():
                     vision_mode = 2
                 elif event.key == pygame.K_3:  # W 阵营视角
                     vision_mode = 3
+                elif event.key == pygame.K_g:
+                    # 假设按下 G 键后，为选中单位规划路径到某个目标坐标(ty, tx)
+                    unit_controller.plan_path_to(mouse_grid_y, mouse_grid_x)
+                    # unit_controller.plan_path_to(ty, tx)
+                elif event.key == pygame.K_h:
+                    # 按下 H 键让单位沿路径前进一步
+                    unit_controller.step_along_path()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 左键选择单位
                     pos = pygame.mouse.get_pos()
@@ -253,6 +282,9 @@ def main():
             faction = "R" if vision_mode == 2 else "W"
             visible_map = unit_controller.compute_visibility(faction, vision_range=2)
 
+        # 获取路径以显示
+        path_to_show = unit_controller.get_unit_path()
+
         # 渲染地图
         generator.render_map(
             screen,
@@ -260,6 +292,7 @@ def main():
             unit_map,
             highlight_pos=highlight_pos,
             visible_map=visible_map,
+            path_to_show=path_to_show,
         )
 
         # 显示文字提示
@@ -282,6 +315,20 @@ def main():
         vision_text = "God" if vision_mode == 1 else ("R" if vision_mode == 2 else "W")
         v_text = font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
         screen.blit(v_text, (10, 50))
+
+        # 显示鼠标位置
+        mouse_text = font.render(
+            f"Mouse: ({mouse_grid_x}, {mouse_grid_y})", True, (255, 255, 255)
+        )
+        screen.blit(mouse_text, (10, 70))
+
+        # 如果有目标点，显示目标点位置
+        if unit_controller.selected_unit_index in unit_controller.target_positions:
+            ty, tx = unit_controller.target_positions[
+                unit_controller.selected_unit_index
+            ]
+            target_text = font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
+            screen.blit(target_text, (10, 90))
 
         # 如果有胜者，显示胜利信息并停止交互
         if winner is not None:
