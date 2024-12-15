@@ -88,7 +88,7 @@ class Agent:
                 if p["system"]:
                     params.update({"system": p["system"]})
                 params.update({"max_tokens": 1000})
-                params.update({"temperature": 0.0})
+                params.update({"temperature": 0.1})
                 params.update({"anthropic_version": "bedrock-2023-05-31"})
                 model = p["model"]
 

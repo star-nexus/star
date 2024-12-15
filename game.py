@@ -336,6 +336,9 @@ def main():
                     else:
                         sel_info = unit_controller.get_selected_unit_info()
 
+                        if sel_info is None:
+                            # 未选中单位，无法攻击
+                            continue
                         if pos_info["utype"][0] != sel_info["utype"][0]:
                             if uid is not None:
                                 # 尝试移动或攻击到鼠标格子
