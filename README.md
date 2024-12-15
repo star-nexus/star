@@ -10,9 +10,16 @@ pip install -r requirements.txt
 ```
 
 ### Run
+human play
 ```bash
 python game.py
 ```
+ai play
+```bash
+python game.py ai
+python run_ai_play.py
+```
+
 
 ## Game Rules   
 
