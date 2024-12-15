@@ -19,14 +19,118 @@ class UnitController:
         self.unit_map = unit_map  # 存储单位位置的地图，与环境分离
         self.tile_size = tile_size
 
-        self.selected_unit_index = 0
+        self.selected_unit_index = 0  # 没有选中单位则为-1
         self.units_positions = []  # 存所有单位的位置和类型 [(y, x, type), ...]
         self.player_mode = player_mode  # 存储玩家模式(human or ai)
         self._find_all_units()
 
-        # 路径缓存：key是unit索引，value是当前该单位的路径（队列）
+        # 路径缓存：key是unit id，value是当前该单位的路径（队列）
         self.unit_paths = {}
         self.target_positions = {}  # 存储AI的目标位置
+
+        # 分配单位ID
+        # unit_id_map: unit_id -> (y, x, utype)
+        # 保证每个单位一个独立ID，可在units_positions生成后分配
+        self.unit_id_map = {}
+        for i, (uy, ux, ut) in enumerate(self.units_positions):
+            self.unit_id_map[i] = (uy, ux, ut)  # i为单位id
+        self.infos_dict = self.get_all_units_info_dict()
+
+    @property
+    def selected_unit_id(self):
+        if self.selected_unit is None:
+            return None
+        # selected_unit_index对应unit_id
+        return self.selected_unit_index
+
+    def get_all_units_info(self):
+        """
+        返回所有单位的信息列表，以便存盘或显示。
+        格式: [(unit_id, y, x, utype, 当前状态), ...]
+        当前状态可以是 'idle', 'moving to (ty, tx)', 'attacking unit_id'等。
+        """
+        info = []
+        for uid, (uy, ux, ut) in self.unit_id_map.items():
+            state = "idle"
+            if uid in self.unit_paths and self.unit_paths[uid]:
+                # 有路径则说明正在移动
+                if uid in self.target_positions:
+                    ty, tx = self.target_positions[uid]
+                    state = f"moving to ({ty}, {tx})"
+            # 攻击状态的逻辑可根据需要扩展
+            info.append((uid, uy, ux, ut, state))
+        return info
+
+    def get_all_units_info_dict(self):
+        """
+        返回所有单位的信息字典，以方便查询。
+        格式: [(unit_id, y, x, utype, 当前状态), ...]
+        当前状态可以是 'idle', 'moving to (ty, tx)', 'attacking unit_id'等。
+        """
+        info = {}
+        for uid, (uy, ux, ut) in self.unit_id_map.items():
+            state = "idle"
+            if uid in self.unit_paths and self.unit_paths[uid]:
+                # 有路径则说明正在移动
+                if uid in self.target_positions:
+                    ty, tx = self.target_positions[uid]
+                    state = f"moving to ({ty}, {tx})"
+            # 攻击状态的逻辑可根据需要扩展
+            info[uid] = {"y": uy, "x": ux, "utype": ut, "state": state}
+        return info
+
+    def get_faction_unit_counts(self):
+        """
+        返回 R 和 W 阵营各类型单位数量统计
+        格式: {
+          'R': {'ping':数量, 'shui':数量, 'shan':数量},
+          'W': {'ping':数量, 'shui':数量, 'shan':数量}
+        }
+        """
+        counts = {
+            "R": {"ping": 0, "shui": 0, "shan": 0},
+            "W": {"ping": 0, "shui": 0, "shan": 0},
+        }
+        for uid, (uy, ux, ut) in self.unit_id_map.items():
+            faction, utype = ut.split("_", 1)
+            if faction in ["R", "W"] and utype in counts[faction]:
+                counts[faction][utype] += 1
+        return counts
+
+    def execute_action(self, unit_id, action, params):
+        """
+        执行AI传入的指令，例如:
+        action: 'move', params: (target_y, target_x)
+        action: 'attack', params: (target_unit_id)
+        """
+        original_index = self.selected_unit_index
+        try:
+            if unit_id not in self.unit_id_map:
+                return
+            # uy, ux, utype = self.unit_id_map[unit_id]
+            if action == "move":
+                ty, tx = params
+                # 调用寻路接口
+                self.selected_unit_index = unit_id
+                self.plan_path_to(ty, tx, action="move")
+            elif action == "attack":
+
+                target_uid = params
+                # 攻击逻辑可以先简化为移动到目标单位附近:
+                if target_uid in self.unit_id_map:
+                    ty, tx, tutype = self.unit_id_map[target_uid]
+                    # 寻路到敌人单位附近某点
+                    self.selected_unit_index = unit_id
+                    # 简化为寻路到目标单位位置（后续扩展为寻路到附近格子）
+                    self.plan_path_to(ty, tx, action="attack")
+        finally:
+            self.selected_unit_index = original_index
+
+    # 需要在单位移动或战斗后更新 self.unit_id_map 中该单位的位置和类型变化
+    def _update_unit_position_in_id_map(self, uid, new_y, new_x, new_utype=None):
+        # 当单位移动或变动时更新unit_id_map记录
+        old_y, old_x, old_utype = self.unit_id_map[uid]
+        self.unit_id_map[uid] = (new_y, new_x, new_utype if new_utype else old_utype)
 
     def _find_all_units(self):
         # 扫描unit_map找出所有单位
@@ -37,7 +141,7 @@ class UnitController:
                     self.units_positions.append((i, j, self.unit_map[i][j]))
 
     def select_unit_by_index(self, index):
-        if 0 <= index < len(self.units_positions):
+        if index in self.unit_id_map:
             self.selected_unit_index = index
 
     def select_unit_by_mouse(self, mouse_pos):
@@ -46,30 +150,27 @@ class UnitController:
         grid_x = mouse_pos[0] // self.tile_size
         grid_y = mouse_pos[1] // self.tile_size
         # 检查点击位置是否有单位
-        for idx, (uy, ux, utype) in enumerate(self.units_positions):
+        for idx, (uy, ux, utype) in self.unit_id_map.items():
             if uy == grid_y and ux == grid_x:
                 self.selected_unit_index = idx
                 break
 
     @property
     def selected_unit(self):
-        # [MOD] 增加安全访问判断，避免IndexError
-        if not self.units_positions:
+        if self.selected_unit_index < 0:
             return None
-        if self.selected_unit_index < 0 or self.selected_unit_index >= len(
-            self.units_positions
-        ):
-            self.selected_unit_index = 0 if self.units_positions else 0
-            if not self.units_positions:
-                return None
-        return self.units_positions[self.selected_unit_index]
+        return self.unit_id_map[self.selected_unit_index]
 
+    # [弃用]
     def move_unit(self, direction):
         # direction: 'up', 'down', 'left', 'right'
-        if not self.units_positions:
+        if (
+            self.selected_unit_index < 0
+            or self.selected_unit_index not in self.unit_id_map
+        ):
             return
 
-        y, x, utype = self.units_positions[self.selected_unit_index]
+        y, x, utype = self.unit_id_map[self.selected_unit_index]
 
         new_y, new_x = y, x
         if direction == "up":
@@ -92,23 +193,28 @@ class UnitController:
         target_unit = self.unit_map[new_y][new_x]
         if target_unit is not None:
             # 有单位，检查阵营和战斗
-            if self.is_enemy(utype, target_unit):  # [MOD] 如果是敌人则战斗
+            if self.is_enemy(utype, target_unit):  # 如果是敌人则战斗
                 winner, loser = self.resolve_combat(utype, target_unit)
                 if winner == utype:
                     # 攻击方胜利
                     self.unit_map[y][x] = None
                     self.unit_map[new_y][new_x] = utype
-                    self.units_positions[self.selected_unit_index] = (
-                        new_y,
-                        new_x,
-                        utype,
+                    # self.units_positions[self.selected_unit_index] = (
+                    #     new_y,
+                    #     new_x,
+                    #     utype,
+                    # )
+                    self._update_unit_position_in_id_map(
+                        self.selected_unit_index, new_y, new_x, utype
                     )
                     # 更新units_positions中被击败单位的记录
-                    self.remove_unit_from_positions(loser)
+                    # self.remove_unit_from_positions(loser)
+                    self._remove_unit_by_type(loser)
                 else:
                     # 攻击方失败
                     self.unit_map[y][x] = None
-                    self.remove_unit_from_positions(utype)
+                    # self.remove_unit_from_positions(utype)
+                    self._remove_unit_by_type(utype)
                     # 如果当前选中单位死了，需要重新选择本阵营单位，如果无则对方获胜
                     self.adjust_selection_after_death(utype)
             else:
@@ -120,7 +226,10 @@ class UnitController:
                 self.unit_map[y][x] = None
                 self.unit_map[new_y][new_x] = utype
                 # 更新unit位置列表
-                self.units_positions[self.selected_unit_index] = (new_y, new_x, utype)
+                # self.units_positions[self.selected_unit_index] = (new_y, new_x, utype)
+                self._update_unit_position_in_id_map(
+                    self.selected_unit_index, new_y, new_x, utype
+                )
 
     def can_enter(self, unit_type, terrain):
         # unit_type: R_ping, R_shui, R_shan, W_ping, W_shui, W_shan
@@ -141,7 +250,7 @@ class UnitController:
         # 从当前列表中找到与dead_utype同阵营的其他单位
         same_faction_units = [
             (i, (uy, ux, ut))
-            for i, (uy, ux, ut) in enumerate(self.units_positions)
+            for i, (uy, ux, ut) in self.unit_id_map.items()
             if ut.startswith(faction + "_")
         ]
 
@@ -153,6 +262,7 @@ class UnitController:
             # 后续由主循环判断胜负
             pass
 
+    # [弃用]
     def remove_unit_from_positions(self, utype):
         # 移除指定类型的单位（仅移除一个，因为只会有一个该类型刚刚战死）
         for i, (uy, ux, ut) in enumerate(self.units_positions):
@@ -167,7 +277,7 @@ class UnitController:
         )
 
     def resolve_combat(self, attacker, defender):
-        # [MOD] 战斗规则，根据unit类型的ping/shui/shan来决定结果
+        # 战斗规则，根据unit类型的ping/shui/shan来决定结果
         # attacker和defender都是比如R_ping或W_shui
         att_faction, att_type = attacker.split("_", 1)
         def_faction, def_type = defender.split("_", 1)
@@ -202,7 +312,7 @@ class UnitController:
         h, w = self.environment_map.shape
         visible = np.full((h, w), False, dtype=bool)
         # 使用vision_range参数决定视野范围，注意为5x5则range为2上下扩展
-        for uy, ux, utype in self.units_positions:
+        for uy, ux, utype in self.unit_id_map.values():
             if utype.startswith(faction + "_"):
                 for dy in range(-vision_range, vision_range + 1):  # 改为5x5，即-2到2
                     for dx in range(-vision_range, vision_range + 1):
@@ -212,7 +322,7 @@ class UnitController:
         return visible
 
     # 寻路相关函数
-    def plan_path_to(self, target_y, target_x):
+    def plan_path_to(self, target_y, target_x, action="move"):
         """
         为当前选中的单位规划路径。如果无法到达目标点，则寻找最近的可到达点。
         """
@@ -220,61 +330,116 @@ class UnitController:
         if not sel:
             return
         sy, sx, utype = sel
-        path = self._find_path(utype, (sy, sx), (target_y, target_x))
+
+        path = self._find_path(utype, (sy, sx), (target_y, target_x), action)
         if not path:
             # 找不到直达路径，寻找最接近目标的点
             path = self._find_closest_reachable_point(
                 utype, (sy, sx), (target_y, target_x)
             )
         self.unit_paths[self.selected_unit_index] = deque(path) if path else deque()
-        self.target_positions[self.selected_unit_index] = (
-            target_y,
-            target_x,
-        )  # 记录目标点
+        # 这里确保使用字典存储信息
+        self.target_positions[self.selected_unit_index] = {
+            "pos": (target_y, target_x),
+            "action": action,
+        }
 
     def step_along_path(self):
         """
         沿规划路径前进一步。如果路径已走完或无路径，则不动。
         """
-        if self.selected_unit_index not in self.unit_paths:
+        # if self.selected_unit_index not in self.unit_paths:
+        #     return
+        # if not self.unit_paths[self.selected_unit_index]:
+        #     return
+        # # 取出下一个节点
+        # ny, nx = self.unit_paths[self.selected_unit_index][0]
+        # sy, sx, utype = self.units_positions[self.selected_unit_index]
+        uid = self.selected_unit_index
+        if uid not in self.unit_paths:
             return
-        if not self.unit_paths[self.selected_unit_index]:
+        if not self.unit_paths[uid]:
             return
-        # 取出下一个节点
-        ny, nx = self.unit_paths[self.selected_unit_index][0]
-        sy, sx, utype = self.units_positions[self.selected_unit_index]
+        ny, nx = self.unit_paths[uid][0]
+        sy, sx, utype = self.unit_id_map[uid]
 
-        # 检查能否前进到该点
+        # # 检查能否前进到该点
+        # if (ny, nx) == (sy, sx):
+        #     # 如果第一个节点就是当前点，弹出后再取下一个
+        #     self.unit_paths[self.selected_unit_index].popleft()
+        #     if self.unit_paths[self.selected_unit_index]:
+        #         ny, nx = self.unit_paths[self.selected_unit_index][0]
+        #     else:
+        #         return
+        # 如果下个节点就是当前点，弹出后取下一个
         if (ny, nx) == (sy, sx):
-            # 如果第一个节点就是当前点，弹出后再取下一个
-            self.unit_paths[self.selected_unit_index].popleft()
-            if self.unit_paths[self.selected_unit_index]:
-                ny, nx = self.unit_paths[self.selected_unit_index][0]
-            else:
+            self.unit_paths[uid].popleft()
+            if not self.unit_paths[uid]:
                 return
+            ny, nx = self.unit_paths[uid][0]
+        # 检查下个格子上的单位情况
+        occupant = self.unit_map[ny, nx]
+        target_info = self.target_positions.get(uid, {"action": "move"})
+        current_action = target_info["action"]
 
-        # 检查动态阻挡：目标格子若有其他单位则需重新寻路
-        if not self._is_tile_free_for(utype, ny, nx):
-            # 尝试重新寻路
-            if self.selected_unit_index in self.target_positions:
-                ty, tx = self.target_positions[self.selected_unit_index]
-                new_path = self._find_path(utype, (sy, sx), (ty, tx))
-                if not new_path:
-                    new_path = self._find_closest_reachable_point(
-                        utype, (sy, sx), (ty, tx)
-                    )
-                self.unit_paths[self.selected_unit_index] = (
-                    deque(new_path) if new_path else deque()
-                )
-            return
+        if occupant is not None:
+            # 有单位
+            if self.is_enemy(utype, occupant):
+                # 遇敌
+                if current_action == "attack":
+                    # 攻击行动下必然战斗
+                    self._do_combat(uid, (ny, nx), utype, occupant)
+                else:
+                    # move遇敌随机决定战或绕路
+                    if random.random() < 0.5:
+                        # 战斗
+                        self._do_combat(uid, (ny, nx), utype, occupant)
+                    else:
+                        # 尝试绕路(重新寻路)
+                        self._reroute(uid)
+            else:
+                # 友军单位，尝试绕路
+                self._reroute(uid)
+        else:
+            # 空格子，检查可进入地形
+            terrain = self.environment_map[ny, nx]
+            if self.can_enter(utype, terrain):
+                self.unit_map[sy, sx] = None
+                self.unit_map[ny, nx] = utype
+                # self.units_positions[uid] = (ny, nx, utype)
+                self.unit_paths[uid].popleft()
+                # 同步更新 unit_id_map
+                self._update_unit_position_in_id_map(uid, ny, nx)
+            else:
+                # 不可进入，尝试绕路
+                self._reroute(uid)
 
-        # 前进到下一节点
-        terrain = self.environment_map[ny, nx]
-        if self.can_enter(utype, terrain) and self._is_tile_free_for(utype, ny, nx):
-            self.unit_map[sy, sx] = None
-            self.unit_map[ny, nx] = utype
-            self.units_positions[self.selected_unit_index] = (ny, nx, utype)
-            self.unit_paths[self.selected_unit_index].popleft()
+        # # 检查动态阻挡：目标格子若有其他单位则需重新寻路
+        # if not self._is_tile_free_for(utype, ny, nx):
+        #     # 尝试重新寻路
+        #     if self.selected_unit_index in self.target_positions:
+        #         ty, tx = self.target_positions[self.selected_unit_index]
+        #         new_path = self._find_path(utype, (sy, sx), (ty, tx))
+        #         if not new_path:
+        #             new_path = self._find_closest_reachable_point(
+        #                 utype, (sy, sx), (ty, tx)
+        #             )
+        #         self.unit_paths[self.selected_unit_index] = (
+        #             deque(new_path) if new_path else deque()
+        #         )
+        #     return
+
+        # # 前进到下一节点
+        # terrain = self.environment_map[ny, nx]
+        # if self.can_enter(utype, terrain) and self._is_tile_free_for(utype, ny, nx):
+        #     self.unit_map[sy, sx] = None
+        #     self.unit_map[ny, nx] = utype
+        #     self.units_positions[self.selected_unit_index] = (ny, nx, utype)
+        #     self.unit_paths[self.selected_unit_index].popleft()
+
+        # #  更新 unit_id_map
+        # uid = self.selected_unit_index
+        # self._update_unit_position_in_id_map(uid, ny, nx)
 
         # terrain = self.environment_map[ny, nx]
         # if self.can_enter(utype, terrain) and self.unit_map[ny, nx] is None:
@@ -289,16 +454,116 @@ class UnitController:
         #     # 无法前进，路径阻塞，尝试重新规划或放弃
         #     self.unit_paths[self.selected_unit_index].clear()
 
-    def _is_tile_free_for(self, utype, y, x):
+    def _do_combat(self, uid, enemy_pos, attacker_type, defender_type):
+        # 执行战斗结算
+        sy, sx, sutype = self.unit_id_map[uid]
+        ey, ex = enemy_pos
+        # defender_uid
+        defender_uid = self.find_unit_id_by_pos(ey, ex)
+        if defender_uid is None:
+            # 如果地图数据不同步，无法找到防守方单位id，则不战
+            print("地图数据不同步，无法找到防守方单位id")
+            return
+        winner, loser = self.resolve_combat(sutype, defender_type)
+        if winner == sutype:
+            # 攻击方胜利
+            self.unit_map[sy, sx] = None
+            # self.unit_map[ey, ex] = sutype
+            # self.units_positions[uid] = (ey, ex, sutype)
+            self._update_unit_position_in_id_map(uid, ey, ex)
+            self._remove_unit_by_id(defender_uid)
+            self.unit_map[ey, ex] = sutype
+            self.unit_paths[uid].popleft()
+        else:
+            # 攻击方失败
+            self.unit_map[sy, sx] = None
+            self._remove_unit_by_id(uid)  # 攻击方消失
+            # selected_unit_index可能失效，如果该单位死了需要调整
+            if uid in self.unit_paths:
+                self.unit_paths.pop(uid)
+            if uid in self.target_positions:
+                self.target_positions.pop(uid)
+
+    def find_unit_id_by_pos(self, y, x):
+        for uid, (uy, ux, ut) in self.unit_id_map.items():
+            if (uy, ux) == (y, x):
+                return uid
+        return None
+
+    def _remove_unit_by_id(self, id):
+        # 从 units_positions, unit_id_map, unit_map 中移除指定类型的单位(一个)
+        remove_uid = id
+
+        if remove_uid is not None:
+            uy, ux, ut = self.unit_id_map[remove_uid]
+            self.unit_map[uy, ux] = None
+            # 从units_positions中删除
+            # for i, (py, px, put) in enumerate(self.units_positions):
+            #     if (py, px, put) == (uy, ux, ut):
+            #         self.units_positions.pop(i)
+            #         break
+            # 从unit_id_map中删除
+            self.unit_id_map.pop(remove_uid, None)
+            # 若死的正是选中单位，需要处理selected_unit_index
+            if self.selected_unit_index == remove_uid:
+                self.selected_unit_index = -1
+
+    def _remove_unit_by_type(self, utype):
+        # 从 units_positions, unit_id_map, unit_map 中移除指定类型的单位(一个)
+        remove_uid = None
+        for uid, (uy, ux, ut) in self.unit_id_map.items():
+            if ut == utype:
+                remove_uid = uid
+                break
+        if remove_uid is not None:
+            uy, ux, ut = self.unit_id_map[remove_uid]
+            self.unit_map[uy, ux] = None
+            # 从units_positions中删除
+            # for i, (py, px, put) in enumerate(self.units_positions):
+            #     if (py, px, put) == (uy, ux, ut):
+            #         self.units_positions.pop(i)
+            #         break
+            # 从unit_id_map中删除
+            self.unit_id_map.pop(remove_uid, None)
+            # 若死的正是选中单位，需要处理selected_unit_index
+            if self.selected_unit_index == remove_uid:
+                self.selected_unit_index = 0
+                if len(self.unit_id_map) == 0:
+                    self.selected_unit_index = -1
+
+    def _reroute(self, uid):
+        sy, sx, utype = self.unit_id_map[uid]
+        tinfo = self.target_positions.get(uid)
+        if not tinfo:
+            # 没有目标就不动了
+            self.unit_paths[uid].clear()
+            return
+        ty, tx = tinfo["pos"]
+        action = tinfo["action"]
+        new_path = self._find_path(utype, (sy, sx), (ty, tx))
+        if not new_path:
+            new_path = self._find_closest_reachable_point(utype, (sy, sx), (ty, tx))
+        self.unit_paths[uid] = deque(new_path) if new_path else deque()
+
+    def _is_tile_free_for(self, utype, y, x, action="move"):
         # 检查unit_map[y,x] 是否为空或是自己所在的格子
         # 不允许穿过敌人或友方单位
         # 找当前选中单位位置，如果(y,x)正是自己的位置也可通过
-        sy, sx, sutype = self.units_positions[self.selected_unit_index]
+        sy, sx, sutype = self.unit_id_map[self.selected_unit_index]
         if (y, x) == (sy, sx):
             return True
-        return self.unit_map[y, x] is None
+        free = self.unit_map[y, x] is None
+        if free == True:
+            return free
+        elif action == "attack":
+            if self.is_enemy(sutype, self.unit_map[y, x]):
+                return True
+            else:
+                return False
+        else:
+            return False
 
-    def _find_path(self, utype, start, goal):
+    def _find_path(self, utype, start, goal, action="move"):
         """
         使用BFS寻找从start到goal的路径。
         返回路径坐标列表(含起点和终点)，若不可达则返回None。
@@ -324,7 +589,7 @@ class UnitController:
                 if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
                     terrain = self.environment_map[ny, nx]
                     if self.can_enter(utype, terrain) and self._is_tile_free_for(
-                        utype, ny, nx
+                        utype, ny, nx, action
                     ):
                         visited[ny, nx] = True
                         parent[(ny, nx)] = (y, x)
@@ -391,3 +656,16 @@ class UnitController:
         if self.selected_unit_index in self.unit_paths:
             return list(self.unit_paths[self.selected_unit_index])
         return []
+
+    # 获取当前选择单位的信息
+    def get_selected_unit_info(self):
+        if self.selected_unit_index < 0:
+            return None
+        return self.infos_dict[self.selected_unit_index]
+
+    # 通过位置获取单位信息
+    def get_unit_info_by_pos(self, y, x):
+        uid = self.find_unit_id_by_pos(y, x)
+        if uid is None:
+            return None
+        return self.infos_dict[uid]
