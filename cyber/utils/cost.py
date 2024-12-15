@@ -7,6 +7,14 @@ PROCES = {
         "input": 0.000003,
         "output": 0.000015,
     },
+    "us.anthropic.claude-3-5-haiku-20241022-v1:0": {
+        "input": 0.0000008,
+        "output": 0.000004,
+    },
+    "us.anthropic.claude-3-haiku-20240307-v1:0": {
+        "input": 0.00000025,
+        "output": 0.00000125,
+    },
 }
 
 
@@ -60,6 +68,10 @@ def which_org(model):
     elif model == "claude-3-5-sonnet-20241022":
         return "Anthropic"
     elif model == "us.anthropic.claude-3-5-sonnet-20241022-v2:0":
+        return "Bedrock_Anthropic"
+    elif model == "us.anthropic.claude-3-5-haiku-20241022-v1:0":
+        return "Bedrock_Anthropic"
+    elif model == "us.anthropic.claude-3-haiku-20240307-v1:0":
         return "Bedrock_Anthropic"
     else:
         return "Custom"

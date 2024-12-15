@@ -356,6 +356,8 @@ class UnitController:
         # ny, nx = self.unit_paths[self.selected_unit_index][0]
         # sy, sx, utype = self.units_positions[self.selected_unit_index]
         uid = self.selected_unit_index
+        if uid not in self.unit_id_map:
+            return
         if uid not in self.unit_paths:
             return
         if not self.unit_paths[uid]:

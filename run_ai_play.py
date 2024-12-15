@@ -105,7 +105,7 @@ def main():
         print(res_w)
 
         # 保存到文件
-        with open("unit_action.txt", "w") as f:
+        with open("run_log/unit_action.txt", "w") as f:
             f.write(get_ins(res_r))
             f.write(get_ins(res_w))
         # 10s 运行一次
