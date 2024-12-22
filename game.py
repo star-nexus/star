@@ -3,151 +3,8 @@ import sys
 import pygame
 import numpy as np
 import os
-from map_generator.map_data_generator import generate_map_data
+from map_generator.map import MapGenerator
 from entity.unit import UnitController
-
-
-class MapGenerator:
-
-    def __init__(self, width, height, image_dir="map_generator/map_tiles"):
-        """Initialize map generator with dimensions and image directory"""
-        self.width = width
-        self.height = height
-        self.image_dir = image_dir
-        self.place_types = [
-            "mountain",
-            "river",
-            "plain",
-            "city",
-            "forest",
-            "bridge",
-            "R_ping",
-            "R_shui",
-            "R_shan",
-            "W_ping",
-            "W_shui",
-            "W_shan",
-        ]
-        self.tile_size = 32  # Tile size in pixels
-        self.tile_images = self._load_tile_images()
-
-    def _load_tile_images(self):
-        """Load tile images from directory using pygame"""
-        tile_images = {}
-        for place_type in self.place_types:
-            image_path = os.path.join(
-                self.image_dir, f"{place_type}.png"
-            )  # 使用 PNG 格式更适合 Pygame
-            if not os.path.exists(image_path):
-                print(f"Warning: Image for {place_type} not found at {image_path}")
-                continue
-            try:
-                img = pygame.image.load(image_path).convert_alpha()
-                tile_images[place_type] = pygame.transform.scale(
-                    img, (self.tile_size, self.tile_size)
-                )
-            except pygame.error as e:
-                print(f"Error loading image {image_path}: {e}")
-        return tile_images
-
-    # [弃用] : 改成静态环境地图 env_map 和 单位移动地图 unit_map, 方便控制与逻辑分离
-    # TODO : 需要对 generate_map_data 进行修改，使其返回两个矩阵
-    # def generate_map_matrix(self):
-    #     """Generate random map matrix with place types"""
-    #     map_matrix = generate_map_data(self.width)
-    #     return map_matrix
-
-    # [暂用] : 生成环境地图和单位地图, 但属于增量修改的临时方案,
-    #         有弊端 map init 时刻的地形无法获取, 未来需要修改 generate_map_data
-    def generate_maps(self, r_units, w_units):
-        # 生成环境地图
-        environment_map, unit_map = generate_map_data(self.width, r_units, w_units)
-        # # unit_map 初始化为相同大小，全None
-        # unit_map = np.full((self.height, self.width), None, dtype=object)
-
-        # # 从environment_map中分离出单位
-        # # 原本generate_map_data返回一个混合的地图，这里我们要把部队分离到unit_map中
-        # for i in range(self.height):
-        #     for j in range(self.width):
-        #         cell = environment_map[i][j]
-        #         if cell.startswith("R_") or cell.startswith("W_"):
-        #             unit_map[i][j] = cell
-        #             # 单位位置原地形设为plain（或检查原地形）
-        #             environment_map[i][j] = "plain"
-        return environment_map, unit_map
-
-    def render_map(
-        self,
-        surface,
-        environment_map,
-        unit_map,
-        highlight_pos=None,
-        visible_map=None,
-        path_to_show=None,
-    ):
-        """Render the map onto the given Pygame surface"""
-
-        # 在R/W模式下，仅渲染可见的单位。上帝视角仍渲染所有
-        # 判断是否是上帝视角（vision_mode=1）还是R/W视角（2或3）
-        # 可通过传入的visible_map是否为None判断，上帝视角visible_map=None
-        for i in range(self.height):
-            for j in range(self.width):
-                # 先渲染环境
-                place_type = environment_map[i][j]
-                base_tile = self.tile_images.get(
-                    place_type, self.tile_images.get("plain")
-                )
-                if base_tile:
-                    x = j * self.tile_size
-                    y = i * self.tile_size
-                    surface.blit(base_tile, (x, y))
-
-                # 再渲染单位（如果有）
-                unit = unit_map[i][j]
-                if unit is not None:
-                    if visible_map is None or visible_map[i][j]:
-                        unit_tile = self.tile_images.get(unit, None)
-                        if unit_tile:
-                            surface.blit(unit_tile, (x, y))
-                            if highlight_pos and highlight_pos == (i, j):
-                                s = pygame.Surface((self.tile_size, self.tile_size))
-                                s.set_alpha(100)
-                                s.fill((255, 255, 0))
-                                surface.blit(s, (x, y))
-                            # x = j * self.tile_size
-                            # y = i * self.tile_size
-                            # surface.blit(unit_tile, (x, y))
-                            # # 如果有高亮位置，并且此单位是被选中的单位，则高亮
-                            # if highlight_pos and highlight_pos == (i, j):
-                            #     # 画一个半透明矩形以示高亮
-                            #     s = pygame.Surface((self.tile_size, self.tile_size))
-                            #     s.set_alpha(100)
-                            #     s.fill((255, 255, 0))
-                            #     surface.blit(s, (x, y))
-
-        # 如果有路径，要高亮路径
-        if path_to_show:
-            for py, px in path_to_show:
-                # 绘制半透明蓝色覆盖表示路径
-                x = px * self.tile_size
-                y = py * self.tile_size
-                s = pygame.Surface((self.tile_size, self.tile_size))
-                s.set_alpha(100)
-                s.fill((0, 0, 255))
-                surface.blit(s, (x, y))
-        # 如果有 visible_map，进行战争迷雾处理
-        if visible_map is not None:
-            h, w = visible_map.shape
-            for i in range(h):
-                for j in range(w):
-                    if not visible_map[i][j]:
-                        # 不可见处盖一层黑色半透明遮罩
-                        x = j * self.tile_size
-                        y = i * self.tile_size
-                        fog = pygame.Surface((self.tile_size, self.tile_size))
-                        fog.fill((0, 0, 0))
-                        fog.set_alpha(200)
-                        surface.blit(fog, (x, y))
 
 
 def main():
@@ -168,30 +25,25 @@ def main():
     window_width = map_width * tile_size
     window_height = map_height * tile_size
 
-    r_units = 10
-    w_units = 10
-
     # 创建窗口（必须在加载图像前）
     screen = pygame.display.set_mode((window_width, window_height))
     pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
 
     # 创建地图生成器
-    generator = MapGenerator(map_width, map_height)
+    generator = MapGenerator(map_width, map_height, "map_generator/map_tiles")
 
     # 生成地图矩阵(弃用)
     # map_matrix = generator.generate_map_matrix()
 
     # 生成环境地图和单位地图
-    environment_map, unit_map = generator.generate_maps(
-        r_units=r_units, w_units=w_units
-    )
+    environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
     # 创建单位控制器
     unit_controller = UnitController(environment_map, unit_map, tile_size=tile_size)
 
     # 填充背景为黑色
     # screen.fill((0, 0, 0))
 
-    # 找到一个可控制的军队单位(示例：第一个R开头的单位)
+    # 找到一个可控制的Unit单位(示例：第一个R开头的单位)
     # selected_unit_pos = None
     # selected_unit_type = None
     # for i in range(map_height):
