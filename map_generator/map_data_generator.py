@@ -85,43 +85,5 @@ def generate_map_data(size=50, r_units=3, w_units=3):
             # 前提：bridge也是一种地形类型，需要在地图渲染时支持
             map_data[by, bx] = "bridge"
 
-    # 此时 map_data 全为环境数据（包含plain、river、mountain、city、bridge 等）。
-    # 我们将其复制为 environment_map
-    environment_map = map_data.copy()
 
-    # Step 5: Add soldier units on a separate unit_map
-    unit_map = np.full((size, size), None, dtype=object)
-    force_types = ["ping", "shui", "shan"]
-    forces_positions = {"R": [], "W": []}
-
-    # 定义放置单位的函数
-    def place_units_for_force(force, unit_count):
-        units_placed = 0
-        max_unit_attempts = 50
-        unit_attempts = 0
-
-        while units_placed < unit_count and unit_attempts < max_unit_attempts:
-            y = random.randint(0, size - 1)
-            x = random.randint(0, size - 1)
-
-            # 根据规则，只在plain地形上放置单位（若有其他规则，可自行扩展）
-            # 并确保与已放置单位保持一定距离
-            if environment_map[y, x] == "plain" and all(
-                abs(pos[0] - y) + abs(pos[1] - x) > 2
-                for pos in forces_positions["R"] + forces_positions["W"]
-            ):
-                unit_type = force_types[units_placed % len(force_types)]
-                # 这里假设不要求严格顺序地分配 ping、shui、shan，
-                # 但如果要求每个势力仍有 ping、shui、shan 三类单位，
-                # 而且数量 > 3，需要重新定义逻辑。
-                # 暂时保持最初逻辑：前3个为ping、shui、shan
-                unit_map[y, x] = f"{force}_{unit_type}"
-                forces_positions[force].append((y, x))
-                units_placed += 1
-            unit_attempts += 1
-
-    # 按指定数量为 R 和 W 部署单位
-    place_units_for_force("R", r_units)
-    place_units_for_force("W", w_units)
-
-    return environment_map, unit_map
+    return map_data
