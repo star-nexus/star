@@ -7,74 +7,73 @@ from map_generator.map import MapGenerator
 from entity.unit import UnitController
 
 
+class GameSettings:
+    def __init__(self, player_mode="human"):
+        # Map settings
+        self.map_width = 25
+        self.map_height = 25
+        self.tile_size = 32
+        
+        # Window settings
+        self.window_width = self.map_width * self.tile_size
+        self.window_height = self.map_height * self.tile_size
+        
+        # Game state
+        self.player_mode = player_mode
+        self.vision_mode = 1
+        self.winner = None
+        self.show_mouse_pos = True
+        
+        # Frame settings
+        self.save_interval = 300
+        self.action_interval = 30
+
+
+class Game:
+    def __init__(self, settings: GameSettings):
+        self.settings = settings
+        self.init_pygame()
+
+    def init_pygame(self):
+        """Initialize Pygame and set up the display."""
+        pygame.init()
+        self.screen = pygame.display.set_mode((self.settings.window_width, self.settings.window_height))
+        pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
+        self.font = pygame.font.SysFont(None, 24)
+        self.win_font = pygame.font.SysFont(None, 72)
+        
+    def quit_pygame(self):
+        """Quit pygame."""
+        pygame.quit()
+
+
+
 def main():
     # 初始化 Pygame
-    pygame.init()
-
+    settings = GameSettings()
+    game = Game(settings)
     # 判断玩家模式
     if len(sys.argv) > 1 and sys.argv[1] == "ai":
-        player_mode = "ai"
-    else:
-        player_mode = "human"
-
-    # 设置地图尺寸
-    map_width, map_height = 25, 25  # 可以根据需要调整
-    tile_size = 32
-
-    # 计算窗口尺寸
-    window_width = map_width * tile_size
-    window_height = map_height * tile_size
-
-    # 创建窗口（必须在加载图像前）
-    screen = pygame.display.set_mode((window_width, window_height))
-    pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
+        settings.player_mode = "ai"
 
     # 创建地图生成器
-    generator = MapGenerator(map_width, map_height, "map_generator/map_tiles")
-
-    # 生成地图矩阵(弃用)
-    # map_matrix = generator.generate_map_matrix()
+    generator = MapGenerator(settings.map_width, settings.map_height, "map_generator/map_tiles")
 
     # 生成环境地图和单位地图
     environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
     # 创建单位控制器
-    unit_controller = UnitController(environment_map, unit_map, tile_size=tile_size)
-
-    # 填充背景为黑色
-    # screen.fill((0, 0, 0))
-
-    # 找到一个可控制的Unit单位(示例：第一个R开头的单位)
-    # selected_unit_pos = None
-    # selected_unit_type = None
-    # for i in range(map_height):
-    #     for j in range(map_width):
-    #         cell = map_matrix[i][j]
-    #         if cell.startswith("R_") or cell.startswith("W_"):
-    #             selected_unit_pos = [i, j]  # 保存行为列表以便修改
-    #             selected_unit_type = cell
-    #             break
-    #     if selected_unit_pos is not None:
-    #         break
-
-    font = pygame.font.SysFont(None, 24)
-    win_font = pygame.font.SysFont(None, 72)
-    vision_mode = 1
-    winner = None
-    # 用于显示坐标信息
-    show_mouse_pos = True
+    unit_controller = UnitController(environment_map, unit_map, tile_size=settings.tile_size)
 
     running = True
     clock = pygame.time.Clock()
 
     frame_count = 0
-    save_interval = 300  # 每300帧执行一次读写
-    action_interval = 30
 
     def save_env_status():
         with open("run_log/env_status.txt", "w") as f:
             # 记录环境信息
             # 如地图大小、双方单位数量统计
-            f.write(f"MapSize: {map_width}x{map_height}\n")
+            f.write(f"MapSize: {settings.map_width}x{settings.map_height}\n")
             faction_counts = unit_controller.get_faction_unit_counts()
             f.write(
                 "R Force: ping={ping} shui={shui} shan={shan}\n".format(
@@ -126,15 +125,15 @@ def main():
     while running:
         clock.tick(30)
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        mouse_grid_x = mouse_x // tile_size
-        mouse_grid_y = mouse_y // tile_size
+        mouse_grid_x = mouse_x // settings.tile_size
+        mouse_grid_y = mouse_y // settings.tile_size
         frame_count += 1
-        if frame_count % save_interval == 0:
+        if frame_count % settings.save_interval == 0:
             # 周期性保存当前状态
             save_env_status()
             save_unit_status()
         # 如果是AI模式，每秒(30帧)执行一次动作周期
-        if player_mode == "ai" and frame_count % action_interval == 0:
+        if game.settings.player_mode == "ai" and frame_count % game.settings.action_interval == 0:
             # 读取AI指令并执行
             load_unit_actions()
             # 执行所有单位的移动与攻击动作
@@ -229,17 +228,17 @@ def main():
         elif not W_units:
             winner = "R Win"
 
-        screen.fill((0, 0, 0))
+        game.screen.fill((0, 0, 0))
         highlight_pos = None
         selected = unit_controller.selected_unit
         if selected:
             highlight_pos = (selected[0], selected[1])
 
         # 根据vision_mode计算visible_map
-        if vision_mode == 1:
+        if game.settings.vision_mode == 1:
             visible_map = None  # 上帝视角全部可见
         else:
-            faction = "R" if vision_mode == 2 else "W"
+            faction = "R" if game.settings.vision_mode == 2 else "W"
             visible_map = unit_controller.compute_visibility(faction, vision_range=2)
 
         # 获取路径以显示
@@ -247,7 +246,7 @@ def main():
 
         # 渲染地图
         generator.render_map(
-            screen,
+            game.screen,
             environment_map,
             unit_map,
             highlight_pos=highlight_pos,
@@ -258,51 +257,51 @@ def main():
         # 显示文字提示
         if selected:
             u_type = selected[2]
-            text = font.render(
+            text = game.font.render(
                 f"selected: {u_type} at ({selected[1]}, {selected[0]})",
                 True,
                 (255, 255, 255),
             )
-            screen.blit(text, (10, 10))
+            game.screen.blit(text, (10, 10))
         else:
-            text = font.render("Cannot select", True, (255, 255, 255))
-            screen.blit(text, (10, 10))
+            text = game.font.render("Cannot select", True, (255, 255, 255))
+            game.screen.blit(text, (10, 10))
         # 显示玩家模式
-        mode_text = font.render(f"Play Mode: {player_mode}", True, (255, 255, 255))
-        screen.blit(mode_text, (10, 30))
+        mode_text = game.font.render(f"Play Mode: {game.settings.player_mode}", True, (255, 255, 255))
+        game.screen.blit(mode_text, (10, 30))
 
         # 显示视角模式
-        vision_text = "God" if vision_mode == 1 else ("R" if vision_mode == 2 else "W")
-        v_text = font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
-        screen.blit(v_text, (10, 50))
+        vision_text = "God" if game.settings.vision_mode == 1 else ("R" if game.settings.vision_mode == 2 else "W")
+        v_text = game.font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
+        game.screen.blit(v_text, (10, 50))
 
         # 显示鼠标位置
-        mouse_text = font.render(
+        mouse_text = game.font.render(
             f"Mouse: ({mouse_grid_x}, {mouse_grid_y})", True, (255, 255, 255)
         )
-        screen.blit(mouse_text, (10, 70))
+        game.screen.blit(mouse_text, (10, 70))
 
         # 如果有目标点，显示目标点位置
         if unit_controller.selected_unit_index in unit_controller.target_positions:
             ty, tx = unit_controller.target_positions[
                 unit_controller.selected_unit_index
             ]
-            target_text = font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
-            screen.blit(target_text, (10, 90))
+            target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
+            game.screen.blit(target_text, (10, 90))
 
         # 如果有胜者，显示胜利信息并停止交互
-        if winner is not None:
-            if winner == "平局":
+        if game.settings.winner is not None:
+            if game.settings.winner == "平局":
                 win_color = (255, 0, 0)  # 平局红色
             else:
                 win_color = (0, 255, 0)  # 获胜绿色
-            win_text = win_font.render(winner, True, win_color)
-            win_rect = win_text.get_rect(center=(window_width // 2, window_height // 2))
-            screen.blit(win_text, win_rect)
+            win_text = game.win_font.render(game.settings.winner, True, win_color)
+            win_rect = win_text.get_rect(center=(game.settings.window_width // 2, game.settings.window_height // 2))
+            game.screen.blit(win_text, win_rect)
         # 更新显示
         pygame.display.flip()
 
-    pygame.quit()
+    game.quit_pygame()
 
 
 if __name__ == "__main__":
