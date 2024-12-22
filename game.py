@@ -49,6 +49,7 @@ class Game:
         """Quit pygame."""
         pygame.quit()
 
+
 class GameController:
     def __init__(self, settings: GameSettings, environment_map, unit_map):
         self.settings = settings
@@ -138,7 +139,7 @@ def main():
     running = True
     clock = pygame.time.Clock()
     frame_count = 0
-    
+
     def save_env_status():
         with open("run_log/env_status.txt", "w") as f:
             # 记录环境信息
