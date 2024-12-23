@@ -182,7 +182,7 @@ class RenderManager:
         return (selected[0], selected[1]) if selected else None
 
     @staticmethod
-    def _calculate_visible_map(game):
+    def _calculate_visible_map(game, game_controller):  # Add game_controller parameter
         if game.settings.vision_mode == 1:
             return None  # God view - everything visible
         faction = "R" if game.settings.vision_mode == 2 else "W"
@@ -238,7 +238,7 @@ class RenderManager:
         
         # Calculate rendering parameters
         highlight_pos = RenderManager._get_highlight_pos(game_controller)
-        visible_map = RenderManager._calculate_visible_map(game)
+        visible_map = RenderManager._calculate_visible_map(game, game_controller)
         path_to_show = game_controller.unit_controller.get_unit_path()
 
         # Render map and UI elements
