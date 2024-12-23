@@ -54,6 +54,8 @@ class GameController:
     def __init__(self, settings: GameSettings, environment_map, unit_map):
         self.settings = settings
         self.unit_controller = UnitController(environment_map, unit_map, tile_size=settings.tile_size)
+        self.mouse_grid_x = 0
+        self.mouse_grid_y = 0
 
     def handle_keydown_event(self, event):
         """Handle keyboard input events"""
@@ -121,29 +123,148 @@ class GameController:
                 if event.button == 1:  # Left click
                     pos = pygame.mouse.get_pos()
                     self.unit_controller.select_unit_by_mouse(pos)
+        
+        # Update mouse position
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        self.mouse_grid_x = mouse_x // self.settings.tile_size
+        self.mouse_grid_y = mouse_y // self.settings.tile_size
         return True
 
 
-def main():
-    # 初始化 Pygame
-    settings = GameSettings()
-    game = Game(settings)
+class GameLoop:
+    def __init__(self, game, game_controller, generator, settings):
+        self.game = game
+        self.game_controller = game_controller
+        self.generator = generator
+        self.settings = settings
+        self.clock = pygame.time.Clock()
+        self.frame_count = 0
+        self.running = True
 
-    # 创建地图生成器
-    generator = MapGenerator(settings.map_width, settings.map_height, "map_generator/map_tiles")
-    environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
+    def check_winner(self):
+        """Check if there's a winner and update game settings"""
+        R_units = [u for u in self.game_controller.unit_controller.units_positions if u[2].startswith("R_")]
+        W_units = [u for u in self.game_controller.unit_controller.units_positions if u[2].startswith("W_")]
+        
+        if not R_units and not W_units:
+            self.settings.winner = "Peace"
+        elif not R_units:
+            self.settings.winner = "W win"
+        elif not W_units:
+            self.settings.winner = "R Win"
 
-    # 创建单位控制器
-    game_controller = GameController(settings, environment_map, unit_map)
+    def run(self):
+        while self.running:
+            self.clock.tick(30)
+            self.frame_count += 1
+            
+            # Handle periodic saves
+            if self.frame_count % self.settings.save_interval == 0:
+                StateManager.save_game_state(self.settings, self.game_controller)
 
-    running = True
-    clock = pygame.time.Clock()
-    frame_count = 0
+            # Handle AI mode actions
+            if self.settings.player_mode == "ai" and self.frame_count % self.settings.action_interval == 0:
+                StateManager.load_and_execute_actions(self.game_controller)
 
-    def save_env_status():
+            self.running = self.game_controller.handle_events()
+            
+            # Check win condition
+            self.check_winner()
+            
+            # Render frame
+            RenderManager.render_frame(self.game, self.game_controller, self.generator)
+
+
+class RenderManager:
+    @staticmethod
+    def _get_highlight_pos(game_controller):
+        selected = game_controller.unit_controller.selected_unit
+        return (selected[0], selected[1]) if selected else None
+
+    @staticmethod
+    def _calculate_visible_map(game):
+        if game.settings.vision_mode == 1:
+            return None  # God view - everything visible
+        faction = "R" if game.settings.vision_mode == 2 else "W"
+        return game_controller.unit_controller.compute_visibility(faction, vision_range=2)
+
+    @staticmethod
+    def _render_ui_elements(game, game_controller):
+        # Render selected unit info
+        selected = game_controller.unit_controller.selected_unit
+        if selected:
+            text = game.font.render(
+                f"selected: {selected[2]} at ({selected[1]}, {selected[0]})",
+                True, (255, 255, 255)
+            )
+        else:
+            text = game.font.render("Cannot select", True, (255, 255, 255))
+        game.screen.blit(text, (10, 10))
+
+        # Render play mode
+        mode_text = game.font.render(f"Play Mode: {game.settings.player_mode}", True, (255, 255, 255))
+        game.screen.blit(mode_text, (10, 30))
+
+        # Render vision mode
+        vision_text = "God" if game.settings.vision_mode == 1 else ("R" if game.settings.vision_mode == 2 else "W")
+        v_text = game.font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
+        game.screen.blit(v_text, (10, 50))
+
+        # Render mouse position
+        mouse_text = game.font.render(
+            f"Mouse: ({game_controller.mouse_grid_x}, {game_controller.mouse_grid_y})", 
+            True, (255, 255, 255)
+        )
+        game.screen.blit(mouse_text, (10, 70))
+
+        # Render target position if exists
+        if game_controller.unit_controller.selected_unit_index in game_controller.unit_controller.target_positions:
+            ty, tx = game_controller.unit_controller.target_positions[
+                game_controller.unit_controller.selected_unit_index
+            ]
+            target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
+            game.screen.blit(target_text, (10, 90))
+
+        # Render winner if exists
+        if game.settings.winner is not None:
+            win_color = (255, 0, 0) if game.settings.winner == "Peace" else (0, 255, 0)
+            win_text = game.win_font.render(game.settings.winner, True, win_color)
+            win_rect = win_text.get_rect(center=(game.settings.window_width // 2, game.settings.window_height // 2))
+            game.screen.blit(win_text, win_rect)
+
+    @staticmethod
+    def render_frame(game, game_controller, generator):
+        game.screen.fill((0, 0, 0))
+        
+        # Calculate rendering parameters
+        highlight_pos = RenderManager._get_highlight_pos(game_controller)
+        visible_map = RenderManager._calculate_visible_map(game)
+        path_to_show = game_controller.unit_controller.get_unit_path()
+
+        # Render map and UI elements
+        generator.render_map(
+            game.screen, 
+            game_controller.unit_controller.environment_map,
+            game_controller.unit_controller.unit_map,
+            highlight_pos=highlight_pos, 
+            visible_map=visible_map,
+            path_to_show=path_to_show
+        )
+
+        RenderManager._render_ui_elements(game, game_controller)
+        pygame.display.flip()
+
+
+class StateManager:
+    @staticmethod
+    def save_game_state(settings, game_controller):
+        """Handle saving environment and unit status"""
+        StateManager.save_env_status(settings, game_controller)
+        StateManager.save_unit_status(game_controller)
+
+    @staticmethod
+    def save_env_status(settings, game_controller):
         with open("run_log/env_status.txt", "w") as f:
-            # 记录环境信息
-            # 如地图大小、双方单位数量统计
             f.write(f"MapSize: {settings.map_width}x{settings.map_height}\n")
             faction_counts = game_controller.unit_controller.get_faction_unit_counts()
             f.write(
@@ -156,24 +277,21 @@ def main():
                     **faction_counts["W"]
                 )
             )
-            # 还可记录其他环境信息，例如terrain统计（可选）
 
-    def save_unit_status():
+    @staticmethod
+    def save_unit_status(game_controller):
         with open("run_log/unit_status.txt", "w") as f:
             units_info = game_controller.unit_controller.get_all_units_info()
-            # 格式: unit_id, utype, x, y, state
             for uid, uy, ux, ut, state in units_info:
                 f.write(f"unit_id:{uid} type:{ut} x:{ux} y:{uy} state:{state}\n")
 
-    def load_unit_actions():
-        # 尝试读取 unit_action.txt，如有则解析指令
+    @staticmethod
+    def load_and_execute_actions(game_controller):
         if not os.path.exists("run_log/unit_action.txt"):
             return
         with open("run_log/unit_action.txt", "r") as f:
             lines = f.readlines()
-        # 格式设定为: unit_id action param...
-        # move命令： <unit_id> move ty tx
-        # attack命令：<unit_id> attack target_unit_id
+            
         for line in lines:
             parts = line.strip().split()
             if len(parts) < 2:
@@ -186,122 +304,21 @@ def main():
             elif action == "attack" and len(parts) == 3:
                 target_uid = int(parts[2])
                 game_controller.unit_controller.execute_action(unit_id, "attack", target_uid)
-        # 读取后可清空文件或重命名
-        # 避免重复执行同样指令:
-        # os.remove("unit_action.txt")
-        # 或者将其清空
-        # open("unit_action.txt", "w").close()
 
-    # 主循环
-    while running:
-        clock.tick(30)
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        mouse_grid_x = mouse_x // settings.tile_size
-        mouse_grid_y = mouse_y // settings.tile_size
-        frame_count += 1
-        if frame_count % settings.save_interval == 0:
-            # 周期性保存当前状态
-            save_env_status()
-            save_unit_status()
-        # 如果是AI模式，每秒(30帧)执行一次动作周期
-        if settings.player_mode == "ai" and frame_count % settings.action_interval == 0:
-            # 读取AI指令并执行
-            load_unit_actions()
-            # 执行所有单位的移动与攻击动作
-            # step_along_path()可被多次调用，一般对selected_unit_index操作
-            # 可遍历所有单位来进行移动执行:
-            for uid, (uy, ux, ut) in game_controller.unit_controller.unit_id_map.copy().items():
-                # 为了处理多个单位，可暂时选中相应unit_id，再step
-                game_controller.unit_controller.selected_unit_index = uid
-                game_controller.unit_controller.step_along_path()  # 每秒走一步
-                # 攻击逻辑如有需要在step_along_path或execute_action里触发
 
-        running = game_controller.handle_events()
+def main():
+    # Initialize game components
+    settings = GameSettings()
+    game = Game(settings)
+    
+    # Create map and controller
+    generator = MapGenerator(settings.map_width, settings.map_height, "map_generator/map_tiles")
+    environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
+    game_controller = GameController(settings, environment_map, unit_map)
 
-        # 战斗后检查两方剩余单位，如果无单位则另一方获胜
-        # 根据阵营计数单位
-        R_units = [u for u in game_controller.unit_controller.units_positions if u[2].startswith("R_")]
-        W_units = [u for u in game_controller.unit_controller.units_positions if u[2].startswith("W_")]
-        if not R_units and not W_units:
-            # 双方无单位？平局处理
-            winner = "Peace"
-        elif not R_units:
-            winner = "W win"
-        elif not W_units:
-            winner = "R Win"
-
-        game.screen.fill((0, 0, 0))
-        highlight_pos = None
-        selected = game_controller.unit_controller.selected_unit
-        if selected:
-            highlight_pos = (selected[0], selected[1])
-
-        # 根据vision_mode计算visible_map
-        if game.settings.vision_mode == 1:
-            visible_map = None  # 上帝视角全部可见
-        else:
-            faction = "R" if game.settings.vision_mode == 2 else "W"
-            visible_map = game_controller.unit_controller.compute_visibility(faction, vision_range=2)
-
-        # 获取路径以显示
-        path_to_show = game_controller.unit_controller.get_unit_path()
-
-        # 渲染地图
-        generator.render_map(
-            game.screen,
-            game_controller.unit_controller.environment_map,
-            game_controller.unit_controller.unit_map,
-            highlight_pos=highlight_pos,
-            visible_map=visible_map,
-            path_to_show=path_to_show,
-        )
-
-        # 显示文字提示
-        if selected:
-            u_type = selected[2]
-            text = game.font.render(
-                f"selected: {u_type} at ({selected[1]}, {selected[0]})",
-                True,
-                (255, 255, 255),
-            )
-            game.screen.blit(text, (10, 10))
-        else:
-            text = game.font.render("Cannot select", True, (255, 255, 255))
-            game.screen.blit(text, (10, 10))
-        # 显示玩家模式
-        mode_text = game.font.render(f"Play Mode: {game.settings.player_mode}", True, (255, 255, 255))
-        game.screen.blit(mode_text, (10, 30))
-
-        # 显示视角模式
-        vision_text = "God" if game.settings.vision_mode == 1 else ("R" if game.settings.vision_mode == 2 else "W")
-        v_text = game.font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
-        game.screen.blit(v_text, (10, 50))
-
-        # 显示鼠标位置
-        mouse_text = game.font.render(
-            f"Mouse: ({mouse_grid_x}, {mouse_grid_y})", True, (255, 255, 255)
-        )
-        game.screen.blit(mouse_text, (10, 70))
-
-        # 如果有目标点，显示目标点位置
-        if game_controller.unit_controller.selected_unit_index in game_controller.unit_controller.target_positions:
-            ty, tx = game_controller.unit_controller.target_positions[
-                game_controller.unit_controller.selected_unit_index
-            ]
-            target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
-            game.screen.blit(target_text, (10, 90))
-
-        # 如果有胜者，显示胜利信息并停止交互
-        if game.settings.winner is not None:
-            if game.settings.winner == "平局":
-                win_color = (255, 0, 0)  # 平局红色
-            else:
-                win_color = (0, 255, 0)  # 获胜绿色
-            win_text = game.win_font.render(game.settings.winner, True, win_color)
-            win_rect = win_text.get_rect(center=(game.settings.window_width // 2, game.settings.window_height // 2))
-            game.screen.blit(win_text, win_rect)
-        # 更新显示
-        pygame.display.flip()
+    # Create and run game loop
+    game_loop = GameLoop(game, game_controller, generator, settings)
+    game_loop.run()
 
     game.quit_pygame()
 
