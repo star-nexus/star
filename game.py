@@ -5,6 +5,7 @@ import numpy as np
 import os
 from map_generator.map import MapGenerator
 from entity.unit import UnitController
+from ai_controller import AIController
 
 
 class GameSettings:
@@ -140,6 +141,7 @@ class GameLoop:
         self.clock = pygame.time.Clock()
         self.frame_count = 0
         self.running = True
+        self.ai_controller = AIController() if settings.player_mode == "ai" else None
 
     def check_winner(self):
         """Check if there's a winner and update game settings"""
@@ -155,6 +157,7 @@ class GameLoop:
 
     def run(self):
         while self.running:
+            # control frame rate
             self.clock.tick(30)
             self.frame_count += 1
             
@@ -163,8 +166,8 @@ class GameLoop:
                 StateManager.save_game_state(self.settings, self.game_controller)
 
             # Handle AI mode actions
-            if self.settings.player_mode == "ai" and self.frame_count % self.settings.action_interval == 0:
-                StateManager.load_and_execute_actions(self.game_controller)
+            if self.ai_controller and self.frame_count % self.settings.action_interval == 0:
+                self.ai_controller.execute_actions(self.game_controller)
 
             self.running = self.game_controller.handle_events()
             
@@ -284,26 +287,6 @@ class StateManager:
             units_info = game_controller.unit_controller.get_all_units_info()
             for uid, uy, ux, ut, state in units_info:
                 f.write(f"unit_id:{uid} type:{ut} x:{ux} y:{uy} state:{state}\n")
-
-    @staticmethod
-    def load_and_execute_actions(game_controller):
-        if not os.path.exists("run_log/unit_action.txt"):
-            return
-        with open("run_log/unit_action.txt", "r") as f:
-            lines = f.readlines()
-            
-        for line in lines:
-            parts = line.strip().split()
-            if len(parts) < 2:
-                continue
-            unit_id = int(parts[0])
-            action = parts[1]
-            if action == "move" and len(parts) == 4:
-                ty, tx = int(parts[2]), int(parts[3])
-                game_controller.unit_controller.execute_action(unit_id, "move", (ty, tx))
-            elif action == "attack" and len(parts) == 3:
-                target_uid = int(parts[2])
-                game_controller.unit_controller.execute_action(unit_id, "attack", target_uid)
 
 
 def main():
