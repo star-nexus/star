@@ -32,8 +32,16 @@ class AIController:
                     
         return actions
 
-    def execute_actions(self, game_controller) -> None:
-        """Execute all pending AI actions"""
+    def execute_actions(self, game_controller):
+        """
+        Execute all pending AI actions
+        """
         actions = self.load_actions()
         for unit_id, action, params in actions:
             game_controller.unit_controller.execute_action(unit_id, action, params) 
+
+        for uid, (uy, ux, ut) in game_controller.unit_controller.unit_id_map.copy().items():
+            # 为了处理多个单位，可暂时选中相应unit_id，再step
+            game_controller.unit_controller.selected_unit_index = uid
+            game_controller.unit_controller.step_along_path()  # 每秒走一步
+            # 攻击逻辑如有需要在step_along_path或execute_action里触发
