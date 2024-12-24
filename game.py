@@ -224,8 +224,8 @@ class RenderManager:
         if game_controller.unit_controller.selected_unit_index in game_controller.unit_controller.target_positions:
             ty, tx = game_controller.unit_controller.target_positions[
                 game_controller.unit_controller.selected_unit_index
-            ]
-            target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
+            ]['pos']
+            target_text = game.font.render(f"Aim at: ({tx}, {ty})", True, (255, 255, 255))
             game.screen.blit(target_text, (10, 90))
 
         # Render winner if exists
@@ -293,7 +293,7 @@ def main():
     # Initialize game components
     settings = GameSettings()
     game = Game(settings)
-    
+
     # Create map and controller
     generator = MapGenerator(settings.map_width, settings.map_height, "map_generator/map_tiles")
     environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
