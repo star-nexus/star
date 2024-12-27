@@ -1,33 +1,31 @@
 # game.py
-import sys
 import pygame
-import numpy as np
-import os
+import argparse
 from map_generator.map import MapGenerator
 from entity.unit import UnitController
 from ai_controller import AIController
 
 
 class GameSettings:
-    def __init__(self):
+    def __init__(self, args):
         # Map settings
         self.map_width = 25
         self.map_height = 25
         self.tile_size = 32
-        
+
         # Window settings
         self.window_width = self.map_width * self.tile_size
         self.window_height = self.map_height * self.tile_size
-        
+
         # Game state
-        if len(sys.argv) > 1 and sys.argv[1] == "ai":
+        if args.ai:
             self.player_mode = "ai"
         else:
             self.player_mode = "human"
         self.vision_mode = 1
         self.winner = None
         self.show_mouse_pos = True
-        
+
         # Frame settings
         self.save_interval = 300
         self.action_interval = 30
@@ -41,7 +39,9 @@ class Game:
     def init_pygame(self):
         """Initialize Pygame and set up the display."""
         pygame.init()
-        self.screen = pygame.display.set_mode((self.settings.window_width, self.settings.window_height))
+        self.screen = pygame.display.set_mode(
+            (self.settings.window_width, self.settings.window_height)
+        )
         pygame.display.set_caption("Romance-of-the-Three-Kingdoms")
         self.font = pygame.font.SysFont(None, 24)
         self.win_font = pygame.font.SysFont(None, 72)
@@ -54,25 +54,27 @@ class Game:
 class GameController:
     def __init__(self, settings: GameSettings, environment_map, unit_map):
         self.settings = settings
-        self.unit_controller = UnitController(environment_map, unit_map, tile_size=settings.tile_size)
+        self.unit_controller = UnitController(
+            environment_map, unit_map, tile_size=settings.tile_size
+        )
         self.mouse_grid_x = 0
         self.mouse_grid_y = 0
 
     def handle_keydown_event(self, event):
         """Handle keyboard input events"""
         if event.key == pygame.K_UP:
-            self.unit_controller.move_unit("up")
+            self.unit_controller.move("up")
         elif event.key == pygame.K_DOWN:
-            self.unit_controller.move_unit("down")
+            self.unit_controller.move("down")
         elif event.key == pygame.K_LEFT:
-            self.unit_controller.move_unit("left")
+            self.unit_controller.move("left")
         elif event.key == pygame.K_RIGHT:
-            self.unit_controller.move_unit("right")
+            self.unit_controller.move("right")
         elif event.key == pygame.K_TAB:
-            new_index = (self.unit_controller.selected_unit_index + 1) % len(
-                self.unit_controller.units_positions
+            new_index = (self.unit_controller.running_id + 1) % len(
+                self.unit_controller.unit_all_info
             )
-            self.unit_controller.select_unit_by_index(new_index)
+            self.unit_controller.unit_all_info(new_index)
         elif event.key == pygame.K_1:
             self.settings.vision_mode = 1  # God view
         elif event.key == pygame.K_2:
@@ -90,10 +92,10 @@ class GameController:
             self.mouse_grid_y, self.mouse_grid_x
         )
         uid = self.unit_controller.selected_unit_id
-        
+
         if uid is None:
             return
-            
+
         if pos_info is None:
             self.unit_controller.execute_action(
                 uid, "move", (self.mouse_grid_y, self.mouse_grid_x)
@@ -102,7 +104,7 @@ class GameController:
             sel_info = self.unit_controller.get_selected_unit_info()
             if sel_info is None:
                 return
-                
+
             if pos_info["utype"][0] != sel_info["utype"][0]:
                 tid = self.unit_controller.find_unit_id_by_pos(
                     self.mouse_grid_y, self.mouse_grid_x
@@ -124,7 +126,7 @@ class GameController:
                 if event.button == 1:  # Left click
                     pos = pygame.mouse.get_pos()
                     self.unit_controller.select_unit_by_mouse(pos)
-        
+
         # Update mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
         self.mouse_grid_x = mouse_x // self.settings.tile_size
@@ -145,9 +147,17 @@ class GameLoop:
 
     def check_winner(self):
         """Check if there's a winner and update game settings"""
-        R_units = [u for u in self.game_controller.unit_controller.units_positions if u[2].startswith("R_")]
-        W_units = [u for u in self.game_controller.unit_controller.units_positions if u[2].startswith("W_")]
-        
+        R_units = [
+            u
+            for u in self.game_controller.unit_controller.unit_all_info.values()
+            if u[2].startswith("R_")
+        ]
+        W_units = [
+            u
+            for u in self.game_controller.unit_controller.unit_all_info.values()
+            if u[2].startswith("W_")
+        ]
+
         if not R_units and not W_units:
             self.settings.winner = "Peace"
         elif not R_units:
@@ -160,20 +170,23 @@ class GameLoop:
             # control frame rate
             self.clock.tick(30)
             self.frame_count += 1
-            
+
             # Handle periodic saves
             if self.frame_count % self.settings.save_interval == 0:
                 StateManager.save_game_state(self.settings, self.game_controller)
 
             # Handle AI mode actions
-            if self.ai_controller and self.frame_count % self.settings.action_interval == 0:
+            if (
+                self.ai_controller
+                and self.frame_count % self.settings.action_interval == 0
+            ):
                 self.ai_controller.execute_actions(self.game_controller)
 
             self.running = self.game_controller.handle_events()
-            
+
             # Check win condition
             self.check_winner()
-            
+
             # Render frame
             RenderManager.render_frame(self.game, self.game_controller, self.generator)
 
@@ -181,7 +194,7 @@ class GameLoop:
 class RenderManager:
     @staticmethod
     def _get_highlight_pos(game_controller):
-        selected = game_controller.unit_controller.selected_unit
+        selected = game_controller.unit_controller.selected_unit_info
         return (selected[0], selected[1]) if selected else None
 
     @staticmethod
@@ -189,56 +202,74 @@ class RenderManager:
         if game.settings.vision_mode == 1:
             return None  # God view - everything visible
         faction = "R" if game.settings.vision_mode == 2 else "W"
-        return game_controller.unit_controller.compute_visibility(faction, vision_range=2)
+        return game_controller.unit_controller.compute_visibility(
+            faction, vision_range=2
+        )
 
     @staticmethod
     def _render_ui_elements(game, game_controller):
         # Render selected unit info
-        selected = game_controller.unit_controller.selected_unit
+        selected = game_controller.unit_controller.selected_unit_info
         if selected:
             text = game.font.render(
                 f"selected: {selected[2]} at ({selected[1]}, {selected[0]})",
-                True, (255, 255, 255)
+                True,
+                (255, 255, 255),
             )
         else:
             text = game.font.render("Cannot select", True, (255, 255, 255))
         game.screen.blit(text, (10, 10))
 
         # Render play mode
-        mode_text = game.font.render(f"Play Mode: {game.settings.player_mode}", True, (255, 255, 255))
+        mode_text = game.font.render(
+            f"Play Mode: {game.settings.player_mode}", True, (255, 255, 255)
+        )
         game.screen.blit(mode_text, (10, 30))
 
         # Render vision mode
-        vision_text = "God" if game.settings.vision_mode == 1 else ("R" if game.settings.vision_mode == 2 else "W")
+        vision_text = (
+            "God"
+            if game.settings.vision_mode == 1
+            else ("R" if game.settings.vision_mode == 2 else "W")
+        )
         v_text = game.font.render(f"View Mode: {vision_text}", True, (255, 255, 255))
         game.screen.blit(v_text, (10, 50))
 
         # Render mouse position
         mouse_text = game.font.render(
-            f"Mouse: ({game_controller.mouse_grid_x}, {game_controller.mouse_grid_y})", 
-            True, (255, 255, 255)
+            f"Mouse: ({game_controller.mouse_grid_x}, {game_controller.mouse_grid_y})",
+            True,
+            (255, 255, 255),
         )
         game.screen.blit(mouse_text, (10, 70))
 
         # Render target position if exists
-        if game_controller.unit_controller.selected_unit_index in game_controller.unit_controller.target_positions:
-            ty, tx = game_controller.unit_controller.target_positions[
-                game_controller.unit_controller.selected_unit_index
-            ]['pos']
-            target_text = game.font.render(f"Aim at: ({tx}, {ty})", True, (255, 255, 255))
+        if (
+            game_controller.unit_controller.selected_unit_id
+            in game_controller.unit_controller.destination
+        ):
+            ty, tx = game_controller.unit_controller.destination[
+                game_controller.unit_controller.selected_unit_id
+            ]["pos"]
+            target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
             game.screen.blit(target_text, (10, 90))
 
         # Render winner if exists
         if game.settings.winner is not None:
             win_color = (255, 0, 0) if game.settings.winner == "Peace" else (0, 255, 0)
             win_text = game.win_font.render(game.settings.winner, True, win_color)
-            win_rect = win_text.get_rect(center=(game.settings.window_width // 2, game.settings.window_height // 2))
+            win_rect = win_text.get_rect(
+                center=(
+                    game.settings.window_width // 2,
+                    game.settings.window_height // 2,
+                )
+            )
             game.screen.blit(win_text, win_rect)
 
     @staticmethod
     def render_frame(game, game_controller, generator):
         game.screen.fill((0, 0, 0))
-        
+
         # Calculate rendering parameters
         highlight_pos = RenderManager._get_highlight_pos(game_controller)
         visible_map = RenderManager._calculate_visible_map(game, game_controller)
@@ -246,12 +277,12 @@ class RenderManager:
 
         # Render map and UI elements
         generator.render_map(
-            game.screen, 
+            game.screen,
             game_controller.unit_controller.environment_map,
             game_controller.unit_controller.unit_map,
-            highlight_pos=highlight_pos, 
+            highlight_pos=highlight_pos,
             visible_map=visible_map,
-            path_to_show=path_to_show
+            path_to_show=path_to_show,
         )
 
         RenderManager._render_ui_elements(game, game_controller)
@@ -289,14 +320,27 @@ class StateManager:
                 f.write(f"unit_id:{uid} type:{ut} x:{ux} y:{uy} state:{state}\n")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--ai", action="store_true", help="Run the game in AI mode (default: human)"
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     # Initialize game components
-    settings = GameSettings()
+    settings = GameSettings(args)
     game = Game(settings)
 
     # Create map and controller
-    generator = MapGenerator(settings.map_width, settings.map_height, "map_generator/map_tiles")
-    environment_map, unit_map = generator.generate_maps(r_unit_count=10, w_unit_count=10)
+    generator = MapGenerator(
+        settings.map_width, settings.map_height, "map_generator/map_tiles"
+    )
+    environment_map, unit_map = generator.generate_maps(
+        r_unit_count=10, w_unit_count=10
+    )
     game_controller = GameController(settings, environment_map, unit_map)
 
     # Create and run game loop
