@@ -6,6 +6,7 @@ from .map_data_generator import generate_map_data
 from .unit_data_generator import generate_unit_data
 import pygame
 
+
 class MapGenerator:
     def __init__(self, width, height, image_dir="map_tiles"):
         """Initialize map generator with dimensions and image directory"""
@@ -13,13 +14,21 @@ class MapGenerator:
         self.height = height
         self.image_dir = image_dir
         self.place_types = [
-            "mountain", "river", "plain", "city", "forest", "bridge",
-            "R_ping", "R_shui", "R_shan",
-            "W_ping", "W_shui", "W_shan"
+            "mountain",
+            "river",
+            "plain",
+            "city",
+            "forest",
+            "bridge",
+            "R_ping",
+            "R_shui",
+            "R_shan",
+            "W_ping",
+            "W_shui",
+            "W_shan",
         ]
         self.tile_size = 32  # Default tile size in pixels
         self.tile_images = self._load_tile_images()
-
 
     def _load_tile_images(self):
         """Load tile images from directory"""
@@ -46,15 +55,13 @@ class MapGenerator:
                 tile_images[place_type] = surface
         return tile_images
 
-
     def generate_maps(self, r_unit_count=3, w_unit_count=3):
         """Main method to generate complete map"""
         map_matrix = generate_map_data(self.width)
-        unit_data = generate_unit_data(map_matrix, r_unit_count=3, w_unit_count=3)
-        print(unit_data)
-        print(map_matrix)
+        unit_data = generate_unit_data(map_matrix, r_unit_count, w_unit_count)
+        # print(unit_data)
+        # print(map_matrix)
         return map_matrix, unit_data
-
 
     def render_map(
         self,
@@ -120,7 +127,6 @@ class MapGenerator:
                         surface.blit(fog, (x, y))
 
 
-
 # Example usage:
 # if __name__ == "__main__":
 
@@ -149,6 +155,3 @@ class MapGenerator:
 #         pygame.display.flip()
 
 #     pygame.quit()
-
-    
-
