@@ -190,24 +190,6 @@ class UnitController:
             return list(self.unit_paths[self.running_id])
         return []
 
-    def get_all_units_info_dict(self):
-        """
-        返回所有单位的信息字典，以方便查询。
-        格式: [(unit_id, y, x, utype, 当前状态), ...]
-        当前状态可以是 'idle', 'moving to (ty, tx)', 'attacking unit_id'等。
-        """
-        info = {}
-        for uid, (uy, ux, ut) in self.unit_id_map.items():
-            state = "idle"
-            if uid in self.unit_paths and self.unit_paths[uid]:
-                # 有路径则说明正在移动
-                if uid in self.destination:
-                    ty, tx = self.destination[uid]
-                    state = f"moving to ({ty}, {tx})"
-            # 攻击状态的逻辑可根据需要扩展
-            info[uid] = {"y": uy, "x": ux, "utype": ut, "state": state}
-        return info
-
     def get_faction_unit_counts(self):
         """
         返回 R 和 W 阵营各类型单位数量统计
