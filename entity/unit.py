@@ -41,7 +41,8 @@ UnitController类负责处理单位的移动、战斗等逻辑，与地图数据
 - player_mode str: 玩家模式，'human'或'ai'
 
 主要 property:
-- selected_unit_info: 选中单位的位置信息
+- 
+selected_unit_info: 选中单位的位置信息
 - selected_unit_id: 选中单位的id
 - selected_unit_pos: 选中单位的位置信息
 
@@ -152,24 +153,42 @@ class UnitController:
             info.append((uid, uy, ux, ut, state))
         return info
 
-    def get_unit_by_id(self, id):
-        if id not in self.unit_all_info:
-            return None
-        else:
-            return self.unit_all_info[id]
+    def get_unit_info(self, id=None, pos=None):
+        """Get unit information by either unit ID or position.
+        
+        Args:
+            id: Unit ID to look up
+            pos: Position tuple (y, x) to look up
+            
+        Returns:
+            Tuple of (id, y, x, unit_type, state) if unit found, None otherwise
+            
+        Examples:
+            >>> unit_controller.get_unit_info(id=5)  # Get unit with ID 5
+            >>> unit_controller.get_unit_info(pos=(10, 15))  # Get unit at position (10,15)
+        """
+        # ID-based lookup (O(1))
+        if id is not None and id in self.unit_all_info:
+            return (id, *self.unit_all_info[id])
+        
+        # Position-based lookup (O(n))
+        if pos is not None:
+            try:
+                current_y, current_x = pos
+                for id, unit_info in self.unit_all_info.items():
+                    y, x, unit_type, state = unit_info
+                    if (y, x) == (current_y, current_x):
+                        return (id, y, x, unit_type, state)
+            except (TypeError, ValueError):
+                return None
+        
+        return None
 
     def get_unit_path(self):
         # 返回当前选中单位的路径列表（用于渲染）
         if self.running_id in self.unit_paths:
             return list(self.unit_paths[self.running_id])
         return []
-
-    # 通过位置获取单位信息
-    def get_unit_by_pos(self, y, x):
-        uid = self.get_unit_id_by_pos(y, x)
-        if uid is None:
-            return None
-        return self.get_unit_by_id(uid)
 
     def get_all_units_info_dict(self):
         """
@@ -207,11 +226,6 @@ class UnitController:
                 counts[faction][utype] += 1
         return counts
 
-    def get_unit_id_by_pos(self, y, x):
-        for uid, (uy, ux, ut, _) in self.unit_all_info.items():
-            if (uy, ux) == (y, x):
-                return uid
-        return None
 
     def load_action(self, unit_id, action, params):
         """
@@ -340,6 +354,7 @@ class UnitController:
         if target_unit_type is not None:
             if self.is_enemy(utype, target_unit_type):
                 # Initiate combat if enemy
+                print("combat target: ", (new_y, new_x))
                 self.combat(self.selected_unit_id, (new_y, new_x))
                 return True
             else:
@@ -571,20 +586,19 @@ class UnitController:
         #         self.running_id
         #     ].popleft()  # 前进成功，移除已达到的点
         # else:
-        #     # 无法前进，路径阻塞，尝试重新规划或放弃
+        #     # 无法���进，路径阻塞，试重新规划或放弃
         #     self.unit_paths[self.running_id].clear()
 
     def combat(self, uid, enemy_pos):
         # 执行战斗结算
         sy, sx, sutype, _ = self.unit_all_info[uid]
-        ey, ex, eutype, _ = self.get_unit_by_pos(*enemy_pos)
-        # defender_uid
-        defender_uid = self.get_unit_id_by_pos(ey, ex)
+        defender_uid, ey, ex, eutype, _ = self.get_unit_info(pos=enemy_pos)
+
         if defender_uid is None:
             # 如果地图数据不同步，无法找到防守方单位id，则不战
             print("地图数据不同步，无法找到防守方单位id")
             return
-        winner, loser = self.compute_combat(sutype, eutype)
+        winner, _ = self.compute_combat(sutype, eutype)
         if winner == sutype:
             # 攻击方胜利
             self.unit_map[sy, sx] = None
