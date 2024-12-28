@@ -141,7 +141,7 @@ class UnitController:
         当前状态可以是 'idle', 'moving to (ty, tx)', 'attacking unit_id'等。
         """
         info = []
-        for uid, (uy, ux, ut, us) in self.unit_all_info.items():
+        for uid, (uy, ux, ut, _) in self.unit_all_info.items():
             state = "idle"
             if uid in self.unit_paths and self.unit_paths[uid]:
                 # 有路径则说明正在移动
@@ -242,13 +242,43 @@ class UnitController:
 
     #### UPDATE ####
     def update_unit_position(self, uid, new_y, new_x, new_utype=None):
+        """
+        Updates a unit's position and synchronizes the unit map.
+        
+        Args:
+            uid: Unit ID to update
+            new_y: New Y coordinate
+            new_x: New X coordinate
+            new_utype: Optional new unit type
+        
+        Returns:
+            bool: True if update successful, False otherwise
+        """
+        # Validate unit exists
+        if uid not in self.unit_all_info:
+            return False
+        
+        # Get current unit info
         old_y, old_x, old_utype, state = self.unit_all_info[uid]
+        
+        # Validate new coordinates are within map bounds
+        h, w = self.unit_map.shape
+        if not (0 <= new_y < h and 0 <= new_x < w):
+            return False
+        
+        # Update unit_map
+        self.unit_map[old_y, old_x] = None
+        self.unit_map[new_y, new_x] = new_utype if new_utype else old_utype
+        
+        # Update unit info
         self.unit_all_info[uid] = (
             new_y,
-            new_x,
+            new_x, 
             new_utype if new_utype else old_utype,
-            state,
+            state
         )
+        
+        return True
 
     def select_unit_by_mouse(self, mouse_pos):
         # 根据鼠标点击位置选择单位
@@ -263,58 +293,61 @@ class UnitController:
 
     # Human 控制移动
     def move(self, direction):
-        # direction: 'up', 'down', 'left', 'right'
-        if self.running_id < 0 or self.running_id not in self.unit_all_info:
-            # 没有选中单位或选中单位已死
-            return
-
-        y, x, utype, ustate = self.unit_all_info[self.selected_unit_id]
-
-        new_y, new_x = y, x
-        if direction == "up":
-            new_y -= 1
-        elif direction == "down":
-            new_y += 1
-        elif direction == "left":
-            new_x -= 1
-        elif direction == "right":
-            new_x += 1
-
-        # 检查边界
+        """
+        Move the selected unit in the specified direction.
+        
+        Args:
+            direction (str): One of 'up', 'down', 'left', 'right'
+            
+        Returns:
+            bool: True if movement was successful, False otherwise
+        """
+        # Validate unit selection
+        if not self.selected_unit_info:
+            return False
+        
+        # Get current position and info
+        y, x, utype, _ = self.selected_unit_info
+        
+        # Calculate new position
+        direction_deltas = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1)
+        }
+        
+        if direction not in direction_deltas:
+            return False
+        
+        dy, dx = direction_deltas[direction]
+        new_y, new_x = y + dy, x + dx
+        
+        # Check map boundaries
         h, w = self.environment_map.shape
         if not (0 <= new_y < h and 0 <= new_x < w):
-            return  # 越界，不移动
-
-        # 检查能否进入该地形
+            return False
+        
+        # Check terrain and target tile
         terrain = self.environment_map[new_y][new_x]
-        # 检查目标点单位情况
+        
+        # Validate movement
+        if not self.can_enter(utype, terrain):
+            return False
+        
+        # Handle unit interactions
         target_unit_type = self.unit_map[new_y][new_x]
-
-        # 如果地形可进入
-        if self.can_enter(utype, terrain):
-            # 如果有目标单位
-            if target_unit_type is not None:
-                # 如果是敌人则战斗
-                if self.is_enemy(utype, target_unit_type):
-                    winner, loser = self.combat(self.selected_unit_id, (new_y, new_x))
-                    return
-                    # if winner == self.running_id:
-                    #     # 攻击方胜利
-                    #     # self.remove_unit(loser)
-                    #     pass
-                    # else:
-                    #     # 攻击方失败
-                    #     # self.remove_unit(winner)
-                    #     self.running_id = (
-                    #         -1
-                    #     )  # 如果当前选中单位死了，需要重新选择本阵营单位，如果无则对方获胜
-                else:
-                    # 同阵营单位，不可进入
-                    return
-                    # 更新unit_map和unit位置列表
-            self.unit_map[y][x] = None
-            self.unit_map[new_y][new_x] = utype
-            self.update_unit_position(self.selected_unit_id, new_y, new_x, utype)
+        if target_unit_type is not None:
+            if self.is_enemy(utype, target_unit_type):
+                # Initiate combat if enemy
+                self.combat(self.selected_unit_id, (new_y, new_x))
+                return True
+            else:
+                # Cannot move into friendly unit's space
+                return False
+            
+        # Execute movement
+        return self.update_unit_position(self.selected_unit_id, new_y, new_x)
 
     def can_enter(self, unit_type, terrain):
         # unit_type: R_ping, R_shui, R_shan, W_ping, W_shui, W_shan
