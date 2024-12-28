@@ -84,12 +84,12 @@ class GameController:
         elif event.key == pygame.K_g:
             self.handle_g_key_action()
         elif event.key == pygame.K_h:
-            self.unit_controller.step_along_path()
+            self.unit_controller.step()
 
     def handle_g_key_action(self):
-        """Handle the 'G' key action for unit movement and attacks"""
-        pos_info = self.unit_controller.get_unit_info_by_pos(
-            self.mouse_grid_y, self.mouse_grid_x
+        """Plan path for target location"""
+        pos_info = self.unit_controller.get_unit_info(
+            pos=(self.mouse_grid_y, self.mouse_grid_x)
         )
         uid = self.unit_controller.selected_unit_id
 
@@ -97,23 +97,10 @@ class GameController:
             return
 
         if pos_info is None:
-            self.unit_controller.execute_action(
-                uid, "move", (self.mouse_grid_y, self.mouse_grid_x)
-            )
+            self.unit_controller.plan(self.mouse_grid_y, self.mouse_grid_x, action="move")
         else:
-            sel_info = self.unit_controller.get_selected_unit_info()
-            if sel_info is None:
-                return
+            pass
 
-            if pos_info["utype"][0] != sel_info["utype"][0]:
-                tid = self.unit_controller.find_unit_id_by_pos(
-                    self.mouse_grid_y, self.mouse_grid_x
-                )
-                self.unit_controller.execute_action(uid, "attack", tid)
-            else:
-                self.unit_controller.execute_action(
-                    uid, "move", (self.mouse_grid_y, self.mouse_grid_x)
-                )
 
     def handle_events(self):
         """Handle all pygame events"""
