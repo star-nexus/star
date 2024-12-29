@@ -147,22 +147,22 @@ class UnitController:
             if uid in self.unit_paths and self.unit_paths[uid]:
                 # 有路径则说明正在移动
                 if uid in self.destination:
-                    ty, tx = self.destination[uid]
-                    state = f"moving to ({ty}, {tx})"
+                    ty, tx = self.destination[uid]["pos"]
+                    state = f"moving to (x:{tx}, y:{ty})"
             # 攻击状态的逻辑可根据需要扩展
             info.append((uid, uy, ux, ut, state))
         return info
 
     def get_unit_info(self, id=None, pos=None):
         """Get unit information by either unit ID or position.
-        
+
         Args:
             id: Unit ID to look up
             pos: Position tuple (y, x) to look up
-            
+
         Returns:
             Tuple of (id, y, x, unit_type, state) if unit found, None otherwise
-            
+
         Examples:
             >>> unit_controller.get_unit_info(id=5)  # Get unit with ID 5
             >>> unit_controller.get_unit_info(pos=(10, 15))  # Get unit at position (10,15)
@@ -170,7 +170,7 @@ class UnitController:
         # ID-based lookup (O(1))
         if id is not None and id in self.unit_all_info:
             return (id, *self.unit_all_info[id])
-        
+
         # Position-based lookup (O(n))
         if pos is not None:
             try:
@@ -181,7 +181,7 @@ class UnitController:
                         return (id, y, x, unit_type, state)
             except (TypeError, ValueError):
                 return None
-        
+
         return None
 
     def get_unit_path(self):
@@ -207,7 +207,6 @@ class UnitController:
             if faction in ["R", "W"] and utype in counts[faction]:
                 counts[faction][utype] += 1
         return counts
-
 
     def load_action(self, unit_id, action, params):
         """
@@ -240,40 +239,40 @@ class UnitController:
     def update_unit_position(self, uid, new_y, new_x, new_utype=None):
         """
         Updates a unit's position and synchronizes the unit map.
-        
+
         Args:
             uid: Unit ID to update
             new_y: New Y coordinate
             new_x: New X coordinate
             new_utype: Optional new unit type
-        
+
         Returns:
             bool: True if update successful, False otherwise
         """
         # Validate unit exists
         if uid not in self.unit_all_info:
             return False
-        
+
         # Get current unit info
         old_y, old_x, old_utype, state = self.unit_all_info[uid]
-        
+
         # Validate new coordinates are within map bounds
         h, w = self.unit_map.shape
         if not (0 <= new_y < h and 0 <= new_x < w):
             return False
-        
+
         # Update unit_map
         self.unit_map[old_y, old_x] = None
         self.unit_map[new_y, new_x] = new_utype if new_utype else old_utype
-        
+
         # Update unit info
         self.unit_all_info[uid] = (
             new_y,
-            new_x, 
+            new_x,
             new_utype if new_utype else old_utype,
-            state
+            state,
         )
-        
+
         return True
 
     def select_unit_by_mouse(self, mouse_pos):
@@ -291,46 +290,46 @@ class UnitController:
     def move(self, direction):
         """
         Move the selected unit in the specified direction.
-        
+
         Args:
             direction (str): One of 'up', 'down', 'left', 'right'
-            
+
         Returns:
             bool: True if movement was successful, False otherwise
         """
         # Validate unit selection
         if not self.selected_unit_info:
             return False
-        
+
         # Get current position and info
         y, x, utype, _ = self.selected_unit_info
-        
+
         # Calculate new position
         direction_deltas = {
             "up": (-1, 0),
             "down": (1, 0),
             "left": (0, -1),
-            "right": (0, 1)
+            "right": (0, 1),
         }
-        
+
         if direction not in direction_deltas:
             return False
-        
+
         dy, dx = direction_deltas[direction]
         new_y, new_x = y + dy, x + dx
-        
+
         # Check map boundaries
         h, w = self.environment_map.shape
         if not (0 <= new_y < h and 0 <= new_x < w):
             return False
-        
+
         # Check terrain and target tile
         terrain = self.environment_map[new_y][new_x]
-        
+
         # Validate movement
         if not self.can_enter(utype, terrain):
             return False
-        
+
         # Handle unit interactions
         target_unit_type = self.unit_map[new_y][new_x]
         if target_unit_type is not None:
@@ -342,7 +341,7 @@ class UnitController:
             else:
                 # Cannot move into friendly unit's space
                 return False
-            
+
         # Execute movement
         return self.update_unit_position(self.selected_unit_id, new_y, new_x)
 
