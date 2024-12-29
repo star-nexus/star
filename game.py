@@ -97,10 +97,11 @@ class GameController:
             return
 
         if pos_info is None:
-            self.unit_controller.plan(self.mouse_grid_y, self.mouse_grid_x, action="move")
+            self.unit_controller.plan(
+                self.mouse_grid_y, self.mouse_grid_x, action="move"
+            )
         else:
             pass
-
 
     def handle_events(self):
         """Handle all pygame events"""
