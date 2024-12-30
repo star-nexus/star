@@ -4,6 +4,7 @@ import numpy as np
 from .path_planner import PathPlanner
 from .unit_manager import UnitManager
 from .visibility_system import VisibilitySystem
+from .combat_system import CombatSystem
 
 # 定义部队数据与战斗规则
 UNIT_STATS = {
@@ -99,6 +100,9 @@ class UnitController:
 
         # Initialize visibility system
         self.visibility_system = VisibilitySystem(environment_map.shape)
+
+        # Initialize combat system
+        self.combat_system = CombatSystem(UNIT_STATS)
 
     @property
     def selected_unit_id(self):
@@ -227,10 +231,8 @@ class UnitController:
         return False
 
     def is_enemy(self, utype1, utype2):
-        # 简单判断R_和W_前缀阵营不同即为敌人
-        return (utype1.startswith("R_") and utype2.startswith("W_")) or (
-            utype1.startswith("W_") and utype2.startswith("R_")
-        )
+        """Delegate enemy check to combat system"""
+        return self.combat_system.is_enemy(utype1, utype2)
 
     def compute_combat(self, attacker, defender):
         # 战斗规则，根据unit类型的ping/shui/shan来决定结果
@@ -333,29 +335,34 @@ class UnitController:
                 self.path_planner.reroute(selected_id)
 
     def combat(self, uid, enemy_pos):
+        """Execute combat using combat system"""
         attacker = self.unit_manager.get_unit_info(id=uid)
         defender = self.unit_manager.get_unit_info(pos=enemy_pos)
 
         if not attacker or not defender:
-            # 如果地图数据不同步，无法找到防守方单位id，则不战
-            print("地图数据不同步，无法找到防守方单位id")
             return
 
         _, _, _, attacker_type, _ = attacker
         defender_id, ey, ex, defender_type, _ = defender
 
-        winner, _ = self.compute_combat(attacker_type, defender_type)
-        if winner == attacker_type:
+        # Use combat system to resolve combat
+        winner_id, loser_id = self.combat_system.resolve_combat(
+            uid, attacker_type,
+            defender_id, defender_type,
+            enemy_pos
+        )
+
+        # Handle combat aftermath
+        if winner_id == uid:
             self.unit_manager.remove_unit(defender_id)
             self.unit_manager.update_unit_position(uid, ey, ex)
             if self.player_mode == "ai":
                 self.path_planner.unit_paths[uid].popleft()
-            winner_id, loser_id = uid, defender_id
         else:
             self.unit_manager.remove_unit(uid)
             if uid in self.path_planner.unit_paths:
                 self.path_planner.unit_paths.pop(uid)
             if uid in self.path_planner.destinations:
                 self.path_planner.destinations.pop(uid)
-            winner_id, loser_id = defender_id, uid
+
         return winner_id, loser_id
