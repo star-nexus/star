@@ -71,10 +71,12 @@ class GameController:
         elif event.key == pygame.K_RIGHT:
             self.unit_controller.move("right")
         elif event.key == pygame.K_TAB:
-            new_index = (self.unit_controller.running_id + 1) % len(
-                self.unit_controller.unit_all_info
-            )
-            self.unit_controller.unit_all_info(new_index)
+            current_id = self.unit_controller.selected_unit_id
+            if current_id is not None:
+                new_index = (current_id + 1) % len(
+                    self.unit_controller.unit_manager.unit_all_info
+                )
+                self.unit_controller.unit_manager.selected_unit_id = new_index
         elif event.key == pygame.K_1:
             self.settings.vision_mode = 1  # God view
         elif event.key == pygame.K_2:
@@ -135,14 +137,15 @@ class GameLoop:
 
     def check_winner(self):
         """Check if there's a winner and update game settings"""
+        # Get all units info from unit manager
+        units_info = self.game_controller.unit_controller.unit_manager.unit_all_info.values()
+        
         R_units = [
-            u
-            for u in self.game_controller.unit_controller.unit_all_info.values()
+            u for u in units_info
             if u[2].startswith("R_")
         ]
         W_units = [
-            u
-            for u in self.game_controller.unit_controller.unit_all_info.values()
+            u for u in units_info
             if u[2].startswith("W_")
         ]
 
@@ -182,11 +185,13 @@ class GameLoop:
 class RenderManager:
     @staticmethod
     def _get_highlight_pos(game_controller):
+        """Get position of selected unit for highlighting"""
         selected = game_controller.unit_controller.selected_unit_info
         return (selected[0], selected[1]) if selected else None
 
     @staticmethod
-    def _calculate_visible_map(game, game_controller):  # Add game_controller parameter
+    def _calculate_visible_map(game, game_controller):
+        """Calculate visible areas based on vision mode"""
         if game.settings.vision_mode == 1:
             return None  # God view - everything visible
         faction = "R" if game.settings.vision_mode == 2 else "W"
@@ -232,12 +237,11 @@ class RenderManager:
         game.screen.blit(mouse_text, (10, 70))
 
         # Render target position if exists
-        if (
-            game_controller.unit_controller.selected_unit_id
-            in game_controller.unit_controller.path_planner.destinations
-        ):
+        selected_id = game_controller.unit_controller.selected_unit_id
+        if (selected_id is not None and 
+            selected_id in game_controller.unit_controller.path_planner.destinations):
             ty, tx = game_controller.unit_controller.path_planner.destinations[
-                game_controller.unit_controller.selected_unit_id
+                selected_id
             ]["pos"]
             target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))
             game.screen.blit(target_text, (10, 90))
@@ -261,13 +265,15 @@ class RenderManager:
         # Calculate rendering parameters
         highlight_pos = RenderManager._get_highlight_pos(game_controller)
         visible_map = RenderManager._calculate_visible_map(game, game_controller)
-        path_to_show = game_controller.unit_controller.get_unit_path()
+        path_to_show = game_controller.unit_controller.path_planner.get_path(
+            game_controller.unit_controller.selected_unit_id
+        )
 
         # Render map and UI elements
         generator.render_map(
             game.screen,
             game_controller.unit_controller.environment_map,
-            game_controller.unit_controller.unit_map,
+            game_controller.unit_controller.unit_manager.unit_map,
             highlight_pos=highlight_pos,
             visible_map=visible_map,
             path_to_show=path_to_show,
@@ -288,6 +294,7 @@ class StateManager:
     def save_env_status(settings, game_controller):
         with open("run_log/env_status.txt", "w") as f:
             f.write(f"MapSize: {settings.map_width}x{settings.map_height}\n")
+            # Update to use unit manager's method
             faction_counts = game_controller.unit_controller.get_faction_unit_counts()
             f.write(
                 "R Force: ping={ping} shui={shui} shan={shan}\n".format(
@@ -303,7 +310,8 @@ class StateManager:
     @staticmethod
     def save_unit_status(game_controller):
         with open("run_log/unit_status.txt", "w") as f:
-            units_info = game_controller.unit_controller.get_all_units_info()
+            # Update method name
+            units_info = game_controller.unit_controller.get_all_units_info_with_path_state()
             for uid, uy, ux, ut, state in units_info:
                 f.write(f"unit_id:{uid} type:{ut} x:{ux} y:{uy} state:{state}\n")
 

@@ -2,6 +2,8 @@ from collections import deque
 import random
 import numpy as np
 from .path_planner import PathPlanner
+from .unit_manager import UnitManager
+from .visibility_system import VisibilitySystem
 
 # 定义部队数据与战斗规则
 UNIT_STATS = {
@@ -84,57 +86,36 @@ Util
 
 class UnitController:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
-
+        # Initialize unit manager
+        self.unit_manager = UnitManager(unit_map)
+        
         # Meta
-        self.running_id = -1  # 没有选中单位则为-1
-        self.player_mode = player_mode  # 存储玩家模式(human or ai)
-        # 地图
-        self.environment_map = environment_map  # 不变的地形地图
-        self.unit_map = unit_map  # 存储单位位置的地图，与环境分离
+        self.player_mode = player_mode
+        self.environment_map = environment_map
         self.tile_size = tile_size
-
-        # 存储单位的位置信息
-        self.unit_all_info = {}
-
-        # 扫描unit_map找出所有单位
-        h, w = self.unit_map.shape
-        index = 0
-        for i in range(h):
-            for j in range(w):
-                if self.unit_map[i][j] is not None:  # 如果这个格子有单位
-                    self.unit_all_info[index] = (i, j, self.unit_map[i][j], "idle")
-                    index += 1
 
         # Initialize path planner
         self.path_planner = PathPlanner(environment_map, self)
 
+        # Initialize visibility system
+        self.visibility_system = VisibilitySystem(environment_map.shape)
+
     @property
     def selected_unit_id(self):
-        if self.selected_unit_info is None:
-            return None
-        return self.running_id
+        return self.unit_manager.selected_unit_id
 
     @property
     def selected_unit_info(self):
-        if self.running_id < 0:
-            return None
-        return self.unit_all_info[self.running_id]
+        return self.unit_manager.selected_unit_info
 
     @property
     def selected_unit_pos(self):
-        if self.running_id < 0:
-            return None
-        return self.unit_all_info[self.running_id][:2]
+        return self.unit_manager.selected_unit_pos
 
-    #### GET ####
-    def get_all_units_info(self):
-        """
-        返回所有单位的信息列表，以便存盘或显示。
-        格式: [(unit_id, y, x, utype, 当前状态), ...]
-        当前状态可以是 'idle', 'moving to (ty, tx)', 'attacking unit_id'等。
-        """
+    def get_all_units_info_with_path_state(self):
+        """Returns all units info with their current path/movement state"""
         info = []
-        for uid, (uy, ux, ut, _) in self.unit_all_info.items():
+        for uid, y, x, ut, _ in self.unit_manager.get_all_units_info():
             state = "idle"
             path = self.path_planner.get_path(uid)
             if path:
@@ -142,141 +123,41 @@ class UnitController:
                 if dest:
                     ty, tx = dest["pos"]
                     state = f"moving to (x:{tx}, y:{ty})"
-            # 攻击状态的逻辑可根据需要扩展
-            info.append((uid, uy, ux, ut, state))
+            info.append((uid, y, x, ut, state))
         return info
 
     def get_unit_info(self, id=None, pos=None):
-        """Get unit information by either unit ID or position.
-
-        Args:
-            id: Unit ID to look up
-            pos: Position tuple (y, x) to look up
-
-        Returns:
-            Tuple of (id, y, x, unit_type, state) if unit found, None otherwise
-
-        Examples:
-            >>> unit_controller.get_unit_info(id=5)  # Get unit with ID 5
-            >>> unit_controller.get_unit_info(pos=(10, 15))  # Get unit at position (10,15)
-        """
-        # ID-based lookup (O(1))
-        if id is not None and id in self.unit_all_info:
-            return (id, *self.unit_all_info[id])
-
-        # Position-based lookup (O(n))
-        if pos is not None:
-            try:
-                current_y, current_x = pos
-                for id, unit_info in self.unit_all_info.items():
-                    y, x, unit_type, state = unit_info
-                    if (y, x) == (current_y, current_x):
-                        return (id, y, x, unit_type, state)
-            except (TypeError, ValueError):
-                return None
-
-        return None
-
-    def get_unit_path(self, unit_id=None):
-        """Get current path for a unit"""
-        if unit_id is None:
-            unit_id = self.running_id
-        return self.path_planner.get_path(unit_id)
+        return self.unit_manager.get_unit_info(id, pos)
 
     def get_faction_unit_counts(self):
-        """
-        返回 R 和 W 阵营各类型单位数量统计
-        格式: {
-          'R': {'ping':数量, 'shui':数量, 'shan':数量},
-          'W': {'ping':数量, 'shui':数量, 'shan':数量}
-        }
-        """
-        counts = {
-            "R": {"ping": 0, "shui": 0, "shan": 0},
-            "W": {"ping": 0, "shui": 0, "shan": 0},
-        }
-        for uid, (uy, ux, ut, _) in self.unit_all_info.items():
-            faction, utype = ut.split("_", 1)
-            if faction in ["R", "W"] and utype in counts[faction]:
-                counts[faction][utype] += 1
-        return counts
+        return self.unit_manager.get_faction_unit_counts()
 
     def load_action(self, unit_id, action, params):
-        """
-        加载AI传入的指令，例如:
-        action: 'move', params: (target_y, target_x)
-        action: 'attack', params: (target_unit_id)
-        """
-        original_index = self.running_id
+        """Load AI actions"""
+        if unit_id not in self.unit_manager.unit_all_info:
+            return
+            
+        original_selected = self.unit_manager.selected_unit_id
         try:
-            if unit_id not in self.unit_all_info:
-                return
+            self.unit_manager.selected_unit_id = unit_id
             if action == "move":
                 ty, tx = params
-                self.running_id = unit_id
                 self.plan(ty, tx, action="move")
             elif action == "attack":
                 target_uid = params
-                # 攻击逻辑可以先简化为移动到目标单位附近:
-                if target_uid in self.unit_all_info:
-                    ty, tx, _, _ = self.unit_all_info[target_uid]
-                    self.running_id = unit_id
+                if target_uid in self.unit_manager.unit_all_info:
+                    ty, tx, _, _ = self.unit_manager.unit_all_info[target_uid]
                     self.plan(ty, tx, action="attack")
         finally:
-            self.running_id = original_index
-
-    #### UPDATE ####
-    def update_unit_position(self, uid, new_y, new_x, new_utype=None):
-        """
-        Updates a unit's position and synchronizes the unit map.
-
-        Args:
-            uid: Unit ID to update
-            new_y: New Y coordinate
-            new_x: New X coordinate
-            new_utype: Optional new unit type
-
-        Returns:
-            bool: True if update successful, False otherwise
-        """
-        # Validate unit exists
-        if uid not in self.unit_all_info:
-            return False
-
-        # Get current unit info
-        old_y, old_x, old_utype, state = self.unit_all_info[uid]
-
-        # Validate new coordinates are within map bounds
-        h, w = self.unit_map.shape
-        if not (0 <= new_y < h and 0 <= new_x < w):
-            return False
-
-        # Update unit_map
-        self.unit_map[old_y, old_x] = None
-        self.unit_map[new_y, new_x] = new_utype if new_utype else old_utype
-
-        # Update unit info
-        self.unit_all_info[uid] = (
-            new_y,
-            new_x,
-            new_utype if new_utype else old_utype,
-            state,
-        )
-
-        return True
+            self.unit_manager.selected_unit_id = original_selected
 
     def select_unit_by_mouse(self, mouse_pos):
-        # 根据鼠标点击位置选择单位
-        # mouse_pos是屏幕坐标，需要转换为格子坐标
         grid_x = mouse_pos[0] // self.tile_size
         grid_y = mouse_pos[1] // self.tile_size
-        # 检查点击位置是否有单位
-        for idx, (uy, ux, _, _) in self.unit_all_info.items():
-            if uy == grid_y and ux == grid_x:
-                self.running_id = idx
-                break
+        unit = self.unit_manager.get_unit_info(pos=(grid_y, grid_x))
+        if unit:
+            self.unit_manager.selected_unit_id = unit[0]
 
-    # Human 控制移动
     def move(self, direction):
         """
         Move the selected unit in the specified direction.
@@ -320,20 +201,16 @@ class UnitController:
         if not self.can_enter(utype, terrain):
             return False
 
-        # Handle unit interactions
-        target_unit_type = self.unit_map[new_y][new_x]
-        if target_unit_type is not None:
-            if self.is_enemy(utype, target_unit_type):
-                # Initiate combat if enemy
-                print("combat target: ", (new_y, new_x))
+        target_unit = self.unit_manager.get_unit_info(pos=(new_y, new_x))
+        if target_unit:
+            if self.is_enemy(utype, target_unit[3]):
                 self.combat(self.selected_unit_id, (new_y, new_x))
                 return True
             else:
                 # Cannot move into friendly unit's space
                 return False
 
-        # Execute movement
-        return self.update_unit_position(self.selected_unit_id, new_y, new_x)
+        return self.unit_manager.update_unit_position(self.selected_unit_id, new_y, new_x)
 
     def can_enter(self, unit_type, terrain):
         # unit_type: R_ping, R_shui, R_shan, W_ping, W_shui, W_shan
@@ -348,8 +225,6 @@ class UnitController:
             return True
         # 如果不符合规则则无法进入
         return False
-
-
 
     def is_enemy(self, utype1, utype2):
         # 简单判断R_和W_前缀阵营不同即为敌人
@@ -384,126 +259,103 @@ class UnitController:
         else:
             return (attacker, defender) if random.random() < 0.5 else (defender, attacker)
 
-    # 计算视野函数
     def compute_visibility(self, faction, vision_range=1):
-        h, w = self.environment_map.shape
-        visible = np.full((h, w), False, dtype=bool)
-        # 使用vision_range参数决定视野范围，注意为5x5则range为2上下扩展
-        for uy, ux, utype, _ in self.unit_all_info.values():
-            if utype.startswith(faction + "_"):
-                for dy in range(-vision_range, vision_range + 1):  # 改为5x5，即-2到2
-                    for dx in range(-vision_range, vision_range + 1):
-                        ny, nx = uy + dy, ux + dx
-                        if 0 <= ny < h and 0 <= nx < w:
-                            visible[ny][nx] = True
-        return visible
+        """Compute visibility for a faction"""
+        # Convert unit info to format needed by VisibilitySystem
+        unit_positions = [
+            ((y, x), utype)
+            for _, y, x, utype, _ in self.unit_manager.get_all_units_info()
+        ]
+        
+        return self.visibility_system.compute_visibility(
+            unit_positions,
+            faction,
+            vision_range
+        )
 
-    # 寻路相关函数
     def plan(self, target_y, target_x, action="move"):
-        """Plan path for selected unit"""
         if not self.selected_unit_info:
             return
         sy, sx, utype, _ = self.selected_unit_info
         self.path_planner.plan_path(
-            self.running_id, 
-            utype, 
-            (sy, sx), 
-            (target_y, target_x), 
+            self.selected_unit_id,
+            utype,
+            (sy, sx),
+            (target_y, target_x),
             action
         )
 
     def step(self):
-        """
-        沿规划路径前进一步。如果路径已走完或无路径，则不动。
-        """
-        uid = self.running_id
-        if uid not in self.unit_all_info:
+        selected_id = self.selected_unit_id
+        if selected_id is None:
             return
 
-        path = self.path_planner.get_path(uid)
+        path = self.path_planner.get_path(selected_id)
         if not path:
             return
 
-        sy, sx, utype, _ = self.unit_all_info[uid]
+        unit_info = self.unit_manager.get_unit_info(id=selected_id)
+        if not unit_info:
+            return
+
+        _, sy, sx, utype, _ = unit_info
         ny, nx = path[0]
 
         if (ny, nx) == (sy, sx):
-            self.path_planner.unit_paths[uid].popleft()
-            if not self.path_planner.unit_paths[uid]:
+            self.path_planner.unit_paths[selected_id].popleft()
+            if not self.path_planner.unit_paths[selected_id]:
                 return
-            ny, nx = self.path_planner.unit_paths[uid][0]
+            ny, nx = self.path_planner.unit_paths[selected_id][0]
 
-        occupant = self.unit_map[ny, nx]
-        target_info = self.path_planner.destinations.get(uid, {"action": "move"})
+        target_unit = self.unit_manager.get_unit_info(pos=(ny, nx))
+        target_info = self.path_planner.destinations.get(selected_id, {"action": "move"})
         current_action = target_info["action"]
 
-        if occupant is not None:
-            # 有单位
-            if self.is_enemy(utype, occupant):
-                # 遇敌
+        if target_unit:
+            if self.is_enemy(utype, target_unit[3]):
                 if current_action == "attack":
-                    # 攻击行动下必然战斗
-                    self.combat(uid, (ny, nx))
+                    self.combat(selected_id, (ny, nx))
                 else:
                     # move遇敌随机决定战或绕路
                     if random.random() < 0.5:
-                        # 战斗
-                        self.combat(uid, (ny, nx))
+                        self.combat(selected_id, (ny, nx))
                     else:
-                        self.path_planner.reroute(uid)
+                        self.path_planner.reroute(selected_id)
             else:
-                self.path_planner.reroute(uid)
+                self.path_planner.reroute(selected_id)
         else:
             # 空格子，检查可进入地形
             terrain = self.environment_map[ny, nx]
             if self.can_enter(utype, terrain):
-                self.unit_map[sy, sx] = None
-                self.unit_map[ny, nx] = utype
-                self.path_planner.unit_paths[uid].popleft()
-                self.update_unit_position(uid, ny, nx)
+                self.unit_manager.update_unit_position(selected_id, ny, nx)
+                self.path_planner.unit_paths[selected_id].popleft()
             else:
-                self.path_planner.reroute(uid)
+                self.path_planner.reroute(selected_id)
 
     def combat(self, uid, enemy_pos):
-        # 执行战斗结算
-        sy, sx, sutype, _ = self.unit_all_info[uid]
-        defender_uid, ey, ex, eutype, _ = self.get_unit_info(pos=enemy_pos)
+        attacker = self.unit_manager.get_unit_info(id=uid)
+        defender = self.unit_manager.get_unit_info(pos=enemy_pos)
 
-        if defender_uid is None:
+        if not attacker or not defender:
             # 如果地图数据不同步，无法找到防守方单位id，则不战
             print("地图数据不同步，无法找到防守方单位id")
             return
 
-        winner, _ = self.compute_combat(sutype, eutype)
-        if winner == sutype:
-            # 攻击方胜利
-            self.unit_map[sy, sx] = None
-            self.remove_unit(defender_uid)
-            self.update_unit_position(uid, ey, ex)
-            self.unit_map[ey, ex] = sutype
+        _, _, _, attacker_type, _ = attacker
+        defender_id, ey, ex, defender_type, _ = defender
+
+        winner, _ = self.compute_combat(attacker_type, defender_type)
+        if winner == attacker_type:
+            self.unit_manager.remove_unit(defender_id)
+            self.unit_manager.update_unit_position(uid, ey, ex)
             if self.player_mode == "ai":
                 self.path_planner.unit_paths[uid].popleft()
-            winner_id, loser_id = uid, defender_uid
+            winner_id, loser_id = uid, defender_id
         else:
-            # 攻击方失败
-            self.unit_map[sy, sx] = None
-            self.remove_unit(uid)
+            self.unit_manager.remove_unit(uid)
             if uid in self.path_planner.unit_paths:
                 self.path_planner.unit_paths.pop(uid)
             if uid in self.path_planner.destinations:
                 self.path_planner.destinations.pop(uid)
-            winner_id, loser_id = defender_uid, uid
+            winner_id, loser_id = defender_id, uid
         return winner_id, loser_id
-
-    def remove_unit(self, id):
-        # 从 units_positions, unit_id_map, unit_map 中移除指定类型的单位(一个)
-        remove_uid = id
-
-        if remove_uid is not None:
-            uy, ux, ut, _ = self.unit_all_info[remove_uid]
-            self.unit_map[uy, ux] = None
-
-            self.unit_all_info.pop(remove_uid, None)
-            # 若死的正是选中单位，需要处理running_id
-            if self.running_id == remove_uid:
-                self.running_id = -1
