@@ -234,9 +234,9 @@ class RenderManager:
         # Render target position if exists
         if (
             game_controller.unit_controller.selected_unit_id
-            in game_controller.unit_controller.destination
+            in game_controller.unit_controller.path_planner.destinations
         ):
-            ty, tx = game_controller.unit_controller.destination[
+            ty, tx = game_controller.unit_controller.path_planner.destinations[
                 game_controller.unit_controller.selected_unit_id
             ]["pos"]
             target_text = game.font.render(f"Aim: ({tx}, {ty})", True, (255, 255, 255))

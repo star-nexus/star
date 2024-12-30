@@ -1,6 +1,7 @@
 from collections import deque
 import random
 import numpy as np
+from .path_planner import PathPlanner
 
 # 定义部队数据与战斗规则
 UNIT_STATS = {
@@ -104,9 +105,8 @@ class UnitController:
                     self.unit_all_info[index] = (i, j, self.unit_map[i][j], "idle")
                     index += 1
 
-        # 路径缓存：key是unit id，value是当前该单位的路径（队列）
-        self.unit_paths = {}
-        self.destination = {}  # 存储AI的目标位置
+        # Initialize path planner
+        self.path_planner = PathPlanner(environment_map, self)
 
     @property
     def selected_unit_id(self):
@@ -136,10 +136,11 @@ class UnitController:
         info = []
         for uid, (uy, ux, ut, _) in self.unit_all_info.items():
             state = "idle"
-            if uid in self.unit_paths and self.unit_paths[uid]:
-                # 有路径则说明正在移动
-                if uid in self.destination:
-                    ty, tx = self.destination[uid]["pos"]
+            path = self.path_planner.get_path(uid)
+            if path:
+                dest = self.path_planner.destinations.get(uid)
+                if dest:
+                    ty, tx = dest["pos"]
                     state = f"moving to (x:{tx}, y:{ty})"
             # 攻击状态的逻辑可根据需要扩展
             info.append((uid, uy, ux, ut, state))
@@ -176,11 +177,11 @@ class UnitController:
 
         return None
 
-    def get_unit_path(self):
-        # 返回当前选中单位的路径列表（用于渲染）
-        if self.running_id in self.unit_paths:
-            return list(self.unit_paths[self.running_id])
-        return []
+    def get_unit_path(self, unit_id=None):
+        """Get current path for a unit"""
+        if unit_id is None:
+            unit_id = self.running_id
+        return self.path_planner.get_path(unit_id)
 
     def get_faction_unit_counts(self):
         """
@@ -210,14 +211,11 @@ class UnitController:
         try:
             if unit_id not in self.unit_all_info:
                 return
-            # uy, ux, utype = self.unit_id_map[unit_id]
             if action == "move":
                 ty, tx = params
-                # 调用寻路接口
                 self.running_id = unit_id
                 self.plan(ty, tx, action="move")
             elif action == "attack":
-
                 target_uid = params
                 # 攻击逻辑可以先简化为移动到目标单位附近:
                 if target_uid in self.unit_all_info:
@@ -384,11 +382,7 @@ class UnitController:
         elif def_data["strong_against"] == att_type:
             return defender, attacker
         else:
-            # 平种类，简单看成五五开
-            if random.random() < 0.5:
-                return attacker, defender
-            else:
-                return defender, attacker
+            return (attacker, defender) if random.random() < 0.5 else (defender, attacker)
 
     # 计算视野函数
     def compute_visibility(self, faction, vision_range=1):
@@ -406,26 +400,17 @@ class UnitController:
 
     # 寻路相关函数
     def plan(self, target_y, target_x, action="move"):
-        """
-        为当前选中的单位规划路径。如果无法到达目标点，则寻找最近的可到达点。
-        """
-        sel = self.selected_unit_info
-        if not sel:
+        """Plan path for selected unit"""
+        if not self.selected_unit_info:
             return
-        sy, sx, utype, _ = sel
-
-        path = self.find_path(utype, (sy, sx), (target_y, target_x), action)
-        if not path:
-            # 找不到直达路径，寻找最接近目标的点
-            path = self.find_closest_reachable_point(
-                utype, (sy, sx), (target_y, target_x)
-            )
-        self.unit_paths[self.running_id] = deque(path) if path else deque()
-        # 这里确保使用字典存储信息
-        self.destination[self.running_id] = {
-            "pos": (target_y, target_x),
-            "action": action,
-        }
+        sy, sx, utype, _ = self.selected_unit_info
+        self.path_planner.plan_path(
+            self.running_id, 
+            utype, 
+            (sy, sx), 
+            (target_y, target_x), 
+            action
+        )
 
     def step(self):
         """
@@ -434,23 +419,22 @@ class UnitController:
         uid = self.running_id
         if uid not in self.unit_all_info:
             return
-        if uid not in self.unit_paths:
+
+        path = self.path_planner.get_path(uid)
+        if not path:
             return
-        if not self.unit_paths[uid]:
-            return
-        ny, nx = self.unit_paths[uid][0]
+
         sy, sx, utype, _ = self.unit_all_info[uid]
+        ny, nx = path[0]
 
-
-        # 如果下个节点就是当前点，弹出后取下一个
         if (ny, nx) == (sy, sx):
-            self.unit_paths[uid].popleft()
-            if not self.unit_paths[uid]:
+            self.path_planner.unit_paths[uid].popleft()
+            if not self.path_planner.unit_paths[uid]:
                 return
-            ny, nx = self.unit_paths[uid][0]
-        # 检查下个格子上的单位情况
+            ny, nx = self.path_planner.unit_paths[uid][0]
+
         occupant = self.unit_map[ny, nx]
-        target_info = self.destination.get(uid, {"action": "move"})
+        target_info = self.path_planner.destinations.get(uid, {"action": "move"})
         current_action = target_info["action"]
 
         if occupant is not None:
@@ -466,24 +450,19 @@ class UnitController:
                         # 战斗
                         self.combat(uid, (ny, nx))
                     else:
-                        # 尝试绕路(重新寻路)
-                        self.reroute(uid)
+                        self.path_planner.reroute(uid)
             else:
-                # 友军单位，尝试绕路
-                self.reroute(uid)
+                self.path_planner.reroute(uid)
         else:
             # 空格子，检查可进入地形
             terrain = self.environment_map[ny, nx]
             if self.can_enter(utype, terrain):
                 self.unit_map[sy, sx] = None
                 self.unit_map[ny, nx] = utype
-                # self.units_positions[uid] = (ny, nx, utype)
-                self.unit_paths[uid].popleft()
-                # 同步更新 unit_id_map
+                self.path_planner.unit_paths[uid].popleft()
                 self.update_unit_position(uid, ny, nx)
             else:
-                # 不可进入，尝试绕路
-                self.reroute(uid)
+                self.path_planner.reroute(uid)
 
     def combat(self, uid, enemy_pos):
         # 执行战斗结算
@@ -494,6 +473,7 @@ class UnitController:
             # 如果地图数据不同步，无法找到防守方单位id，则不战
             print("地图数据不同步，无法找到防守方单位id")
             return
+
         winner, _ = self.compute_combat(sutype, eutype)
         if winner == sutype:
             # 攻击方胜利
@@ -502,16 +482,16 @@ class UnitController:
             self.update_unit_position(uid, ey, ex)
             self.unit_map[ey, ex] = sutype
             if self.player_mode == "ai":
-                self.unit_paths[uid].popleft()
+                self.path_planner.unit_paths[uid].popleft()
             winner_id, loser_id = uid, defender_uid
         else:
             # 攻击方失败
             self.unit_map[sy, sx] = None
-            self.remove_unit(uid)  # 攻击方消失
-            if uid in self.unit_paths:
-                self.unit_paths.pop(uid)
-            if uid in self.destination:
-                self.destination.pop(uid)
+            self.remove_unit(uid)
+            if uid in self.path_planner.unit_paths:
+                self.path_planner.unit_paths.pop(uid)
+            if uid in self.path_planner.destinations:
+                self.path_planner.destinations.pop(uid)
             winner_id, loser_id = defender_uid, uid
         return winner_id, loser_id
 
@@ -527,121 +507,3 @@ class UnitController:
             # 若死的正是选中单位，需要处理running_id
             if self.running_id == remove_uid:
                 self.running_id = -1
-
-    def reroute(self, uid):
-        sy, sx, utype, _ = self.unit_all_info[uid]
-        tinfo = self.destination.get(uid)
-        if not tinfo:
-            # 没有目标就不动了
-            self.unit_paths[uid].clear()
-            return
-        ty, tx = tinfo["pos"]
-        action = tinfo["action"]
-        new_path = self.find_path(utype, (sy, sx), (ty, tx))
-        if not new_path:
-            new_path = self.find_closest_reachable_point(utype, (sy, sx), (ty, tx))
-        self.unit_paths[uid] = deque(new_path) if new_path else deque()
-
-    def is_tile_free(self, y, x, action="move"):
-        # 检查unit_map[y,x] 是否为空或是自己所在的格子
-        # 不允许穿过敌人或友方单位
-        # 找当前选中单位位置，如果(y,x)正是自己的位置也可通过
-        sy, sx, sutype, _ = self.unit_all_info[self.running_id]
-        if (y, x) == (sy, sx):
-            return True
-        free = self.unit_map[y, x] is None
-        if free == True:
-            return free
-        elif action == "attack":
-            if self.is_enemy(sutype, self.unit_map[y, x]):
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def find_path(self, utype, start, goal, action="move"):
-        """
-        使用BFS寻找从start到goal的路径。
-        返回路径坐标列表(含起点和终点)，若不可达则返回None。
-        """
-        sy, sx = start
-        gy, gx = goal
-        h, w = self.environment_map.shape
-        visited = np.full((h, w), False, dtype=bool)
-        parent = dict()
-
-        queue = deque()
-        queue.append((sy, sx))
-        visited[sy, sx] = True
-
-        while queue:
-            y, x = queue.popleft()
-            if (y, x) == (gy, gx):
-                # 找到目标，回溯路径
-                return self.reconstruct_path(parent, start, goal)
-
-            for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
-                    terrain = self.environment_map[ny, nx]
-                    if self.can_enter(utype, terrain) and self.is_tile_free(
-                        ny, nx, action
-                    ):
-                        visited[ny, nx] = True
-                        parent[(ny, nx)] = (y, x)
-                        queue.append((ny, nx))
-
-        # 未找到目标
-        return None
-
-    def find_closest_reachable_point(self, utype, start, goal):
-        """
-        当目标不可达时，使用BFS扩张所有可达点，
-        在可达点中选择与goal曼哈顿距离最近的点。
-        然后返回到该点的路径。
-        """
-        sy, sx = start
-        gy, gx = goal
-        h, w = self.environment_map.shape
-        visited = np.full((h, w), False, dtype=bool)
-        parent = dict()
-
-        queue = deque()
-        queue.append((sy, sx))
-        visited[sy, sx] = True
-
-        reachable_points = []
-        while queue:
-            y, x = queue.popleft()
-            reachable_points.append((y, x))
-            for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
-                    terrain = self.environment_map[ny, nx]
-                    if self.can_enter(utype, terrain) and self.is_tile_free(ny, nx):
-                        visited[ny, nx] = True
-                        parent[(ny, nx)] = (y, x)
-                        queue.append((ny, nx))
-
-        # 从reachable_points中选与goal距离最近的
-        best_point = None
-        best_dist = float("inf")
-        for ry, rx in reachable_points:
-            dist = abs(ry - gy) + abs(rx - gx)
-            if dist < best_dist:
-                best_dist = dist
-                best_point = (ry, rx)
-        if best_point is not None and best_point != (sy, sx):
-            return self.reconstruct_path(parent, start, best_point)
-        return None
-
-    def reconstruct_path(self, parent, start, goal):
-        path = []
-        cur = goal
-        while cur != start:
-            path.append(cur)
-            cur = parent[cur]
-        path.append(start)
-        path.reverse()
-        return path
