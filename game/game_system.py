@@ -1,11 +1,11 @@
 from collections import deque
 import random
 import numpy as np
-from .path_planner import PathPlanner
-from .unit_manager import UnitManager
-from .visibility_system import VisibilitySystem
-from .combat_system import CombatSystem
-from .movement_controller import MovementController
+from .planner import PathPlanner
+from .agents import UnitManager
+from .visibility import VisibilitySystem
+from .combat import CombatSystem
+from .movement import MovementController
 
 # 定义部队数据与战斗规则
 UNIT_STATS = {
@@ -85,8 +85,8 @@ Util
 
 """
 
-
-class UnitController:
+# Game 1: Two forces encouters.
+class TwoForcesEncounter:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
         # Initialize unit manager
         self.unit_manager = UnitManager(unit_map)
