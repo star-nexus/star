@@ -102,7 +102,7 @@ class UnitController:
         self.visibility_system = VisibilitySystem(environment_map.shape)
 
         # Initialize combat system
-        self.combat_system = CombatSystem(UNIT_STATS)
+        self.combat_system = CombatSystem(UNIT_STATS, self.unit_manager, self.path_planner, is_ai_mode=self.player_mode == "ai")
 
     @property
     def selected_unit_id(self):
@@ -207,8 +207,8 @@ class UnitController:
 
         target_unit = self.unit_manager.get_unit_info(pos=(new_y, new_x))
         if target_unit:
-            if self.is_enemy(utype, target_unit[3]):
-                self.combat(self.selected_unit_id, (new_y, new_x))
+            if self.combat_system.is_enemy(utype, target_unit[3]):
+                self.combat_system.combat(self.selected_unit_id, (new_y, new_x))
                 return True
             else:
                 # Cannot move into friendly unit's space
@@ -229,37 +229,6 @@ class UnitController:
             return True
         # 如果不符合规则则无法进入
         return False
-
-    def is_enemy(self, utype1, utype2):
-        """Delegate enemy check to combat system"""
-        return self.combat_system.is_enemy(utype1, utype2)
-
-    def compute_combat(self, attacker, defender):
-        # 战斗规则，根据unit类型的ping/shui/shan来决定结果
-        # attacker和defender都是比如R_ping或W_shui
-        att_faction, att_type = attacker.split("_", 1)
-        def_faction, def_type = defender.split("_", 1)
-
-        # 简化规则为：强克制 > 被克制 > 平手（同种类平手则随机?）
-        # ping>shan, shui>ping, shan>shui
-        att_data = UNIT_STATS[att_type]
-        def_data = UNIT_STATS[def_type]
-
-        if (
-            att_data["strong_against"] == def_type
-            and def_data["strong_against"] == att_type
-        ):
-            # 双方互克制？则随机
-            if random.random() < 0.5:
-                return attacker, defender
-            else:
-                return defender, attacker
-        elif att_data["strong_against"] == def_type:
-            return attacker, defender
-        elif def_data["strong_against"] == att_type:
-            return defender, attacker
-        else:
-            return (attacker, defender) if random.random() < 0.5 else (defender, attacker)
 
     def compute_visibility(self, faction, vision_range=1):
         """Compute visibility for a faction"""
@@ -314,13 +283,13 @@ class UnitController:
         current_action = target_info["action"]
 
         if target_unit:
-            if self.is_enemy(utype, target_unit[3]):
+            if self.combat_system.is_enemy(utype, target_unit[3]):
                 if current_action == "attack":
-                    self.combat(selected_id, (ny, nx))
+                    self.combat_system.combat(selected_id, (ny, nx))
                 else:
                     # move遇敌随机决定战或绕路
                     if random.random() < 0.5:
-                        self.combat(selected_id, (ny, nx))
+                        self.combat_system.combat(selected_id, (ny, nx))
                     else:
                         self.path_planner.reroute(selected_id)
             else:
@@ -334,35 +303,4 @@ class UnitController:
             else:
                 self.path_planner.reroute(selected_id)
 
-    def combat(self, uid, enemy_pos):
-        """Execute combat using combat system"""
-        attacker = self.unit_manager.get_unit_info(id=uid)
-        defender = self.unit_manager.get_unit_info(pos=enemy_pos)
 
-        if not attacker or not defender:
-            return
-
-        _, _, _, attacker_type, _ = attacker
-        defender_id, ey, ex, defender_type, _ = defender
-
-        # Use combat system to resolve combat
-        winner_id, loser_id = self.combat_system.resolve_combat(
-            uid, attacker_type,
-            defender_id, defender_type,
-            enemy_pos
-        )
-
-        # Handle combat aftermath
-        if winner_id == uid:
-            self.unit_manager.remove_unit(defender_id)
-            self.unit_manager.update_unit_position(uid, ey, ex)
-            if self.player_mode == "ai":
-                self.path_planner.unit_paths[uid].popleft()
-        else:
-            self.unit_manager.remove_unit(uid)
-            if uid in self.path_planner.unit_paths:
-                self.path_planner.unit_paths.pop(uid)
-            if uid in self.path_planner.destinations:
-                self.path_planner.destinations.pop(uid)
-
-        return winner_id, loser_id
