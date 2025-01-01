@@ -2,7 +2,7 @@ from collections import deque
 import random
 import numpy as np
 from .planner import PathPlanner
-from .agents import UnitManager
+from .agents import Unit
 from .visibility import VisibilitySystem
 from .combat import CombatSystem
 from .movement import MovementController
@@ -89,7 +89,7 @@ Util
 class TwoForcesEncounter:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
         # Initialize unit manager
-        self.unit_manager = UnitManager(unit_map)
+        self.unit_manager = Unit(unit_map)
         
         # Meta
         self._is_ai_mode = player_mode == "ai"
