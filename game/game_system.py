@@ -214,3 +214,10 @@ class TwoForcesEncounter:
         self.movement_controller.step(self.selected_unit_id)
 
 
+# Game 2: Romance of the three kingdoms
+class RomanceThreeKingdoms:
+    pass
+
+# Game 3: Agent use LLM for decision making. Stronger LLM defeats weaker one.
+class LLMAgentArena:
+    pass
