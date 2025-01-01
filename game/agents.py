@@ -1,7 +1,8 @@
 from typing import Dict, Tuple, Optional, List, Any
 
-class UnitManager:
+class Unit:
     """
+    An agent class that can be controlled by a large language model.
     Manages unit data, state, and basic operations.
     Responsible for maintaining the game's unit information and state.
     """
@@ -13,11 +14,24 @@ class UnitManager:
         Args:
             unit_map: 2D numpy array containing unit positions and types
         """
+        # Unit/Agent properties. 
+        # ============ To do ==============
+        self.name = "Guan Yu"; # Zhang Fei, Zhao Yun, Lv Bu, Liu Bei
+        self.model = "gpt-4o";
+        self.instructions = "You are a Troop than can pass water in this game.";
+        self.skills = [] # tools used by LLM
+        self.shared_memory = ""
+        self.knowledge = ""
+        # ============ To do ==============
+
+        # Unit/Agent states
         self.unit_map = unit_map
         self.unit_all_info: Dict[int, Tuple[int, int, str, str]] = {}  # id: (y, x, type, state)
         self._selected_unit_id: int = -1
-        self._initialize_units()
 
+        # Initialize
+        self._initialize_units()
+        
     def _initialize_units(self) -> None:
         """Scan unit_map and initialize unit data"""
         h, w = self.unit_map.shape
