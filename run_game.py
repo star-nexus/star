@@ -2,7 +2,7 @@
 import pygame
 import argparse
 from map_generator.map import MapGenerator
-from entity.unit import UnitController
+from game.game_system import TwoForcesEncounter
 from ai_controller import AIController
 
 
@@ -54,7 +54,7 @@ class Game:
 class GameController:
     def __init__(self, settings: GameSettings, environment_map, unit_map):
         self.settings = settings
-        self.unit_controller = UnitController(
+        self.unit_controller = TwoForcesEncounter(
             environment_map, unit_map, tile_size=settings.tile_size
         )
         self.mouse_grid_x = 0
