@@ -7,14 +7,20 @@ class CombatSystem:
     Determines combat outcomes based on unit types and manages combat execution.
     """
     
-    def __init__(self, unit_stats: Dict):
+    def __init__(self, unit_stats: Dict, unit_manager, path_planner, is_ai_mode: bool = False):
         """
-        Initialize combat system with unit stats.
+        Initialize combat system.
         
         Args:
             unit_stats: Dictionary defining unit type relationships
+            unit_manager: Reference to UnitManager for unit state updates
+            path_planner: Reference to PathPlanner for path updates
+            is_ai_mode: Whether the combat system is in AI mode
         """
         self.unit_stats = unit_stats
+        self.unit_manager = unit_manager
+        self.path_planner = path_planner
+        self.is_ai_mode = is_ai_mode
 
     def is_enemy(self, unit_type1: str, unit_type2: str) -> bool:
         """
@@ -81,3 +87,45 @@ class CombatSystem:
             return attacker_id, defender_id
         else:
             return defender_id, attacker_id 
+
+    def combat(self, attacker_id: int, enemy_pos: Tuple[int, int]) -> Tuple[int, int]:
+        """
+        Execute combat between two units and handle the aftermath.
+        
+        Args:
+            attacker_id: ID of attacking unit
+            enemy_pos: Position (y, x) of defending unit
+            
+        Returns:
+            Tuple of (winner_id, loser_id)
+        """
+        attacker = self.unit_manager.get_unit_info(id=attacker_id)
+        defender = self.unit_manager.get_unit_info(pos=enemy_pos)
+
+        if not attacker or not defender:
+            return None
+
+        _, _, _, attacker_type, _ = attacker
+        defender_id, ey, ex, defender_type, _ = defender
+
+        # Resolve combat
+        winner_id, loser_id = self.resolve_combat(
+            attacker_id, attacker_type,
+            defender_id, defender_type,
+            enemy_pos
+        )
+
+        # Handle combat aftermath
+        if winner_id == attacker_id:
+            self.unit_manager.remove_unit(defender_id)
+            self.unit_manager.update_unit_position(attacker_id, ey, ex)
+            if self.is_ai_mode:
+                self.path_planner.unit_paths[attacker_id].popleft()
+        else:
+            self.unit_manager.remove_unit(attacker_id)
+            if attacker_id in self.path_planner.unit_paths:
+                self.path_planner.unit_paths.pop(attacker_id)
+            if attacker_id in self.path_planner.destinations:
+                self.path_planner.destinations.pop(attacker_id)
+
+        return winner_id, loser_id 
