@@ -5,6 +5,7 @@ from .path_planner import PathPlanner
 from .unit_manager import UnitManager
 from .visibility_system import VisibilitySystem
 from .combat_system import CombatSystem
+from .movement_controller import MovementController
 
 # 定义部队数据与战斗规则
 UNIT_STATS = {
@@ -91,7 +92,7 @@ class UnitController:
         self.unit_manager = UnitManager(unit_map)
         
         # Meta
-        self.player_mode = player_mode
+        self._is_ai_mode = player_mode == "ai"
         self.environment_map = environment_map
         self.tile_size = tile_size
 
@@ -102,7 +103,15 @@ class UnitController:
         self.visibility_system = VisibilitySystem(environment_map.shape)
 
         # Initialize combat system
-        self.combat_system = CombatSystem(UNIT_STATS, self.unit_manager, self.path_planner, is_ai_mode=self.player_mode == "ai")
+        self.combat_system = CombatSystem(UNIT_STATS, self.unit_manager, self.path_planner, is_ai_mode=self._is_ai_mode)
+
+        # Initialize movement controller
+        self.movement_controller = MovementController(
+            environment_map,
+            self.unit_manager,
+            self.path_planner,
+            self.combat_system
+        )
 
     @property
     def selected_unit_id(self):
@@ -163,72 +172,14 @@ class UnitController:
             self.unit_manager.selected_unit_id = unit[0]
 
     def move(self, direction):
-        """
-        Move the selected unit in the specified direction.
-
-        Args:
-            direction (str): One of 'up', 'down', 'left', 'right'
-
-        Returns:
-            bool: True if movement was successful, False otherwise
-        """
-        # Validate unit selection
-        if not self.selected_unit_info:
+        """Delegate movement to movement controller"""
+        if self.selected_unit_id is None:
             return False
-
-        # Get current position and info
-        y, x, utype, _ = self.selected_unit_info
-
-        # Calculate new position
-        direction_deltas = {
-            "up": (-1, 0),
-            "down": (1, 0),
-            "left": (0, -1),
-            "right": (0, 1),
-        }
-
-        if direction not in direction_deltas:
-            return False
-
-        dy, dx = direction_deltas[direction]
-        new_y, new_x = y + dy, x + dx
-
-        # Check map boundaries
-        h, w = self.environment_map.shape
-        if not (0 <= new_y < h and 0 <= new_x < w):
-            return False
-
-        # Check terrain and target tile
-        terrain = self.environment_map[new_y][new_x]
-
-        # Validate movement
-        if not self.can_enter(utype, terrain):
-            return False
-
-        target_unit = self.unit_manager.get_unit_info(pos=(new_y, new_x))
-        if target_unit:
-            if self.combat_system.is_enemy(utype, target_unit[3]):
-                self.combat_system.combat(self.selected_unit_id, (new_y, new_x))
-                return True
-            else:
-                # Cannot move into friendly unit's space
-                return False
-
-        return self.unit_manager.update_unit_position(self.selected_unit_id, new_y, new_x)
+        return self.movement_controller.move(self.selected_unit_id, direction)
 
     def can_enter(self, unit_type, terrain):
-        # unit_type: R_ping, R_shui, R_shan, W_ping, W_shui, W_shan
-        # 根据类型解析出 ping/shui/shan
-        force, u_kind = unit_type.split("_", 1)
-        # 所有单位都可进入 city, plain, forest
-        if terrain in ["city", "plain", "forest", "bridge"]:
-            return True
-        if u_kind == "shan" and terrain in ["mountain"]:
-            return True
-        if u_kind == "shui" and terrain in ["river"]:
-            return True
-        # 如果不符合规则则无法进入
-        return False
+        """Delegate terrain check to movement controller"""
+        return self.movement_controller.can_enter(unit_type, terrain)
 
     def compute_visibility(self, faction, vision_range=1):
         """Compute visibility for a faction"""
@@ -257,50 +208,9 @@ class UnitController:
         )
 
     def step(self):
-        selected_id = self.selected_unit_id
-        if selected_id is None:
+        """Delegate path following to movement controller"""
+        if self.selected_unit_id is None:
             return
-
-        path = self.path_planner.get_path(selected_id)
-        if not path:
-            return
-
-        unit_info = self.unit_manager.get_unit_info(id=selected_id)
-        if not unit_info:
-            return
-
-        _, sy, sx, utype, _ = unit_info
-        ny, nx = path[0]
-
-        if (ny, nx) == (sy, sx):
-            self.path_planner.unit_paths[selected_id].popleft()
-            if not self.path_planner.unit_paths[selected_id]:
-                return
-            ny, nx = self.path_planner.unit_paths[selected_id][0]
-
-        target_unit = self.unit_manager.get_unit_info(pos=(ny, nx))
-        target_info = self.path_planner.destinations.get(selected_id, {"action": "move"})
-        current_action = target_info["action"]
-
-        if target_unit:
-            if self.combat_system.is_enemy(utype, target_unit[3]):
-                if current_action == "attack":
-                    self.combat_system.combat(selected_id, (ny, nx))
-                else:
-                    # move遇敌随机决定战或绕路
-                    if random.random() < 0.5:
-                        self.combat_system.combat(selected_id, (ny, nx))
-                    else:
-                        self.path_planner.reroute(selected_id)
-            else:
-                self.path_planner.reroute(selected_id)
-        else:
-            # 空格子，检查可进入地形
-            terrain = self.environment_map[ny, nx]
-            if self.can_enter(utype, terrain):
-                self.unit_manager.update_unit_position(selected_id, ny, nx)
-                self.path_planner.unit_paths[selected_id].popleft()
-            else:
-                self.path_planner.reroute(selected_id)
+        self.movement_controller.step(self.selected_unit_id)
 
 
