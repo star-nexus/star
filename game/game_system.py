@@ -1,6 +1,3 @@
-from collections import deque
-import random
-import numpy as np
 from .planner import PathPlanner
 from .agents import Unit
 from .visibility import VisibilitySystem
@@ -66,7 +63,7 @@ UPDATE
 ACTION
 - move: 移动单位
 - step: 沿路径前进一步
-- plan_path: 规划路径
+- plan: 规划路径
 - combat: 执行战斗结算
 - load_action: 装填AI传入的指令
 
@@ -85,12 +82,13 @@ Util
 
 """
 
+
 # Game 1: Two forces encouters.
 class TwoForcesEncounter:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
         # Initialize unit manager
         self.unit_manager = Unit(unit_map)
-        
+
         # Meta
         self._is_ai_mode = player_mode == "ai"
         self.environment_map = environment_map
@@ -103,14 +101,16 @@ class TwoForcesEncounter:
         self.visibility_system = VisibilitySystem(environment_map.shape)
 
         # Initialize combat system
-        self.combat_system = CombatSystem(UNIT_STATS, self.unit_manager, self.path_planner, is_ai_mode=self._is_ai_mode)
+        self.combat_system = CombatSystem(
+            UNIT_STATS,
+            self.unit_manager,
+            self.path_planner,
+            is_ai_mode=self._is_ai_mode,
+        )
 
         # Initialize movement controller
         self.movement_controller = MovementController(
-            environment_map,
-            self.unit_manager,
-            self.path_planner,
-            self.combat_system
+            environment_map, self.unit_manager, self.path_planner, self.combat_system
         )
 
     @property
@@ -149,7 +149,7 @@ class TwoForcesEncounter:
         """Load AI actions"""
         if unit_id not in self.unit_manager.unit_all_info:
             return
-            
+
         original_selected = self.unit_manager.selected_unit_id
         try:
             self.unit_manager.selected_unit_id = unit_id
@@ -188,11 +188,9 @@ class TwoForcesEncounter:
             ((y, x), utype)
             for _, y, x, utype, _ in self.unit_manager.get_all_units_info()
         ]
-        
+
         return self.visibility_system.compute_visibility(
-            unit_positions,
-            faction,
-            vision_range
+            unit_positions, faction, vision_range
         )
 
     def plan(self, target_y, target_x, action="move"):
@@ -200,11 +198,7 @@ class TwoForcesEncounter:
             return
         sy, sx, utype, _ = self.selected_unit_info
         self.path_planner.plan_path(
-            self.selected_unit_id,
-            utype,
-            (sy, sx),
-            (target_y, target_x),
-            action
+            self.selected_unit_id, utype, (sy, sx), (target_y, target_x), action
         )
 
     def step(self):
@@ -217,6 +211,7 @@ class TwoForcesEncounter:
 # Game 2: Romance of the three kingdoms
 class RomanceThreeKingdoms:
     pass
+
 
 # Game 3: Agent use LLM for decision making. Stronger LLM defeats weaker one.
 class LLMAgentArena:

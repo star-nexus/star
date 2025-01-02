@@ -1,16 +1,19 @@
 from typing import Dict, Tuple, Optional
 import numpy as np
 
+
 class MovementController:
     """
     Handles movement validation, terrain rules, and movement execution.
     Coordinates with PathPlanner for path following.
     """
-    
-    def __init__(self, environment_map: np.ndarray, unit_manager, path_planner, combat_system):
+
+    def __init__(
+        self, environment_map: np.ndarray, unit_manager, path_planner, combat_system
+    ):
         """
         Initialize movement controller.
-        
+
         Args:
             environment_map: 2D array of terrain
             unit_manager: Reference to UnitManager for unit queries
@@ -26,7 +29,7 @@ class MovementController:
     def can_enter(self, unit_type: str, terrain: str) -> bool:
         """
         Check if a unit type can enter a specific terrain.
-        
+
         Args:
             unit_type: Type of unit (e.g., 'R_ping')
             terrain: Terrain type
@@ -43,7 +46,7 @@ class MovementController:
     def move(self, unit_id: int, direction: str) -> bool:
         """
         Move a unit in the specified direction.
-        
+
         Args:
             unit_id: ID of unit to move
             direction: One of 'up', 'down', 'left', 'right'
@@ -92,7 +95,7 @@ class MovementController:
     def step(self, unit_id: int) -> None:
         """
         Execute the next step in a unit's planned path.
-        
+
         Args:
             unit_id: ID of unit to move
         """
@@ -136,4 +139,4 @@ class MovementController:
                 self.unit_manager.update_unit_position(unit_id, ny, nx)
                 self.path_planner.unit_paths[unit_id].popleft()
             else:
-                self.path_planner.reroute(unit_id) 
+                self.path_planner.reroute(unit_id)
