@@ -10,5 +10,3 @@ build_system_message = lambda text: {
     "role": "system",
     "content": [{"type": "text", "text": text}],
 }
-
-
