@@ -1,37 +1,40 @@
 from typing import Dict, Tuple, Optional, List, Any
 
+
 class Unit:
     """
     An agent class that can be controlled by a large language model.
     Manages unit data, state, and basic operations.
     Responsible for maintaining the game's unit information and state.
     """
-    
+
     def __init__(self, unit_map):
         """
         Initialize the unit manager.
-        
+
         Args:
             unit_map: 2D numpy array containing unit positions and types
         """
-        # Unit/Agent properties. 
+        # Unit/Agent properties.
         # ============ To do ==============
-        self.name = "Guan Yu"; # Zhang Fei, Zhao Yun, Lv Bu, Liu Bei
-        self.model = "gpt-4o";
-        self.instructions = "You are a Troop than can pass water in this game.";
-        self.skills = [] # tools used by LLM
+        self.name = "Guan Yu"  # Zhang Fei, Zhao Yun, Lv Bu, Liu Bei
+        self.model = "gpt-4o"
+        self.instructions = "You are a Troop than can pass water in this game."
+        self.skills = []  # tools used by LLM
         self.shared_memory = ""
         self.knowledge = ""
         # ============ To do ==============
 
         # Unit/Agent states
         self.unit_map = unit_map
-        self.unit_all_info: Dict[int, Tuple[int, int, str, str]] = {}  # id: (y, x, type, state)
+        self.unit_all_info: Dict[int, Tuple[int, int, str, str]] = (
+            {}
+        )  # id: (y, x, type, state)
         self._selected_unit_id: int = -1
 
         # Initialize
         self._initialize_units()
-        
+
     def _initialize_units(self) -> None:
         """Scan unit_map and initialize unit data"""
         h, w = self.unit_map.shape
@@ -70,7 +73,7 @@ class Unit:
     def get_all_units_info(self) -> List[Tuple[int, int, int, str, str]]:
         """
         Get information about all units.
-        
+
         Returns:
             List of tuples (unit_id, y, x, unit_type, state)
         """
@@ -79,16 +82,16 @@ class Unit:
             for uid, (y, x, utype, state) in self.unit_all_info.items()
         ]
 
-    def get_unit_info(self, id: Optional[int] = None, 
-                     pos: Optional[Tuple[int, int]] = None
-                     ) -> Optional[Tuple[int, int, int, str, str]]:
+    def get_unit_info(
+        self, id: Optional[int] = None, pos: Optional[Tuple[int, int]] = None
+    ) -> Optional[Tuple[int, int, int, str, str]]:
         """
         Get unit information by either ID or position.
-        
+
         Args:
             id: Unit ID to look up
             pos: Position tuple (y, x) to look up
-            
+
         Returns:
             Tuple of (id, y, x, unit_type, state) if found, None otherwise
         """
@@ -109,7 +112,7 @@ class Unit:
     def get_faction_unit_counts(self) -> Dict[str, Dict[str, int]]:
         """
         Get unit counts by faction and type.
-        
+
         Returns:
             Dictionary of format:
             {
@@ -127,17 +130,18 @@ class Unit:
                 counts[faction][utype] += 1
         return counts
 
-    def update_unit_position(self, uid: int, new_y: int, new_x: int, 
-                           new_utype: Optional[str] = None) -> bool:
+    def update_unit_position(
+        self, uid: int, new_y: int, new_x: int, new_utype: Optional[str] = None
+    ) -> bool:
         """
         Update a unit's position and optionally its type.
-        
+
         Args:
             uid: Unit ID to update
             new_y: New Y coordinate
             new_x: New X coordinate
             new_utype: Optional new unit type
-            
+
         Returns:
             bool: True if update successful, False otherwise
         """
@@ -164,7 +168,7 @@ class Unit:
     def remove_unit(self, uid: int) -> None:
         """
         Remove a unit from the game.
-        
+
         Args:
             uid: ID of unit to remove
         """
@@ -178,17 +182,17 @@ class Unit:
     def update_unit_state(self, uid: int, new_state: str) -> bool:
         """
         Update a unit's state.
-        
+
         Args:
             uid: Unit ID to update
             new_state: New state string
-            
+
         Returns:
             bool: True if update successful, False otherwise
         """
         if uid not in self.unit_all_info:
             return False
-            
+
         y, x, utype, _ = self.unit_all_info[uid]
         self.unit_all_info[uid] = (y, x, utype, new_state)
-        return True 
+        return True

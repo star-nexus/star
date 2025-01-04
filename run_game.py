@@ -138,16 +138,12 @@ class GameLoop:
     def check_winner(self):
         """Check if there's a winner and update game settings"""
         # Get all units info from unit manager
-        units_info = self.game_controller.unit_controller.unit_manager.unit_all_info.values()
-        
-        R_units = [
-            u for u in units_info
-            if u[2].startswith("R_")
-        ]
-        W_units = [
-            u for u in units_info
-            if u[2].startswith("W_")
-        ]
+        units_info = (
+            self.game_controller.unit_controller.unit_manager.unit_all_info.values()
+        )
+
+        R_units = [u for u in units_info if u[2].startswith("R_")]
+        W_units = [u for u in units_info if u[2].startswith("W_")]
 
         if not R_units and not W_units:
             self.settings.winner = "Peace"
@@ -238,8 +234,10 @@ class RenderManager:
 
         # Render target position if exists
         selected_id = game_controller.unit_controller.selected_unit_id
-        if (selected_id is not None and 
-            selected_id in game_controller.unit_controller.path_planner.destinations):
+        if (
+            selected_id is not None
+            and selected_id in game_controller.unit_controller.path_planner.destinations
+        ):
             ty, tx = game_controller.unit_controller.path_planner.destinations[
                 selected_id
             ]["pos"]
@@ -311,7 +309,9 @@ class StateManager:
     def save_unit_status(game_controller):
         with open("run_log/unit_status.txt", "w") as f:
             # Update method name
-            units_info = game_controller.unit_controller.get_all_units_info_with_path_state()
+            units_info = (
+                game_controller.unit_controller.get_all_units_info_with_path_state()
+            )
             for uid, uy, ux, ut, state in units_info:
                 f.write(f"unit_id:{uid} type:{ut} x:{ux} y:{uy} state:{state}\n")
 
