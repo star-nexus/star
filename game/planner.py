@@ -130,7 +130,9 @@ class PathPlanner:
 
         # For attack actions, allow moving to enemy positions
         if action == "attack":
-            return self.unit_controller.is_enemy(current_unit[2], unit_info[3])
+            return self.unit_controller.combat_system.is_enemy(
+                current_unit[2], unit_info[3]
+            )
 
         return False
 
