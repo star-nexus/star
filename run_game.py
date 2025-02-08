@@ -20,6 +20,7 @@ class GameSettings:
         # Game state
         if args.ai:
             self.player_mode = "ai"
+            self.ai_type = args.ai_type
         else:
             self.player_mode = "human"
         self.vision_mode = 1
@@ -55,7 +56,10 @@ class GameController:
     def __init__(self, settings: GameSettings, environment_map, unit_map):
         self.settings = settings
         self.unit_controller = TwoForcesEncounter(
-            environment_map, unit_map, tile_size=settings.tile_size
+            environment_map,
+            unit_map,
+            tile_size=settings.tile_size,
+            player_mode=settings.player_mode,
         )
         self.mouse_grid_x = 0
         self.mouse_grid_y = 0
@@ -158,16 +162,23 @@ class GameLoop:
             self.clock.tick(30)
             self.frame_count += 1
 
-            # Handle periodic saves
-            if self.frame_count % self.settings.save_interval == 0:
-                StateManager.save_game_state(self.settings, self.game_controller)
-
             # Handle AI mode actions
             if (
                 self.ai_controller
                 and self.frame_count % self.settings.action_interval == 0
             ):
-                self.ai_controller.execute_actions(self.game_controller)
+                if self.settings.ai_type == "monolithic":
+                    # Handle periodic saves
+                    if self.frame_count % self.settings.save_interval == 0:
+                        StateManager.save_game_state(
+                            self.settings, self.game_controller
+                        )
+                    self.ai_controller.execute_actions(self.game_controller)
+                elif self.settings.ai_type == "muti-agent":
+                    if self.frame_count % self.settings.save_interval == 0:
+                        self.ai_controller.multi_agent_think(self.game_controller)
+                    self.ai_controller.multi_agent_do(self.game_controller)
+                    # self.ai_controller.future_execute_actions(self.game_controller)
 
             self.running = self.game_controller.handle_events()
 
@@ -321,6 +332,12 @@ def parse_args():
     parser.add_argument(
         "--ai", action="store_true", help="Run the game in AI mode (default: human)"
     )
+    parser.add_argument(
+        "--ai_type",
+        default="muti-agent",
+        choices=["monolithic", "muti-agent"],
+        help="AI type to use (default: monolithic)",
+    )
     return parser.parse_args()
 
 
@@ -334,9 +351,7 @@ def main():
     generator = MapGenerator(
         settings.map_width, settings.map_height, "map_generator/map_tiles"
     )
-    environment_map, unit_map = generator.generate_maps(
-        r_unit_count=10, w_unit_count=10
-    )
+    environment_map, unit_map = generator.generate_maps(r_unit_count=3, w_unit_count=3)
     game_controller = GameController(settings, environment_map, unit_map)
 
     # Create and run game loop

@@ -1,4 +1,13 @@
+import os
+from string import Template
+import sys
 from typing import Dict, Tuple, Optional, List, Any
+
+import yaml
+
+# 添加顶层目录到 sys.path
+sys.path.append("..")
+from mlong.agent.role_play.role_play_agent import RolePlayAgent
 
 
 class Unit:
@@ -8,7 +17,7 @@ class Unit:
     Responsible for maintaining the game's unit information and state.
     """
 
-    def __init__(self, unit_map):
+    def __init__(self, unit_map, mode):
         """
         Initialize the unit manager.
 
@@ -23,6 +32,7 @@ class Unit:
         self.skills = []  # tools used by LLM
         self.shared_memory = ""
         self.knowledge = ""
+        self.agents = []
         # ============ To do ==============
 
         # Unit/Agent states
@@ -34,6 +44,52 @@ class Unit:
 
         # Initialize
         self._initialize_units()
+
+        # 如果ai模式
+        if mode == "ai":
+            print("AI模式")
+            self.init_agent()
+
+    def init_agent(self):
+        print(len(self.unit_all_info))
+        for id, (y, x, utype, _) in self.unit_all_info.items():
+            print(f"初始化单位 {id} {utype}")
+            match utype:
+                case _ as s if "shan" in s:
+                    with open("configs/shan.yaml", "r") as f:
+                        agent_config = yaml.safe_load(f)
+                    agent = RolePlayAgent(role_info=agent_config)
+                    agent.id = id
+                    self.agents.append(agent)
+                case _ as s if "shui" in s:
+                    with open("configs/shui.yaml", "r") as f:
+                        agent_config = yaml.safe_load(f)
+                    agent = RolePlayAgent(role_info=agent_config)
+                    agent.id = id
+                    self.agents.append(agent)
+                case _ as s if "ping" in s:
+                    with open("configs/ping.yaml", "r") as f:
+                        agent_config = yaml.safe_load(f)
+                    agent = RolePlayAgent(role_info=agent_config)
+                    agent.id = id
+                    self.agents.append(agent)
+                case _:
+                    print("未知单位类型")
+                    break
+        print("初始化完成")
+        print(f"目前有 {len(self.agents)} 个单位")
+
+    def agent_run(self, env_status, agent_status):
+        obs = """
+棋盘情况:
+    地图信息:
+        $env_status
+    单位信息:
+        $agent_status
+"""
+        obs = Template(obs).substitute(env_status=env_status, agent_status=agent_status)
+        for agent in self.agents:
+            agent.step(obs)
 
     def _initialize_units(self) -> None:
         """Scan unit_map and initialize unit data"""

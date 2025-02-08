@@ -87,7 +87,7 @@ Util
 class TwoForcesEncounter:
     def __init__(self, environment_map, unit_map, tile_size=32, player_mode="human"):
         # Initialize unit manager
-        self.unit_manager = Unit(unit_map)
+        self.unit_manager = Unit(unit_map, player_mode)
 
         # Meta
         self._is_ai_mode = player_mode == "ai"
@@ -116,6 +116,11 @@ class TwoForcesEncounter:
     @property
     def selected_unit_id(self):
         return self.unit_manager.selected_unit_id
+
+    @selected_unit_id.setter
+    def selected_unit_id(self, value):
+        """Setter for selected_unit_id"""
+        self.unit_manager.selected_unit_id = value
 
     @property
     def selected_unit_info(self):
@@ -147,22 +152,24 @@ class TwoForcesEncounter:
 
     def load_action(self, unit_id, action, params):
         """Load AI actions"""
+        original_selected = None
         if unit_id not in self.unit_manager.unit_all_info:
             return
-
-        original_selected = self.unit_manager.selected_unit_id
+        if self.unit_manager.selected_unit_id is not None:
+            original_selected = self.unit_manager.selected_unit_id
         try:
             self.unit_manager.selected_unit_id = unit_id
             if action == "move":
                 ty, tx = params
                 self.plan(ty, tx, action="move")
             elif action == "attack":
-                target_uid = params
+                target_uid = params[0]  # list type 可迭代类型，为了方便打印
                 if target_uid in self.unit_manager.unit_all_info:
                     ty, tx, _, _ = self.unit_manager.unit_all_info[target_uid]
                     self.plan(ty, tx, action="attack")
         finally:
-            self.unit_manager.selected_unit_id = original_selected
+            if original_selected is not None:
+                self.unit_manager.selected_unit_id = original_selected
 
     def select_unit_by_mouse(self, mouse_pos):
         grid_x = mouse_pos[0] // self.tile_size

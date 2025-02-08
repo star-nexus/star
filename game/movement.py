@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Tuple, Optional
 import numpy as np
 
@@ -123,11 +124,11 @@ class MovementController:
         if target_unit:
             if self.combat_system.is_enemy(utype, target_unit[3]):
                 if current_action == "attack":
-                    self.combat_system.execute_combat(unit_id, (ny, nx))
+                    self.combat_system.combat(unit_id, (ny, nx))
                 else:
                     # move遇敌随机决定战或绕路
                     if random.random() < 0.5:
-                        self.combat_system.execute_combat(unit_id, (ny, nx))
+                        self.combat_system.combat(unit_id, (ny, nx))
                     else:
                         self.path_planner.reroute(unit_id)
             else:
