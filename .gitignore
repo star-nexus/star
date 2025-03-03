@@ -173,3 +173,4 @@ test.toml
 unit_action.txt
 unit_status.txt
 env_status.txt
+*.txt
