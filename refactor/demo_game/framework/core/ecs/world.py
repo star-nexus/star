@@ -9,7 +9,7 @@ class World:
     是整个实体-组件-系统架构的中心点，负责协调实体和系统之间的交互
     使用嵌套字典存储组件数据，提高查询效率
     """
-    
+
     def __init__(self):
         """初始化游戏世界（由于单例模式，只在第一次创建实例时调用）"""
         self.entities = set()  # 存储所有实体ID的集合
@@ -41,7 +41,6 @@ class World:
         for component_dict in self.components.values():
             component_dict.pop(entity, None)
 
-
     def add_component(self, entity: Entity, component: Component) -> None:
         """
         为实体添加组件
@@ -55,7 +54,6 @@ class World:
             self.components[component_type] = {}
         self.components[component_type][entity] = component
 
-
     def remove_component(self, entity: Entity, component_type: Type) -> None:
         """
         移除实体的组件
@@ -65,8 +63,7 @@ class World:
             component_type: 要移除的组件类型
         """
         if component_type in self.components:
-            self.components[component_type].pop(entity,None)
-
+            self.components[component_type].pop(entity, None)
 
     def get_component(self, entity: Entity, component_type: Type) -> object:
         """
@@ -92,7 +89,10 @@ class World:
         返回:
             bool: 如果实体拥有该类型组件则返回True
         """
-        return component_type in self.components and entity in self.components[component_type]
+        return (
+            component_type in self.components
+            and entity in self.components[component_type]
+        )
 
     def add_system(self, system):
         """
@@ -105,7 +105,6 @@ class World:
             System: 被注册的系统对象
         """
         self.systems.append(system)
-
 
         # 根据优先级排序系统
         self.systems.sort(key=lambda s: s.priority)
@@ -130,7 +129,7 @@ class World:
         """
         for system in self.systems:
             if system.is_enabled():
-                system.update(self,delta_time)
+                system.update(self, delta_time)
 
     def get_entities_with_components(self, *component_types: Type) -> List[Entity]:
         """
@@ -142,6 +141,8 @@ class World:
         """
         entities = []
         for entity in self.entities:
-            if all(self.get_component(entity, ct) is not None for ct in component_types):
+            if all(
+                self.get_component(entity, ct) is not None for ct in component_types
+            ):
                 entities.append(entity)
         return entities
