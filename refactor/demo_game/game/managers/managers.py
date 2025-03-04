@@ -1,4 +1,4 @@
-from framework.managers.events import EventManager
+from framework.managers.events import EventManager, Message
 
 
 class GameManager:
@@ -19,15 +19,17 @@ class GameManager:
             "player_enemy_collision", self._handle_player_enemy_collision
         )
 
-    def _handle_player_enemy_collision(self, event_data):
+    def _handle_player_enemy_collision(self, message):
         """处理玩家与敌人碰撞事件
 
         Args:
-            event_data: 包含碰撞信息的事件数据
+            message: 包含碰撞信息的Message对象
         """
         if self.is_game_over:
             return
 
+        # 从Message对象的data属性中获取数据
+        event_data = message.data if hasattr(message, "data") else message
         player_speed = event_data.get("player_speed", 0)
 
         # 判断游戏胜负
@@ -40,12 +42,26 @@ class GameManager:
 
         self.is_game_over = True
         # 发布游戏结束事件
-        self.event_manager.publish("game_over", {"victory": self.victory})
+        self.event_manager.publish(
+            "game_over",
+            Message(
+                topic="game_over",
+                data_type="game_event",
+                data={"victory": self.victory},
+            ),
+        )
 
     def reset(self):
         """重置游戏状态"""
+        # 重置游戏状态变量
         self.is_game_over = False
         self.victory = False
+        # 发布游戏重置事件，让其他对象可以响应
+        self.event_manager.publish(
+            "game_reset",
+            Message(topic="game_reset", data_type="game_event", data={}),
+        )
+        print("Game Manager: Game state reset complete")
 
     def cleanup(self):
         """清理资源"""

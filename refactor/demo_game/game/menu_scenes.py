@@ -1,87 +1,143 @@
 import pygame
-from framework.core.ecs.world import World
 from framework.managers.scenes import Scene
 from framework.managers.renders import RenderManager
-from game.components import Position, Renderable
+
 
 class MenuScene(Scene):
     """游戏菜单场景，显示开始游戏选项"""
-    
-    def __init__(self, world: World):
-        super().__init__(world)
-        self.font = None
-        self.title_text = None
-        self.start_text = None
-        
+
+    def __init__(self, engine):
+        super().__init__(engine)
+        self.title_label = None
+        self.start_button = None
+        # 添加场景加载状态标志
+        self.is_loaded = False
+
     def enter(self) -> None:
-        # 初始化字体
-        pygame.font.init()
-        self.font = pygame.font.Font(None, 74)  # 使用默认字体
-        
-        # 创建文本
-        self.title_text = self.font.render("Simple Demo Game", True, (255, 255, 255))
-        self.start_text = self.font.render("Press SPACE to Start", True, (255, 255, 255))
-    
+        # 防止重复初始化
+        if self.is_loaded:
+            return
+
+        # 加载字体
+        title_font = self.engine.resource_manager.load_font("default", None, 74)
+        button_font = self.engine.resource_manager.load_font("default", None, 48)
+
+        # 创建标题标签
+        self.title_label = self.engine.ui_manager.create_label(
+            position=(200, 150),
+            size=(400, 80),
+            text="Simple Demo Game",
+            font=title_font,
+            text_color=(255, 255, 255),
+            z_index=10,
+        )
+
+        # 创建开始游戏按钮
+        self.start_button = self.engine.ui_manager.create_button(
+            position=(300, 350),
+            size=(200, 60),
+            text="Start Game",
+            font=button_font,
+            on_click=self._on_start_click,
+            z_index=10,
+        )
+
+        # 标记场景已加载
+        self.is_loaded = True
+        print("MenuScene: Scene loaded")
+
     def exit(self) -> None:
-        self.font = None
-        self.title_text = None
-        self.start_text = None
-    
+        # 清理UI元素
+        if self.title_label:
+            self.engine.ui_manager.remove_element(self.title_label)
+            self.title_label = None
+
+        if self.start_button:
+            self.engine.ui_manager.remove_element(self.start_button)
+            self.start_button = None
+
+        # 标记场景已卸载
+        self.is_loaded = False
+        print("MenuScene: Scene unloaded")
+
+    def _on_start_click(self):
+        """开始游戏按钮点击回调"""
+        # 立即清理UI元素以防止重叠
+        self.exit()
+        self.engine.switch_scene("game")
+
     def update(self, delta_time: float) -> None:
-        # 检查空格键是否被按下
+        # 检查空格键是否被按下（作为备用控制方式）
         keys = pygame.key.get_pressed()
         if keys[pygame.K_SPACE]:
-            # 切换到游戏场景
+            # 立即清理UI元素以防止重叠
+            self.exit()
             self.engine.switch_scene("game")
-    
+
     def render(self, render_manager: RenderManager) -> None:
-        if self.title_text and self.start_text:
-            # 计算文本位置
-            title_rect = self.title_text.get_rect(center=(400, 200))
-            start_rect = self.start_text.get_rect(center=(400, 400))
-            
-            # 渲染文本
-            render_manager.draw(self.title_text, title_rect)
-            render_manager.draw(self.start_text, start_rect)
+        # UI元素由UI系统自动渲染，这里不需要额外操作
+        pass
+
 
 class GameOverScene(Scene):
     """游戏结束场景，显示游戏结果"""
-    
-    def __init__(self, world: World, is_victory: bool = False):
-        super().__init__(world)
+
+    def __init__(self, engine, is_victory: bool = False):
+        super().__init__(engine)
         self.is_victory = is_victory
-        self.font = None
-        self.result_text = None
-        self.restart_text = None
-    
+        self.result_label = None
+        self.restart_button = None
+
     def enter(self) -> None:
-        # 初始化字体
-        pygame.font.init()
-        self.font = pygame.font.Font(None, 74)  # 使用默认字体
-        
-        # 创建文本
-        result = "Victory!" if self.is_victory else "Defeat!"
-        self.result_text = self.font.render(result, True, (255, 255, 255))
-        self.restart_text = self.font.render("Press R to Restart", True, (255, 255, 255))
-    
+        # 加载字体
+        title_font = self.engine.resource_manager.load_font("default", None, 74)
+        button_font = self.engine.resource_manager.load_font("default", None, 48)
+
+        # 创建结果标签
+        result_text = "Victory!" if self.is_victory else "Defeat!"
+        result_color = (
+            (0, 255, 0) if self.is_victory else (255, 0, 0)
+        )  # 胜利为绿色，失败为红色
+
+        self.result_label = self.engine.ui_manager.create_label(
+            position=(300, 150),
+            size=(200, 80),
+            text=result_text,
+            font=title_font,
+            text_color=result_color,
+            z_index=10,
+        )
+
+        # 创建重新开始按钮
+        self.restart_button = self.engine.ui_manager.create_button(
+            position=(300, 350),
+            size=(200, 60),
+            text="Restart",
+            font=button_font,
+            on_click=self._on_restart_click,
+            z_index=10,
+        )
+
     def exit(self) -> None:
-        self.font = None
-        self.result_text = None
-        self.restart_text = None
-    
+        # 清理UI元素
+        if self.result_label:
+            self.engine.ui_manager.remove_element(self.result_label)
+            self.result_label = None
+
+        if self.restart_button:
+            self.engine.ui_manager.remove_element(self.restart_button)
+            self.restart_button = None
+
+    def _on_restart_click(self):
+        """重新开始按钮点击回调"""
+        self.engine.switch_scene("menu")
+
     def update(self, delta_time: float) -> None:
-        # 检查空格键是否被按下
+        # 检查R键是否被按下（作为备用控制方式）
         keys = pygame.key.get_pressed()
         if keys[pygame.K_r]:
-            # 切换回菜单场景
             self.engine.switch_scene("menu")
-    
+
     def render(self, render_manager: RenderManager) -> None:
-        if self.result_text and self.restart_text:
-            # 计算文本位置
-            result_rect = self.result_text.get_rect(center=(400, 200))
-            restart_rect = self.restart_text.get_rect(center=(400, 400))
-            
-            # 渲染文本
-            render_manager.draw(self.result_text, result_rect)
-            render_manager.draw(self.restart_text, restart_rect)
+        # UI元素由UI系统自动渲染，这里不需要额外操作
+        pass
