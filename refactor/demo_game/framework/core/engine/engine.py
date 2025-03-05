@@ -119,14 +119,10 @@ class Engine:
         self.scene_manager.render(self.render_manager)
 
         # 调用所有游戏渲染系统
-        for system in self.world.systems:
-            if hasattr(system, "render") and system.is_enabled():
-                system.render(self.render_manager)
+        self.world.render(self.render_manager)
 
         # 调用UI渲染系统
-        for system in self.ui_manager.world.systems:
-            if hasattr(system, "render") and system.is_enabled():
-                system.render(self.render_manager)
+        self.ui_manager.world.render(self.render_manager)
 
         # 将渲染管理器的内容绘制到屏幕
         self.render_manager.render(self.screen)

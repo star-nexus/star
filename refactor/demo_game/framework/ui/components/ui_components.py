@@ -12,12 +12,6 @@ class UITransformComponent(Component):
     size: Tuple[int, int]
     z_index: int = 0
 
-    @property
-    def rect(self) -> pygame.Rect:
-        return pygame.Rect(
-            self.position[0], self.position[1], self.size[0], self.size[1]
-        )
-
 
 @dataclass
 class UIRenderComponent(Component):

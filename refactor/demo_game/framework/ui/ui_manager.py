@@ -21,8 +21,9 @@ class UIManager:
         self.root_elements = []
 
         # 注册UI系统
-        self.ui_render_system = UIRenderSystem(self.world)
-        self.ui_event_system = UIEventSystem(self.world, event_manager)
+        self.ui_render_system = UIRenderSystem()
+        self.ui_event_system = UIEventSystem()
+        self.ui_event_system.setup(self.world, event_manager)
 
         self.world.add_system(self.ui_render_system)
         self.world.add_system(self.ui_event_system)

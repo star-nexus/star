@@ -50,7 +50,7 @@ class System(ABC):
         """
         pass
 
-    def render(self, render_manager: Any) -> None:
+    def render(self, world: Any, render_manager: Any) -> None:
         """
         渲染系统，可由子类实现以提供可视化输出
         并非所有系统都需要渲染，默认为空实现
