@@ -64,7 +64,16 @@ class InputManager:
                 Message(
                     topic="MOUSEMOTION",
                     data_type="mouse_event",
-                    data={"pos": event.pos, "rel": event.rel},
+                    data={"pos": event.pos, "rel": event.rel, "buttons": event.buttons},
+                ),
+            )
+        elif event.type == pygame.MOUSEWHEEL:
+            self.publisher(
+                "MOUSEWHEEL",
+                Message(
+                    topic="MOUSEWHEEL",
+                    data_type="mouse_event",
+                    data={"x": event.x, "y": event.y},
                 ),
             )
 

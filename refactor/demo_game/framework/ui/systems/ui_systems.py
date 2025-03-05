@@ -10,9 +10,10 @@ from framework.managers.events import EventManager, Message
 class UIRenderSystem(System):
     """UI渲染系统，负责渲染具有UI组件的实体"""
 
-    def __init__(self, world: World):
+    def __init__(
+        self,
+    ):
         super().__init__([UITransformComponent, UIRenderComponent], priority=100)
-        self.world = world  # 将在UIManager中设置
 
     def update(self, world: World, delta_time: float) -> None:
         # 在更新方法中更新按钮状态
@@ -27,12 +28,11 @@ class UIRenderSystem(System):
             else:
                 button.current_color = button.normal_color
 
-    def render(self, render_manager):
+    def render(self, world, render_manager):
         # 设置UI渲染层级
         render_manager.set_layer(100)
 
         # 获取所有UI实体并按z_index排序
-        world = self.world
         ui_entities = world.get_entities_with_components(
             UITransformComponent, UIRenderComponent
         )
@@ -73,22 +73,39 @@ class UIRenderSystem(System):
 class UIEventSystem(System):
     """UI事件系统，处理UI相关的输入事件"""
 
-    def __init__(self, world: World, event_manager: EventManager):
+    def __init__(
+        self,
+    ):
         super().__init__([UITransformComponent, UIInteractiveComponent], priority=10)
-        self.event_manager = event_manager
         self.focused_entity = None
-        self.world = world  # 将在UIManager中设置
 
+    def setup(self, world: World, event_manager: EventManager):
+        """系统初始化时调用，订阅相关事件"""
+        self.event_manager = event_manager
         # 注册事件处理
-        self.event_manager.subscribe("MOUSEMOTION", self._process_event)
-        self.event_manager.subscribe("MOUSEBUTTONDOWN", self._process_event)
-        self.event_manager.subscribe("MOUSEBUTTONUP", self._process_event)
-        self.event_manager.subscribe("KEYDOWN", self._process_event)
-        self.event_manager.subscribe("KEYUP", self._process_event)
+        self.event_manager.subscribe(
+            "MOUSEMOTION",
+            lambda message: self._process_event(world, message),
+        )
+        self.event_manager.subscribe(
+            "MOUSEBUTTONDOWN",
+            lambda message: self._process_event(world, message),
+        )
+        self.event_manager.subscribe(
+            "MOUSEBUTTONUP",
+            lambda message: self._process_event(world, message),
+        )
+        self.event_manager.subscribe(
+            "KEYDOWN",
+            lambda message: self._process_event(world, message),
+        )
+        self.event_manager.subscribe(
+            "KEYUP",
+            lambda message: self._process_event(world, message),
+        )
 
-    def _process_event(self, message: Message) -> None:
+    def _process_event(self, world, message: Message) -> None:
         # 处理事件
-        world = self.world
         if not world:
             return
 

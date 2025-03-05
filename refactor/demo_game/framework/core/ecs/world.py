@@ -131,6 +131,17 @@ class World:
             if system.is_enabled():
                 system.update(self, delta_time)
 
+    def render(self, render_manager) -> None:
+        """
+        渲染所有系统
+
+        参数:
+            render_manager: 渲染管理器
+        """
+        for system in self.systems:
+            if hasattr(system, "render") and system.is_enabled():
+                system.render(self, render_manager)
+
     def get_entities_with_components(self, *component_types: Type) -> List[Entity]:
         """
         获取拥有指定组件类型的实体集合

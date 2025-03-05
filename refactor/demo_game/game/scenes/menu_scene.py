@@ -10,6 +10,7 @@ class MenuScene(Scene):
         super().__init__(engine)
         self.title_label = None
         self.start_button = None
+        self.map_edit_button = None  # 添加地图编辑按钮
         # 添加场景加载状态标志
         self.is_loaded = False
 
@@ -34,11 +35,21 @@ class MenuScene(Scene):
 
         # 创建开始游戏按钮
         self.start_button = self.engine.ui_manager.create_button(
-            position=(300, 350),
+            position=(300, 300),
             size=(200, 60),
             text="Start Game",
             font=button_font,
             on_click=self._on_start_click,
+            z_index=10,
+        )
+
+        # 创建地图编辑按钮
+        self.map_edit_button = self.engine.ui_manager.create_button(
+            position=(300, 380),
+            size=(200, 60),
+            text="Map Editor",
+            font=button_font,
+            on_click=self._on_map_edit_click,
             z_index=10,
         )
 
@@ -56,6 +67,10 @@ class MenuScene(Scene):
             self.engine.ui_manager.remove_element(self.start_button)
             self.start_button = None
 
+        if self.map_edit_button:
+            self.engine.ui_manager.remove_element(self.map_edit_button)
+            self.map_edit_button = None
+
         # 标记场景已卸载
         self.is_loaded = False
         print("MenuScene: Scene unloaded")
@@ -65,6 +80,12 @@ class MenuScene(Scene):
         # 立即清理UI元素以防止重叠
         self.exit()
         self.engine.switch_scene("game")
+
+    def _on_map_edit_click(self):
+        """地图编辑按钮点击回调"""
+        # 立即清理UI元素以防止重叠
+        self.exit()
+        self.engine.switch_scene("map_edit")
 
     def update(self, delta_time: float) -> None:
         # 检查空格键是否被按下（作为备用控制方式）
