@@ -46,6 +46,14 @@ class CameraManager:
         self.x = x
         self.y = y
 
+    def zoom_in(self):
+        """放大"""
+        self.adjust_zoom(1.1)
+
+    def zoom_out(self):
+        """缩小"""
+        self.adjust_zoom(0.9)
+
     def adjust_zoom(self, factor):
         """调整缩放级别
 
