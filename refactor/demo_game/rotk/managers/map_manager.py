@@ -641,10 +641,33 @@ class MapManager:
 
     def regenerate_map(self, world):
         """重新生成地图"""
-        if self.map_entity:
-            self.generate_map(world)
-            return True
-        return False
+        # 确保保留map_entity
+        map_entity = self.map_entity
+
+        # 获取当前地图组件
+        map_comp = world.get_component(map_entity, MapComponent)
+        if not map_comp:
+            return
+
+        # 保存尺寸信息
+        width, height = map_comp.width, map_comp.height
+
+        # 清空实体位置字典但保留地图实体
+        map_comp.entities_positions = {}
+
+        # 重新生成地图内容
+        self.generate_map(world)
+
+        # 发送地图重生成事件
+        if hasattr(world, "event_manager"):
+            world.event_manager.publish(
+                "MAP_REGENERATED",
+                Message(
+                    topic="MAP_REGENERATED",
+                    data_type="map_event",
+                    data={"map_entity": map_entity},
+                ),
+            )
 
     def get_movement_cost(self, terrain_type):
         """获取指定地形的移动消耗"""

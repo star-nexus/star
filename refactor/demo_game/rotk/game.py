@@ -20,13 +20,14 @@ def main():
     engine.switch_scene("game")
 
     # 启动游戏
-    try:
-        engine.start()
-    except Exception as e:
-        print(f"游戏发生错误: {e}")
-    finally:
-        pygame.quit()
-        sys.exit()
+    engine.start()
+    # try:
+    #     engine.start()
+    # except Exception as e:
+    #     print(f"游戏发生错误: {e}")
+    # finally:
+    #     pygame.quit()
+    #     sys.exit()
 
 
 if __name__ == "__main__":
