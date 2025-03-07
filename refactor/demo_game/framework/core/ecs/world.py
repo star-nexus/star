@@ -157,3 +157,17 @@ class World:
             ):
                 entities.append(entity)
         return entities
+
+    def get_unique_entity(self, *component_types: Type) -> Entity:
+        """
+        获取拥有指定组件类型的唯一实体
+        参数:
+            *component_types: 要匹配的组件类型
+        返回:
+            Entity: 拥有指定组件类型的唯一实体，如果不存在则返回None
+        """
+        for entity in self.entities:
+            if all(
+                self.get_component(entity, ct) is not None for ct in component_types
+            ):
+                return entity

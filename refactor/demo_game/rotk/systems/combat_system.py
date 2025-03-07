@@ -137,8 +137,8 @@ class CombatSystem(System):
         self._process_attack(attacker, target)
 
         # 如果是远程攻击，则不设置目标为交战状态
-        attacker_movement = self.world.get_component(attacker, UnitMovementComponent)
-        if attacker_movement and attacker_movement.attack_range > 1.0:
+        attacker_stats = self.world.get_component(attacker, UnitStatsComponent)
+        if attacker_stats and attacker_stats.attack_range > 1.0:
             target_state.is_engaged = False
             attacker_state.is_engaged = False
 
@@ -164,9 +164,10 @@ class CombatSystem(System):
             return False
 
         # 检查是否敌对阵营
-        if not self.faction_system.are_factions_hostile(
-            attacker_stats.faction_id, target_stats.faction_id
-        ):
+        # if not self.are_factions_hostile(
+        #     attacker_stats.faction_id, target_stats.faction_id
+        # ):
+        if attacker_stats.faction_id == target_stats.faction_id:
             return False
 
         # 检查是否在攻击范围内
@@ -229,7 +230,7 @@ class CombatSystem(System):
         damage, is_critical = self._calculate_damage(attacker, target)
 
         # 应用伤害
-        self.unit_system.apply_damage(target, damage)
+        self.apply_damage(target, damage)
 
         # 更新补给（如果是远程单位消耗弹药）
         if attacker_supply and attacker_supply.ammo_consumption_rate > 0:
@@ -269,11 +270,11 @@ class CombatSystem(System):
         )
 
         # 检查目标是否死亡
-        if target_stats.health <= 0:
-            # 死亡逻辑在unit_system.apply_damage中处理
-            # 这里处理额外的战斗经验奖励
-            experience = max(10, target_stats.level * 20)  # 基于目标等级的经验奖励
-            self.unit_system.add_experience(attacker, experience)
+        # if target_stats.health <= 0:
+        # 死亡逻辑在unit_system.apply_damage中处理
+        # 这里处理额外的战斗经验奖励
+        # experience = max(10, target_stats.level * 20)  # 基于目标等级的经验奖励
+        # self.unit_system.add_experience(attacker, experience)
 
     def _calculate_hit_chance(self, attacker: int, target: int) -> float:
         """计算攻击命中率
@@ -316,7 +317,7 @@ class CombatSystem(System):
         # 考虑地形因素
         if target_pos:
             terrain_type = self.map_manager.get_terrain_at(
-                self.world, target_pos.grid_x, target_pos.grid_y
+                self.world, target_pos.x, target_pos.y
             )
             terrain_factor = self.TERRAIN_DEFENSE_BONUS.get(terrain_type, 1.0)
             base_chance /= terrain_factor
@@ -356,7 +357,7 @@ class CombatSystem(System):
         # 地形防御加成
         if target_pos:
             terrain = self.map_manager.get_terrain_at(
-                self.world, target_pos.grid_x, target_pos.grid_y
+                self.world, target_pos.x, target_pos.y
             )
             terrain_defense = self.TERRAIN_DEFENSE_BONUS.get(terrain, 1.0)
             damage /= terrain_defense
@@ -381,6 +382,30 @@ class CombatSystem(System):
 
         # 确保最小伤害
         return max(1.0, damage), is_critical
+
+    def apply_damage(self, unit_entity: int, damage: float) -> None:
+        """对单位应用伤害"""
+        stats = self.world.get_component(unit_entity, UnitStatsComponent)
+        if not stats:
+            return
+        stats.health = max(0, stats.health - damage)
+        if stats.health <= 0:
+            state = self.world.get_component(unit_entity, UnitStateComponent)
+            if state:
+                state.state = UnitState.DEAD
+            self.event_manager.publish(
+                "UNIT_KILLED",
+                Message(
+                    topic="UNIT_KILLED",
+                    data_type="combat_event",
+                    data={
+                        "unit_entity": unit_entity,
+                        "unit_name": stats.name,
+                        "faction_id": stats.faction_id,
+                    },
+                ),
+            )
+            self.world.remove_entity(unit_entity)
 
     def _calculate_morale_impact(
         self, attacker: int, target: int, damage: float, is_critical: bool

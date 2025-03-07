@@ -10,6 +10,17 @@ class UnitConversion:
     CELL_SIZE_METERS = 100  # 一个格子代表的实际距离(米)
     PIXEL_TO_METER_RATIO = CELL_SIZE_METERS / CELL_SIZE_PIXELS  # 每像素代表的米数
 
+    # 不同地形的移动系数
+    TERRAIN_MOVEMENT_MULTIPLIER = {
+        "plains": 1.0,
+        "forest": 0.7,
+        "mountain": 0.4,
+        "hill": 0.6,
+        "river": 0.3,
+        "swamp": 0.5,
+        "desert": 0.8,
+    }
+
     @classmethod
     def pixels_to_meters(cls, pixels):
         """将像素转换为米"""
@@ -96,3 +107,35 @@ class UnitConversion:
         """
         meters = cls.calculate_movement_distance(speed_mps, delta_time_seconds)
         return cls.meters_to_pixels(meters)
+
+    @classmethod
+    def get_terrain_movement_multiplier(cls, terrain_name):
+        """
+        获取指定地形的移动系数
+
+        Args:
+            terrain_name: 地形名称
+
+        Returns:
+            float: 移动系数，默认为1.0
+        """
+        # 如果找不到对应地形，则返回默认值1.0
+        return cls.TERRAIN_MOVEMENT_MULTIPLIER.get(terrain_name, 1.0)
+
+    @classmethod
+    def calculate_adjusted_movement(cls, speed_mps, terrain_type, delta_time_seconds):
+        """
+        计算考虑地形的实际移动距离
+
+        Args:
+            speed_mps: 速度，单位米/秒
+            terrain_type: 地形类型
+            delta_time_seconds: 时间间隔
+
+        Returns:
+            float: 调整后的移动距离，单位米
+        """
+        terrain_name = getattr(terrain_type, "value", str(terrain_type).lower())
+        multiplier = cls.get_terrain_movement_multiplier(terrain_name)
+        adjusted_speed = speed_mps * multiplier
+        return cls.calculate_movement_distance(adjusted_speed, delta_time_seconds)

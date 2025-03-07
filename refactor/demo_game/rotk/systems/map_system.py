@@ -15,6 +15,7 @@ from rotk.components import (
     FactionComponent,
     UnitStateComponent,
     TERRAIN_COLORS,
+    TerrainType,
 )
 
 from rotk.managers import MapManager, CameraManager
@@ -150,16 +151,47 @@ class MapSystem(System):
                     self.move_target = None
                     print(f"选中单位: {unit_stats.name}")
 
+                    # 发布单位选择事件
+                    self.event_manager.publish(
+                        "UNIT_SELECTED",
+                        Message(
+                            topic="UNIT_SELECTED",
+                            data_type="unit_event",
+                            data={
+                                "unit": clicked_unit,
+                                "unit_name": unit_stats.name,
+                                "faction_id": unit_stats.faction_id,
+                            },
+                        ),
+                    )
+
                 elif self.selected_unit:
                     # 如果已经有选中的单位，且点击的是其他阵营的单位，发起攻击
                     selected_stats = world.get_component(
                         self.selected_unit, UnitStatsComponent
                     )
 
-                    if selected_stats and self._are_units_hostile(
-                        world, self.selected_unit, clicked_unit
+                    # 简化敌对检查 - 不同阵营就视为敌对
+                    if (
+                        selected_stats
+                        and selected_stats.faction_id != unit_stats.faction_id
                     ):
                         self.target_unit = clicked_unit
+
+                        # 发布目标选择事件
+                        self.event_manager.publish(
+                            "TARGET_SELECTED",
+                            Message(
+                                topic="TARGET_SELECTED",
+                                data_type="unit_event",
+                                data={
+                                    "target": clicked_unit,
+                                    "target_name": unit_stats.name,
+                                    "target_faction_id": unit_stats.faction_id,
+                                },
+                            ),
+                        )
+
                         # 发布攻击命令事件
                         self.event_manager.publish(
                             "ATTACK_COMMAND",
@@ -172,11 +204,8 @@ class MapSystem(System):
                                 },
                             ),
                         )
-                        target_stats = world.get_component(
-                            clicked_unit, UnitStatsComponent
-                        )
                         print(
-                            f"攻击目标: {target_stats.name if target_stats else '未知单位'}"
+                            f"攻击目标: {unit_stats.name if unit_stats else '未知单位'}"
                         )
             else:
                 # 如果有选中的玩家单位且点击的是空地，则发送移动命令
@@ -192,12 +221,9 @@ class MapSystem(System):
                     ):
                         # 转换屏幕坐标为世界坐标
                         world_pos = self.camera_manager.screen_to_world(*mouse_pos)
-                        # map_comp = world.get_component(
-                        #     self.map_manager.map_entity, MapComponent
-                        # )
                         map_entity = world.get_entities_with_components(MapComponent)
-                        # map 只有一份
-                        map_comp = map_entity[0].get_component(MapComponent)
+                        map_comp = world.get_component(map_entity[0], MapComponent)
+
                         if map_comp:
                             # 将世界坐标转换为格子坐标
                             grid_x = int(world_pos[0] / map_comp.cell_size)
@@ -228,46 +254,44 @@ class MapSystem(System):
                     self._clear_selection()
 
     def _get_unit_at_screen_position(self, world: World, screen_pos: tuple) -> int:
-        """获取屏幕位置对应的单位实体ID
-
-        Args:
-            world: 游戏世界
-            screen_pos: 屏幕坐标 (x, y)
-
-        Returns:
-            int: 单位实体ID，如果没有单位则返回None
-        """
-        if not self.camera_manager:  # or not self.map_manager:
+        """获取屏幕位置对应的单位实体ID"""
+        if not self.camera_manager:
             return None
 
         # 获取地图组件
-        # map_comp = world.get_component(self.map_manager.map_entity, MapComponent)
         map_entity = world.get_entities_with_components(MapComponent)
-        # map 只有一份
         map_comp = world.get_component(map_entity[0], MapComponent)
         if not map_comp:
             return None
 
         # 转换为世界坐标
         world_pos = self.camera_manager.screen_to_world(*screen_pos)
-        grid_x = int(world_pos[0] / map_comp.cell_size)
-        grid_y = int(world_pos[1] / map_comp.cell_size)
 
-        # 检查是否有单位在该位置
-        # for entity, (x, y) in map_comp.entities_positions.items():
-        #     precise_pos = world.get_component(entity, PrecisePositionComponent)
-        #     if precise_pos:
-        #         # 使用精确位置比较
-        #         unit_grid_x = precise_pos.grid_x
-        #         unit_grid_y = precise_pos.grid_y
-        #     else:
-        #         unit_grid_x = x
-        #         unit_grid_y = y
+        # 遍历所有单位，检查点击位置
+        units = world.get_entities_with_components(
+            UnitPositionComponent, UnitRenderComponent
+        )
 
-        #     # 简单判断是否在同一格子
-        #     if unit_grid_x == grid_x and unit_grid_y == grid_y:
-        #         if world.has_component(entity, UnitStatsComponent):
-        #             return entity
+        for entity in units:
+            unit_pos = world.get_component(entity, UnitPositionComponent)
+            unit_render = world.get_component(entity, UnitRenderComponent)
+
+            if not unit_pos or not unit_render:
+                continue
+
+            # 计算单位在世界中的位置
+            unit_world_x = unit_pos.x * map_comp.cell_size
+            unit_world_y = unit_pos.y * map_comp.cell_size
+
+            # 计算距离
+            dx = world_pos[0] - unit_world_x
+            dy = world_pos[1] - unit_world_y
+            distance = math.sqrt(dx * dx + dy * dy)
+
+            # 检查是否点击在单位上 (使用单位大小的一半作为点击半径)
+            click_radius = unit_render.size / 2 * self.camera_manager.zoom
+            if distance <= click_radius:
+                return entity
 
         return None
 
@@ -563,18 +587,63 @@ class MapSystem(System):
                 self.player_faction_id = 1  # 魏国
                 self._clear_selection()
                 print(f"当前控制阵营: 魏国 (蓝色)")
+                # 发布阵营切换事件
+                self.event_manager.publish(
+                    "FACTION_SWITCHED",
+                    Message(
+                        topic="FACTION_SWITCHED",
+                        data_type="faction_change",
+                        data={
+                            "faction_id": self.player_faction_id,
+                            "faction_name": "魏国",
+                        },
+                    ),
+                )
             elif key == pygame.K_2:
                 self.player_faction_id = 2  # 蜀国
                 self._clear_selection()
                 print(f"当前控制阵营: 蜀国 (红色)")
+                self.event_manager.publish(
+                    "FACTION_SWITCHED",
+                    Message(
+                        topic="FACTION_SWITCHED",
+                        data_type="faction_change",
+                        data={
+                            "faction_id": self.player_faction_id,
+                            "faction_name": "蜀国",
+                        },
+                    ),
+                )
             elif key == pygame.K_3:
                 self.player_faction_id = 3  # 吴国
                 self._clear_selection()
                 print(f"当前控制阵营: 吴国 (绿色)")
+                self.event_manager.publish(
+                    "FACTION_SWITCHED",
+                    Message(
+                        topic="FACTION_SWITCHED",
+                        data_type="faction_change",
+                        data={
+                            "faction_id": self.player_faction_id,
+                            "faction_name": "吴国",
+                        },
+                    ),
+                )
             elif key == pygame.K_4:
                 self.player_faction_id = 4  # 黄巾
                 self._clear_selection()
                 print(f"当前控制阵营: 黄巾 (黄色)")
+                self.event_manager.publish(
+                    "FACTION_SWITCHED",
+                    Message(
+                        topic="FACTION_SWITCHED",
+                        data_type="faction_change",
+                        data={
+                            "faction_id": self.player_faction_id,
+                            "faction_name": "黄巾",
+                        },
+                    ),
+                )
 
     def _clear_selection(self):
         """清除当前选择"""
