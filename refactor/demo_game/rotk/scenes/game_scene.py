@@ -10,7 +10,12 @@ from rotk.systems import (
     CombatSystem,
     RenderSystem,
 )
-from rotk.managers import MapManager, CameraManager, UnitManager
+from rotk.managers import (
+    MapManager,
+    CameraManager,
+    UnitManager,
+    FactionManager,
+)
 from rotk.components import (
     MapComponent,
     PositionComponent,
@@ -18,6 +23,7 @@ from rotk.components import (
     UnitType,
 )
 from rotk.configs import UNIT_CONFIGS
+from framework.managers.events import Message
 
 
 class GameScene(Scene):
@@ -86,11 +92,26 @@ class GameScene(Scene):
         )
         self.world.add_system(self.combat_system)
 
+        # 初始化渲染系统，确保它与地图系统使用同一玩家阵营ID
         self.render_system = RenderSystem()
         self.render_system.initialize(
             self.world, self.engine.event_manager, self.camera_manager
         )
+        self.render_system.player_faction_id = self.player_faction_id  # 确保同步
         self.world.add_system(self.render_system)
+
+        # 通知渲染系统当前阵营
+        self.engine.event_manager.publish(
+            "FACTION_SWITCHED",
+            Message(
+                topic="FACTION_SWITCHED",
+                data_type="faction_event",
+                data={
+                    "faction_id": self.player_faction_id,
+                    "faction_name": "蜀国",  # 默认为蜀国
+                },
+            ),
+        )
 
         # 创建一些测试单位
         self._create_test_units()
@@ -158,7 +179,7 @@ class GameScene(Scene):
     def _regenerate_map(self):
         """重新生成地图的协调函数"""
         # 清空所有单位
-        for entity in self.world.get_entities_with_components(PrecisePositionComponent):
+        for entity in self.world.get_entities_with_components(UnitPositionComponent):
             self.world.remove_entity(entity)
 
         self.player_units = []
@@ -189,6 +210,9 @@ class GameScene(Scene):
 
         map_width, map_height = map_comp.width, map_comp.height
 
+        # 首先创建各个阵营
+        self.faction_manager = FactionManager(self.world, self.engine.event_manager)
+
         # 为三个主要阵营创建单位
         # 魏国单位 (阵营ID: 1) - 放在地图左侧
         wei_start_x = map_width // 4
@@ -196,17 +220,17 @@ class GameScene(Scene):
 
         # 创建盾兵方阵
         wei_shield_units = self.unit_manager.create_unit_formation(
-            UnitType.SHIELD_INFANTRY, 1, wei_start_x, wei_start_y - 3, 9, "square"
+            UnitType.SHIELD_INFANTRY, 1, wei_start_x, wei_start_y - 3, 9, 2.0, "square"
         )
 
         # 创建弓箭手
         wei_archer_units = self.unit_manager.create_unit_formation(
-            UnitType.ARCHER, 1, wei_start_x - 2, wei_start_y + 3, 5, "line"
+            UnitType.ARCHER, 1, wei_start_x - 2, wei_start_y + 3, 5, 2.0, "line"
         )
 
         # 创建骑兵
         wei_cavalry = self.unit_manager.create_unit_formation(
-            UnitType.HEAVY_CAVALRY, 1, wei_start_x + 4, wei_start_y, 3, "wedge"
+            UnitType.HEAVY_CAVALRY, 1, wei_start_x + 4, wei_start_y, 3, 2.0, "wedge"
         )
 
         # 蜀国单位 (阵营ID: 2，玩家阵营) - 放在地图右侧
@@ -215,21 +239,16 @@ class GameScene(Scene):
 
         # 蜀国创建长戟兵
         shu_spear_units = self.unit_manager.create_unit_formation(
-            UnitType.SPEAR_INFANTRY, 2, shu_start_x, shu_start_y - 2, 9, "square"
+            UnitType.SPEAR_INFANTRY, 2, shu_start_x, shu_start_y - 2, 9, 2.0, "square"
         )
 
         # 蜀国创建弩手
         shu_crossbow_units = self.unit_manager.create_unit_formation(
-            UnitType.CROSSBOWMAN, 2, shu_start_x + 2, shu_start_y + 3, 5, "line"
-        )
-
-        # 蜀国创建山地步兵
-        shu_mountain_units = self.unit_manager.create_unit_formation(
-            UnitType.MOUNTAIN_INFANTRY, 2, shu_start_x - 4, shu_start_y, 3, "wedge"
+            UnitType.CROSSBOWMAN, 2, shu_start_x + 2, shu_start_y + 3, 5, 2.0, "line"
         )
 
         # 记录玩家单位
-        # self.player_units = shu_spear_units + shu_crossbow_units + shu_mountain_units
+        self.player_units = shu_spear_units + shu_crossbow_units
 
         # 吴国单位 (阵营ID: 3) - 放在地图下方
         wu_start_x = map_width // 2
@@ -237,12 +256,12 @@ class GameScene(Scene):
 
         # 吴国创建骑射手
         wu_mounted_archers = self.unit_manager.create_unit_formation(
-            UnitType.MOUNTED_ARCHER, 3, wu_start_x, wu_start_y, 7, "line"
+            UnitType.MOUNTED_ARCHER, 3, wu_start_x, wu_start_y, 7, 2.0, "line"
         )
 
         # 吴国创建斥候骑兵
         wu_scouts = self.unit_manager.create_unit_formation(
-            UnitType.SCOUT_CAVALRY, 3, wu_start_x - 3, wu_start_y - 3, 3, "wedge"
+            UnitType.SCOUT_CAVALRY, 3, wu_start_x - 3, wu_start_y - 3, 3, 2.0, "wedge"
         )
 
         # 黄巾军单位 (阵营ID: 4) - 随机放置
@@ -258,34 +277,32 @@ class GameScene(Scene):
             # 创建小群黄巾军
             count = random.randint(3, 6)
             self.unit_manager.create_unit_formation(
-                unit_type, 4, rebel_x, rebel_y, count, "square"
+                unit_type, 4, rebel_x, rebel_y, count, 2.0, "square"
             )
 
         # 确保相机位于玩家单位中心
         if self.player_units and self.camera_manager:
             # 获取第一个玩家单位的位置
             first_unit = self.player_units[0]
-            pos = self.world.get_component(first_unit, PrecisePositionComponent)
+            pos = self.world.get_component(first_unit, UnitPositionComponent)
             if pos:
                 # 设置相机中心位置
-                map_comp = self.world.get_component(
-                    self.map_manager.map_entity, MapComponent
+                world_x = pos.x * map_comp.cell_size
+                world_y = pos.y * map_comp.cell_size
+
+                # 将相机中心点设置为玩家位置
+                center_x = world_x - self.camera_manager.screen_width / (
+                    2 * self.camera_manager.zoom
                 )
-                if map_comp:
-                    world_x = pos.grid_x * map_comp.cell_size
-                    world_y = pos.grid_y * map_comp.cell_size
+                center_y = world_y - self.camera_manager.screen_height / (
+                    2 * self.camera_manager.zoom
+                )
 
-                    # 将相机中心点设置为玩家位置
-                    center_x = world_x - self.camera_manager.screen_width / (
-                        2 * self.camera_manager.zoom
-                    )
-                    center_y = world_y - self.camera_manager.screen_height / (
-                        2 * self.camera_manager.zoom
-                    )
-
-                    self.camera_manager.set_position(center_x, center_y)
-                    self.camera_manager.constrain(
-                        map_comp.width, map_comp.height, map_comp.cell_size
-                    )
+                self.camera_manager.set_position(center_x, center_y)
+                self.camera_manager.constrain(
+                    map_comp.width * map_comp.cell_size,
+                    map_comp.height * map_comp.cell_size,
+                    map_comp.cell_size,
+                )
 
         print(f"创建了玩家单位: {len(self.player_units)}")

@@ -3,6 +3,7 @@ import math
 from rotk.components import (
     MapComponent,
     TerrainType,
+    UniqueComponent,
     # TERRAIN_MOVEMENT_COST,
     TERRAIN_COLORS,
 )
@@ -48,6 +49,7 @@ class MapManager:
 
         # 创建地图实体
         map_entity = world.create_entity()
+        world.add_component(map_entity, UniqueComponent(unique_id="map"))
         world.add_component(map_entity, MapComponent(width=width, height=height))
 
         # 生成地图内容
@@ -659,10 +661,12 @@ class MapManager:
     def regenerate_map(self, world):
         """重新生成地图"""
         # 确保保留map_entity
-        map_entity = self.map_entity
+        map_entity = world.get_entities_with_components(MapComponent)
+        if not map_entity:
+            return
 
         # 获取当前地图组件
-        map_comp = world.get_component(map_entity, MapComponent)
+        map_comp = world.get_component(map_entity[0], MapComponent)
         if not map_comp:
             return
 
@@ -740,7 +744,8 @@ class MapManager:
 
     def get_terrain_at(self, world, x, y):
         """获取指定位置的地形类型"""
-        map_comp = world.get_component(self.map_entity, MapComponent)
+        map_entity = world.get_unique_entity(self, MapComponent)
+        map_comp = world.get_component(map_entity, MapComponent)
         if (
             not map_comp
             or x < 0

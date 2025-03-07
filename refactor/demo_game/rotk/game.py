@@ -2,12 +2,8 @@ import pygame
 import sys
 from framework.core.engine import Engine
 
-from rotk.managers import MapManager
-from rotk.scenes import (
-    GameScene,
-)
-
-from rotk.systems import MapSystem
+from rotk.managers import MapManager, FactionManager
+from rotk.scenes import GameScene
 
 
 def main():
@@ -21,13 +17,15 @@ def main():
 
     # 启动游戏
     engine.start()
-    # try:
-    #     engine.start()
-    # except Exception as e:
-    #     print(f"游戏发生错误: {e}")
-    # finally:
-    #     pygame.quit()
-    #     sys.exit()
+
+
+# try:
+#     engine.start()
+# except Exception as e:
+#     print(f"游戏发生错误: {e}")
+# finally:
+#     pygame.quit()
+#     sys.exit()
 
 
 if __name__ == "__main__":

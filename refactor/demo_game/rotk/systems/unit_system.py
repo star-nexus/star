@@ -56,11 +56,11 @@ class UnitSystem(System):
             unit_manager: 单位管理器
             unit_configs: 单位配置（可选）
         """
-        self.world = world
+        # self.world = world
         self.event_manager = event_manager
-        self.map_manager = map_manager
-        self.faction_system = faction_system
-        self.unit_manager = unit_manager
+        # self.map_manager = map_manager
+        # self.faction_system = faction_system
+        # self.unit_manager = unit_manager
 
         # 如果提供了配置，加载它
         # if unit_configs:
@@ -70,10 +70,16 @@ class UnitSystem(System):
         #     self._create_default_unit_configs()
 
         # 订阅单位命令事件
-        self.event_manager.subscribe("MOVE_COMMAND", self._handle_move_command)
-        self.event_manager.subscribe("ATTACK_COMMAND", self._handle_attack_command)
+        self.event_manager.subscribe(
+            "MOVE_COMMAND", lambda message: self._handle_move_command(world, message)
+        )
+        self.event_manager.subscribe(
+            "ATTACK_COMMAND",
+            lambda message: self._handle_attack_command(world, message),
+        )
 
-    # def _create_default_unit_configs(self):
+        # def _create_default_unit_configs(self):
+
     #     """创建默认单位配置"""
     #     # 刀盾兵配置
     #     self.unit_configs[UnitType.SHIELD_INFANTRY] = {
@@ -320,7 +326,7 @@ class UnitSystem(System):
     #         print(f"警告: 地图组件不存在，无法更新单位位置映射")
 
     #     # 更新阵营单位计数 - 确保阵营存在且有效
-    #     if self.faction_system and faction_id in self.faction_system.factions:
+    #     if self.faction_system和 faction_id in self.faction_system.factions:
     #         faction_entity = self.faction_system.factions.get(faction_id, {}).get(
     #             "entity"
     #         )
@@ -596,7 +602,7 @@ class UnitSystem(System):
             # 处理濒死单位
             if stats.health <= 0 and state.state != UnitState.DEAD:
                 state.state = UnitState.DEAD
-                self.destroy_unit(entity)
+                world.remove_entity(entity)
                 continue
 
             # 处理溃逃单位
@@ -609,32 +615,46 @@ class UnitSystem(System):
         moving_units = world.get_entities_with_components(
             UnitPositionComponent, UnitStateComponent, UnitMovementComponent
         )
+
+        # 获取地图信息以确定格子大小和地形
+        map_entities = world.get_entities_with_components(MapComponent)
+        cell_size = 32  # 默认值
+        map_comp = None
+        if map_entities:
+            map_comp = world.get_component(map_entities[0], MapComponent)
+            if map_comp:
+                cell_size = map_comp.cell_size
+
         for entity in moving_units:
             state_comp = world.get_component(entity, UnitStateComponent)
             pos_comp = world.get_component(entity, UnitPositionComponent)
             move_comp = world.get_component(entity, UnitMovementComponent)
+            supply_comp = world.get_component(entity, UnitSupplyComponent)
 
             if state_comp.state == UnitState.MOVING and state_comp.target_position:
                 target_x, target_y = state_comp.target_position
 
                 # 检查是否已到达目标
-                dx = target_x - pos_comp.grid_x
-                dy = target_y - pos_comp.grid_y
+                dx = target_x - pos_comp.x
+                dy = target_y - pos_comp.y
                 distance = math.sqrt(dx * dx + dy * dy)
 
                 if distance < 0.1:  # 足够接近目标
                     # 到达目标，停止移动
-                    pos_comp.grid_x = target_x
-                    pos_comp.grid_y = target_y
-                    pos_comp.offset_x = 0.5  # 居中
-                    pos_comp.offset_y = 0.5
+                    pos_comp.x = target_x
+                    pos_comp.y = target_y
                     state_comp.state = UnitState.IDLE
                     state_comp.target_position = None
                 else:
+                    # 更新单位实际移动速度 - 考虑地形、疲劳、补给等因素
+                    actual_speed = self._calculate_actual_speed(
+                        world, entity, move_comp, supply_comp, map_comp, pos_comp
+                    )
+
                     # 继续移动 - 使用米/秒速度和实际时间计算
                     # 计算在当前时间步内应移动的距离（米）
                     move_distance_meters = UnitConversion.calculate_movement_distance(
-                        move_comp.current_speed, delta_time
+                        actual_speed, delta_time
                     )
 
                     # 将距离转换为格子单位（因为我们是在格子坐标系中移动）
@@ -646,20 +666,98 @@ class UnitSystem(System):
                     move_dir_x = dx / distance if distance > 0 else 0
                     move_dir_y = dy / distance if distance > 0 else 0
 
-                    # 更新位置（现在使用格子单位的距离）
-                    new_grid_x = pos_comp.grid_x + move_dir_x * move_distance_cells
-                    new_grid_y = pos_comp.grid_y + move_dir_y * move_distance_cells
+                    # 确保不会超过目标位置
+                    if move_distance_cells >= distance:
+                        pos_comp.x = target_x
+                        pos_comp.y = target_y
+                        state_comp.state = UnitState.IDLE
+                        state_comp.target_position = None
+                    else:
+                        # 更新位置（使用格子单位的距离）
+                        pos_comp.x += move_dir_x * move_distance_cells
+                        pos_comp.y += move_dir_y * move_distance_cells
 
-                    # 更新格子坐标和偏移
-                    int_grid_x = int(new_grid_x)
-                    int_grid_y = int(new_grid_y)
+                        # 增加疲劳值
+                        if move_comp:
+                            move_comp.fatigue = min(
+                                100, move_comp.fatigue + 0.05 * delta_time
+                            )
 
-                    pos_comp.offset_x = new_grid_x - int_grid_x
-                    pos_comp.offset_y = new_grid_y - int_grid_y
-                    pos_comp.grid_x = int_grid_x
-                    pos_comp.grid_y = int_grid_y
+                        # 消耗补给
+                        if supply_comp:
+                            food_consumption = (
+                                supply_comp.food_consumption_rate * delta_time / 60
+                            )
+                            supply_comp.food_supply = max(
+                                0, supply_comp.food_supply - food_consumption
+                            )
 
-    def _handle_move_command(self, message: Message) -> None:
+    def _calculate_actual_speed(
+        self, world, entity, move_comp, supply_comp, map_comp, pos_comp
+    ):
+        """计算单位的实际移动速度，考虑各种影响因素
+
+        Args:
+            world: 游戏世界
+            entity: 单位实体ID
+            move_comp: 移动组件
+            supply_comp: 补给组件
+            map_comp: 地图组件
+            pos_comp: 位置组件
+
+        Returns:
+            float: 实际移动速度 (米/秒)
+        """
+        # 基础速度
+        base_speed = move_comp.base_speed
+
+        # 地形修正
+        terrain_factor = 1.0
+        if (
+            map_comp
+            and 0 <= int(pos_comp.x) < map_comp.width
+            and 0 <= int(pos_comp.y) < map_comp.height
+        ):
+            current_terrain = map_comp.grid[int(pos_comp.y)][int(pos_comp.x)]
+
+            # 根据单位对地形的适应性修正速度
+            if current_terrain in move_comp.terrain_adaptability:
+                terrain_adaptability = move_comp.terrain_adaptability[current_terrain]
+                if terrain_adaptability == TerrainAdaptability.EXCELLENT:
+                    terrain_factor = 1.2  # 极佳适应性提升速度
+                elif terrain_adaptability == TerrainAdaptability.GOOD:
+                    terrain_factor = 1.0  # 良好适应性正常速度
+                elif terrain_adaptability == TerrainAdaptability.AVERAGE:
+                    terrain_factor = 0.8  # 一般适应性略微减速
+                elif terrain_adaptability == TerrainAdaptability.POOR:
+                    terrain_factor = 0.6  # 较差适应性明显减速
+                elif terrain_adaptability == TerrainAdaptability.VERY_POOR:
+                    terrain_factor = 0.4  # 极差适应性大幅减速
+
+        # 补给修正 - 粮食不足会降低速度
+        supply_factor = 1.0
+        if supply_comp:
+            if supply_comp.food_supply < 10:
+                supply_factor = 0.5  # 粮食严重不足
+            elif supply_comp.food_supply < 30:
+                supply_factor = 0.7  # 粮食不足
+
+        # 疲劳修正 - 疲劳度越高，速度越慢
+        fatigue_factor = 1.0
+        if move_comp.fatigue > 80:
+            fatigue_factor = 0.6  # 极度疲劳
+        elif move_comp.fatigue > 60:
+            fatigue_factor = 0.8  # 疲劳
+        elif move_comp.fatigue > 40:
+            fatigue_factor = 0.9  # 轻微疲劳
+
+        # 计算最终速度，但不超过最大速度
+        actual_speed = base_speed * terrain_factor * supply_factor * fatigue_factor
+        actual_speed = min(actual_speed, move_comp.max_speed)
+
+        return max(0.5, actual_speed)  # 确保速度不会过低
+
+    def _handle_move_command(self, world, message: Message) -> None:
         """处理移动命令
 
         Args:
@@ -673,9 +771,11 @@ class UnitSystem(System):
         if unit_entity is None or target_x is None or target_y is None:
             return
 
+        # 获取地图实体
+        map_entity = world.get_entities_with_components(MapComponent)
         # 获取单位组件
-        pos_comp = self.world.get_component(unit_entity, UnitPositionComponent)
-        state_comp = self.world.get_component(unit_entity, UnitStateComponent)
+        pos_comp = world.get_component(unit_entity, UnitPositionComponent)
+        state_comp = world.get_component(unit_entity, UnitStateComponent)
 
         if pos_comp and state_comp:
             # 设置目标位置
@@ -687,14 +787,12 @@ class UnitSystem(System):
             state_comp.is_engaged = False
 
             # 更新地图位置
-            map_comp = self.world.get_component(
-                self.map_manager.map_entity, MapComponent
-            )
-            if map_comp and unit_entity in map_comp.entities_positions:
-                # 立即更新记录的格子位置为目标位置
-                map_comp.entities_positions[unit_entity] = (target_x, target_y)
+            # map_comp = world.get_component(map_entity[0], MapComponent)
+            # if map_comp and unit_entity in map_comp.entities_positions:
+            #     # 立即更新记录的格子位置为目标位置
+            #     map_comp.entities_positions[unit_entity] = (target_x, target_y)
 
-    def _handle_attack_command(self, message: Message) -> None:
+    def _handle_attack_command(self, world, message: Message) -> None:
         """处理攻击命令
 
         Args:
@@ -707,7 +805,7 @@ class UnitSystem(System):
 
         if attacker:
             # 获取单位组件
-            state_comp = self.world.get_component(attacker, UnitStateComponent)
+            state_comp = world.get_component(attacker, UnitStateComponent)
             if state_comp:
                 # 清除移动目标
                 state_comp.target_position = None

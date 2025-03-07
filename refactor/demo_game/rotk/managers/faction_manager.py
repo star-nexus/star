@@ -1,6 +1,7 @@
 from framework.core.ecs.world import World
 from framework.managers.events import EventManager
 import json
+from rotk.components import FactionComponent
 
 
 class FactionManager:

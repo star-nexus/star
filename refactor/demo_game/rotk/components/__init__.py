@@ -29,3 +29,5 @@ from .unit_component import (
     UnitPositionComponent,
     UnitRenderComponent,
 )
+from .unique_component import UniqueComponent
+from .selection_component import SelectionComponent

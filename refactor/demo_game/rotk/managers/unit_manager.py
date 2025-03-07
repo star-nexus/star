@@ -187,10 +187,9 @@ class UnitManager:
         factions = self.world.get_entities_with_components(FactionComponent)
         for faction in factions:
             faction_comp = self.world.get_component(faction, FactionComponent)
-            if faction_comp:
+            if faction_comp and faction_comp.faction_id == faction_id:
                 faction_color = faction_comp.color
-            else:
-                faction_color = (200, 200, 200)
+                break
         unit_entity = self.world.create_entity()
         self.world.add_component(
             unit_entity,
@@ -203,13 +202,14 @@ class UnitManager:
                 max_health=config["health"],
                 attack=config["attack"],
                 defense=config["defense"],
+                attack_range=config.get("attack_range", 1.0),
             ),
         )
         self.world.add_component(
             unit_entity,
             UnitPositionComponent(
                 x=x,
-                y=x,
+                y=y,
             ),
         )
         move_comp = UnitMovementComponent(
@@ -280,7 +280,7 @@ class UnitManager:
         #                 return random.choice(candidates)
         #     return self.map_manager.find_walkable_position(self.world)
 
-        # def _is_valid_placement(self, x: int, y: int) -> bool:
+    def _is_valid_placement(self, x: int, y: int) -> bool:
         """检查位置是否可以放置单位"""
 
         # if not self.map_manager.is_position_valid(self.world, x, y):
@@ -383,47 +383,23 @@ class UnitManager:
 
         return units
 
-    def destroy_unit(self, unit_entity: int) -> None:
-        """销毁单位"""
-        # unit_stats = self.world.get_component(unit_entity, UnitStatsComponent)
-        # pos = self.world.get_component(unit_entity, PrecisePositionComponent)
-        # if not unit_stats or not pos:
-        #     return
-        # map_comp = self.world.get_component(self.map_manager.map_entity, "MapComponent")
-        # if map_comp and unit_entity in map_comp.entities_positions:
-        #     del map_comp.entities_positions[unit_entity]
-        # faction_entity = self.faction_system.factions.get(
-        #     unit_stats.faction_id, {}
-        # ).get("entity")
-        # if faction_entity:
-        #     faction_comp = self.world.get_component(faction_entity, FactionComponent)
-        #     if faction_comp:
-        #         faction_comp.unit_count = max(0, faction_comp.unit_count - 1)
-        self.world.remove_entity(unit_entity)
-
-    def apply_damage(self, unit_entity: int, damage: float) -> None:
-        """对单位应用伤害"""
-        stats = self.world.get_component(unit_entity, UnitStatsComponent)
-        if not stats:
-            return
-        stats.health = max(0, stats.health - damage)
-        if stats.health <= 0:
-            state = self.world.get_component(unit_entity, UnitStateComponent)
-            if state:
-                state.state = UnitState.DEAD
-            self.event_manager.publish(
-                "UNIT_KILLED",
-                Message(
-                    topic="UNIT_KILLED",
-                    data_type="combat_event",
-                    data={
-                        "unit_entity": unit_entity,
-                        "unit_name": stats.name,
-                        "faction_id": stats.faction_id,
-                    },
-                ),
-            )
-            self.destroy_unit(unit_entity)
+    # def destroy_unit(self, unit_entity: int) -> None:
+    #     """销毁单位"""
+    #     # unit_stats = self.world.get_component(unit_entity, UnitStatsComponent)
+    #     # pos = self.world.get_component(unit_entity, PrecisePositionComponent)
+    #     # if not unit_stats or not pos:
+    #     #     return
+    #     # map_comp = self.world.get_component(self.map_manager.map_entity, "MapComponent")
+    #     # if map_comp and unit_entity in map_comp.entities_positions:
+    #     #     del map_comp.entities_positions[unit_entity]
+    #     # faction_entity = self.faction_system.factions.get(
+    #     #     unit_stats.faction_id, {}
+    #     # ).get("entity")
+    #     # if faction_entity:
+    #     #     faction_comp = self.world.get_component(faction_entity, FactionComponent)
+    #     #     if faction_comp:
+    #     #         faction_comp.unit_count = max(0, faction_comp.unit_count - 1)
+    #     self.world.remove_entity(unit_entity)
 
     def add_experience(self, unit_entity: int, exp: float) -> None:
         """增加单位经验值，可能触发升级"""

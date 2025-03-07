@@ -51,6 +51,8 @@ class UnitMovementComponent(Component):
         default_factory=dict
     )  # 地形适应性
     fatigue: float = 0.0  # 疲劳值 (0-100)
+    terrain_movement_modifier: float = 1.0  # 当前地形的移动修正
+    last_terrain_type: Optional[TerrainType] = None  # 上一次所在的地形类型
 
 
 @dataclass
