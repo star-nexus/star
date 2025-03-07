@@ -10,7 +10,7 @@ from rotk.components import (
     UnitMovementComponent,
     UnitSupplyComponent,
     UnitStateComponent,
-    PrecisePositionComponent,
+    UnitPositionComponent,
     TerrainType,
     UnitType,
     UnitCategory,
@@ -170,20 +170,22 @@ class CombatSystem(System):
             return False
 
         # 检查是否在攻击范围内
-        attacker_pos = self.world.get_component(attacker, PrecisePositionComponent)
-        target_pos = self.world.get_component(target, PrecisePositionComponent)
-        attacker_move = self.world.get_component(attacker, UnitMovementComponent)
+        attacker_pos = self.world.get_component(attacker, UnitPositionComponent)
+        target_pos = self.world.get_component(target, UnitPositionComponent)
+        attacker_stats = self.world.get_component(attacker, UnitStatsComponent)
 
-        if not attacker_pos or not target_pos or not attacker_move:
+        if not attacker_pos or not target_pos or not attacker_stats:
+            return False
+
             return False
 
         # 计算距离
-        dx = attacker_pos.grid_x - target_pos.grid_x
-        dy = attacker_pos.grid_y - target_pos.grid_y
+        dx = attacker_pos.x - target_pos.x
+        dy = attacker_pos.y - target_pos.y
         distance = math.sqrt(dx * dx + dy * dy)
 
         # 检查是否在攻击范围内
-        return distance <= attacker_move.attack_range
+        return distance <= attacker_stats.attack_range
 
     def _process_attack(self, attacker: int, target: int) -> None:
         """处理攻击过程
@@ -196,8 +198,8 @@ class CombatSystem(System):
         attacker_stats = self.world.get_component(attacker, UnitStatsComponent)
         target_stats = self.world.get_component(target, UnitStatsComponent)
         attacker_supply = self.world.get_component(attacker, UnitSupplyComponent)
-        attacker_pos = self.world.get_component(attacker, PrecisePositionComponent)
-        target_pos = self.world.get_component(target, PrecisePositionComponent)
+        attacker_pos = self.world.get_component(attacker, UnitPositionComponent)
+        target_pos = self.world.get_component(target, UnitPositionComponent)
 
         if not all([attacker_stats, target_stats, attacker_pos, target_pos]):
             return
@@ -286,7 +288,7 @@ class CombatSystem(System):
         attacker_stats = self.world.get_component(attacker, UnitStatsComponent)
         target_stats = self.world.get_component(target, UnitStatsComponent)
         attacker_supply = self.world.get_component(attacker, UnitSupplyComponent)
-        target_pos = self.world.get_component(target, PrecisePositionComponent)
+        target_pos = self.world.get_component(target, UnitPositionComponent)
 
         base_chance = self.BASE_HIT_CHANCE
 
@@ -334,7 +336,7 @@ class CombatSystem(System):
         """
         attacker_stats = self.world.get_component(attacker, UnitStatsComponent)
         target_stats = self.world.get_component(target, UnitStatsComponent)
-        target_pos = self.world.get_component(target, PrecisePositionComponent)
+        target_pos = self.world.get_component(target, UnitPositionComponent)
 
         # 基础伤害
         base_damage = attacker_stats.attack

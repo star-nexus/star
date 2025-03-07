@@ -8,22 +8,7 @@ from .unit_enums import (
     TerrainAdaptability,
     SupplyStatus,
 )
-from .map_components import TerrainType
-
-
-@dataclass
-class FactionComponent(Component):
-    """阵营组件，定义单位所属的阵营"""
-
-    faction_id: int  # 阵营唯一ID
-    name: str  # 阵营名称
-    color: Tuple[int, int, int]  # 阵营颜色 (RGB)
-    active: bool = True  # 阵营是否激活
-    city_count: int = 0  # 控制的城市数量
-    unit_count: int = 0  # 拥有的单位数量
-    diplomacy: Dict[int, int] = field(
-        default_factory=dict
-    )  # 与其他阵营的外交关系 {faction_id: relation_value}
+from .map_component import TerrainType
 
 
 @dataclass
@@ -43,6 +28,7 @@ class UnitStatsComponent(Component):
     morale: float = 70.0  # 士气(0-100)
     experience: float = 0.0  # 经验值
     level: int = 1  # 等级
+    attack_range: float = 5  # 攻击范围(格子)
 
     # 高级属性
     leadership: float = 0.0  # 统率力
@@ -65,7 +51,6 @@ class UnitMovementComponent(Component):
         default_factory=dict
     )  # 地形适应性
     fatigue: float = 0.0  # 疲劳值 (0-100)
-    attack_range: float = 1.0  # 攻击范围(格子)
 
 
 @dataclass
@@ -95,26 +80,19 @@ class UnitStateComponent(Component):
 
 
 @dataclass
-class PrecisePositionComponent(Component):
-    """精确位置组件，支持格子内连续移动"""
+class UnitPositionComponent(Component):
+    """
+    位置组件：管理实体在游戏世界中的位置
+    所有可见或具有空间位置的实体都需要此组件
+    提供基础的二维坐标定位功能
+    """
 
-    grid_x: int = 0  # 格子X坐标
-    grid_y: int = 0  # 格子Y坐标
-    offset_x: float = 0.5  # 格子内X偏移(0-1)
-    offset_y: float = 0.5  # 格子内Y偏移(0-1)
-    direction: float = 0.0  # 朝向角度(弧度)
-    prev_grid_x: int = 0  # 上一格子X坐标
-    prev_grid_y: int = 0  # 上一格子Y坐标
+    x: float = 0.0  # X坐标，表示实体在水平方向上的位置
+    y: float = 0.0  # Y坐标，表示实体在垂直方向上的位置
 
-    @property
-    def world_x(self) -> float:
-        """获取精确的X世界坐标"""
-        return self.grid_x + self.offset_x
-
-    @property
-    def world_y(self) -> float:
-        """获取精确的Y世界坐标"""
-        return self.grid_y + self.offset_y
+    # 注：在RTS游戏中，通常坐标系原点(0,0)位于地图左上角
+    # X轴向右为正方向，Y轴向下为正方向
+    # 单位为像素或游戏单位
 
 
 @dataclass

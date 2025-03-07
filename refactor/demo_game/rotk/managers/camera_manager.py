@@ -1,6 +1,3 @@
-import pygame
-
-
 class CameraManager:
     """相机管理器，负责处理地图视图的平移和缩放"""
 

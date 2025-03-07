@@ -1,14 +1,14 @@
-from .map_components import (
+from .map_component import (
     MapComponent,
     TerrainComponent,
     PositionComponent,
-    MovableComponent,
+    # MovableComponent,
     ObstacleComponent,
-    PlayerComponent,
-    EnemyComponent,
+    # PlayerComponent,
+    # EnemyComponent,
     RenderableComponent,
     TerrainType,
-    TERRAIN_MOVEMENT_COST,
+    # TERRAIN_MOVEMENT_COST,
     TERRAIN_COLORS,
 )
 
@@ -20,12 +20,12 @@ from .unit_enums import (
     SupplyStatus,
 )
 
-from .faction_components import (
-    FactionComponent,
+from .faction_component import FactionComponent
+from .unit_component import (
     UnitStatsComponent,
     UnitMovementComponent,
     UnitSupplyComponent,
     UnitStateComponent,
-    PrecisePositionComponent,
+    UnitPositionComponent,
     UnitRenderComponent,
 )
