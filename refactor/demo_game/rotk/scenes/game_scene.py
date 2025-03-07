@@ -5,17 +5,16 @@ from framework.core.ecs.world import World
 from framework.managers.scenes import Scene
 from rotk.systems import (
     MapSystem,
-    EntitySystem,
-    MovementSystem,
     FactionSystem,
     UnitSystem,
     CombatSystem,
+    RenderSystem,
 )
-from rotk.managers import MapManager, CameraManager
+from rotk.managers import MapManager, CameraManager, UnitManager
 from rotk.components import (
     MapComponent,
     PositionComponent,
-    PrecisePositionComponent,
+    UnitPositionComponent,
     UnitType,
 )
 from rotk.configs import UNIT_CONFIGS
@@ -42,10 +41,14 @@ class GameScene(Scene):
 
         # 创建地图管理器
         self.map_manager = MapManager()
+        self.unit_manager = UnitManager(
+            self.world,
+            self.engine.event_manager,
+        )
 
         # 初始化阵营系统
         self.faction_system = FactionSystem()
-        self.faction_system.initialize(self.world, self.engine.event_manager)
+        self.faction_system.initialize(self.engine.event_manager)
         self.world.add_system(self.faction_system)
 
         # 初始化单位系统
@@ -55,6 +58,7 @@ class GameScene(Scene):
             self.engine.event_manager,
             self.map_manager,
             self.faction_system,
+            self.unit_manager,
             UNIT_CONFIGS,  # 传入单位配置
         )
         self.world.add_system(self.unit_system)
@@ -62,7 +66,7 @@ class GameScene(Scene):
         # 初始化地图系统
         self.map_system = MapSystem()
         self.map_system.initialize(
-            self.world, self.engine.event_manager, self.map_manager, self.camera_manager
+            self.world, self.engine.event_manager, self.camera_manager
         )
         # 设置玩家阵营ID
         self.map_system.player_faction_id = self.player_faction_id
@@ -81,6 +85,12 @@ class GameScene(Scene):
             self.unit_system,
         )
         self.world.add_system(self.combat_system)
+
+        self.render_system = RenderSystem()
+        self.render_system.initialize(
+            self.world, self.engine.event_manager, self.camera_manager
+        )
+        self.world.add_system(self.render_system)
 
         # 创建一些测试单位
         self._create_test_units()
@@ -172,7 +182,8 @@ class GameScene(Scene):
     def _create_test_units(self):
         """创建测试用的阵营单位"""
         # 获取地图尺寸
-        map_comp = self.world.get_component(self.map_manager.map_entity, MapComponent)
+        map_entity = self.world.get_entities_with_components(MapComponent)
+        map_comp = self.world.get_component(map_entity[0], MapComponent)
         if not map_comp:
             return
 
@@ -183,18 +194,18 @@ class GameScene(Scene):
         wei_start_x = map_width // 4
         wei_start_y = map_height // 2
 
-        # 魏国创建盾兵方阵
-        wei_shield_units = self.unit_system.create_unit_formation(
+        # 创建盾兵方阵
+        wei_shield_units = self.unit_manager.create_unit_formation(
             UnitType.SHIELD_INFANTRY, 1, wei_start_x, wei_start_y - 3, 9, "square"
         )
 
-        # 魏国创建弓箭手
-        wei_archer_units = self.unit_system.create_unit_formation(
+        # 创建弓箭手
+        wei_archer_units = self.unit_manager.create_unit_formation(
             UnitType.ARCHER, 1, wei_start_x - 2, wei_start_y + 3, 5, "line"
         )
 
-        # 魏国创建骑兵
-        wei_cavalry = self.unit_system.create_unit_formation(
+        # 创建骑兵
+        wei_cavalry = self.unit_manager.create_unit_formation(
             UnitType.HEAVY_CAVALRY, 1, wei_start_x + 4, wei_start_y, 3, "wedge"
         )
 
@@ -203,34 +214,34 @@ class GameScene(Scene):
         shu_start_y = map_height // 2
 
         # 蜀国创建长戟兵
-        shu_spear_units = self.unit_system.create_unit_formation(
+        shu_spear_units = self.unit_manager.create_unit_formation(
             UnitType.SPEAR_INFANTRY, 2, shu_start_x, shu_start_y - 2, 9, "square"
         )
 
         # 蜀国创建弩手
-        shu_crossbow_units = self.unit_system.create_unit_formation(
+        shu_crossbow_units = self.unit_manager.create_unit_formation(
             UnitType.CROSSBOWMAN, 2, shu_start_x + 2, shu_start_y + 3, 5, "line"
         )
 
         # 蜀国创建山地步兵
-        shu_mountain_units = self.unit_system.create_unit_formation(
+        shu_mountain_units = self.unit_manager.create_unit_formation(
             UnitType.MOUNTAIN_INFANTRY, 2, shu_start_x - 4, shu_start_y, 3, "wedge"
         )
 
         # 记录玩家单位
-        self.player_units = shu_spear_units + shu_crossbow_units + shu_mountain_units
+        # self.player_units = shu_spear_units + shu_crossbow_units + shu_mountain_units
 
         # 吴国单位 (阵营ID: 3) - 放在地图下方
         wu_start_x = map_width // 2
         wu_start_y = map_height * 3 // 4
 
         # 吴国创建骑射手
-        wu_mounted_archers = self.unit_system.create_unit_formation(
+        wu_mounted_archers = self.unit_manager.create_unit_formation(
             UnitType.MOUNTED_ARCHER, 3, wu_start_x, wu_start_y, 7, "line"
         )
 
         # 吴国创建斥候骑兵
-        wu_scouts = self.unit_system.create_unit_formation(
+        wu_scouts = self.unit_manager.create_unit_formation(
             UnitType.SCOUT_CAVALRY, 3, wu_start_x - 3, wu_start_y - 3, 3, "wedge"
         )
 
@@ -246,7 +257,7 @@ class GameScene(Scene):
 
             # 创建小群黄巾军
             count = random.randint(3, 6)
-            self.unit_system.create_unit_formation(
+            self.unit_manager.create_unit_formation(
                 unit_type, 4, rebel_x, rebel_y, count, "square"
             )
 

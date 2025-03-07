@@ -25,23 +25,23 @@ class TerrainType(Enum):
 
 
 # 定义地形的移动消耗
-TERRAIN_MOVEMENT_COST = {
-    TerrainType.PLAINS: 1,
-    TerrainType.FOREST: 2,
-    TerrainType.MOUNTAIN: 3,
-    TerrainType.HILL: 2,
-    TerrainType.RIVER: 3,
-    TerrainType.LAKE: 5,
-    TerrainType.BRIDGE: 1,
-    TerrainType.PLATEAU: 2,
-    TerrainType.BASIN: 2,
-    TerrainType.SWAMP: 4,
-    TerrainType.DESERT: 3,
-    TerrainType.VALLEY: 2,
-    TerrainType.OCEAN: 10,
-    TerrainType.COAST: 2,
-    TerrainType.CITY: 1,
-}
+# TERRAIN_MOVEMENT_COST = {
+#     TerrainType.PLAINS: 1,
+#     TerrainType.FOREST: 2,
+#     TerrainType.MOUNTAIN: 3,
+#     TerrainType.HILL: 2,
+#     TerrainType.RIVER: 3,
+#     TerrainType.LAKE: 5,
+#     TerrainType.BRIDGE: 1,
+#     TerrainType.PLATEAU: 2,
+#     TerrainType.BASIN: 2,
+#     TerrainType.SWAMP: 4,
+#     TerrainType.DESERT: 3,
+#     TerrainType.VALLEY: 2,
+#     TerrainType.OCEAN: 10,
+#     TerrainType.COAST: 2,
+#     TerrainType.CITY: 1,
+# }
 
 # 定义地形的颜色 RGB
 TERRAIN_COLORS = {
@@ -71,7 +71,7 @@ class MapComponent(Component):
     height: int = 15
     cell_size: int = 32
     grid: List[List[TerrainType]] = field(default_factory=list)
-    entities_positions: Dict[int, Tuple[int, int]] = field(default_factory=dict)
+    # entities_positions: Dict[int, Tuple[int, int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -92,12 +92,12 @@ class PositionComponent(Component):
     prev_y: int = 0
 
 
-@dataclass
-class MovableComponent(Component):
-    """可移动组件"""
+# @dataclass
+# class MovableComponent(Component):
+#     """可移动组件"""
 
-    speed: int = 1  # 每回合可移动的格子数
-    movement_points: int = 1  # 当前可用的移动点数
+#     speed: int = 1  # 每回合可移动的格子数
+#     movement_points: int = 1  # 当前可用的移动点数
 
 
 @dataclass
@@ -107,19 +107,19 @@ class ObstacleComponent(Component):
     is_destructible: bool = False  # 是否可被破坏
 
 
-@dataclass
-class PlayerComponent(Component):
-    """玩家组件"""
+# @dataclass
+# class PlayerComponent(Component):
+#     """玩家组件"""
 
-    name: str = "玩家"
+#     name: str = "玩家"
 
 
-@dataclass
-class EnemyComponent(Component):
-    """敌人组件"""
+# @dataclass
+# class EnemyComponent(Component):
+#     """敌人组件"""
 
-    name: str = "敌人"
-    aggression: int = 1  # 敌人侵略性，影响AI决策
+#     name: str = "敌人"
+#     aggression: int = 1  # 敌人侵略性，影响AI决策
 
 
 @dataclass

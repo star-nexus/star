@@ -3,9 +3,11 @@ import math
 from rotk.components import (
     MapComponent,
     TerrainType,
-    TERRAIN_MOVEMENT_COST,
+    # TERRAIN_MOVEMENT_COST,
     TERRAIN_COLORS,
 )
+from framework.managers.events import EventManager, Message
+from framework.core.ecs.world import World
 
 
 class MapManager:
@@ -13,7 +15,6 @@ class MapManager:
 
     def __init__(self):
         """初始化地图管理器"""
-        self.map_entity = None
         self.default_width = 50
         self.default_height = 50
 
@@ -28,23 +29,39 @@ class MapManager:
         self.water_threshold = 0.20  # 水域阈值
         self.deep_water_threshold = 0.15  # 深水阈值
 
+    def initialize(
+        self,
+        world: World,
+        event_manager: EventManager,
+    ) -> None:
+        """初始化地图管理器"""
+        self.event_manager = event_manager
+        # 订阅地图生成事件
+        self.event_manager.subscribe(
+            "MAP_REGENERATED", lambda message: self.generate_map(world)
+        )
+
     def create_map(self, world, width=None, height=None):
         """创建新地图"""
         width = width or self.default_width
         height = height or self.default_height
 
         # 创建地图实体
-        self.map_entity = world.create_entity()
-        world.add_component(self.map_entity, MapComponent(width=width, height=height))
+        map_entity = world.create_entity()
+        world.add_component(map_entity, MapComponent(width=width, height=height))
 
         # 生成地图内容
         self.generate_map(world)
 
-        return self.map_entity
+        # return self.map_entity
 
     def generate_map(self, world):
         """使用高级地形生成算法生成随机地图"""
-        map_comp = world.get_component(self.map_entity, MapComponent)
+        map_entity = world.get_entities_with_components(MapComponent)
+        if not map_entity:
+            return
+
+        map_comp = world.get_component(map_entity[0], MapComponent)
         if not map_comp:
             return
 
@@ -704,22 +721,22 @@ class MapManager:
         # 如果找不到，返回默认值
         return 0, 0
 
-    def is_position_valid(self, world, x, y):
-        """检查位置是否在地图范围内且可通行"""
-        map_comp = world.get_component(self.map_entity, MapComponent)
-        if not map_comp:
-            return False
+    # def is_position_valid(self, world, x, y):
+    #     """检查位置是否在地图范围内且可通行"""
+    #     map_comp = world.get_component(self.map_entity, MapComponent)
+    #     if not map_comp:
+    #         return False
 
-        # 检查边界
-        if x < 0 or x >= map_comp.width or y < 0 or y >= map_comp.height:
-            return False
+    #     # 检查边界
+    #     if x < 0 or x >= map_comp.width or y < 0 or y >= map_comp.height:
+    #         return False
 
-        # 检查地形是否可通行
-        terrain_type = map_comp.grid[y][x]
-        if terrain_type in [TerrainType.OCEAN]:  # 海洋不可通行
-            return False
+    #     # 检查地形是否可通行
+    #     terrain_type = map_comp.grid[y][x]
+    #     if terrain_type in [TerrainType.OCEAN]:  # 海洋不可通行
+    #         return False
 
-        return True
+    #     return True
 
     def get_terrain_at(self, world, x, y):
         """获取指定位置的地形类型"""
