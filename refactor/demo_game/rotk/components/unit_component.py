@@ -54,6 +54,14 @@ class UnitMovementComponent(Component):
     terrain_movement_modifier: float = 1.0  # 当前地形的移动修正
     last_terrain_type: Optional[TerrainType] = None  # 上一次所在的地形类型
 
+    # 平滑移动相关属性
+    prev_x: float = 0.0  # 上一次位置X
+    prev_y: float = 0.0  # 上一次位置Y
+    start_x: float = 0.0  # 移动起始位置X
+    start_y: float = 0.0  # 移动起始位置Y
+    movement_progress: float = 0.0  # 移动进度(0-1)
+    movement_easing: str = "linear"  # 缓动函数类型
+
 
 @dataclass
 class UnitSupplyComponent(Component):

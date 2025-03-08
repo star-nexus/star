@@ -62,14 +62,6 @@ class FactionManager:
         self.create_faction(3, "吴", (0, 150, 0))  # 绿色
         self.create_faction(4, "黄巾", (255, 255, 0))  # 黄色
 
-        # 设置默认关系
-        # self.set_faction_relation(1, 2, -50)  # 魏蜀敌对
-        # self.set_faction_relation(1, 3, -30)  # 魏吴轻度敌对
-        # self.set_faction_relation(2, 3, 30)  # 蜀吴同盟
-        # self.set_faction_relation(1, 4, -80)  # 魏黄巾深度敌对
-        # self.set_faction_relation(2, 4, -80)  # 蜀黄巾深度敌对
-        # self.set_faction_relation(3, 4, -80)  # 吴黄巾深度敌对
-
     def create_faction(self, faction_id: int, name: str, color: tuple) -> int:
         """创建新的阵营
 
@@ -89,87 +81,4 @@ class FactionManager:
                 faction_id=faction_id, name=name, color=color, active=True
             ),
         )
-
-        # 存储阵营信息
-        # self.factions[faction_id] = {
-        #     "entity": faction_entity,
-        #     "name": name,
-        #     "color": color,
-        #     "units": [],  # 阵营单位列表
-        # }
-
-        # self.active_factions.append(faction_id)
-
         return faction_entity
-
-    # def set_faction_relation(
-    #     self, faction_id1: int, faction_id2: int, relation_value: int
-    # ) -> None:
-    #     """设置两个阵营间的关系值
-
-    #     Args:
-    #         faction_id1: 第一个阵营ID
-    #         faction_id2: 第二个阵营ID
-    #         relation_value: 关系值(-100到100)
-    #     """
-    #     if faction_id1 == faction_id2:
-    #         return  # 不设置自己与自己的关系
-
-    #     # 确保faction_id1 < faction_id2作为统一的键格式
-    #     if faction_id1 > faction_id2:
-    #         faction_id1, faction_id2 = faction_id2, faction_id1
-
-    #     key = (faction_id1, faction_id2)
-    #     self.faction_relations[key] = max(-100, min(100, relation_value))
-
-    #     # 同时更新实体组件中的外交信息
-    #     for faction_id in [faction_id1, faction_id2]:
-    #         if faction_id in self.factions:
-    #             faction_entity = self.factions[faction_id]["entity"]
-    #             faction_comp = self.world.get_component(
-    #                 faction_entity, FactionComponent
-    #             )
-    #             if faction_comp:
-    #                 other_id = faction_id2 if faction_id == faction_id1 else faction_id1
-    #                 faction_comp.diplomacy[other_id] = self.faction_relations[key]
-
-    # def get_faction_relation(self, faction_id1: int, faction_id2: int) -> int:
-    #     """获取两个阵营间的关系值
-
-    #     Args:
-    #         faction_id1: 第一个阵营ID
-    #         faction_id2: 第二个阵营ID
-
-    #     Returns:
-    #         int: 关系值，如果未设置则返回0
-    #     """
-    #     if faction_id1 == faction_id2:
-    #         return 100  # 自己与自己的关系始终为100
-
-    #     # 确保faction_id1 < faction_id2作为统一的键格式
-    #     if faction_id1 > faction_id2:
-    #         faction_id1, faction_id2 = faction_id2, faction_id1
-
-    #     key = (faction_id1, faction_id2)
-    #     return self.faction_relations.get(key, 0)
-
-    # def are_factions_hostile(self, faction_id1: int, faction_id2: int) -> bool:
-    #     """检查两个阵营是否敌对
-
-    #     Args:
-    #         faction_id1: 第一个阵营ID
-    #         faction_id2: 第二个阵营ID
-
-    #     Returns:
-    #         bool: 如果关系值小于0则为敌对
-    #     """
-    #     return self.get_faction_relation(faction_id1, faction_id2) < 0
-
-    # def reset_unit_counts(self) -> None:
-    #     """重置所有阵营的单位计数，用于地图重生成后"""
-    #     for faction_id in self.factions:
-    #         faction_entity = self.factions[faction_id]["entity"]
-    #         faction_comp = self.world.get_component(faction_entity, FactionComponent)
-    #         if faction_comp:
-    #             faction_comp.unit_count = 0
-    #             self.factions[faction_id]["units"] = []

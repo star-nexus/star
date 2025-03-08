@@ -92,8 +92,8 @@ class UnitManager:
             "health": 90,
             "attack": 12,
             "defense": 6,
-            "base_speed": 8.0,
-            "max_speed": 12.0,
+            "base_speed": 16.0,
+            "max_speed": 24.0,
             "attack_range": 1.0,
             "food_consumption": 0.8,
             "symbol": "侦",
@@ -237,48 +237,7 @@ class UnitManager:
                 size=config.get("size", 20),
             ),
         )
-        # map_comp = self.world.get_component(self.map_manager.map_entity, MapComponent)
-        # if map_comp:
-        #     map_comp.entities_positions[unit_entity] = (grid_x, grid_y)
-        # else:
-        #     print("警告: 地图组件不存在，无法更新单位位置映射")
-        # if self.faction_system and faction_id in self.faction_system.factions:
-        #     faction_entity = self.faction_system.factions.get(faction_id, {}).get(
-        #         "entity"
-        #     )
-        #     if faction_entity:
-        #         faction_comp = self.world.get_component(
-        #             faction_entity, FactionComponent
-        #         )
-        #         if faction_comp:
-        #             faction_comp.unit_count += 1
         return unit_entity
-
-        # def find_unit_placement_position(
-        #     self,
-        #     faction_id: int,
-        #     near_x: int = None,
-        #     near_y: int = None,
-        #     max_distance: int = 5,
-        # ) -> tuple:
-        #     """为新单位寻找合适的放置位置"""
-        #     map_comp = self.world.get_component(self.map_manager.map_entity, "MapComponent")
-        #     if not map_comp:
-        #         return (0, 0)
-        #     width, height = map_comp.width, map_comp.height
-        #     if near_x is not None and near_y is not None:
-        #         for d in range(1, max_distance + 1):
-        #             candidates = []
-        #             for dy in range(-d, d + 1):
-        #                 for dx in range(-d, d + 1):
-        #                     if abs(dx) == d or abs(dy) == d:
-        #                         x, y = near_x + dx, near_y + dy
-        #                         if 0 <= x < width and 0 <= y < height:
-        #                             if self._is_valid_placement(x, y):
-        #                                 candidates.append((x, y))
-        #             if candidates:
-        #                 return random.choice(candidates)
-        #     return self.map_manager.find_walkable_position(self.world)
 
     def _is_valid_placement(self, x: int, y: int) -> bool:
         """检查位置是否可以放置单位"""
@@ -298,7 +257,7 @@ class UnitManager:
         center_x: float,  # 中心点X坐标（格子，支持小数）
         center_y: float,  # 中心点Y坐标（格子，支持小数）
         count: int,
-        spacing_meters: float = 20.0,  # 单位间距（米）
+        spacing_meters: float = 40.0,  # 增大默认间距
         formation_type: str = "square",
     ) -> list:
         """创建单位编队
@@ -320,8 +279,20 @@ class UnitManager:
         units = []
         positions = []  # 存储格子坐标
 
+        # 确保至少生成一个单位
+        count = max(1, count)
+
         # 将单位间距从米转换为格子单位
         spacing_cells = UnitConversion.meters_to_cells(spacing_meters)
+
+        # 添加少量随机偏移以避免完全重叠
+        def add_jitter(x, y, jitter_amount=0.08):
+            # 噪音
+            # return (
+            #     x + random.uniform(-jitter_amount, jitter_amount),
+            #     y + random.uniform(-jitter_amount, jitter_amount),
+            # )
+            return (x, y)
 
         if formation_type == "square":
             # 方阵
@@ -332,13 +303,13 @@ class UnitManager:
                 # 计算精确位置，使编队居中
                 x_pos = center_x + (col - (size - 1) / 2) * spacing_cells
                 y_pos = center_y + (row - (size - 1) / 2) * spacing_cells
-                positions.append((x_pos, y_pos))
+                positions.append(add_jitter(x_pos, y_pos))
 
         elif formation_type == "line":
             # 横线
             for i in range(count):
                 x_pos = center_x + (i - (count - 1) / 2) * spacing_cells
-                positions.append((x_pos, center_y))
+                positions.append(add_jitter(x_pos, center_y))
 
         elif formation_type == "wedge":
             # V字形
@@ -348,14 +319,14 @@ class UnitManager:
                 offset = i % 2
                 if offset == 0:
                     positions.append(
-                        (
+                        add_jitter(
                             center_x - depth * spacing_cells,
                             center_y + depth * depth_spacing,
                         )
                     )
                 else:
                     positions.append(
-                        (
+                        add_jitter(
                             center_x + depth * spacing_cells,
                             center_y + depth * depth_spacing,
                         )
@@ -364,42 +335,55 @@ class UnitManager:
         elif formation_type == "circle":
             # 圆形阵列
             if count <= 1:
-                positions.append((center_x, center_y))
+                positions.append(add_jitter(center_x, center_y, 0.05))
             else:
-                radius_cells = (
-                    spacing_cells * count / (2 * math.pi) * 0.8
-                )  # 估算合理半径，乘以0.8使阵型更紧凑
+                # 调整半径，确保圆形阵型不会太小
+                radius_cells = max(
+                    spacing_cells, spacing_cells * count / (2 * math.pi) * 0.9
+                )
                 for i in range(count):
                     angle = 2 * math.pi * i / count
                     x_pos = center_x + radius_cells * math.cos(angle)
                     y_pos = center_y + radius_cells * math.sin(angle)
-                    positions.append((x_pos, y_pos))
+                    positions.append(add_jitter(x_pos, y_pos, 0.05))
+
+        elif formation_type == "staggered":
+            # 交错阵列 - 适合更多的单位，更紧凑但不重叠
+            rows = math.ceil(math.sqrt(count))
+            cols = math.ceil(count / rows)
+            for i in range(count):
+                row = i // cols
+                col = i % cols
+                # 偶数行偏移半个单位宽度
+                offset = (spacing_cells / 2) if row % 2 else 0
+                x_pos = center_x + (col - (cols - 1) / 2) * spacing_cells + offset
+                y_pos = (
+                    center_y + (row - (rows - 1) / 2) * spacing_cells * 0.866
+                )  # 高度压缩
+                positions.append(add_jitter(x_pos, y_pos, 0.03))
 
         # 创建单位
         for pos_x, pos_y in positions:
-            unit_entity = self.create_unit(unit_type, faction_id, pos_x, pos_y)
-            if unit_entity:
-                units.append(unit_entity)
+            # 检查地图边界
+            map_entities = self.world.get_entities_with_components(MapComponent)
+            if map_entities:
+                map_comp = self.world.get_component(map_entities[0], MapComponent)
+                if map_comp:
+                    # 确保位置在地图范围内
+                    if (
+                        0 <= int(pos_x) < map_comp.width
+                        and 0 <= int(pos_y) < map_comp.height
+                    ):
+                        unit_entity = self.create_unit(
+                            unit_type, faction_id, pos_x, pos_y
+                        )
+                        if unit_entity:
+                            units.append(unit_entity)
+                    else:
+                        # 越界位置不创建单位
+                        continue
 
         return units
-
-    # def destroy_unit(self, unit_entity: int) -> None:
-    #     """销毁单位"""
-    #     # unit_stats = self.world.get_component(unit_entity, UnitStatsComponent)
-    #     # pos = self.world.get_component(unit_entity, PrecisePositionComponent)
-    #     # if not unit_stats or not pos:
-    #     #     return
-    #     # map_comp = self.world.get_component(self.map_manager.map_entity, "MapComponent")
-    #     # if map_comp and unit_entity in map_comp.entities_positions:
-    #     #     del map_comp.entities_positions[unit_entity]
-    #     # faction_entity = self.faction_system.factions.get(
-    #     #     unit_stats.faction_id, {}
-    #     # ).get("entity")
-    #     # if faction_entity:
-    #     #     faction_comp = self.world.get_component(faction_entity, FactionComponent)
-    #     #     if faction_comp:
-    #     #         faction_comp.unit_count = max(0, faction_comp.unit_count - 1)
-    #     self.world.remove_entity(unit_entity)
 
     def add_experience(self, unit_entity: int, exp: float) -> None:
         """增加单位经验值，可能触发升级"""
