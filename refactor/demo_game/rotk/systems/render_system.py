@@ -8,9 +8,11 @@ from rotk.components import (
     UnitRenderComponent,
     UnitStatsComponent,
     UnitPositionComponent,
+    HumanControlComponent,
 )
 from rotk.managers import CameraManager
 from rotk.utils.terrain_renderer import TerrainRenderer
+from rotk.utils.unit_icon_renderer import UnitIconRenderer  # 导入新的单位图标渲染器
 
 
 class RenderSystem(System):
@@ -18,9 +20,6 @@ class RenderSystem(System):
         # 这里根据需要定义依赖的组件，例如MapComponent、UnitRenderComponent等
         super().__init__([], priority=15)
         self.camera_manager: CameraManager = None
-        self.player_faction_id = 2  # 默认蜀国，需要从地图系统同步
-        self.selected_unit = None  # 当前选中的单位
-        self.target_unit = None  # 当前目标单位
 
     def initialize(
         self,
@@ -32,36 +31,44 @@ class RenderSystem(System):
         self.camera_manager = camera_manager
 
         # 订阅单位选择和目标选择事件
-        self.event_manager.subscribe("UNIT_SELECTED", self._handle_unit_selected)
-        self.event_manager.subscribe("TARGET_SELECTED", self._handle_target_selected)
-        self.event_manager.subscribe("FACTION_SWITCHED", self._handle_faction_switched)
+        self.event_manager.subscribe(
+            "UNIT_SELECTED", lambda message: self._handle_unit_selected(world, message)
+        )
+        self.event_manager.subscribe(
+            "TARGET_SELECTED",
+            lambda message: self._handle_target_selected(world, message),
+        )
+        self.event_manager.subscribe(
+            "FACTION_SWITCHED",
+            lambda message: self._handle_faction_switched(world, message),
+        )
 
-    def _handle_unit_selected(self, message):
+    def _handle_unit_selected(self, world, message):
         """处理单位选择事件"""
-        self.selected_unit = message.data.get("unit")
+        hc_entity = world.get_unique_entity(HumanControlComponent)
+        hc_comp = world.get_component(hc_entity, HumanControlComponent)
+        hc_comp.selected_unit = message.data.get("unit")
 
-    def _handle_target_selected(self, message):
+    def _handle_target_selected(self, world, message):
         """处理目标选择事件"""
-        self.target_unit = message.data.get("target")
+        hc_entity = world.get_unique_entity(HumanControlComponent)
+        hc_comp = world.get_component(hc_entity, HumanControlComponent)
+        hc_comp.selected_target = message.data.get("target")
 
-    def _handle_faction_switched(self, message):
+    def _handle_faction_switched(self, world, message):
         """处理阵营切换事件"""
-        self.player_faction_id = message.data.get("faction_id")
+        hc_entity = world.get_unique_entity(HumanControlComponent)
+        hc_comp = world.get_component(hc_entity, HumanControlComponent)
+        hc_comp.selected_faction_id = message.data.get("faction_id")
 
     def update(self, world: World, delta_time: float) -> None:
         # 这里不做更新处理，渲染在render()中完成
-        # 从地图系统更新玩家阵营ID和选中单位
-        map_systems = [s for s in world.systems if hasattr(s, "player_faction_id")]
-        if map_systems:
-            self.player_faction_id = map_systems[0].player_faction_id
-            self.selected_unit = map_systems[0].selected_unit
-            self.target_unit = map_systems[0].target_unit
+        # 从人类控制系统获取选中单位和其他状态信息
+        pass
 
     def render(self, world: World, render_manager) -> None:
-        map_entity = world.get_entities_with_components(MapComponent)
-        map_comp = (
-            world.get_component(map_entity[0], MapComponent) if map_entity else None
-        )
+        map_entity = world.get_unique_entity(MapComponent)
+        map_comp = world.get_component(map_entity, MapComponent) if map_entity else None
         if not map_comp:
             return
         width, height, cell_size = map_comp.width, map_comp.height, map_comp.cell_size
@@ -110,14 +117,16 @@ class RenderSystem(System):
         units = world.get_entities_with_components(
             UnitRenderComponent, UnitStatsComponent, UnitPositionComponent
         )
+        hc_entity = world.get_unique_entity(HumanControlComponent)
+        hc_comp = world.get_component(hc_entity, HumanControlComponent)
         render_manager.set_layer(1)  # 单位层级
 
         # 先排序单位，确保选中的单位在最上层
         sorted_units = sorted(
             units,
             key=lambda u: (
-                u == self.selected_unit or u == self.target_unit,
-                u == self.selected_unit,
+                u == hc_comp.selected_unit or u == hc_comp.selected_target,
+                u == hc_comp.selected_unit,
             ),
         )
 
@@ -144,7 +153,7 @@ class RenderSystem(System):
 
                 # 创建一个大一点的表面，以容纳额外的标记
                 padding = 6  # 额外边距，用于绘制选择标记
-                if unit == self.selected_unit or unit == self.target_unit:
+                if unit == hc_comp.selected_unit or unit == hc_comp.selected_target:
                     padding = 10
 
                 total_size = display_size + padding * 2
@@ -170,7 +179,7 @@ class RenderSystem(System):
                     )
 
                 # 2. 选中单位的标记 - 绘制一个亮色边框
-                if unit == self.selected_unit:
+                if unit == hc_comp.selected_unit:
                     border_color = (0, 255, 255)  # 青色，醒目
                     border_width = 3
                     pygame.draw.circle(
@@ -182,7 +191,7 @@ class RenderSystem(System):
                     )
 
                     # 为选中单位绘制方向指示器
-                    if unit_stats.faction_id == self.player_faction_id:
+                    if unit_stats.faction_id == hc_comp.selected_faction_id:
                         direction_length = display_size // 2 + 10
                         pygame.draw.line(
                             unit_surf,
@@ -193,7 +202,7 @@ class RenderSystem(System):
                         )
 
                 # 3. 目标单位的标记 - 绘制一个红色边框
-                elif unit == self.target_unit:
+                elif unit == hc_comp.selected_target:
                     target_color = (255, 0, 0)  # 红色
                     border_width = 2
                     pygame.draw.circle(
@@ -204,20 +213,22 @@ class RenderSystem(System):
                         border_width,
                     )
 
-                # 绘制单位底圈（用于阵营标识）
-                pygame.draw.circle(
-                    unit_surf,
-                    unit_render.main_color,
-                    (total_size // 2, total_size // 2),
-                    display_size // 2,
+                # 移除原有的底圈绘制代码，完全交给UnitIconRenderer处理
+                # 确保图标渲染在单位表面的中央
+                icon_rect = pygame.Rect(
+                    0,  # 让图标使用整个surface区域
+                    0,
+                    total_size,  # 使用整个surface作为绘制区域
+                    total_size,
                 )
 
-                # 绘制单位符号
-                font_size = max(14, int(display_size * 0.7))
-                font = pygame.font.Font(None, font_size)
-                text = font.render(unit_render.symbol, True, (0, 0, 0))
-                text_rect = text.get_rect(center=(total_size // 2, total_size // 2))
-                unit_surf.blit(text, text_rect)
+                UnitIconRenderer.render_unit_icon(
+                    unit_surf,
+                    unit_render.symbol,
+                    icon_rect,
+                    unit_render.main_color,
+                    unit_render.accent_color,
+                )
 
                 # 绘制血条
                 if unit_stats:
@@ -254,56 +265,59 @@ class RenderSystem(System):
                 )
                 render_manager.draw(unit_surf, rect)
 
-        # 渲染移动目标标记
-        map_systems = [s for s in world.systems if hasattr(s, "move_target")]
-        if map_systems and map_systems[0].move_target and self.camera_manager:
-            move_target = map_systems[0].move_target
-            target_x, target_y = move_target
-            world_x = target_x * cell_size + cell_size // 2
-            world_y = target_y * cell_size + cell_size // 2
-            screen_x, screen_y = self.camera_manager.world_to_screen(world_x, world_y)
-
-            # 绘制移动目标标记 - 绿色圆圈
-            mark_radius = int(10 * self.camera_manager.zoom)
-            render_manager.draw_circle(
-                (0, 255, 0), (screen_x, screen_y), mark_radius, 2
-            )
-
-            # 绘制从选中单位到目标的虚线
-            if self.selected_unit:
-                selected_pos = world.get_component(
-                    self.selected_unit, UnitPositionComponent
+        # 渲染移动目标标记 - 从HumanControlComponent中获取
+        hc_entity = world.get_unique_entity(HumanControlComponent)
+        if hc_entity and self.camera_manager:
+            hc_comp = world.get_component(hc_entity, HumanControlComponent)
+            if hc_comp and hc_comp.move_target:
+                target_x, target_y = hc_comp.move_target
+                world_x = target_x * cell_size + cell_size // 2
+                world_y = target_y * cell_size + cell_size // 2
+                screen_x, screen_y = self.camera_manager.world_to_screen(
+                    world_x, world_y
                 )
-                if selected_pos:
-                    start_world_x = selected_pos.x * cell_size
-                    start_world_y = selected_pos.y * cell_size
-                    start_screen_x, start_screen_y = (
-                        self.camera_manager.world_to_screen(
-                            start_world_x, start_world_y
+
+                # 绘制移动目标标记 - 绿色圆圈
+                mark_radius = int(10 * self.camera_manager.zoom)
+                render_manager.draw_circle(
+                    (0, 255, 0), (screen_x, screen_y), mark_radius, 2
+                )
+
+                # 绘制从选中单位到目标的虚线
+                if hc_comp.selected_unit:
+                    selected_pos = world.get_component(
+                        hc_comp.selected_unit, UnitPositionComponent
+                    )
+                    if selected_pos:
+                        start_world_x = selected_pos.x * cell_size
+                        start_world_y = selected_pos.y * cell_size
+                        start_screen_x, start_screen_y = (
+                            self.camera_manager.world_to_screen(
+                                start_world_x, start_world_y
+                            )
                         )
-                    )
 
-                    # 计算线段总长度
-                    line_length = math.sqrt(
-                        (screen_x - start_screen_x) ** 2
-                        + (screen_y - start_screen_y) ** 2
-                    )
-                    segments = int(line_length / 10)  # 每10像素一个线段
+                        # 计算线段总长度
+                        line_length = math.sqrt(
+                            (screen_x - start_screen_x) ** 2
+                            + (screen_y - start_screen_y) ** 2
+                        )
+                        segments = int(line_length / 10)  # 每10像素一个线段
 
-                    if segments > 0:
-                        dx = (screen_x - start_screen_x) / segments
-                        dy = (screen_y - start_screen_y) / segments
+                        if segments > 0:
+                            dx = (screen_x - start_screen_x) / segments
+                            dy = (screen_y - start_screen_y) / segments
 
-                        for i in range(segments):
-                            if i % 2 == 0:  # 只绘制偶数段，形成虚线效果
-                                start_point = (
-                                    start_screen_x + i * dx,
-                                    start_screen_y + i * dy,
-                                )
-                                end_point = (
-                                    start_screen_x + (i + 1) * dx,
-                                    start_screen_y + (i + 1) * dy,
-                                )
-                                render_manager.draw_line(
-                                    (0, 255, 0), start_point, end_point, 2
-                                )
+                            for i in range(segments):
+                                if i % 2 == 0:  # 只绘制偶数段，形成虚线效果
+                                    start_point = (
+                                        start_screen_x + i * dx,
+                                        start_screen_y + i * dy,
+                                    )
+                                    end_point = (
+                                        start_screen_x + (i + 1) * dx,
+                                        start_screen_y + (i + 1) * dy,
+                                    )
+                                    render_manager.draw_line(
+                                        (0, 255, 0), start_point, end_point, 2
+                                    )

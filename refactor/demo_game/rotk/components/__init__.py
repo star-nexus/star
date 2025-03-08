@@ -30,4 +30,8 @@ from .unit_component import (
     UnitRenderComponent,
 )
 from .unique_component import UniqueComponent
-from .selection_component import SelectionComponent
+from .control_component import (
+    HumanControlComponent,
+    AgentControlComponent,
+    AIControlComponent,
+)
