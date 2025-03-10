@@ -755,3 +755,39 @@ class MapManager:
         ):
             return None
         return map_comp.grid[y][x]
+
+    def is_valid_spawn_position(self, world, x: float, y: float) -> bool:
+        """检查位置是否适合生成单位"""
+        # 获取地图组件
+        map_entity = world.get_unique_entity(MapComponent)
+        map_comp = world.get_component(map_entity, MapComponent)
+
+        # 转换为整数坐标
+        grid_x = int(x)
+        grid_y = int(y)
+
+        # 检查边界
+        if (
+            grid_x < 0
+            or grid_x >= map_comp.width
+            or grid_y < 0
+            or grid_y >= map_comp.height
+        ):
+            return False
+
+        # 检查地形是否可通行
+        terrain_type = map_comp.grid[grid_y][grid_x]
+        if terrain_type in [
+            TerrainType.OCEAN,
+            TerrainType.LAKE,
+            TerrainType.RIVER,
+            TerrainType.SWAMP,
+            TerrainType.MOUNTAIN,
+        ]:
+            return False
+
+        # 避免生成在城市上
+        if terrain_type == TerrainType.CITY:
+            return False
+
+        return True
