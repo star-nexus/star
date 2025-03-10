@@ -3,7 +3,7 @@ import sys
 from framework.core.engine import Engine
 
 from rotk.managers import MapManager, FactionManager
-from rotk.scenes import GameScene
+from rotk.scenes import GameScene, StartScene, EndScene
 
 
 def main():
@@ -11,21 +11,15 @@ def main():
     engine = Engine(title="简单演示游戏", width=800, height=600, fps=60)
 
     # 注册场景
+    engine.register_scene("start", StartScene(engine))
     engine.register_scene("game", GameScene(engine))
-    # 设置初始场景
-    engine.switch_scene("game")
+    engine.register_scene("end", EndScene(engine))
+
+    # 设置初始场景为开始菜单
+    engine.switch_scene("start")
 
     # 启动游戏
     engine.start()
-
-
-# try:
-#     engine.start()
-# except Exception as e:
-#     print(f"游戏发生错误: {e}")
-# finally:
-#     pygame.quit()
-#     sys.exit()
 
 
 if __name__ == "__main__":
