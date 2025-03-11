@@ -15,6 +15,12 @@ class World:
         self.entities = set()  # 存储所有实体ID的集合
         self.systems = []  # 存储所有系统的列表
         self.components = {}  # 组件存储：{组件类型: {实体ID: 组件实例}}
+        self.global_state = {
+            "paused": False,  # 游戏暂停状态
+            "time_scale": 1.0,  # 时间缩放因子
+            "debug_mode": False,  # 调试模式开关
+            "global_config": {}  # 全局配置参数
+        }
 
     def create_entity(self) -> Entity:
         """
@@ -120,6 +126,38 @@ class World:
         if system in self.systems:
             self.systems.remove(system)
 
+    def set_paused(self, paused: bool):
+        """设置全局暂停状态"""
+        self.global_state["paused"] = paused
+
+    def is_paused(self) -> bool:
+        """获取当前暂停状态"""
+        return self.global_state["paused"]
+
+    def set_time_scale(self, scale: float):
+        """设置时间缩放因子"""
+        self.global_state["time_scale"] = max(0.0, scale)
+
+    def get_time_scale(self) -> float:
+        """获取当前时间缩放因子"""
+        return self.global_state["time_scale"]
+
+    def set_debug_mode(self, debug: bool):
+        """设置调试模式开关"""
+        self.global_state["debug_mode"] = debug
+
+    def is_debug_mode(self) -> bool:
+        """检查是否处于调试模式"""
+        return self.global_state["debug_mode"]
+
+    def update_global_config(self, key: str, value):
+        """更新全局配置参数"""
+        self.global_state["global_config"][key] = value
+
+    def get_global_config(self, key: str, default=None):
+        """获取全局配置参数"""
+        return self.global_state["global_config"].get(key, default)
+
     def update(self, delta_time: float) -> None:
         """
         更新所有系统
@@ -127,9 +165,10 @@ class World:
         参数:
             delta_time: 帧间时间差（秒）
         """
+        scaled_delta = delta_time * self.get_time_scale()
         for system in self.systems:
-            if system.is_enabled():
-                system.update(self, delta_time)
+            if system.is_enabled() and not self.is_paused():
+                system.update(self, scaled_delta)
 
     def render(self, render_manager) -> None:
         """

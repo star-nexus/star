@@ -38,11 +38,11 @@ class EndScene(Scene):
         # 创建结果文本
         if self.victory:
             self.result_text = self.title_font.render(
-                "胜利!", True, (255, 215, 0)
+                "win!", True, (255, 215, 0)
             )  # 金色
         else:
             self.result_text = self.title_font.render(
-                "失败!", True, (200, 50, 50)
+                "lose!", True, (200, 50, 50)
             )  # 红色
 
         # 创建统计数据文本
@@ -52,13 +52,15 @@ class EndScene(Scene):
                 text = self.text_font.render(f"{key}: {value}", True, (200, 200, 200))
                 self.stats_text.append(text)
         else:
-            text = self.text_font.render("游戏结束", True, (200, 200, 200))
+            text = self.text_font.render("Game Over", True, (200, 200, 200))
             self.stats_text.append(text)
 
         # 创建按钮
-        self.menu_button_text = self.button_font.render("主菜单", True, (255, 255, 255))
+        self.menu_button_text = self.button_font.render(
+            "Main Menu", True, (255, 255, 255)
+        )
         self.exit_button_text = self.button_font.render(
-            "退出游戏", True, (255, 255, 255)
+            "Exit Game", True, (255, 255, 255)
         )
 
         # 按钮位置和大小

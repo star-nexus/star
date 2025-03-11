@@ -1,98 +1,111 @@
-# Romance of the Three Kingdoms
+# RoTK Game
 
-基于大语言模型的多智能体三国策略游戏。这个项目创建了一个围绕三国时期战争元素的回合制策略游戏，并支持人类玩家与AI智能体交互。
+A simple game built on an Entity-Component-System architecture to demonstrate game development patterns and practices.
 
+## Overview
 
-## 项目特点
+This demo game implements a basic chase mechanic where the player (blue circle) can be chased by an enemy (red circle). The player needs to gain enough speed and collide with the enemy to win. Gray obstacles provide collision mechanics with bounce effects.
 
-- **多智能体系统**：支持多个AI智能体作为游戏单位进行协同和对抗
-- **基于规则的战斗系统**：山克制平，平克制水，水克制山的三角克制关系
-- **动态地图生成**：随机生成包含多种地形的战场环境
-- **多视角模式**：支持上帝视角、红方视角和白方视角
-- **多种游戏模式**：支持人类玩家操作和AI自动对战
+## Architecture
 
-## 安装
+The game is built using an ECS (Entity-Component-System) architecture with a comprehensive engine framework. See [Arch.md](Arch.md) for a detailed architectural overview.
 
-1. 克隆项目仓库：
+## How to Run
 
-```bash
-git clone https://github.com/yourusername/Romance-of-the-Three-Kingdoms.git
-cd Romance-of-the-Three-Kingdoms
+1. Ensure you have Python 3.12+ and Pygame installed
+   ```
+   pip install pygame
+   ```
+
+2. Run the main script
+   ```
+   make run
+   ```
+
+## Game Controls
+
+- **Menu**: Press SPACE to start the game
+- **Game**:
+  - Arrow keys to control the player movement
+  - Build up enough speed to defeat the enemy by colliding with it
+- **Game Over**: Press R to return to the menu
+
+## Key Components
+
+### ECS Framework
+
+- **Entities**: Simple identifiers (player, enemy, obstacles)
+- **Components**: Data containers (Position, Velocity, Collider, etc.)
+- **Systems**: Logic modules (MovementSystem, CollisionSystem, etc.)
+
+### Manager Subsystems
+
+- **EventManager**: Handles communication between systems
+- **InputManager**: Processes player input
+- **RenderManager**: Handles drawing operations
+- **SceneManager**: Controls game flow and scene transitions
+- **ResourceManager**: Loads and manages game assets
+- **AudioManager**: Handles sound effects and music
+
+### Game Scenes
+
+- **MenuScene**: Title screen
+- **GameScene**: Main gameplay area
+- **GameOverScene**: Victory or defeat screen
+
+## Game Logic
+
+1. The player needs to navigate around obstacles
+2. The enemy constantly follows the player
+3. The player wins by colliding with the enemy while moving fast
+4. Obstacles cause entities to bounce on collision
+5. Collisions trigger visual glow effects
+
+## Project Structure
+
+```
+demo_game/
+├── framework/
+│   ├── core/
+│   │   ├── ecs/            # Entity-Component-System implementation
+│   │   └── engine/         # Game engine implementation
+│   └── managers/           # Game subsystem managers
+│       ├── ui/             # User interface framework
+│       ├── audio.py        # Audio management
+│       ├── events.py       # Event system
+│       ├── inputs.py       # Input handling
+│       ├── renders.py      # Rendering pipeline
+│       ├── resources.py    # Asset management
+│       └── scenes.py       # Scene management
+├── game/
+│   ├── components.py       # Game-specific components
+│   ├── managers.py         # Game-specific managers
+│   ├── menu_scenes.py      # Menu and game over scenes
+│   ├── scenes.py           # Main game scene
+│   └── systems.py          # Game-specific systems
+├── main.py                 # Entry point
+├── README.md               # This file
+└── Arch.md                 # Architecture documentation
 ```
 
-2. 安装依赖：
+## Implementation Details
 
-```bash
-pip install -r requirements.txt
-```
+1. **Physics**: Simple circular collision detection with basic bounce physics
+2. **AI**: Enemy follows the player using vector normalization
+3. **UI**: Basic text rendering for menus and game state
+4. **Scene Transitions**: Smooth fade effects between game scenes
+5. **Event System**: Publish-subscribe pattern for game events
 
-## 运行游戏
+## Extending the Game
 
-### 人类玩家模式
+This demo provides a foundation that can be extended in numerous ways:
 
-```bash
-python run_game.py
-```
+1. Add more enemy types with different behaviors
+2. Implement power-ups and special abilities
+3. Create additional levels with different obstacle layouts
+4. Add scoring and progression systems
+5. Enhance visuals with particle effects and animations
 
-### AI对战模式
+## Credits
 
-单智能体调度模式：
-
-```bash
-python run_game.py --ai
-python run_ai.py
-```
-
-多智能体协作模式：
-
-```bash
-python run_game.py --ai --ai_type=muti-agent
-```
-
-
-## 游戏规则
-
-### 单位类型与克制关系
-
-游戏单位遵循相互克制关系：
-- 山 克制 平
-- 平 克制 水
-- 水 克制 山
-
-### 游戏目标
-
-消灭对方阵营的所有单位，或者在规定回合内拥有更多的存活单位。
-
-## 操作方式
-
-- **移动选中单位**：上下左右方向键
-- **选择单位**：
-  - 鼠标左键点击单位
-  - TAB键切换选中单位
-- **视角切换**：
-  - 1: 上帝视角（全局可见）
-  - 2: 红方视角
-  - 3: 白方视角
-- **路径规划**：
-  - 选中单位后按G键，再点击目标位置
-- **执行回合**：H键
-
-## 项目结构
-
-- **game/**: 游戏核心逻辑与系统
-- **map_generator/**: 地图和单位生成器
-- **cyber/**: AI智能体基础架构
-- **mlong/**: 大语言模型集成与智能体实现
-- **entity/**: 游戏实体定义
-- **configs/**: 配置文件
-- **run_log/**: AI运行日志与观察
-
-## 开发环境
-
-- Python 3.10+
-- pygame
-- numpy
-
-## 许可证
-
-[MIT License](LICENSE)
+This demo game was created as an educational project to demonstrate game architecture concepts and patterns.
