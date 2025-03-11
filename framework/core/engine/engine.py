@@ -1,3 +1,4 @@
+import sys
 import pygame
 import time
 from framework.core.ecs.world import World
@@ -58,6 +59,11 @@ class Engine:
     def stop(self) -> None:
         """停止游戏引擎"""
         self.running = False
+
+    def quit(self) -> None:
+        """退出游戏"""
+        pygame.quit()
+        sys.exit()
 
     def _main_loop(self) -> None:
         """游戏主循环"""

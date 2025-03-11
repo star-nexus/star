@@ -213,25 +213,25 @@ class VictorySystem(System):
         """收集游戏统计数据"""
         # 获取玩家阵营单位
         player_units = []
-        units = self.world.get_entities_with_components(UnitStatsComponent)
+        units = world.get_entities_with_components(UnitStatsComponent)
         for unit in units:
-            unit_stats = self.world.get_component(unit, UnitStatsComponent)
+            unit_stats = world.get_component(unit, UnitStatsComponent)
             if unit_stats.faction_id == self.player_faction_id:
                 player_units.append(unit)
 
         # 获取阵营名称
-        faction_names = ["魏国", "蜀国", "吴国", "黄巾军"]
+        faction_names = ["Wei", "Shu", "Wu", "Huang"]
         faction_name = (
             faction_names[self.player_faction_id - 1]
             if 0 < self.player_faction_id <= len(faction_names)
-            else f"阵营{self.player_faction_id}"
+            else f"faction_{self.player_faction_id}"
         )
 
-        # 组装基本统计数据
+        # Assemble basic statistics
         stats = {
-            "游戏时长": f"{int(pygame.time.get_ticks() / 1000)}秒",
-            "剩余单位": len(player_units) if victory else 0,
-            "阵营": faction_name,
+            "Time": f"{int(pygame.time.get_ticks() / 1000)} seconds",
+            "Remaining Units": len(player_units) if victory else 0,
+            "Faction": faction_name,
         }
 
         # 添加战斗统计数据
@@ -242,4 +242,4 @@ class VictorySystem(System):
 
     def _get_combat_statistics(self) -> dict:
         """获取战斗统计数据"""
-        return {"击杀敌军": self.killed_enemies or 0, "损失友军": self.lost_allies or 0}
+        return {"Kills": self.killed_enemies or 0, "Losses": self.lost_allies or 0}
