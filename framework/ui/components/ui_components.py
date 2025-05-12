@@ -1,62 +1,46 @@
-from dataclasses import dataclass, field
-from typing import Tuple, Optional, Callable, List, Dict, Any
-import pygame
-from framework.core.ecs.component import Component
+from dataclasses import dataclass
+from framework.ecs.component import Component
 
 
 @dataclass
 class UITransformComponent(Component):
-    """UI元素的位置和大小"""
+    """基础UI组件，存储UI元素通用属性"""
 
-    position: Tuple[int, int]
-    size: Tuple[int, int]
-    z_index: int = 0
+    x: int = 0
+    y: int = 0
+    width: int = 0
+    height: int = 0
+    visible: bool = True
+    enabled: bool = True
 
 
 @dataclass
-class UIRenderComponent(Component):
-    """UI元素的渲染属性"""
+class ButtonComponent(Component):
+    """按钮组件，存储按钮特定属性"""
 
-    visible: bool = True
-    color: Tuple[int, int, int] = (100, 100, 100)
-    border_color: Optional[Tuple[int, int, int]] = None
+    text: str = ""
+    color: tuple = (100, 100, 200)
+    hover_color: tuple = (120, 120, 220)
+    text_color: tuple = (255, 255, 255)
+    font_size: int = 20
+    callback: callable = None
+    hovered: bool = False
+
+
+@dataclass
+class PanelComponent(Component):
+    """面板组件，存储面板特定属性"""
+
+    color: tuple = (50, 50, 50, 200)
+    border_color: tuple = (255, 255, 255)
     border_width: int = 0
 
 
 @dataclass
-class UILabelComponent(Component):
-    """标签组件"""
+class TextComponent(Component):
+    """文本组件，存储文本特定属性"""
 
-    text: str
-    font: pygame.font.Font
-    text_color: Tuple[int, int, int] = (255, 255, 255)
-
-
-@dataclass
-class UIButtonComponent(Component):
-    """按钮组件"""
-
-    normal_color: Tuple[int, int, int] = (100, 100, 100)
-    hover_color: Tuple[int, int, int] = (150, 150, 150)
-    pressed_color: Tuple[int, int, int] = (50, 50, 50)
-    current_color: Tuple[int, int, int] = field(default=(100, 100, 100), init=False)
-    is_hovered: bool = field(default=False, init=False)
-    is_pressed: bool = field(default=False, init=False)
-
-
-@dataclass
-class UIInteractiveComponent(Component):
-    """交互组件，处理事件响应"""
-
-    enabled: bool = True
-    on_click: Optional[Callable] = None
-    on_hover: Optional[Callable] = None
-    on_leave: Optional[Callable] = None
-
-
-@dataclass
-class UIParentComponent(Component):
-    """父子关系组件，管理UI层次结构"""
-
-    children: List[int] = field(default_factory=list)
-    parent: Optional[int] = None
+    text: str = ""
+    color: tuple = (255, 255, 255)
+    font_size: int = 20
+    centered: bool = False

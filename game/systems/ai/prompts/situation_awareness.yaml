@@ -1,0 +1,14 @@
+prompt: |
+  # 敌方情况
+    观测范围内敌方兵力部署与调动
+    兵力状态:{enemy_status}
+    调动情况:{transfer_situation}
+  # 我方情况
+    我方兵力状态: {my_status}
+    我方作战任务执行进度: {my_transfer_situation}
+  # 作战进程
+    交战双方的接触与交火情况: {contact_and_fire}
+    交战双方的伤亡情况: {death_status}
+bak: |
+  # 战场环境
+  地理环境: { terrain_environment }
