@@ -1,3 +1,5 @@
+import os
+import pygame
 from framework.engine.scenes import Scene
 from framework.ui import (
     UITransformComponent,
@@ -57,6 +59,14 @@ class EditorScene(Scene):
         self.logger.info("进入编辑测试场景")
         super().enter(**kwargs)
 
+        self.prefab_factory = PrefabFactory(self.world)
+
+        self.prefab_factory.create_map("huge")
+
+        self.prefab_factory.create_camera("default")
+
+        self.prefab_factory.create_random_unit(3, 8)
+
         # 注册系统
         self.register_systems()
 
@@ -76,7 +86,7 @@ class EditorScene(Scene):
         self.logger.debug("注册编辑场景系统")
 
         # 创建组件工厂
-        self.component_factory = PrefabFactory(self.world)
+        # self.component_factory = PrefabFactory(self.world)
 
         # 创建地图系统
         self.map_system = MapSystem()
@@ -94,14 +104,14 @@ class EditorScene(Scene):
         self.world.add_system(self.map_render_system)
 
         # 创建战争迷雾系统
-        self.fog_of_war_system = FogOfWarSystem()
-        self.fog_of_war_system.initialize(self.world.context)
-        self.world.add_system(self.fog_of_war_system)
+        # self.fog_of_war_system = FogOfWarSystem()
+        # self.fog_of_war_system.initialize(self.world.context)
+        # self.world.add_system(self.fog_of_war_system)
 
-        # 创建战争迷雾渲染系统
-        self.fog_of_war_render_system = FogOfWarRenderSystem()
-        self.fog_of_war_render_system.initialize(self.world.context)
-        self.world.add_system(self.fog_of_war_render_system)
+        # # 创建战争迷雾渲染系统
+        # self.fog_of_war_render_system = FogOfWarRenderSystem()
+        # self.fog_of_war_render_system.initialize(self.world.context)
+        # self.world.add_system(self.fog_of_war_render_system)
 
         # 创建移动系统
         self.movement_system = UnitMovementSystem()
@@ -129,26 +139,26 @@ class EditorScene(Scene):
 
         self.logger.debug("编辑场景系统注册完成")
 
-        # 使用组件工厂创建地图
-        self.map_entity, map_component = self.component_factory.create_map("default")
+        # # 使用组件工厂创建地图
+        # self.map_entity, map_component = self.component_factory.create_map("default")
 
-        # 设置地图系统的地图实体引用
-        self.map_system.set_map_entity(self.map_entity)
+        # # 设置地图系统的地图实体引用
+        # self.map_system.set_map_entity(self.map_entity)
 
-        # 使用组件工厂创建相机
-        self.camera_entity, camera_component = self.component_factory.create_camera(
-            "default"
-        )
+        # # 使用组件工厂创建相机
+        # self.camera_entity, camera_component = self.component_factory.create_camera(
+        #     "default"
+        # )
 
-        # 设置相机系统的相机实体引用
-        if hasattr(self.camera_system, "set_camera_entity"):
-            self.camera_system.set_camera_entity(self.camera_entity)
+        # # 设置相机系统的相机实体引用
+        # if hasattr(self.camera_system, "set_camera_entity"):
+        #     self.camera_system.set_camera_entity(self.camera_entity)
 
-        # 创建战争迷雾
-        self._create_fog_of_war()
+        # # 创建战争迷雾
+        # self._create_fog_of_war()
 
         # 创建单位
-        self._create_units()
+        # self._create_units()
 
         # 设置摄像机与地图的关联
         # self.camera_system.set_map(self.map_entity)
@@ -379,8 +389,8 @@ class EditorScene(Scene):
             (UnitType.INFANTRY, "INFANTRY"),
             (UnitType.CAVALRY, "CAVALRY"),
             (UnitType.ARCHER, "ARCHER"),
-            (UnitType.SIEGE, "SIEGE"),
-            (UnitType.HERO, "HERO"),
+            # (UnitType.SIEGE, "SIEGE"),
+            # (UnitType.HERO, "HERO"),
         ]
 
         # 创建单位类型标题
@@ -574,6 +584,9 @@ class EditorScene(Scene):
             elif key == "f":
                 self.logger.info("收到切换战争迷雾事件")
                 self._on_toggle_fog_click()
+            elif key == pygame.K_p:
+                self.logger.msg("收到保存地图为图像事件")
+                self._save_map_as_image()
             elif key == "escape":
                 if self.edit_mode != "none":
                     self.logger.info("退出编辑模式")
@@ -705,6 +718,176 @@ class EditorScene(Scene):
         faction_names = {0: "player", 1: "enemy", 2: "neutral"}
         self.logger.info(f"选择阵营: {faction_names.get(faction_id, str(faction_id))}")
         self._update_status_display()
+
+    def _save_map_as_image(self):
+        """将当前地图（包括单位）保存为图像文件"""
+        import pygame
+        import os
+        import datetime
+
+        self.logger.msg("开始保存地图为图像...")
+
+        map_entity = self.world.context.with_all(MapComponent).first()
+        map_component = self.world.context.get_component(map_entity, MapComponent)
+        if not map_component:
+            self.logger.error("无法保存地图：地图组件未初始化")
+            return
+
+        # 计算完整地图的尺寸
+        tile_size = map_component.tile_size
+        map_width_px = map_component.width * tile_size
+        map_height_px = map_component.height * tile_size
+
+        self.logger.info(f"地图尺寸: {map_width_px}x{map_height_px} 像素")
+
+        # 创建一个足够大的surface来容纳整个地图，使用RGB模式而不是RGBA
+        map_surface = pygame.Surface((map_width_px, map_height_px), pygame.SRCALPHA)
+        # 填充白色背景，确保不是透明的
+        map_surface.fill((255, 255, 255, 255))
+
+        # 保存当前相机状态
+        original_camera_x = None
+        original_camera_y = None
+        original_camera_zoom = None
+
+        if self.camera_system and hasattr(self.camera_system, "camera_component"):
+            camera_component = self.camera_system.camera_component
+            original_camera_x = camera_component.x
+            original_camera_y = camera_component.y
+            original_camera_zoom = camera_component.zoom
+
+            # 临时设置相机以覆盖整个地图
+            camera_component.x = map_width_px / 2
+            camera_component.y = map_height_px / 2
+            camera_component.zoom = 1.0
+
+        # 渲染地图到surface
+        if self.map_render_system:
+            # 渲染所有地形格子
+            for (x, y), tile_entity in map_component.tile_entities.items():
+                tile_component = self.world.get_component(tile_entity, TileComponent)
+                if tile_component:
+                    # 计算格子在surface上的位置
+                    pos_x = x * tile_size
+                    pos_y = y * tile_size
+
+                    # 使用地图渲染系统的方法渲染格子
+                    tile_surface = self.map_render_system._render_tile(
+                        tile_component, tile_size
+                    )
+                    map_surface.blit(tile_surface, (pos_x, pos_y))
+
+        # 渲染单位到surface
+        if (
+            self.unit_render_system
+            and self.unit_system
+            and hasattr(self.unit_system, "unit_entities")
+        ):
+            for unit_entity in self.unit_system.unit_entities:
+                unit_component = self.world.get_component(unit_entity, UnitComponent)
+                if unit_component:
+                    # 计算单位在surface上的位置 - 使用格子坐标乘以格子大小
+                    grid_x = int(unit_component.position_x / tile_size)
+                    grid_y = int(unit_component.position_y / tile_size)
+                    pos_x = grid_x * tile_size
+                    pos_y = grid_y * tile_size
+
+                    # 使用单位渲染系统的_render_unit_surface方法渲染单位
+                    # 而不是_get_unit_texture，因为前者会渲染完整的单位（包括状态、血条等）
+                    unit_surface = self.unit_render_system._render_unit_surface(
+                        unit_component, tile_size
+                    )
+                    if unit_surface:
+                        map_surface.blit(unit_surface, (pos_x, pos_y))
+
+        # 恢复相机状态
+        if (
+            self.camera_system
+            and hasattr(self.camera_system, "camera_component")
+            and original_camera_x is not None
+        ):
+            camera_component = self.camera_system.camera_component
+            camera_component.x = original_camera_x
+            camera_component.y = original_camera_y
+            camera_component.zoom = original_camera_zoom
+
+        # 创建保存目录
+        save_dir = os.path.join(os.getcwd(), "screenshots")
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 生成文件名（使用当前时间戳）
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"map_{timestamp}.png"
+        filepath = os.path.join(save_dir, filename)
+
+        # 保存图像
+        pygame.image.save(map_surface, filepath)
+
+        self.logger.info(f"地图已保存为图像: {filepath}")
+
+        # 显示保存成功消息
+        # self._show_save_success_message(filepath)
+
+    def _show_save_success_message(self, filepath):
+        """显示保存成功的消息"""
+        # 创建一个临时UI实体显示保存成功消息
+        screen_width, screen_height = self.engine.screen.get_size()
+
+        # 创建消息面板
+        message_panel = self.world.create_entity()
+        self.world.add_component(
+            message_panel,
+            UITransformComponent(
+                x=screen_width // 2,
+                y=100,
+                width=400,
+                height=80,
+                visible=True,
+                enabled=True,
+            ),
+        )
+        self.world.add_component(
+            message_panel,
+            PanelComponent(color=(60, 100, 60), border_width=2),
+        )
+
+        # 创建消息文本
+        message_text = self.world.create_entity()
+        self.world.add_component(
+            message_text,
+            UITransformComponent(
+                x=screen_width // 2,
+                y=100,
+                visible=True,
+                enabled=True,
+            ),
+        )
+        self.world.add_component(
+            message_text,
+            TextComponent(
+                text=f"地图已保存为图像\n{os.path.basename(filepath)}",
+                font_size=18,
+                color=(255, 255, 255),
+                centered=True,
+            ),
+        )
+        self.logger.msg(f"地图已保存为图像\n{os.path.basename(filepath)}")
+        # 将消息实体添加到临时列表中
+        self.status_entities.append(message_panel)
+        self.status_entities.append(message_text)
+
+        # 设置定时器，3秒后移除消息
+        import threading
+
+        timer = threading.Timer(3.0, self._remove_save_message)
+        timer.start()
+
+    def _remove_save_message(self):
+        """移除保存成功的消息"""
+        # 移除所有状态显示实体
+        for entity in self.status_entities:
+            self.world.destroy_entity(entity)
+        self.status_entities.clear()
 
     def _on_config_map_click(self):
         """配置地图按钮点击回调"""

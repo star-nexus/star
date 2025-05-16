@@ -103,41 +103,42 @@ class MapGenerator:
 
                 # 水系地形 (0-15)
                 if e < 15:
-                    if m < 0.3:  # 浅水
-                        terrain[y, x] = TerrainType.LAKE.value
-                    elif m < 0.6:  # 深水
-                        terrain[y, x] = TerrainType.OCEAN.value
-                    else:  # 湿地
-                        terrain[y, x] = TerrainType.WETLAND.value
+                    # if m < 0.3:  # 浅水
+                    #     terrain[y, x] = TerrainType.LAKE.value
+                    # elif m < 0.6:  # 深水
+                    #     terrain[y, x] = TerrainType.OCEAN.value
+                    # else:  # 湿地
+                    #     terrain[y, x] = TerrainType.WETLAND.value
+                    terrain[y, x] = TerrainType.LAKE.value
 
                 # 低地地形 (15-40)
-                elif e < 40:
-                    if m < 0.3:  # 干燥低地
+                elif e < 75:  # 40:
+                    if m < 0.6:  # 干燥低地
                         terrain[y, x] = TerrainType.PLAIN.value
-                    elif m < 0.6:  # 适中湿度
-                        terrain[y, x] = TerrainType.GRASSLAND.value
+                    # elif m < 0.6:  # 适中湿度
+                    #     terrain[y, x] = TerrainType.GRASSLAND.value
                     else:  # 潮湿低地
                         terrain[y, x] = TerrainType.FOREST.value
 
-                # 丘陵地形 (40-60)
-                elif e < 60:
-                    if m < 0.4:  # 干燥丘陵
-                        terrain[y, x] = TerrainType.HILL.value
-                    elif m < 0.7:  # 有植被的丘陵
-                        terrain[y, x] = (
-                            TerrainType.HILL.value
-                        )  # 仍然是丘陵但后续会添加森林特性
-                    else:  # 湿润丘陵
-                        terrain[y, x] = TerrainType.FOREST.value
+                # # 丘陵地形 (40-60)
+                # elif e < 60:
+                #     if m < 0.4:  # 干燥丘陵
+                #         terrain[y, x] = TerrainType.HILL.value
+                #     elif m < 0.7:  # 有植被的丘陵
+                #         terrain[y, x] = (
+                #             TerrainType.HILL.value
+                #         )  # 仍然是丘陵但后续会添加森林特性
+                #     else:  # 湿润丘陵
+                #         terrain[y, x] = TerrainType.FOREST.value
 
-                # 高原与盆地 (60-75)
-                elif e < 75:
-                    # 检查周围，如果周围都高则为盆地，否则为高原
-                    is_basin = self._is_basin(elevation, x, y)
-                    if is_basin:
-                        terrain[y, x] = TerrainType.BASIN.value
-                    else:
-                        terrain[y, x] = TerrainType.PLATEAU.value
+                # # 高原与盆地 (60-75)
+                # elif e < 75:
+                #     # 检查周围，如果周围都高则为盆地，否则为高原
+                #     is_basin = self._is_basin(elevation, x, y)
+                #     if is_basin:
+                #         terrain[y, x] = TerrainType.BASIN.value
+                #     else:
+                #         terrain[y, x] = TerrainType.PLATEAU.value
 
                 # 山地 (75-100)
                 else:
@@ -313,71 +314,71 @@ class MapGenerator:
                         settlements.append((x, y, True))  # True表示城市
                         break
 
-        # 放置村庄（更随机的位置）
-        for _ in range(num_villages):
-            for _ in range(50):  # 尝试50次找到合适的位置
-                x = random.randint(0, self.width - 1)
-                y = random.randint(0, self.height - 1)
-                if terrain[y, x] in [
-                    TerrainType.PLAIN.value,
-                    TerrainType.GRASSLAND.value,
-                    TerrainType.HILL.value,
-                    TerrainType.FOREST.value,
-                ]:
-                    terrain[y, x] = TerrainType.VILLAGE.value
-                    settlements.append((x, y, False))  # False表示村庄
-                    break
+        # # 放置村庄（更随机的位置）
+        # for _ in range(num_villages):
+        #     for _ in range(50):  # 尝试50次找到合适的位置
+        #         x = random.randint(0, self.width - 1)
+        #         y = random.randint(0, self.height - 1)
+        #         if terrain[y, x] in [
+        #             TerrainType.PLAIN.value,
+        #             TerrainType.GRASSLAND.value,
+        #             TerrainType.HILL.value,
+        #             TerrainType.FOREST.value,
+        #         ]:
+        #             terrain[y, x] = TerrainType.VILLAGE.value
+        #             settlements.append((x, y, False))  # False表示村庄
+        #             break
 
-        # 连接城市和村庄
-        # 首先连接所有城市
-        cities = [s for s in settlements if s[2]]
-        for i in range(len(cities)):
-            # 每个城市至少连接到一个其他城市
-            nearest_city = None
-            min_dist = float("inf")
+        # # 连接城市和村庄
+        # # 首先连接所有城市
+        # cities = [s for s in settlements if s[2]]
+        # for i in range(len(cities)):
+        #     # 每个城市至少连接到一个其他城市
+        #     nearest_city = None
+        #     min_dist = float("inf")
 
-            for j in range(len(cities)):
-                if i != j:
-                    x1, y1, _ = cities[i]
-                    x2, y2, _ = cities[j]
-                    dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                    if dist < min_dist:
-                        min_dist = dist
-                        nearest_city = cities[j]
+        #     for j in range(len(cities)):
+        #         if i != j:
+        #             x1, y1, _ = cities[i]
+        #             x2, y2, _ = cities[j]
+        #             dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        #             if dist < min_dist:
+        #                 min_dist = dist
+        #                 nearest_city = cities[j]
 
-            if nearest_city:
-                x1, y1, _ = cities[i]
-                x2, y2, _ = nearest_city
-                self._create_road(terrain, elevation, (x1, y1), (x2, y2))
+        #     if nearest_city:
+        #         x1, y1, _ = cities[i]
+        #         x2, y2, _ = nearest_city
+        #         self._create_road(terrain, elevation, (x1, y1), (x2, y2))
 
-        # 然后将村庄连接到最近的城市或道路
-        villages = [s for s in settlements if not s[2]]
-        for village in villages:
-            x1, y1, _ = village
+        # # 然后将村庄连接到最近的城市或道路
+        # villages = [s for s in settlements if not s[2]]
+        # for village in villages:
+        #     x1, y1, _ = village
 
-            # 寻找最近的城市或现有道路
-            nearest_point = None
-            min_dist = float("inf")
+        #     # 寻找最近的城市或现有道路
+        #     nearest_point = None
+        #     min_dist = float("inf")
 
-            # 检查所有城市
-            for city in cities:
-                x2, y2, _ = city
-                dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest_point = (x2, y2)
+        #     # 检查所有城市
+        #     for city in cities:
+        #         x2, y2, _ = city
+        #         dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        #         if dist < min_dist:
+        #             min_dist = dist
+        #             nearest_point = (x2, y2)
 
-            # 检查现有道路
-            for y in range(self.height):
-                for x in range(self.width):
-                    if terrain[y, x] == TerrainType.ROAD.value:
-                        dist = math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
-                        if dist < min_dist:
-                            min_dist = dist
-                            nearest_point = (x, y)
+        #     # 检查现有道路
+        #     for y in range(self.height):
+        #         for x in range(self.width):
+        #             if terrain[y, x] == TerrainType.ROAD.value:
+        #                 dist = math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
+        #                 if dist < min_dist:
+        #                     min_dist = dist
+        #                     nearest_point = (x, y)
 
-            if nearest_point and random.random() < 0.7:  # 70%的村庄有道路
-                self._create_road(terrain, elevation, (x1, y1), nearest_point)
+        #     if nearest_point and random.random() < 0.7:  # 70%的村庄有道路
+        #         self._create_road(terrain, elevation, (x1, y1), nearest_point)
 
     def _create_road(
         self,
@@ -460,7 +461,19 @@ class MapGenerator:
 
     def generate_map(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """生成完整地图，返回(海拔图, 地形图, 湿度图)"""
+        # 海拔
         elevation = self.generate_elevation_map()
+        # 湿度
         moisture = self.generate_moisture_map()
         terrain = self.generate_terrain_map(elevation, moisture)
+        return elevation, terrain, moisture
+
+    def generate_v1_map(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """生成完整地图，返回(海拔图, 地形图, 湿度图)"""
+        from game.utils.map_data_generator import generate_map_data
+
+        elevation = None
+        moisture = None
+        # 因为 宽 高 相等 所以 只需要一个参数
+        terrain = generate_map_data(self.width)
         return elevation, terrain, moisture

@@ -17,6 +17,7 @@ class UnitAttackSystem(System):
         super().__init__(required_components=[UnitComponent], priority=priority)
         self.logger = get_logger("AttackSystem")
         self.attack_cooldowns = {}  # 存储单位攻击冷却时间
+        self.auto_attack_timer = 0.0  # 自动攻击计时器
 
     def initialize(self, context):
         """初始化系统"""
@@ -56,6 +57,12 @@ class UnitAttackSystem(System):
                 ):
                     unit.state = UnitState.IDLE
                     self.logger.debug(f"单位 {unit.name} 攻击完成，恢复为空闲状态")
+
+        # 自动攻击逻辑
+        self.auto_attack_timer += delta_time
+        if self.auto_attack_timer >= 2.0:  # 每2秒检测一次
+            self._check_auto_attack()
+            self.auto_attack_timer = 0.0  # 重置计时器
 
     def _update_attack_cooldowns(self, delta_time: float):
         """更新攻击冷却时间"""
@@ -192,3 +199,39 @@ class UnitAttackSystem(System):
             target.position_y - attacker.position_y
         )
         return distance <= attacker.range
+
+    def _check_auto_attack(self):
+        """检测并执行自动攻击"""
+        # 获取所有存活的单位
+        units_data = []
+        for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
+            UnitComponent
+        ):
+            if unit.is_alive and unit.state != UnitState.ATTACKING:
+                units_data.append((entity, unit))
+
+        # 检查每个单位是否可以攻击其他阵营的单位
+        for attacker_entity, attacker_unit in units_data:
+            # 跳过正在冷却的单位
+            if (
+                attacker_entity in self.attack_cooldowns
+                and self.attack_cooldowns[attacker_entity] > 0
+            ):
+                continue
+
+            # 查找攻击范围内的敌对单位
+            for target_entity, target_unit in units_data:
+                # 跳过同一单位或同一阵营的单位
+                if (
+                    attacker_entity == target_entity
+                    or attacker_unit.faction == target_unit.faction
+                ):
+                    continue
+
+                # 检查是否在攻击范围内
+                if self.is_in_attack_range(attacker_unit, target_unit):
+                    self.logger.info(
+                        f"单位 {attacker_unit.name} 自动攻击范围内的敌对单位 {target_unit.name}"
+                    )
+                    self.attack_unit(attacker_entity, target_entity)
+                    break  # 每次只攻击一个目标

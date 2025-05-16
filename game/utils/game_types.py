@@ -16,8 +16,8 @@ class UnitType(Enum):
     INFANTRY = auto()  # 步兵
     CAVALRY = auto()  # 骑兵
     ARCHER = auto()  # 弓箭手
-    SIEGE = auto()  # 攻城单位
-    HERO = auto()  # 英雄单位
+    # SIEGE = auto()  # 攻城单位
+    # HERO = auto()  # 英雄单位
 
 
 class UnitState(Enum):
@@ -58,6 +58,9 @@ class TerrainType(Enum):
     CASTLE = auto()  # 城堡
     PASS = auto()  # 关隘/隘口
 
+    DEEP_WATER = auto()  # 深海
+    SHALLOW_WATER = auto()  # 浅海
+
 
 class ViewMode(Enum):
     """游戏统计视图模式"""
@@ -74,3 +77,29 @@ class FOWType:
     UNKNOWN = 0  # 未知区域
     FOG = 1  # 迷雾
     EXPLORATION = 2  # 探索区域
+
+
+TerrainTypeMapping = {
+    TerrainType.PLAIN: "平原",
+    TerrainType.HILL: "丘陵",
+    TerrainType.MOUNTAIN: "山地",
+    TerrainType.PLAIN: "平原",
+    TerrainType.HILL: "丘陵",
+    TerrainType.MOUNTAIN: "山地",
+    TerrainType.PLATEAU: "高原",
+    TerrainType.BASIN: "盆地",
+    TerrainType.FOREST: "森林",
+    TerrainType.GRASSLAND: "草地",
+    TerrainType.RIVER: "河流",
+    TerrainType.LAKE: "湖泊",
+    TerrainType.OCEAN: "海洋",
+    TerrainType.WETLAND: "湿地",
+    TerrainType.ROAD: "道路",
+    TerrainType.BRIDGE: "桥梁",
+    TerrainType.CITY: "城市",
+    TerrainType.VILLAGE: "村庄",
+    TerrainType.CASTLE: "城堡",
+    TerrainType.PASS: "关隘/隘口",
+    TerrainType.DEEP_WATER: "深海",
+    TerrainType.SHALLOW_WATER: "浅海",
+}

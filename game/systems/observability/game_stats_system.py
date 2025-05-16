@@ -1,14 +1,17 @@
-import pygame
-from typing import Dict, List, Tuple, Optional, Set
-from enum import Enum, auto
+from curses import meta
+from typing import Set
 from framework.ecs.system import System
 from framework.ecs.entity import Entity
 from framework.utils.logging import get_logger
 from framework.engine.events import EventType, EventMessage
-from game.components import UnitComponent, UnitState, UnitType
-from game.components import MapComponent, TileComponent, TerrainType
+from game.components import (
+    UnitComponent,
+    MapComponent,
+    TileComponent,
+    TerrainType,
+)
 from game.components.status.battle_stats_component import BattleStatsComponent
-from game.utils.game_types import ViewMode
+from game.utils.game_types import ViewMode, TerrainTypeMapping
 
 
 class GameStatsSystem(System):
@@ -61,6 +64,9 @@ class GameStatsSystem(System):
         )
         self.context.event_manager.subscribe(
             EventType.UNIT_MOVED, self._handle_unit_moved
+        )
+        self.context.event_manager.subscribe(
+            EventType.UNIT_ARRIVALED, self._handle_unit_arrived
         )
 
     def update_current_stats(self):
@@ -140,7 +146,7 @@ class GameStatsSystem(System):
         self.update_battlefield_stats()
 
         # 检查游戏结束条件
-        self.check_game_over()
+        # self.check_game_over()
 
     def _handle_unit_moved(self, event: EventMessage):
         """处理单位移动事件，用于跟踪调动情况。"""
@@ -177,11 +183,11 @@ class GameStatsSystem(System):
                     if stat_comp.faction == faction:
                         stat_comp.my_transfer_situation[
                             f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
-                        ] = f"移动到 ({target_x}, {target_y})"
+                        ] = f"正在移动到 ({target_x}, {target_y})"
                     else:
                         stat_comp.enemy_transfer_situation[
                             f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
-                        ] = f"移动到 ({target_x}, {target_y})"
+                        ] = f"正在移动到 ({target_x}, {target_y})"
 
                 # 添加到调动记录列表
                 # self.battlefield_stats_component.transfer_situation[faction].append(
@@ -220,10 +226,14 @@ class GameStatsSystem(System):
                     BattleStatsComponent
                 ).iter_components(BattleStatsComponent):
                     if stat_comp.faction == killed_faction:
+                        if "损失" not in stat_comp.death_status:
+                            stat_comp.death_status["损失"] = []
                         stat_comp.death_status["损失"].append(
                             f"{killed_comp.name}(ID:{killed_entity})"
                         )
                     if stat_comp.faction == killer_faction:
+                        if "击杀" not in stat_comp.death_status:
+                            stat_comp.death_status["击杀"] = []
                         stat_comp.death_status["击杀"].append(
                             f"{killed_comp.name}(ID:{killed_entity})"
                         )
@@ -237,11 +247,7 @@ class GameStatsSystem(System):
         # Ensure unit_counts is up-to-date before checking
         # self.update_current_stats() # Called in main update loop already
 
-        factions_with_units = [
-            faction for faction, count in self.unit_counts.items() if count > 0
-        ]
-
-        active_factions_count = len(factions_with_units)
+        active_factions_count = len(self.unit_counts.keys())
 
         # Consider only factions that are part of the game (e.g., not neutral if neutrals don't count for winning)
         # This might require a list of active/playing factions.
@@ -249,15 +255,15 @@ class GameStatsSystem(System):
 
         if active_factions_count == 1 and not self.game_over:
             self.game_over = True
-            self.winner = factions_with_units[0]
+            self.winner = self.unit_counts.keys()[0]
             self.logger.info(f"游戏结束，胜利者: {self.winner}")
             # Post GAME_OVER event if your event system supports it
             # self.context.event_manager.post(EventMessage(EventType.GAME_OVER, {"winner": self.winner}))
 
             # 更新战场统计组件中的作战进程信息
-            if self.battlefield_stats_component:
-                self.battlefield_stats_component.death_status["game_over"] = True
-                self.battlefield_stats_component.death_status["winner"] = self.winner
+            # if self.battlefield_stats_component:
+            #     self.battlefield_stats_component.death_status["game_over"] = True
+            #     self.battlefield_stats_component.death_status["winner"] = self.winner
         elif active_factions_count == 0 and not self.game_over:
             # 所有阵营都没有单位，平局
             self.game_over = True
@@ -266,9 +272,9 @@ class GameStatsSystem(System):
             # self.context.event_manager.post(EventMessage(EventType.GAME_OVER, {"winner": None}))
 
             # 更新战场统计组件中的作战进程信息
-            if self.battlefield_stats_component:
-                self.battlefield_stats_component.death_status["game_over"] = True
-                self.battlefield_stats_component.death_status["winner"] = "DRAW"
+            # if self.battlefield_stats_component:
+            #     self.battlefield_stats_component.death_status["game_over"] = True
+            #     self.battlefield_stats_component.death_status["winner"] = "DRAW"
         # If more than one faction has units, game continues (unless other conditions apply)
 
     def _handle_damage_dealt(self, event: EventMessage):
@@ -380,11 +386,11 @@ class GameStatsSystem(System):
                 self._update_my_status(battle_stats)
 
                 # 更新战场环境
-                self._update_terrain_environment()
+                self._update_terrain_environment(battle_stats)
 
     def _update_enemy_status(self, battle_stats: BattleStatsComponent):
         """更新敌方兵力部署与状态。"""
-
+        battle_stats.enemy_status_info = {}
         # 遍历所有单位，统计敌方单位状态
         for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
             UnitComponent
@@ -401,43 +407,13 @@ class GameStatsSystem(System):
             battle_stats.enemy_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "health": f"{unit.current_health} / {unit.max_health}",
-                "position": (unit.position_x, unit.position_y),
+                "血量": f"{unit.current_health} / {unit.max_health}",
+                "位置": (unit.position_x, unit.position_y),
             }
-
-        #     # 更新统计数据
-        #     enemy_status[faction]["unit_count"] += 1
-
-        #     # 按类型统计
-        #     unit_type = unit.unit_type.value
-        #     enemy_status[faction]["unit_types"].setdefault(unit_type, 0)
-        #     enemy_status[faction]["unit_types"][unit_type] += 1
-
-        #     # 按状态统计
-        #     unit_state = unit.state.name
-        #     enemy_status[faction]["unit_states"].setdefault(unit_state, 0)
-        #     enemy_status[faction]["unit_states"][unit_state] += 1
-
-        #     # 记录位置
-        #     enemy_status[faction]["positions"].append(
-        #         (unit.position_x, unit.position_y)
-        #     )
-
-        #     # 计算健康度百分比
-        #     health_percentage = (unit.current_health / unit.max_health) * 100
-        #     enemy_status[faction]["health_percentage"] += health_percentage
-
-        # # 计算平均健康度
-        # for faction, data in enemy_status.items():
-        #     if data["unit_count"] > 0:
-        #         data["health_percentage"] /= data["unit_count"]
-
-        # 更新战场统计组件
-        # battlefield_stats_component.enemy_status = enemy_status
 
     def _update_my_status(self, battle_stats):
         """更新我方兵力状态和任务执行进度。"""
-
+        battle_stats.my_status_info = {}
         # 遍历所有单位，统计我方单位状态
         for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
             UnitComponent
@@ -449,94 +425,93 @@ class GameStatsSystem(System):
             battle_stats.my_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "health": f"{unit.current_health} / {unit.max_health}",
-                "position": (unit.position_x, unit.position_y),
+                "血量": f"{unit.current_health} / {unit.max_health}",
+                "位置": (unit.position_x, unit.position_y),
             }
-            # # 按类型统计
-            # unit_type = unit.unit_type.name
-            # my_status["unit_types"].setdefault(unit_type, 0)
-            # my_status["unit_types"][unit_type] += 1
 
-            # # 按状态统计
-            # unit_state = unit.state.name
-            # my_status["unit_states"].setdefault(unit_state, 0)
-            # my_status["unit_states"][unit_state] += 1
-
-            # # 记录位置
-            # my_status["positions"].append((unit.position_x, unit.position_y))
-
-            # # 计算健康度百分比
-            # health_percentage = (unit.current_health / unit.max_health) * 100
-            # my_status["health_percentage"] += health_percentage
-
-        # # 计算平均健康度
-        # if my_status["unit_count"] > 0:
-        #     my_status["health_percentage"] /= my_status["unit_count"]
-
-        # # 更新战场统计组件
-        # self.battlefield_stats_component.my_status = my_status
-
-        # # 更新任务执行进度（这里只是一个示例，实际游戏中可能有更复杂的任务系统）
-        # # 假设任务是消灭敌方单位，进度为已消灭的敌方单位数量占总数的百分比
-        # task_progress = {}
-
-        # # 获取敌方单位总数
-        # enemy_total = sum(
-        #     self.unit_counts.get(faction, 0)
-        #     for faction in self.unit_counts
-        #     if faction != self.player_faction
-        # )
-
-        # # 获取已消灭的敌方单位数量
-        # enemy_killed = sum(
-        #     self.event_stats["kills_by_player"].get(self.player_faction, 0)
-        # )
-
-        # # 计算进度百分比
-        # if enemy_total > 0:
-        #     task_progress["eliminate_enemies"] = (enemy_killed / enemy_total) * 100
-        # else:
-        #     task_progress["eliminate_enemies"] = 100  # 如果没有敌人，则任务完成
-
-        # # 更新战场统计组件
-        # self.battlefield_stats_component.task_progress = task_progress
-
-    def _update_terrain_environment(self):
+    def _update_terrain_environment(self, battle_stats):
         """更新战场地理环境信息。"""
-        if not self.battlefield_stats_component or not self.map_component:
-            return
 
         terrain_environment = {
-            "terrain_types": {},
-            "terrain_distribution": {},
-            "strategic_points": [],
+            "地图元信息": {},
+            "地形描述": {},
+            "地形分布": [],
+            "战略点": [],
         }
 
         # 统计地形类型分布
-        for pos, tile_entity in self.map_component.tile_entities.items():
-            tile_component = self.context.get_component(tile_entity, TileComponent)
-            if tile_component:
-                terrain_type = tile_component.terrain_type.name
-                terrain_environment["terrain_types"].setdefault(terrain_type, 0)
-                terrain_environment["terrain_types"][terrain_type] += 1
+        for entity, (map_component,) in self.context.with_all(
+            MapComponent
+        ).iter_components(MapComponent):
+            meta_info = ""
+            meta_info += f"地图大小: {map_component.width * map_component.tile_size}x{map_component.height * map_component.tile_size}, "
+            meta_info += f"方向: 上北下南左西右东,地图西北角为(0,0),东南角为({map_component.width * map_component.tile_size},{map_component.height * map_component.tile_size}), "
+            terrain_environment["地图元信息"] = meta_info
+            for pos, tile_entity in map_component.tile_entities.items():
+                tile_component = self.context.get_component(tile_entity, TileComponent)
+                if tile_component:
+                    terrain_type = tile_component.type_name
+                    terrain_environment["地形描述"][terrain_type] = {
+                        "移动成本": tile_component.movement_cost,
+                        "防御加成": tile_component.defense_bonus,
+                    }
 
-                # 记录地形分布
-                if terrain_type not in terrain_environment["terrain_distribution"]:
-                    terrain_environment["terrain_distribution"][terrain_type] = []
-                terrain_environment["terrain_distribution"][terrain_type].append(pos)
-
-                # 识别战略要点（例如，关隘、城市、城堡等）
-                if tile_component.terrain_type in [
-                    TerrainType.CITY,
-                    TerrainType.CASTLE,
-                    TerrainType.PASS,
-                ]:
-                    terrain_environment["strategic_points"].append(
-                        {
-                            "position": pos,
-                            "type": terrain_type,
-                        }
+                    # # 记录地形分布
+                    # if terrain_type not in terrain_environment["地形分布"]:
+                    #     terrain_environment["地形分布"] = []
+                    terrain_environment["地形分布"].append(
+                        f"位置在 x:{pos[0] * map_component.tile_size}到{(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size}到{(pos[1] + 1) * map_component.tile_size}间的坐标,地形类型:{terrain_type}"
                     )
 
+                    # 识别战略要点（例如，关隘、城市、城堡等）
+                    if tile_component.terrain_type in [
+                        TerrainType.CITY,
+                        TerrainType.CASTLE,
+                        TerrainType.PASS,
+                    ]:
+                        terrain_environment["战略点"].append(
+                            {
+                                "位置": f"{pos[0] * map_component.tile_size}到{(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size}到{(pos[1] + 1) * map_component.tile_size}",
+                                "类型": terrain_type,
+                            }
+                        )
+
         # 更新战场统计组件
-        self.battlefield_stats_component.terrain_environment = terrain_environment
+        battle_stats.terrain_environment = terrain_environment
+
+    def _handle_unit_arrived(self, event: EventMessage):
+        """处理单位到达事件。"""
+        entity = event.data.get("entity")
+        target_x = event.data.get("target_x")
+        target_y = event.data.get("target_y")
+
+        if entity and target_x is not None and target_y is not None:
+            unit_comp = self.context.get_component(entity, UnitComponent)
+            if unit_comp:
+                # 更新战场统计组件中的调动情况
+                # if self.battlefield_stats_component:
+                faction = unit_comp.faction
+
+                # 初始化调动情况数据结构
+                # if faction not in self.battlefield_stats_component.transfer_situation:
+                #     self.battlefield_stats_component.transfer_situation[faction] = []
+
+                # 记录调动事件
+                # movement = {
+                #     "unit_type": unit_comp.unit_type.name,
+                #     "from": (unit_comp.position_x, unit_comp.position_y),
+                #     "to": (target_x, target_y),
+                #     "distance": abs(target_x - unit_comp.position_x)
+                #     + abs(target_y - unit_comp.position_y),
+                # }
+                self.logger.msg(
+                    f"阵营{faction}的{unit_comp.name}(ID:{entity}) 到达 ({target_x}, {target_y})"
+                )
+
+                for entity, (stat_comp,) in self.context.with_all(
+                    BattleStatsComponent
+                ).iter_components(BattleStatsComponent):
+                    if stat_comp.faction == faction:
+                        stat_comp.my_transfer_situation = {}
+                    else:
+                        stat_comp.enemy_transfer_situation = {}

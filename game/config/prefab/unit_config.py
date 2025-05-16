@@ -5,77 +5,91 @@ from game.utils.game_types import UnitType, UnitState
 UNIT_TYPE_CONFIG = {
     UnitType.INFANTRY: {
         "name": "步兵",
+        "unit_type": UnitType.INFANTRY,
         "max_health": 100,
         "attack": 10,
         "defense": 5,
         "range": 5,
         "base_speed": 2.0,
         "movement": 5,
-        "unit_size": 1.0,
+        "unit_size": 8,
         "abilities": [],
     },
     UnitType.CAVALRY: {
         "name": "骑兵",
-        "max_health": 120,
-        "attack": 12,
-        "defense": 3,
+        "unit_type": UnitType.CAVALRY,
+        "max_health": 150,
+        "attack": 15,
+        "defense": 10,
         "range": 5,
         "base_speed": 10.0,
-        "movement": 7,
-        "unit_size": 1.2,
+        "movement": 10,
+        "unit_size": 8,
         "abilities": ["charge"],
     },
     UnitType.ARCHER: {
         "name": "弓箭手",
+        "unit_type": UnitType.ARCHER,
         "max_health": 80,
-        "attack": 2,
+        "attack": 5,
         "defense": 2,
         "range": 20,
         "base_speed": 3.0,
         "movement": 4,
-        "unit_size": 0.9,
+        "unit_size": 8,
         "abilities": ["ranged_attack"],
     },
-    UnitType.SIEGE: {
-        "name": "攻城单位",
-        "max_health": 150,
-        "attack": 20,
-        "defense": 1,
-        "range": 4,
-        "base_speed": 1.0,
-        "movement": 3,
-        "unit_size": 1.5,
-        "abilities": ["siege_attack"],
-    },
-    UnitType.HERO: {
-        "name": "英雄单位",
-        "max_health": 200,
-        "attack": 25,
-        "defense": 10,
-        "range": 2,
-        "base_speed": 2.5,
-        "movement": 6,
-        "unit_size": 1.3,
-        "abilities": ["leadership", "special_attack"],
-    },
+    # UnitType.SIEGE: {
+    #     "name": "攻城单位",
+    #     "max_health": 150,
+    #     "attack": 20,
+    #     "defense": 1,
+    #     "range": 4,
+    #     "base_speed": 1.0,
+    #     "movement": 3,
+    #     "unit_size": 8,
+    #     "abilities": ["siege_attack"],
+    # },
+    # UnitType.HERO: {
+    #     "name": "英雄单位",
+    #     "max_health": 200,
+    #     "attack": 25,
+    #     "defense": 10,
+    #     "range": 2,
+    #     "base_speed": 2.5,
+    #     "movement": 6,
+    #     "unit_size": 8,
+    #     "abilities": ["leadership", "special_attack"],
+    # },
 }
+
 
 # 阵营配置
 FACTION_CONFIG = {
     0: {
         "name": "玩家",
-        "color": (0, 0, 255),  # 蓝色
+        "color": (128, 0, 128),  # 紫色
         "unit_modifier": {"attack": 1.0, "defense": 1.0},
     },
     1: {
-        "name": "敌军",
-        "color": (255, 0, 0),  # 红色
-        "unit_modifier": {"attack": 1.0, "defense": 1.0},
+        "name": "魏",
+        "color": (0, 0, 255),  # 蓝色
+        "unit_modifier": {"attack": 1.1, "defense": 1.1},
     },
     2: {
-        "name": "中立",
-        "color": (200, 200, 200),  # 灰色
-        "unit_modifier": {"attack": 0.8, "defense": 0.8},
+        "name": "蜀",
+        "color": (0, 255, 0),  # 绿色
+        "unit_modifier": {"attack": 1.1, "defense": 1.1},
+    },
+    3: {
+        "name": "吴",
+        "color": (255, 0, 0),  # 红色
+        "unit_modifier": {"attack": 1.1, "defense": 1.1},
+    },
+    4: {
+        "name": "群",
+        "color": (255, 255, 0),  # 黄色
+        "unit_modifier": {"attack": 1.1, "defense": 1.1},
     },
 }
 
@@ -96,11 +110,11 @@ PREDEFINED_UNITS = {
         "faction": 2,
         "level": 1,
     },
-    "player_hero": {
-        "unit_type": UnitType.HERO,
-        "faction": 0,
-        "level": 3,
-    },
+    # "player_hero": {
+    #     "unit_type": UnitType.HERO,
+    #     "faction": 0,
+    #     "level": 3,
+    # },
 }
 
 

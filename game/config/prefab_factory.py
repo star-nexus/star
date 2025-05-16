@@ -13,6 +13,7 @@ from game.components import (
     UnitState,
     UnitType,
 )
+
 from game.config.prefab.map_config import (
     get_map_config,
     get_terrain_properties,
@@ -27,7 +28,7 @@ from game.config.prefab.unit_config import (
 from game.config.prefab.camera_config import get_camera_config
 from game.config.prefab.fog_of_war_config import get_fog_of_war_config
 from game.utils.map_generator import MapGenerator
-from game.utils.game_types import ViewMode
+from game.utils.game_types import TerrainTypeMapping, ViewMode
 
 
 class PrefabFactory:
@@ -71,11 +72,12 @@ class PrefabFactory:
             map_config["width"], map_config["height"], map_gen_config["seed"]
         )
         elevation, terrain, moisture = map_generator.generate_map()
+        # elevation, terrain, moisture = map_generator.generate_v1_map()
 
         # 存储地图数据
-        map_component.elevation_map = elevation
+        # map_component.elevation_map = elevation
         map_component.terrain_map = terrain
-        map_component.moisture_map = moisture
+        # map_component.moisture_map = moisture
 
         # 生成地图格子实体
         self._generate_tile_entities(map_entity, map_component, terrain)
@@ -98,6 +100,7 @@ class PrefabFactory:
                 # 创建格子组件
                 tile_component = TileComponent(
                     terrain_type=terrain_type,
+                    type_name=TerrainTypeMapping[terrain_type],
                     elevation=map_component.elevation_map[y, x],  # 添加海拔数据
                     moisture=map_component.moisture_map[y, x],
                     movement_cost=terrain_props["movement_cost"],
@@ -254,3 +257,36 @@ class PrefabFactory:
             fog.visibility_map[player_id] = np.zeros((height, width), dtype=np.uint8)
             # 已探索地图：0表示未探索，1表示已探索
             fog.explored_map[player_id] = np.zeros((height, width), dtype=np.uint8)
+
+    def create_random_unit(
+        self, faction_num: int = 3, unit_num: int = 3
+    ) -> Optional[Tuple[Entity, UnitComponent]]:
+        """创建随机单位"""
+        import random
+
+        # 获取所有单位类型
+        unit_types = list(UnitType)
+
+        # 获取地图
+        map_entity = self.world.query_manager.with_all(MapComponent).first()
+        map_component = self.world.component_manager.get_component(
+            map_entity, MapComponent
+        )
+
+        # 获取单位所属阵营
+        # faction = get_faction_config(faction_num)
+        # 随机选择一个位置
+
+        for faction_id in range(faction_num):
+            # 获取单位所属阵营
+            if faction_id == 0:
+                continue
+            for _ in range(unit_num):
+                # 随机选择一个位置
+                x = random.randint(0, (map_component.width) * map_component.tile_size)
+                y = random.randint(0, (map_component.height) * map_component.tile_size)
+
+                unit_type = random.choice(unit_types)
+                # 创建单位
+                self.create_unit(unit_type, faction_id, x, y, owner_id=faction_id)
+            self.create_battle_stats(faction_id)

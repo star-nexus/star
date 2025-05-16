@@ -1,3 +1,5 @@
+import time
+from typing import override
 from framework.engine.scenes import Scene
 from framework.utils.logging import get_logger
 from framework.engine.events import EventMessage, EventType
@@ -31,6 +33,8 @@ class GameScene(Scene):
         super().__init__(engine)
         # 游戏场景所需的属性
         self.logger = get_logger("GameScene")
+        self.scene_start_time = None
+
         self.map_entity = None
         self.camera_entity = None
         self.units = []
@@ -57,6 +61,9 @@ class GameScene(Scene):
         self.logger.info("进入游戏场景")
         super().enter(**kwargs)
 
+        if self.scene_start_time is None:
+            self.scene_start_time = time.time()
+
         # 创建组件工厂
         self.prefab_factory = PrefabFactory(self.world)
 
@@ -78,7 +85,8 @@ class GameScene(Scene):
         # self._create_fog_of_war()
 
         # 创建单位
-        self._create_units()
+        # self._create_units()
+        self.prefab_factory.create_random_unit()
 
         # 创建UI界面
         self.create_ui_entities()
@@ -95,65 +103,138 @@ class GameScene(Scene):
         self.logger.info("开始创建单位")
         # self.units = []
 
-        self.prefab_factory.create_unit(
-            UnitType.INFANTRY,
-            0,
-            100,
-            100,
-            owner_id=0,
-        )
-        self.prefab_factory.create_unit(
-            UnitType.INFANTRY,
-            0,
-            150,
-            100,
-            owner_id=0,
-        )
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     0,
+        #     100,
+        #     100,
+        #     owner_id=0,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     0,
+        #     150,
+        #     100,
+        #     owner_id=0,
+        # )
         self.prefab_factory.create_unit(
             UnitType.INFANTRY,
             1,
-            200,
-            100,
+            20,
+            10,
             owner_id=1,
         )
         self.prefab_factory.create_unit(
             UnitType.ARCHER,
             1,
-            200,
-            150,
+            20,
+            15,
             owner_id=1,
         )
         self.prefab_factory.create_unit(
             UnitType.CAVALRY,
             1,
-            200,
-            200,
+            20,
+            20,
             owner_id=1,
         )
+
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     1,
+        #     220,
+        #     100,
+        #     owner_id=1,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.ARCHER,
+        #     1,
+        #     220,
+        #     150,
+        #     owner_id=1,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.CAVALRY,
+        #     1,
+        #     220,
+        #     200,
+        #     owner_id=1,
+        # )
+
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     1,
+        #     240,
+        #     100,
+        #     owner_id=1,
+        # )
+
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     1,
+        #     260,
+        #     100,
+        #     owner_id=1,
+        # )
 
         self.prefab_factory.create_battle_stats(1)
 
         self.prefab_factory.create_unit(
             UnitType.INFANTRY,
             2,
-            300,
-            100,
+            30,
+            10,
             owner_id=2,
         )
         self.prefab_factory.create_unit(
             UnitType.ARCHER,
             2,
-            300,
-            150,
+            30,
+            15,
             owner_id=2,
         )
         self.prefab_factory.create_unit(
             UnitType.CAVALRY,
             2,
-            300,
-            200,
+            30,
+            20,
             owner_id=2,
         )
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     2,
+        #     320,
+        #     100,
+        #     owner_id=2,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.ARCHER,
+        #     2,
+        #     320,
+        #     150,
+        #     owner_id=2,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.CAVALRY,
+        #     2,
+        #     320,
+        #     200,
+        #     owner_id=2,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     2,
+        #     280,
+        #     100,
+        #     owner_id=2,
+        # )
+        # self.prefab_factory.create_unit(
+        #     UnitType.INFANTRY,
+        #     2,
+        #     260,
+        #     100,
+        #     owner_id=2,
+        # )
         self.prefab_factory.create_battle_stats(2)
 
     def register_systems(self):
@@ -236,6 +317,8 @@ class GameScene(Scene):
     def exit(self):
         self.logger.info("退出游戏场景")
         # 移除所有实体 - 使用列表复制防止迭代时修改集合
+        # 关闭线程池
+        self.world.context.executor.shutdown()
         self.logger.debug("移除游戏实体")
         self.world.entity_manager.clear_entities
         self.logger.debug("游戏实体移除完成")
@@ -268,6 +351,9 @@ class GameScene(Scene):
         if self.ui_system:
             self.world.remove_system(self.ui_system)
 
+        end_time = time.time()
+        self.logger.msg(f"游戏场景运行时间: {end_time - self.scene_start_time:.2f}秒")
+
         self.logger.debug("游戏系统移除完成")
         # 清理游戏场景资源
         super().exit()
@@ -294,7 +380,7 @@ class GameScene(Scene):
             self.engine.event_manager.subscribe(
                 EventType.UNIT_KILLED, self._handle_unit_killed_event
             )
-            self.logger.info("GameScene subscribed to UNIT_KILLED event.")
+            # self.logger.info("GameScene subscribed to UNIT_KILLED event.")
 
             # 订阅单位选择事件
             self.engine.event_manager.subscribe(
@@ -321,70 +407,66 @@ class GameScene(Scene):
     def _handle_unit_killed_event(self, event: EventMessage):
         self.logger.info(f"GameScene: Unit killed event received: {event.data}")
         # 在这里可以更新游戏统计数据，例如 GameStatsSystem
-        if self.game_stats_system:
-            killer_entity = event.data.get("killer")
-            killed_entity = event.data.get("target")
-            if killer_entity and killed_entity:
-                killer_comp = self.world.get_component(killer_entity, UnitComponent)
-                killed_comp = self.world.get_component(killed_entity, UnitComponent)
-                if killer_comp and killed_comp:
-                    self.game_stats_system.record_kill(
-                        killer_comp.owner_id, killed_comp.owner_id
-                    )
+        # killer_entity = event.data.get("killer")
+        # killed_entity = event.data.get("target")
+        # if killer_entity and killed_entity:
+        #     killer_comp = self.world.get_component(killer_entity, UnitComponent)
+        #     killed_comp = self.world.get_component(killed_entity, UnitComponent)
 
-                    # 添加到事件日志
-                    killer_type = (
-                        killer_comp.unit_type.name
-                        if hasattr(killer_comp, "unit_type")
-                        else "未知单位"
-                    )
-                    killed_type = (
-                        killed_comp.unit_type.name
-                        if hasattr(killed_comp, "unit_type")
-                        else "未知单位"
-                    )
-                    log_message = f"Player {killer_comp.owner_id}'s {killer_type} kill Player {killed_comp.owner_id}'s {killed_type}"
-                    self._add_event_log(log_message)
+        # log_message = f"Player {killer_comp.owner_id}'s {killer_type} kill Player {killed_comp.owner_id}'s {killed_type}"
+        # self._add_event_log(log_message)
 
-        # 检查胜负条件，确保在事件处理中调用
+        # # 检查胜负条件，确保在事件处理中调用
         self._check_win_loss_conditions()
 
         # 更新状态面板
         self._update_status_display()
 
     def _check_win_loss_conditions(self):
-        # 示例：检查玩家0是否所有单位都已阵亡 (失败条件)
-        # 示例：检查AI（例如玩家1）是否所有单位都已阵亡 (胜利条件)
-        player_0_units_alive = 0
-        ai_player_units_alive = 0  # 假设AI是玩家1
+        # 统计每个阵营的存活单位数量
+        faction_units_alive = {}
 
+        # 遍历所有单位，统计每个阵营的存活单位数量
         for entity, (unit_comp,) in self.world.context.with_all(
             UnitComponent
         ).iter_components(UnitComponent):
-            if unit_comp.owner_id == 0 and unit_comp.is_alive:
-                player_0_units_alive += 1
-            elif (
-                unit_comp.owner_id != 0 and unit_comp.is_alive
-            ):  # 简单假设非玩家0的都是AI
-                ai_player_units_alive += 1
+            if unit_comp.is_alive:
+                owner_id = unit_comp.owner_id
+                if owner_id not in faction_units_alive:
+                    faction_units_alive[owner_id] = 0
+                faction_units_alive[owner_id] += 1
 
-        # 确保场景仍在游戏中，避免重复跳转
-        # if self.engine.scene_manager.current_scene_name != "game":
+        # 检查是否只有一个阵营有存活单位
+        if len(faction_units_alive) == 1:
+            # 获取胜利阵营ID
+            winner_faction = list(faction_units_alive.keys())[0]
+
+            # 判断胜利者是玩家还是AI
+            # if winner_faction == 0:
+            #     self.logger.info(f"玩家{winner_faction}获得胜利！所有敌方单位已阵亡！")
+            #     self.engine.scene_manager.load_scene(
+            #         "end",
+            #         result="victory",
+            #         reason="Successfully eliminate all enemy units",
+            #     )
+            # else:
+            self.logger.msg(f"阵营{winner_faction}获得胜利！其余阵营单位已全部阵亡！")
+            self.engine.scene_manager.load_scene(
+                "end", result="victory", reason={winner_faction}
+            )
+        elif len(faction_units_alive) == 0:
+            self.logger.info("所有阵营单位均已阵亡，平局！")
+            self.engine.scene_manager.load_scene(
+                "end", result="tie", reason="All units has died, it's a tie"
+            )
+
+        # 检查玩家阵营是否已经全部阵亡
+        # if 0 not in faction_units_alive and len(faction_units_alive) > 0:
+        #     self.logger.info("玩家所有单位已阵亡，游戏失败！")
+        #     self.engine.scene_manager.load_scene(
+        #         "end", result="defeat", reason="All our units have been eliminated"
+        #     )
         #     return
-
-        if player_0_units_alive == 0:
-            self.logger.info("玩家0所有单位已阵亡，游戏失败！")
-            self.engine.scene_manager.load_scene(
-                "end", result="defeat", reason="All our units have been eliminated"
-            )
-            return
-
-        if ai_player_units_alive == 0:
-            self.logger.info("所有敌方单位已阵亡，游戏胜利！")
-            self.engine.scene_manager.load_scene(
-                "end", result="victory", reason="Successfully eliminate all enemy units"
-            )
-            return
 
     def handle_custom_event(self, event: EventMessage):
         """处理自定义事件"""
@@ -629,8 +711,9 @@ class GameScene(Scene):
         """更新状态信息面板"""
         # 更新单位信息
         unit_info_text = None
-        for entity in self.status_entities:
-            text_comp = self.world.get_component(entity, TextComponent)
+        for entity, (text_comp,) in self.world.context.with_all(
+            TextComponent
+        ).iter_components(TextComponent):
             if (
                 text_comp
                 and "select nothing" in text_comp.text
@@ -698,6 +781,8 @@ class GameScene(Scene):
             if unit_comp:
                 log_message = f"Player {unit_comp.owner_id}'s {unit_comp.unit_type.name} from ({from_pos[0]},{from_pos[1]}) to ({to_pos[0]},{to_pos[1]})"
                 self._add_event_log(log_message)
+        # 更新状态面板
+        self._update_status_display()
 
     def _handle_unit_attacked_event(self, event: EventMessage):
         """处理单位攻击事件"""
@@ -712,3 +797,5 @@ class GameScene(Scene):
             if attacker_comp and target_comp:
                 log_message = f"Player {attacker_comp.owner_id}'s {attacker_comp.unit_type.name} attack Player {target_comp.owner_id}'s {target_comp.unit_type.name}, take {damage} damage"
                 self._add_event_log(log_message)
+        # 更新状态面板
+        self._update_status_display()

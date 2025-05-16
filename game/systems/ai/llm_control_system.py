@@ -1,4 +1,6 @@
+from collections import namedtuple
 import enum
+from turtle import mode
 from typing import Optional
 import datetime
 
@@ -35,7 +37,7 @@ class LLMControlSystem(System):
         self.ai_decision_cooldowns = {}  # 存储AI决策冷却时间
 
         self.ai_targets = {}  # 存储AI单位的目标 {ai_entity: target_entity}
-        self.decision_interval = 1.0  # AI决策间隔（秒）
+        self.decision_interval = 5.0  # AI决策间隔（秒）
         self.agent_type = 1  # 1: 单体决策, 2: 群体决策, 3: 混合决策
 
         self.futures = {}
@@ -161,7 +163,7 @@ class LLMControlSystem(System):
                 encoding="utf-8",
             ) as f:
                 sa_template = yaml.safe_load(f)
-
+            # 遍历所有单位
             for entity, (stats_comp,) in self.context.with_all(
                 BattleStatsComponent
             ).iter_components(BattleStatsComponent):
@@ -171,6 +173,7 @@ class LLMControlSystem(System):
                         transfer_situation=stats_comp.enemy_transfer_situation,
                         my_status=stats_comp.my_status_info,
                         my_transfer_situation=stats_comp.my_transfer_situation,
+                        terrain_environment=stats_comp.terrain_environment,
                         contact_and_fire=stats_comp.contact_and_fire,
                         death_status=stats_comp.death_status,
                     )
@@ -180,30 +183,35 @@ class LLMControlSystem(System):
             # sa_template = sa_template.replace("${faction}", str(faction))
 
             # orient() 反思定向
+            try:
+                with open(
+                    f"{Path(__file__).parent}/prompts/orient_thinking.yaml",
+                    "r",
+                    encoding="utf-8",
+                ) as f:
+                    ot_template = yaml.safe_load(f)
 
-            with open(
-                f"{Path(__file__).parent}/prompts/orient_thinking.yaml",
-                "r",
-                encoding="utf-8",
-            ) as f:
-                ot_template = yaml.safe_load(f)
+                ot_prompt = ot_template["prompt"].format(
+                    faction=faction, situation_info=sa_prompt
+                )
+                # self.logger.msg(f"ot: {ot_prompt}")
 
-            ot_prompt = ot_template["prompt"].format(satuation_info=sa_prompt)
-            # self.logger.msg(f"ot: {ot_prompt}")
-
-            self.futures[faction]["orient"] = self.context.executor.submit(
-                self.chat,
-                [
-                    {
-                        "role": "system",
-                        "content": ot_template["system"],
-                    },
-                    {
-                        "role": "user",
-                        "content": ot_prompt,
-                    },
-                ],
-            )
+                self.futures[faction]["orient"] = self.context.executor.submit(
+                    self.chat,
+                    [
+                        {
+                            "role": "system",
+                            "content": ot_template["system"],
+                        },
+                        {
+                            "role": "user",
+                            "content": ot_prompt,
+                        },
+                    ],
+                    log_tag=f"orient_thinking_{faction}",
+                )
+            except Exception as e:
+                self.logger.error(f"error: {e}")
         elif (
             self.futures[faction]["decide"] is None
             and self.step_status[faction]["step"] is STEP.DECIDE
@@ -219,19 +227,23 @@ class LLMControlSystem(System):
                 "{{thinking_result}}",
                 self.step_status[faction]["think"],
             )
-            self.futures[faction]["decide"] = self.context.executor.submit(
-                self.chat,
-                [
-                    {
-                        "role": "system",
-                        "content": de_template["system"],
-                    },
-                    {
-                        "role": "user",
-                        "content": de_prompt,
-                    },
-                ],
-            )
+            try:
+                self.futures[faction]["decide"] = self.context.executor.submit(
+                    self.chat,
+                    [
+                        {
+                            "role": "system",
+                            "content": de_template["system"],
+                        },
+                        {
+                            "role": "user",
+                            "content": de_prompt,
+                        },
+                    ],
+                    log_tag=f"decision_{faction}",
+                )
+            except Exception as e:
+                self.logger.error(f"error: {e}")
         elif self.step_status[faction]["action"] is not None:
             # act()
             # self.logger.msg(f"action: {self.step_status[faction]['action']}")
@@ -442,25 +454,42 @@ class LLMControlSystem(System):
             return map_component
         return None
 
-    def _log_chat_to_file(self, log_type, content):
+    def _log_chat_to_file(self, log_type, content, log_tag):
         """记录聊天内容
 
         Args:
             log_type: 日志类型，'request'或'response'
             content: 要记录的内容
+            log_tag: 日志标签, 按阵营区分
         """
         try:
             # 提取faction_id（如果存在）
             # 构建日志消息前缀
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            prefix = f"[Chat {log_type.upper()}]"
-            prefix += f" Time: {timestamp}"
+            if log_tag:
+                prefix = f"[Chat 阵营{log_tag} {log_type.upper()}]"
+                prefix += f" Time: {timestamp}"
+            else:
+                prefix = f"[Chat {log_type.upper()}]"
+                prefix += f" Time: {timestamp}"
 
-            # 使用不同的日志级别记录不同类型的内容
+            # 创建日志内容
             if log_type == "request":
-                self.logger.msg(
-                    f"{prefix} 发送请求: {json.dumps(content, ensure_ascii=False)}"
-                )
+                content_text = ""
+                for item in content["messages"]:
+                    if item["role"] == "system":
+                        content_text += "System: \n"
+                        content_text += item["content"]
+                        content_text += "\n"
+                    if item["role"] == "user":
+                        content_text += "User: \n"
+                        content_text += item["content"]
+                        content_text += "\n"
+                    if item["role"] == "assistant":
+                        content_text += "Assistant: \n"
+                        content_text += item["content"]
+                        content_text += "\n"
+                log_content = f"{prefix} \n***阵营{log_tag}***\n 发送请求: \n------\n{content_text}\n------"
             else:  # response
                 # 对于响应，记录文本内容
                 if (
@@ -469,13 +498,40 @@ class LLMControlSystem(System):
                     and "text_content" in content["message"]["content"]
                 ):
                     response_text = content["message"]["content"]["text_content"]
-                    self.logger.msg(
-                        f"{prefix} 收到响应:\n=====\n{response_text}\n====="
-                    )
+                    log_content = f"{prefix} \n***阵营{log_tag}***\n 收到响应:\n------\n{response_text}\n------"
                 else:
-                    self.logger.msg(
-                        f"{prefix} 收到响应: {json.dumps(content, ensure_ascii=False)}"
+                    log_content = (
+                        f"{prefix} 收到响应: {json.dumps(content, ensure_ascii=True)}"
                     )
+
+            # 使用主日志记录器记录
+            self.logger.msg(log_content)
+
+            # 根据log_tag将日志写入不同的文件
+            if log_tag:
+                # 确保日志目录存在
+                log_dir = Path(__file__).parent / "logs"
+                log_dir.mkdir(exist_ok=True)
+
+                # 根据log_tag创建对应的日志文件
+                # 处理log_tag中可能包含的特殊字符，确保文件名有效
+                safe_log_tag = (
+                    str(log_tag).replace("/", "_").replace("\\", "_").replace(":", "_")
+                )
+                if "1" in safe_log_tag:
+                    safe_log_tag = "1"
+                if "2" in safe_log_tag:
+                    safe_log_tag = "2"
+                if "0" in safe_log_tag:
+                    safe_log_tag = "0"
+                log_file_path = (
+                    log_dir
+                    / f"{safe_log_tag}_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+                )
+
+                # 追加写入日志文件
+                with open(log_file_path, "a", encoding="utf-8") as f:
+                    f.write(f"{log_content}\n\n")
 
         except Exception as e:
             self.logger.error(f"记录聊天内容时出错: {str(e)}")
@@ -486,6 +542,7 @@ class LLMControlSystem(System):
         # model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_id="us.amazon.nova-pro-v1:0",
         stream=False,
+        log_tag=None,
     ):
         SERVER_URL = "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
         TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
@@ -493,6 +550,11 @@ class LLMControlSystem(System):
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json",
         }
+        if log_tag is not None and "1" in log_tag:
+            model_id = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+        if log_tag is not None and "2" in log_tag:
+            model_id = "us.amazon.nova-pro-v1:0"
         # self.logger.msg(messages)
         data = {
             "messages": messages,
@@ -503,7 +565,7 @@ class LLMControlSystem(System):
         }
 
         # 记录请求内容到日志
-        self._log_chat_to_file("request", data)
+        self._log_chat_to_file("request", data, log_tag)
 
         if stream:
             # 暂时先不支持
@@ -519,7 +581,7 @@ class LLMControlSystem(System):
             response_text = response.json()["message"]["content"]["text_content"]
 
             # 记录响应内容到日志
-            self._log_chat_to_file("response", response.json())
+            self._log_chat_to_file("response", response.json(), log_tag)
 
             return response_text
 

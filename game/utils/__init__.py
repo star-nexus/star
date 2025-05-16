@@ -1,3 +1,17 @@
-from .game_types import UnitType, TerrainType, UnitState, RenderLayer, FOWType
+from .game_types import (
+    UnitType,
+    TerrainType,
+    UnitState,
+    RenderLayer,
+    FOWType,
+    TerrainTypeMapping,
+)
 
-__all__ = ["UnitType", "TerrainType", "UnitState", "RenderLayer", "FOWType"]
+__all__ = [
+    "UnitType",
+    "TerrainType",
+    "UnitState",
+    "RenderLayer",
+    "FOWType",
+    "TerrainTypeMapping",
+]
