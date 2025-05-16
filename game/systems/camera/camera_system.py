@@ -86,7 +86,7 @@ class CameraSystem(System):
         map_component = map_component
         camera_component.x = (map_component.width * map_component.tile_size) / 2
         camera_component.y = (map_component.height * map_component.tile_size) / 2
-        camera_component.zoom = 3
+        camera_component.zoom = 0.4
         self.logger.debug(
             f"摄像机居中到位置 ({camera_component.x}, {camera_component.y})"
         )

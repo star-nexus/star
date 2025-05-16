@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List
 from framework.ecs.component import Component
 
 
@@ -29,7 +29,7 @@ class BattleStatsComponent(Component):
     )  # 我方作战任务执行进度
 
     # 战场环境
-    terrain_environment: Dict[str, Dict] = field(default_factory=dict)  # 地理环境信息
+    terrain_environment: Dict[str, Any] = field(default_factory=dict)  # 地理环境信息
 
     # 作战进程
     contact_and_fire: Dict[str, List] = field(

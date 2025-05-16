@@ -65,6 +65,7 @@ class EventType(Enum):
 
     # 移动事件
     UNIT_MOVED = auto()
+    UNIT_ARRIVALED = auto()
     UNIT_MOVE_STARTED = auto()
     UNIT_MOVE_ENDED = auto()
     UNIT_PATH_BLOCKED = auto()

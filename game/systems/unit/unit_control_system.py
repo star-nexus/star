@@ -539,7 +539,7 @@ class UnitControlSystem(System):
                 unit_comp = self.context.get_component(entity, UnitComponent)
                 if unit_comp:
                     self.logger.info(
-                        f"单位 {unit_comp.name}(ID:{entity}) 移动到 ({world_x:.1f}, {world_y:.1f})"
+                        f"单位 {unit_comp.name}(ID:{entity}) 正在移动到 ({world_x:.1f}, {world_y:.1f})"
                     )
                     try:
                         # unit_system.move_unit(entity, world_x, world_y)

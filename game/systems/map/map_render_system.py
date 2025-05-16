@@ -1,5 +1,6 @@
 import pygame
 import numpy as np
+import os
 from typing import Tuple, List, Dict, Optional
 from framework.ecs.system import System
 from framework.utils.logging import get_logger
@@ -20,11 +21,20 @@ class MapRenderSystem(System):
         self.logger = get_logger("MapRenderSystem")
         self.terrain_colors = self._init_terrain_colors()
         self.tile_cache = {}  # 缓存渲染过的格子，提高性能
+        self.texture_cache = {}  # 贴图缓存
+        self.use_textures = True  # 是否使用贴图渲染
+        self.texture_path = os.path.join(
+            "game", "config", "prefab", "tile_texture"
+        )  # 贴图路径
+        self.terrain_textures = {}  # 地形类型对应的贴图
 
     def initialize(self, context):
         """初始化系统"""
         self.context = context
         self.logger.info("地图渲染系统初始化")
+
+        # 加载贴图
+        self._load_terrain_textures()
 
         # 订阅相机相关事件
         if self.context.event_manager:
@@ -60,6 +70,102 @@ class MapRenderSystem(System):
         """获取地形类型对应的颜色"""
         return self.terrain_colors.get(terrain_type, (200, 200, 200))  # 默认为灰色
 
+    def _load_terrain_textures(self):
+        """加载地形贴图"""
+        # 贴图文件夹路径
+        texture_dir = os.path.join(
+            self.texture_path,
+        )
+        self.logger.info(f"加载地形贴图，路径: {texture_dir}")
+
+        # 检查贴图文件夹是否存在
+        if not os.path.exists(texture_dir):
+            self.logger.warning(f"贴图文件夹不存在: {texture_dir}")
+            self.use_textures = False
+            return
+
+        try:
+            # 遍历贴图文件夹中的所有文件
+            texture_files = os.listdir(texture_dir)
+
+            # 简单的贴图映射规则（根据文件名包含的关键字映射到地形类型）
+            texture_mapping = {
+                "plain": TerrainType.PLAIN,
+                # "hill": TerrainType.HILL,
+                "mountain": TerrainType.MOUNTAIN,
+                "forest": TerrainType.FOREST,
+                # "grass": TerrainType.GRASSLAND,
+                "river": TerrainType.RIVER,
+                # "lake": TerrainType.LAKE,
+                # "ocean": TerrainType.OCEAN,
+                # "road": TerrainType.ROAD,
+                "city": TerrainType.CITY,
+                "bridge": TerrainType.BRIDGE,
+                # "village": TerrainType.VILLAGE,
+                # "castle": TerrainType.CASTLE,
+            }
+
+            # 为每种地形类型选择一个默认贴图
+            # 由于贴图文件名不规则，这里采用一种简单的策略：使用第一个找到的贴图
+            for terrain_type in TerrainType:
+                # 为每种地形类型分配一个默认贴图
+                self.terrain_textures[terrain_type] = None
+
+            # 加载所有贴图文件
+            for file_name in texture_files:
+                if file_name.lower().endswith(".png") or file_name.lower().endswith(
+                    ".jpg"
+                ):
+                    file_path = os.path.join(texture_dir, file_name)
+                    try:
+                        # 加载贴图
+                        texture = pygame.image.load(file_path).convert_alpha()
+
+                        # 根据文件名分配给对应的地形类型
+                        for keyword, terrain_type in texture_mapping.items():
+                            if (
+                                keyword.lower() in file_name.lower()
+                                and self.terrain_textures[terrain_type] is None
+                            ):
+                                self.terrain_textures[terrain_type] = texture
+                                self.logger.msg(
+                                    f"为地形类型 {terrain_type} 加载贴图: {file_name}"
+                                )
+                    except Exception as e:
+                        self.logger.error(f"加载贴图失败: {file_path}, 错误: {e}")
+
+            # 检查是否所有地形类型都有贴图，如果没有，使用第一个加载的贴图作为默认
+            default_texture = None
+            if texture_files and len(texture_files) > 0:
+                try:
+                    default_file = os.path.join(texture_dir, texture_files[0])
+                    if default_file.lower().endswith(
+                        ".png"
+                    ) or default_file.lower().endswith(".jpg"):
+                        default_texture = pygame.image.load(
+                            default_file
+                        ).convert_alpha()
+                except Exception as e:
+                    self.logger.error(f"加载默认贴图失败: {e}")
+
+            # 为没有贴图的地形类型分配默认贴图
+            for terrain_type in TerrainType:
+                if self.terrain_textures[terrain_type] is None:
+                    self.terrain_textures[terrain_type] = default_texture
+
+            # 检查是否成功加载了贴图
+            if all(texture is None for texture in self.terrain_textures.values()):
+                self.logger.warning("没有成功加载任何贴图，将使用颜色渲染")
+                self.use_textures = False
+            else:
+                self.logger.msg(
+                    f"成功加载了 {sum(1 for t in self.terrain_textures.values() if t is not None)} 个地形贴图"
+                )
+
+        except Exception as e:
+            self.logger.error(f"加载贴图过程中发生错误: {e}")
+            self.use_textures = False
+
     def _render_tile(self, tile_component: TileComponent, size: int) -> pygame.Surface:
         """渲染单个格子，考虑海拔高度、道路和水系特性"""
         # 创建格子表面 - 使用比请求的尺寸略大的表面以消除缩放时的边缘缝隙
@@ -67,6 +173,69 @@ class MapRenderSystem(System):
         actual_size = size + extra_pixel
         tile_surface = pygame.Surface((actual_size, actual_size), pygame.SRCALPHA)
 
+        # 尝试使用贴图渲染
+        if self.use_textures and tile_component.terrain_type in self.terrain_textures:
+            texture = self.terrain_textures[tile_component.terrain_type]
+            if texture is not None:
+                # 缩放贴图到格子大小
+                scaled_texture = pygame.transform.scale(
+                    texture, (actual_size, actual_size)
+                )
+                tile_surface.blit(scaled_texture, (0, 0))
+
+                # 根据海拔调整亮度
+                # if tile_component.terrain_type not in [
+                #     TerrainType.RIVER,
+                #     TerrainType.LAKE,
+                #     TerrainType.OCEAN,
+                #     TerrainType.WETLAND,
+                # ]:
+                #     elevation_factor = min(
+                #         1.0, tile_component.elevation / 100.0
+                #     )  # 归一化到0-1
+                #     brightness_factor = 0.7 + (
+                #         elevation_factor * 0.6
+                #     )  # 0.7-1.3范围内的亮度
+
+                #     # 创建一个调整亮度的表面
+                #     brightness_surface = pygame.Surface(
+                #         (actual_size, actual_size), pygame.SRCALPHA
+                #     )
+                #     if brightness_factor < 1.0:
+                #         # 变暗
+                #         brightness_surface.fill(
+                #             (0, 0, 0, int((1.0 - brightness_factor) * 255))
+                #         )
+                #     else:
+                #         # 变亮
+                #         brightness_surface.fill(
+                #             (255, 255, 255, int((brightness_factor - 1.0) * 100))
+                #         )
+
+                #     # 应用亮度调整
+                #     tile_surface.blit(
+                #         brightness_surface,
+                #         (0, 0),
+                #         special_flags=pygame.BLEND_RGBA_MULT
+                #         if brightness_factor < 1.0
+                #         else pygame.BLEND_RGBA_ADD,
+                #     )
+            else:
+                # 如果没有贴图，使用颜色渲染
+                self._render_tile_with_color(tile_component, tile_surface, size)
+        else:
+            # 使用颜色渲染
+            self._render_tile_with_color(tile_component, tile_surface, size)
+
+        # 添加特殊标记（道路、河流、桥梁等）
+        # self._add_special_features(tile_component, tile_surface, size)
+
+        return tile_surface
+
+    def _render_tile_with_color(
+        self, tile_component: TileComponent, tile_surface: pygame.Surface, size: int
+    ) -> None:
+        """使用颜色渲染格子"""
         # 获取基本地形颜色
         terrain_color = self.get_terrain_color(tile_component.terrain_type)
 
@@ -87,6 +256,10 @@ class MapRenderSystem(System):
         # 填充基本地形颜色
         tile_surface.fill(terrain_color)
 
+    def _add_special_features(
+        self, tile_component: TileComponent, tile_surface: pygame.Surface, size: int
+    ) -> None:
+        """添加特殊地形特征（道路、河流、桥梁等）"""
         # 为道路和桥梁绘制特殊标记
         if tile_component.has_road or tile_component.terrain_type == TerrainType.ROAD:
             self._draw_road(tile_surface, size)
@@ -111,8 +284,6 @@ class MapRenderSystem(System):
         # 为特定海拔值添加等高线标记
         if tile_component.elevation % 10 == 0 and tile_component.elevation > 0:
             self._draw_contour_line(tile_surface, size)
-
-        return tile_surface
 
     def _adjust_color_brightness(
         self, color: Tuple[int, int, int], factor: float
@@ -316,6 +487,7 @@ class MapRenderSystem(System):
                             tile_component.has_road,
                             tile_component.has_river,
                             tile_component.has_bridge,
+                            self.use_textures,  # 是否使用贴图渲染
                         )
 
                         if cache_key not in self.tile_cache:

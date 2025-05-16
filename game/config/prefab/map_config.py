@@ -8,19 +8,39 @@ MAP_CONFIG = {
         "height": 10,
         "tile_size": 32,
     },
+    "tiny": {
+        "width": 3,
+        "height": 3,
+        "tile_size": 32,
+    },
+    "tiny2": {
+        "width": 3,
+        "height": 3,
+        "tile_size": 8,
+    },
+    "tiny3": {
+        "width": 10,
+        "height": 10,
+        "tile_size": 20,
+    },
     "small": {
         "width": 8,
         "height": 8,
         "tile_size": 32,
     },
     "medium": {
-        "width": 16,
-        "height": 16,
+        "width": 15,
+        "height": 15,
         "tile_size": 32,
     },
     "large": {
-        "width": 24,
-        "height": 24,
+        "width": 20,
+        "height": 20,
+        "tile_size": 32,
+    },
+    "huge": {
+        "width": 50,
+        "height": 50,
         "tile_size": 32,
     },
 }

@@ -1,5 +1,6 @@
 import pygame
 import numpy as np
+import os
 from typing import Dict, Tuple, List, Optional
 from framework.ecs.system import System
 from framework.utils.logging import get_logger
@@ -19,28 +20,31 @@ class UnitRenderSystem(System):
         super().__init__(required_components=[UnitComponent], priority=priority)
         self.logger = get_logger("UnitRenderSystem")
         self.unit_colors = {
-            UnitType.INFANTRY: (0, 0, 255),  # 蓝色
-            UnitType.CAVALRY: (0, 255, 0),  # 绿色
-            UnitType.ARCHER: (255, 255, 0),  # 黄色
-            UnitType.SIEGE: (128, 0, 128),  # 紫色
-            UnitType.HERO: (255, 215, 0),  # 金色
+            UnitType.CAVALRY: (255, 215, 0),  # 金
+            UnitType.INFANTRY: (192, 192, 192),  # 银
+            UnitType.ARCHER: (0, 0, 0),  # 黑
         }
         self.state_indicators = {
             UnitState.IDLE: None,
-            UnitState.MOVING: (0, 255, 255),  # 青色
-            UnitState.ATTACKING: (255, 0, 0),  # 红色
-            UnitState.DEFENDING: (0, 128, 255),  # 浅蓝色
+            UnitState.MOVING: (0, 191, 255),  # 青色
+            UnitState.ATTACKING: (255, 165, 0),  # 橙色
+            UnitState.DEFENDING: (186, 85, 211),  # 紫色
             UnitState.DEAD: (128, 128, 128),  # 灰色
         }
         self.owner_colors = {
-            0: (0, 0, 255),  # 玩家0 - 蓝色
-            1: (255, 0, 0),  # 玩家1 - 红色
-            2: (0, 255, 0),  # 玩家2 - 绿色
-            3: (255, 255, 0),  # 玩家3 - 黄色
+            0: (128, 0, 128),  # 玩家0 - 紫色
+            1: (0, 0, 255),  # 玩家1 - 蓝色
+            2: (255, 0, 0),  # 玩家2 - 红色
+            3: (0, 255, 0),  # 玩家3 - 绿色
+            4: (255, 255, 0),  # 玩家4 - 黄色
         }
         self.font = None
         self.tile_size = 32  # 默认格子大小
         self.unit_cache = {}  # 缓存渲染过的单位，提高性能
+        self.texture_cache = {}  # 缓存加载过的贴图
+        self.texture_path = os.path.join(
+            "game", "config", "prefab", "unit_texture"
+        )  # 贴图路径
 
     def initialize(self, context):
         """初始化系统"""
@@ -53,6 +57,9 @@ class UnitRenderSystem(System):
 
         # 初始化选择框相关属性
         self.selection_box = None  # 当前选择框，格式为 (start_x, start_y, end_x, end_y)
+
+        # 加载单位贴图
+        self._load_unit_textures()
 
         # 订阅选择框更新事件
         self.subscribe_events()
@@ -157,37 +164,121 @@ class UnitRenderSystem(System):
         # 渲染选择框（如果存在）
         self._render_selection_box()
 
+    def _load_unit_textures(self):
+        """加载单位贴图"""
+        self.logger.info("开始加载单位贴图")
+        # 检查贴图目录是否存在
+        if not os.path.exists(self.texture_path):
+            self.logger.warning(f"贴图目录不存在: {self.texture_path}")
+            return
+
+        # 加载所有贴图文件
+        try:
+            for filename in os.listdir(self.texture_path):
+                if filename.endswith(".png"):
+                    # 构建贴图键名，例如 wei_infantry -> (UnitType.INFANTRY, 0)
+                    parts = filename.split("_")
+                    if len(parts) >= 2:
+                        faction = parts[0]  # 势力名称，如wei, shu, wu
+                        unit_type_str = parts[1].split(".")[
+                            0
+                        ]  # 单位类型名称，去掉扩展名
+
+                        # 确定单位类型
+                        unit_type = None
+                        if unit_type_str.lower() == "infantry":
+                            unit_type = UnitType.INFANTRY
+                        elif unit_type_str.lower() == "cavalry":
+                            unit_type = UnitType.CAVALRY
+                        elif unit_type_str.lower() == "archer":
+                            unit_type = UnitType.ARCHER
+
+                        # 确定势力ID
+                        owner_id = 0  # 默认为0
+                        if faction.lower() == "wei":
+                            owner_id = 1
+                        elif faction.lower() == "shu":
+                            owner_id = 2
+                        elif faction.lower() == "wu":
+                            owner_id = 3
+
+                        if unit_type is not None:
+                            # 加载贴图
+                            texture_path = os.path.join(self.texture_path, filename)
+                            try:
+                                texture = pygame.image.load(
+                                    texture_path
+                                ).convert_alpha()
+                                # 使用(单位类型, 势力ID)作为键
+                                texture_key = (unit_type, owner_id)
+                                self.texture_cache[texture_key] = texture
+                                self.logger.debug(
+                                    f"加载贴图: {filename} -> {texture_key}"
+                                )
+                            except Exception as e:
+                                self.logger.error(
+                                    f"加载贴图失败: {filename}, 错误: {e}"
+                                )
+        except Exception as e:
+            self.logger.error(f"加载贴图目录失败: {e}")
+
+        self.logger.info(f"单位贴图加载完成，共加载 {len(self.texture_cache)} 个贴图")
+
+    def _get_unit_texture(self, unit: UnitComponent) -> Optional[pygame.Surface]:
+        """获取单位贴图"""
+        # 使用(单位类型, 势力ID)作为键查找贴图
+        texture_key = (unit.unit_type, unit.owner_id)
+        return self.texture_cache.get(texture_key)
+
     def _render_unit_surface(self, unit: UnitComponent, size: int) -> pygame.Surface:
         """渲染单个单位的表面，用于缓存"""
         # 创建单位表面
         unit_surface = pygame.Surface((size, size), pygame.SRCALPHA)
 
-        # 确定单位颜色（基于所有者）
-        unit_color = self.owner_colors.get(unit.owner_id, (200, 200, 200))  # 默认为灰色
+        # 尝试获取单位贴图
+        unit_texture = self._get_unit_texture(unit)
 
-        # 如果单位已死亡，使用灰色
-        if unit.state == UnitState.DEAD:
-            unit_color = (128, 128, 128)  # 灰色
+        if unit_texture and unit.state != UnitState.DEAD:
+            # 使用贴图渲染单位
+            # 缩放贴图以适应单位大小
+            scaled_texture = pygame.transform.scale(unit_texture, (size, size))
+            unit_surface.blit(scaled_texture, (0, 0))
+        else:
+            # 如果没有贴图或单位已死亡，使用颜色渲染
+            # 确定单位颜色（基于所有者）
+            unit_color = self.owner_colors.get(
+                unit.owner_id, (200, 200, 200)
+            )  # 默认为灰色
 
-        # 绘制单位主体
-        unit_rect = pygame.Rect(0, 0, size, size)
-        pygame.draw.rect(unit_surface, unit_color, unit_rect)
+            # 如果单位已死亡，使用灰色
+            if unit.state == UnitState.DEAD:
+                unit_color = (128, 128, 128)  # 灰色
 
-        # 绘制单位类型标识
-        type_indicator = self._get_unit_type_indicator(unit.unit_type)
-        if type_indicator:
-            pygame.draw.rect(
-                unit_surface,
-                type_indicator,
-                (
-                    size // 4,
-                    size // 4,
-                    size // 2,
-                    size // 2,
-                ),
-            )
+            # 绘制单位主体
+            unit_rect = pygame.Rect(0, 0, size, size)
+            pygame.draw.rect(unit_surface, unit_color, unit_rect)
 
-        # 绘制单位状态指示器
+            # 绘制单位类型标识
+            type_indicator = self._get_unit_type_indicator(unit.unit_type)
+            if type_indicator:
+                pygame.draw.rect(
+                    unit_surface,
+                    type_indicator,
+                    (
+                        size // 4,
+                        size // 4,
+                        size // 2,
+                        size // 2,
+                    ),
+                )
+
+            # 绘制单位名称或等级
+            text = f"{str(unit.unit_type)[9:11]}"  # 名称首字母+等级
+            text_surface = self.font.render(text, True, (255, 255, 255))
+            text_rect = text_surface.get_rect(center=(size // 2, size // 2))
+            unit_surface.blit(text_surface, text_rect)
+
+        # 绘制单位状态指示器（无论是否使用贴图都显示）
         state_color = self.state_indicators.get(unit.state)
         if state_color:
             pygame.draw.circle(
@@ -196,8 +287,17 @@ class UnitRenderSystem(System):
                 (size * 2 // 3, size // 3),
                 max(2, size // 6),
             )
+        else:
+            # 如果没有状态指示器，使用默认颜色
+            unit_color = self.owner_colors.get(unit.owner_id, (200, 200, 200))
+            pygame.draw.circle(
+                unit_surface,
+                unit_color,
+                (size * 2 // 3, size // 3),
+                max(2, size // 6),
+            )
 
-        # 绘制生命值条
+        # 绘制生命值条（无论是否使用贴图都显示）
         health_ratio = unit.current_health / unit.max_health
         health_width = int(size * health_ratio)
         health_rect = pygame.Rect(0, size - 4, size, 4)
@@ -207,10 +307,10 @@ class UnitRenderSystem(System):
         pygame.draw.rect(unit_surface, health_color, health_fill_rect)  # 血条
 
         # 绘制单位名称或等级
-        text = f"{unit.name[:1]}{unit.level}"  # 名称首字母+等级
-        text_surface = self.font.render(text, True, (255, 255, 255))
-        text_rect = text_surface.get_rect(center=(size // 2, size // 2))
-        unit_surface.blit(text_surface, text_rect)
+        # text = f"{str(unit.unit_type)[9:11]}"  # 名称首字母+等级
+        # text_surface = self.font.render(text, True, (255, 255, 255))
+        # text_rect = text_surface.get_rect(center=(size // 2, size // 2))
+        # unit_surface.blit(text_surface, text_rect)
 
         return unit_surface
 
@@ -221,6 +321,7 @@ class UnitRenderSystem(System):
         # 计算单位在屏幕上的位置和尺寸（支持浮点坐标和实际尺寸）
         # 单位实际尺寸（米）根据相机缩放和tile_size换算为像素
         unit_pixel_size = max(20, int(unit.unit_size * camera_comp.zoom))
+        # unit_pixel_size = int(unit.unit_size * camera_comp.zoom)
 
         # 创建缓存键
         cache_key = (
@@ -277,89 +378,6 @@ class UnitRenderSystem(System):
                 (draw_pos[0] - 2, draw_pos[1] - 2),
                 RenderLayer.UNIT_EFFECT.value,
             )
-
-    # def _render_unit(
-    #     self,
-    #     screen: Optional[pygame.Surface],
-    #     unit: UnitComponent,
-    #     camera_comp: CameraComponent,
-    # ):
-    #     """渲染单个单位（保留用于兼容旧代码）"""
-    #     # 计算单位在屏幕上的位置和尺寸（支持浮点坐标和实际尺寸）
-    #     screen_x, screen_y = self._world_to_screen(
-    #         unit.position_x, unit.position_y, camera_comp
-    #     )
-    #     # 单位实际尺寸（米）根据相机缩放和tile_size换算为像素
-    #     unit_pixel_size = max(2, int(unit.unit_size * camera_comp.zoom))
-
-    #     # 创建缓存键
-    #     cache_key = (
-    #         unit.unit_type,
-    #         unit.state,
-    #         unit.owner_id,
-    #         unit_pixel_size,
-    #         int(
-    #             unit.current_health / unit.max_health * 10
-    #         ),  # 将血量比例离散化为10个等级
-    #         unit.level,
-    #         unit.name[:1],  # 名称首字母
-    #     )
-
-    #     # 检查缓存
-    #     if cache_key not in self.unit_cache:
-    #         self.unit_cache[cache_key] = self._render_unit_surface(
-    #             unit, unit_pixel_size
-    #         )
-
-    #     # 获取单位表面
-    #     unit_surface = self.unit_cache[cache_key]
-
-    #     # 计算绘制位置（居中）
-    #     draw_pos = (screen_x - unit_pixel_size // 2, screen_y - unit_pixel_size // 2)
-
-    #     # 使用渲染管理器绘制单位
-    #     if self.context.render_manager:
-    #         # 创建目标矩形
-    #         dest_rect = pygame.Rect(
-    #             draw_pos[0], draw_pos[1], unit_pixel_size, unit_pixel_size
-    #         )
-    #         # 通过渲染管理器绘制
-    #         self.context.render_manager.draw(unit_surface, dest_rect)
-
-    #         # 如果单位被选中，绘制选中指示器（这个不缓存，因为选中状态经常变化）
-    #         if unit.is_selected:
-    #             # 创建选中指示器表面
-    #             select_surface = pygame.Surface(
-    #                 (unit_pixel_size + 4, unit_pixel_size + 4), pygame.SRCALPHA
-    #             )
-    #             select_rect = pygame.Rect(
-    #                 0, 0, unit_pixel_size + 4, unit_pixel_size + 4
-    #             )
-    #             pygame.draw.rect(
-    #                 select_surface, (255, 255, 255), select_rect, 2
-    #             )  # 白色边框
-
-    #             # 通过渲染管理器绘制选中指示器
-    #             select_dest = pygame.Rect(
-    #                 screen_x - unit_pixel_size // 2 - 2,
-    #                 screen_y - unit_pixel_size // 2 - 2,
-    #                 unit_pixel_size + 4,
-    #                 unit_pixel_size + 4,
-    #             )
-    #             self.context.render_manager.draw(select_surface, select_dest)
-    #     else:
-    #         # 如果没有渲染管理器，则直接在屏幕上绘制（兼容旧代码）
-    #         screen.blit(unit_surface, draw_pos)
-
-    #         # 如果单位被选中，绘制选中指示器
-    #         if unit.is_selected:
-    #             select_rect = pygame.Rect(
-    #                 screen_x - unit_pixel_size // 2 - 2,
-    #                 screen_y - unit_pixel_size // 2 - 2,
-    #                 unit_pixel_size + 4,
-    #                 unit_pixel_size + 4,
-    #             )
-    #             pygame.draw.rect(screen, (255, 255, 255), select_rect, 2)  # 白色边框
 
     def _world_to_screen(
         self, world_x: float, world_y: float, camera_comp: CameraComponent
@@ -429,7 +447,3 @@ class UnitRenderSystem(System):
         )
 
         self.logger.debug(f"渲染选择框: 位置=({left}, {top}), 尺寸=({width}, {height})")
-
-    # def set_tile_size(self, tile_size: int):
-    #     """设置格子大小"""
-    #     self.tile_size = tile_size

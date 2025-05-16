@@ -65,6 +65,17 @@ class UnitMovementSystem(System):
                 self.context.component_manager.remove_component(
                     entity, UnitMovementPathComponent
                 )
+                # 发布单位移动完成事件
+                self.context.event_manager.publish(
+                    EventMessage(
+                        EventType.UNIT_ARRIVALED,
+                        {
+                            "entity": entity,
+                            "target_x": unit.position_x,
+                            "target_y": unit.position_y,
+                        },
+                    )
+                )
             else:
                 unit.position_x = float("{:.1f}".format(path.current_x))
                 unit.position_y = float("{:.1f}".format(path.current_y))

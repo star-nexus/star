@@ -103,6 +103,7 @@ class UnitSystem(System):
             unit.current_health = 0
             unit.is_alive = False  # 更新存活状态
             self.logger.info(f"单位 {unit.name} 已阵亡")
+            self.context.component_manager.remove_component(entity, UnitComponent)
             # 发布单位死亡事件，如果尚未在AttackSystem中发布，或者需要在此处也发布
             # self.context.event_manager.publish(
             # EventMessage(

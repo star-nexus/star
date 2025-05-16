@@ -9,6 +9,7 @@ class TileComponent(Component):
 
     # 基本属性
     terrain_type: TerrainType = TerrainType.PLAIN  # 主要地形类型
+    type_name: str = "平原"  # 地形名称，用于显示和描述
     elevation: int = 0  # 海拔高度值（用于等高线）
     moisture: float = 0.5  # 湿度值（0.0-1.0）
 

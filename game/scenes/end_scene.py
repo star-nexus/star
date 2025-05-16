@@ -24,7 +24,7 @@ class EndScene(Scene):
         result = kwargs.get("result", "游戏结束")
         reason = kwargs.get("reason", "未知原因")
         self.logger.info(f"游戏结果: {result}, 原因: {reason}")
-
+        reason = f"faction {reason} win"
         self.create_ui_entities(result, reason)
         self.register_system()
         self.logger.info("结束场景初始化完成")
