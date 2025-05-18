@@ -21,6 +21,9 @@ from .unit.unit_movement_system import UnitMovementSystem
 from .unit.unit_attack_system import UnitAttackSystem
 from .unit.unit_ai_control_system import UnitAIControlSystem
 
+## 地形
+from .terrain.terrain_effect_system import TerrainEffectSystem
+
 ## AI
 from .ai.llm_control_system import LLMControlSystem
 
@@ -41,4 +44,5 @@ __all__ = [
     "UnitAttackSystem",
     "UnitAIControlSystem",
     "LLMControlSystem",
+    "TerrainEffectSystem",
 ]

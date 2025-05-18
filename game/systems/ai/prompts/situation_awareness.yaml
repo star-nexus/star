@@ -6,8 +6,6 @@ prompt: |
   # 我方情况
     我方单位状态: {my_status}
     我方调动情况: {my_transfer_situation}
-  # 战场环境
-    地理环境: {terrain_environment}
   # 作战进程
     交战双方交火情况: {contact_and_fire}
     交战双方伤亡情况: {death_status}
