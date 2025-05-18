@@ -22,7 +22,11 @@ from game.systems import (
     UnitMovementSystem,
     FogOfWarRenderSystem,
     UnitControlSystem,
+    UnitAttackSystem,
+    GameStatsSystem,
+    TerrainEffectSystem,
 )
+from game.systems.unit.unit_health_system import UnitHealthSystem
 from game.utils.game_types import UnitType, TerrainType
 from game.config.prefab_factory import PrefabFactory
 
@@ -61,11 +65,15 @@ class EditorScene(Scene):
 
         self.prefab_factory = PrefabFactory(self.world)
 
-        self.prefab_factory.create_map("huge")
+        _, map_component = self.prefab_factory.create_map("tiny2")
 
         self.prefab_factory.create_camera("default")
 
-        self.prefab_factory.create_random_unit(3, 8)
+        self.prefab_factory.create_fog_of_war(
+            "default", map_component.width, map_component.height
+        )
+
+        self.prefab_factory.create_benchmark_unit(2)
 
         # 注册系统
         self.register_systems()
@@ -103,7 +111,7 @@ class EditorScene(Scene):
         self.map_render_system.initialize(self.world.context)
         self.world.add_system(self.map_render_system)
 
-        # 创建战争迷雾系统
+        # # 创建战争迷雾系统
         # self.fog_of_war_system = FogOfWarSystem()
         # self.fog_of_war_system.initialize(self.world.context)
         # self.world.add_system(self.fog_of_war_system)
@@ -118,6 +126,10 @@ class EditorScene(Scene):
         self.movement_system.initialize(self.world.context)
         self.world.add_system(self.movement_system)
 
+        self.attack_system = UnitAttackSystem()
+        self.attack_system.initialize(self.world.context)
+        self.world.add_system(self.attack_system)
+
         # 创建单位系统
         self.unit_system = UnitSystem()
         self.unit_system.initialize(self.world.context)
@@ -131,6 +143,21 @@ class EditorScene(Scene):
         self.unit_control_system = UnitControlSystem()
         self.unit_control_system.initialize(self.world.context)
         self.world.add_system(self.unit_control_system)
+
+        # 统计
+        self.game_stats_system = GameStatsSystem()
+        self.game_stats_system.initialize(self.world.context)
+        self.world.add_system(self.game_stats_system)
+
+        # 地形效果系统
+        self.terrain_effect_system = TerrainEffectSystem()
+        self.terrain_effect_system.initialize(self.world.context)
+        self.world.add_system(self.terrain_effect_system)
+
+        # 单位生命值系统
+        self.unit_health_system = UnitHealthSystem()
+        self.unit_health_system.initialize(self.world.context)
+        self.world.add_system(self.unit_health_system)
 
         # 创建UI系统
         self.ui_system = UISystem()
