@@ -226,9 +226,9 @@ class GameStatsSystem(System):
                     BattleStatsComponent
                 ).iter_components(BattleStatsComponent):
                     if stat_comp.faction == killed_faction:
-                        if "损失" not in stat_comp.death_status:
-                            stat_comp.death_status["损失"] = []
-                        stat_comp.death_status["损失"].append(
+                        if "阵亡" not in stat_comp.death_status:
+                            stat_comp.death_status["阵亡"] = []
+                        stat_comp.death_status["阵亡"].append(
                             f"{killed_comp.name}(ID:{killed_entity})"
                         )
                     if stat_comp.faction == killer_faction:
@@ -407,8 +407,8 @@ class GameStatsSystem(System):
             battle_stats.enemy_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health} / {unit.max_health}",
-                "位置": (unit.position_x, unit.position_y),
+                "血量": f"{unit.current_health}",# / {unit.max_health}",
+                "位置": [int(unit.position_x), int(unit.position_y)],
             }
 
     def _update_my_status(self, battle_stats):
@@ -425,8 +425,8 @@ class GameStatsSystem(System):
             battle_stats.my_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health} / {unit.max_health}",
-                "位置": (unit.position_x, unit.position_y),
+                "血量": f"{unit.current_health}",# / {unit.max_health}",
+                "位置": [int(unit.position_x), int(unit.position_y)],
             }
 
     def _update_terrain_environment(self, battle_stats):
@@ -445,7 +445,7 @@ class GameStatsSystem(System):
         ).iter_components(MapComponent):
             meta_info = ""
             meta_info += f"地图大小: {map_component.width * map_component.tile_size}x{map_component.height * map_component.tile_size}, "
-            meta_info += f"方向: 上北下南左西右东,地图西北角为(0,0),东南角为({map_component.width * map_component.tile_size},{map_component.height * map_component.tile_size}), "
+            meta_info += f"方向: 地图西北角为(0,0),东南角为({map_component.width * map_component.tile_size},{map_component.height * map_component.tile_size}), "
             terrain_environment["地图元信息"] = meta_info
             for pos, tile_entity in map_component.tile_entities.items():
                 tile_component = self.context.get_component(tile_entity, TileComponent)

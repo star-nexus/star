@@ -9,18 +9,20 @@ from framework.ui import (
     PanelComponent,
     TextComponent,
 )
+from game.systems.unit.unit_health_system import UnitHealthSystem
 from framework.ui.systems import UISystem
 from game.components.map import map_component
 from game.systems import MapSystem, CameraSystem, MapRenderSystem
-from game.systems import UnitSystem
-from game.systems import UnitRenderSystem
-from game.systems import UnitMovementSystem
-from game.systems import UnitAttackSystem
+from game.systems.unit.unit_system import UnitSystem
+from game.systems.unit.unit_render_system import UnitRenderSystem
+from game.systems.unit.unit_movement_system import UnitMovementSystem
+from game.systems.unit.unit_attack_system import UnitAttackSystem
 from game.systems import UnitControlSystem
-from game.systems import UnitAIControlSystem
+from game.systems.unit.unit_ai_control_system import UnitAIControlSystem
 from game.systems import GameStatsSystem, ViewMode
 from game.systems import FogOfWarSystem
 from game.systems import LLMControlSystem
+from game.systems.terrain.terrain_effect_system import TerrainEffectSystem
 
 from game.config.prefab_factory import PrefabFactory
 
@@ -34,6 +36,7 @@ class GameScene(Scene):
         # 游戏场景所需的属性
         self.logger = get_logger("GameScene")
         self.scene_start_time = None
+        self.max_game_duration = 900.0  # 最大游戏时长为900秒，超时判定半歼
 
         self.map_entity = None
         self.camera_entity = None
@@ -56,6 +59,7 @@ class GameScene(Scene):
         self.unit_render_system = None
         self.game_stats_system = None
         self.ui_system = None  # UI系统引用
+        self.terrain_effect_system = None  # 地形效果系统引用
 
     def enter(self, **kwargs):
         self.logger.info("进入游戏场景")
@@ -87,9 +91,10 @@ class GameScene(Scene):
         # 创建单位
         # self._create_units()
         self.prefab_factory.create_random_unit()
+        # self.prefab_factory.create_benchmark_unit(2)
 
         # 创建UI界面
-        self.create_ui_entities()
+        # self.create_ui_entities()
 
         # 创建状态信息面板
         self._create_status_display()
@@ -304,6 +309,21 @@ class GameScene(Scene):
         self.world.add_system(game_stats_system)
         self.game_stats_system = game_stats_system
 
+        # 地形效果系统
+        # 创建地形效果系统
+        terrain_effect_system = TerrainEffectSystem()
+        terrain_effect_system.initialize(self.world.context)
+        self.world.add_system(terrain_effect_system)
+        self.terrain_effect_system = terrain_effect_system
+
+        # 单位生命值系统
+        unit_health_system = (
+            UnitHealthSystem()
+        )  # 假设你有一个UnitHealthSystem的实现，替换为实际的实现类
+        unit_health_system.initialize(self.world.context)
+        self.world.add_system(unit_health_system)
+        self.unit_health_system = unit_health_system
+
         # 创建UI系统
         ui_system = UISystem()
         ui_system.initialize(self.world.context)
@@ -317,8 +337,15 @@ class GameScene(Scene):
     def exit(self):
         self.logger.info("退出游戏场景")
         # 移除所有实体 - 使用列表复制防止迭代时修改集合
+
+        # 调用LLM控制系统的cleanup方法，取消所有未完成的API请求
+        if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+            self.logger.debug("清理LLM控制系统未完成任务")
+            self.llm_controller_system.cleanup()
+            
         # 关闭线程池
         self.world.context.executor.shutdown()
+
         self.logger.debug("移除游戏实体")
         self.world.entity_manager.clear_entities
         self.logger.debug("游戏实体移除完成")
@@ -352,7 +379,17 @@ class GameScene(Scene):
             self.world.remove_system(self.ui_system)
 
         end_time = time.time()
-        self.logger.msg(f"游戏场景运行时间: {end_time - self.scene_start_time:.2f}秒")
+        game_duration = end_time - self.scene_start_time
+        self.logger.msg(f"游戏场景运行时间: {game_duration:.2f}秒")
+        
+        # 如果游戏是由于退出而结束（而不是胜负已定）
+        # 记录为提前退出的实验数据
+        # 注意：这里需要添加一个标记来判断是否已经生成过实验报告，避免重复
+        if not hasattr(self, '_experiment_report_generated') or not self._experiment_report_generated:
+            # 获取各阵营使用的模型和策略分数
+            model_info, strategy_scores = self._get_model_info()
+            self.generate_experiment_report(None, game_duration, is_tie=True, model_info=model_info, strategy_scores=strategy_scores)
+            self._experiment_report_generated = True
 
         self.logger.debug("游戏系统移除完成")
         # 清理游戏场景资源
@@ -362,6 +399,16 @@ class GameScene(Scene):
     def update(self, delta_time):
         # 更新世界，这会调用所有系统的update方法
         self.world.update(delta_time)
+        
+        # 检查游戏时间是否超过最大时长
+        if self.scene_start_time is not None:
+            current_time = time.time()
+            game_duration = current_time - self.scene_start_time
+            
+            if game_duration >= self.max_game_duration:
+                self.logger.info(f"游戏时间已达到{self.max_game_duration}秒上限，进行半歼结算")
+                self._check_half_annihilation()
+        
         # 胜负条件检查已移至 _handle_unit_killed_event 和 _check_win_loss_conditions
         # self._check_win_loss_conditions() # 避免在每帧都检查，只在单位死亡时检查
 
@@ -441,32 +488,54 @@ class GameScene(Scene):
             # 获取胜利阵营ID
             winner_faction = list(faction_units_alive.keys())[0]
 
-            # 判断胜利者是玩家还是AI
-            # if winner_faction == 0:
-            #     self.logger.info(f"玩家{winner_faction}获得胜利！所有敌方单位已阵亡！")
-            #     self.engine.scene_manager.load_scene(
-            #         "end",
-            #         result="victory",
-            #         reason="Successfully eliminate all enemy units",
-            #     )
-            # else:
+            # 在切换场景前清理LLM控制系统
+            if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+                self.logger.debug("游戏结束，清理LLM控制系统未完成任务")
+                self.llm_controller_system.cleanup()
+                
+            # 获取各阵营使用的模型和策略分数
+            model_info, strategy_scores = self._get_model_info()
+                
+            # 记录游戏时长和胜利阵营
+            game_duration = time.time() - self.scene_start_time
+            self.generate_experiment_report(winner_faction, game_duration, is_tie=False, model_info=model_info, strategy_scores=strategy_scores)
+            self._experiment_report_generated = True
+                
             self.logger.msg(f"阵营{winner_faction}获得胜利！其余阵营单位已全部阵亡！")
             self.engine.scene_manager.load_scene(
                 "end", result="victory", reason={winner_faction}
             )
         elif len(faction_units_alive) == 0:
+            # 在切换场景前清理LLM控制系统
+            if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+                self.logger.debug("游戏结束，清理LLM控制系统未完成任务")
+                self.llm_controller_system.cleanup()
+                
+            # 获取各阵营使用的模型和策略分数
+            model_info, strategy_scores = self._get_model_info()
+                
+            # 记录平局游戏结果
+            game_duration = time.time() - self.scene_start_time
+            self.generate_experiment_report(0, game_duration, is_tie=True, model_info=model_info, strategy_scores=strategy_scores)
+            self._experiment_report_generated = True
+                
             self.logger.info("所有阵营单位均已阵亡，平局！")
             self.engine.scene_manager.load_scene(
                 "end", result="tie", reason="All units has died, it's a tie"
             )
 
-        # 检查玩家阵营是否已经全部阵亡
-        # if 0 not in faction_units_alive and len(faction_units_alive) > 0:
-        #     self.logger.info("玩家所有单位已阵亡，游戏失败！")
-        #     self.engine.scene_manager.load_scene(
-        #         "end", result="defeat", reason="All our units have been eliminated"
-        #     )
-        #     return
+    def _get_model_info(self):
+        """获取各阵营使用的LLM模型信息"""
+        model_info = {}
+        strategy_scores = {}
+        
+        # 从LLM控制系统获取模型信息
+        if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+            # 使用LLMControlSystem的get_faction_models方法获取模型信息
+            model_info = self.llm_controller_system.get_faction_models()
+            strategy_scores = self.llm_controller_system.get_strategy_scores()
+            
+        return model_info, strategy_scores
 
     def handle_custom_event(self, event: EventMessage):
         """处理自定义事件"""
@@ -730,7 +799,7 @@ class GameScene(Scene):
                     if unit_comp:
                         info_text += f"unit type: {unit_comp.unit_type.name}\n"
                         info_text += f"own player: {unit_comp.owner_id}\n"
-                        info_text += f"HP: {unit_comp.health}/{unit_comp.max_health}\n"
+                        info_text += f"HP: {unit_comp.current_health}/{unit_comp.max_health}\n"
                         info_text += f"attack: {unit_comp.attack}\n"
                         info_text += f"defense: {unit_comp.defense}\n"
                         info_text += f"movement: {unit_comp.movement_points}\n"
@@ -799,3 +868,194 @@ class GameScene(Scene):
                 self._add_event_log(log_message)
         # 更新状态面板
         self._update_status_display()
+
+    def generate_experiment_report(self, winner_faction, game_duration, is_tie=False, model_info=None, strategy_scores=None, is_half_win=False):
+        """
+        生成实验数据报告并保存到文件
+        
+        Args:
+            winner_faction: 胜利的阵营ID（0表示平局）
+            game_duration: 游戏持续时间（秒）
+            is_tie: 是否平局
+            model_info: 各阵营使用的模型信息
+            strategy_scores: 各阵营的策略推理分数
+            is_half_win: 是否为半歼胜利（超时后存活单位数量较多）
+        """
+        import os
+        import json
+        import datetime
+        import csv
+        
+        # 创建报告目录
+        report_dir = "experiment_reports"
+        os.makedirs(report_dir, exist_ok=True)
+        
+        # 获取当前时间作为文件名
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H_%M_%S")
+        
+        # 地图类型
+        map_type = "symmetric_5x5" if hasattr(self.prefab_factory, "create_symmetric_terrain") else "random"
+        
+        # 构建实验报告数据
+        report_data = {
+            "experiment_id": timestamp,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "map_type": map_type,
+            "result": {
+                "is_tie": is_tie,
+                "winner_faction": winner_faction if not is_tie else None,
+                "is_half_win": is_half_win,  # 添加半歼胜利标记
+                "game_duration_seconds": game_duration,
+                "game_duration_formatted": f"{game_duration:.2f}秒"
+            },
+            "units_info": self._get_units_info(),
+            "model_info": model_info,
+            "strategy_scores": strategy_scores
+        }
+        
+        # 保存为JSON文件
+        report_file = os.path.join(report_dir, f"experiment_{timestamp}.json")
+        with open(report_file, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, ensure_ascii=False, indent=2)
+        
+        # 同时保存到CSV文件便于统计分析
+        csv_file = os.path.join(report_dir, "experiment_results.csv")
+        csv_exists = os.path.exists(csv_file)
+        
+        with open(csv_file, "a", encoding="utf-8", newline='') as f:
+            if not csv_exists:
+                f.write("experiment_id,timestamp,map_type,is_tie,winner_faction,is_half_win,game_duration_seconds,faction1_model,faction2_model,faction1_strategy_score,faction2_strategy_score\n")
+            
+            # 获取各阵营模型信息
+            faction1_model = model_info.get(1, "unknown") if model_info else "unknown"
+            faction2_model = model_info.get(2, "unknown") if model_info else "unknown"
+            
+            # 获取各阵营策略推理分数
+            faction1_strategy = strategy_scores.get(1, 0) if strategy_scores else 0
+            faction2_strategy = strategy_scores.get(2, 0) if strategy_scores else 0
+            
+            csv_row = f"{timestamp},{report_data['timestamp']},{map_type},{is_tie},{winner_faction if not is_tie else 'tie'},{is_half_win},{game_duration:.2f},{faction1_model},{faction2_model},{faction1_strategy},{faction2_strategy}\n"
+            f.write(csv_row)
+        
+        # 输出到控制台
+        self.logger.info("=" * 50)
+        self.logger.info("实验报告生成成功")
+        self.logger.info(f"实验ID: {timestamp}")
+        if is_tie:
+            self.logger.info("结果: 平局")
+        else:
+            victory_type = "半歼胜利" if is_half_win else "全歼胜利"
+            self.logger.info(f"结果: 阵营{winner_faction}{victory_type}")
+        self.logger.info(f"游戏时长: {game_duration:.2f}秒")
+        if model_info:
+            self.logger.info(f"阵营1使用模型: {model_info.get(1, 'unknown')}")
+            self.logger.info(f"阵营2使用模型: {model_info.get(2, 'unknown')}")
+        if strategy_scores:
+            self.logger.info(f"阵营1策略推理分: {strategy_scores.get(1, 0)}")
+            self.logger.info(f"阵营2策略推理分: {strategy_scores.get(2, 0)}")
+        self.logger.info(f"报告文件: {report_file}")
+        self.logger.info("=" * 50)
+        
+    def _get_units_info(self):
+        """收集单位信息用于实验报告"""
+        units_info = {}
+        
+        for entity, (unit_comp,) in self.world.context.with_all(
+            UnitComponent
+        ).iter_components(UnitComponent):
+            faction_id = unit_comp.owner_id
+            if faction_id not in units_info:
+                units_info[faction_id] = {
+                    "alive": 0,
+                    "dead": 0,
+                    "total": 0,
+                    "units": []
+                }
+            
+            # 增加相应计数
+            if unit_comp.is_alive:
+                units_info[faction_id]["alive"] += 1
+            else:
+                units_info[faction_id]["dead"] += 1
+            units_info[faction_id]["total"] += 1
+            
+            # 记录详细单位信息
+            units_info[faction_id]["units"].append({
+                "id": entity,
+                "type": unit_comp.unit_type.name,
+                "health": unit_comp.current_health,
+                "max_health": unit_comp.max_health,
+                "is_alive": unit_comp.is_alive,
+                "position": [unit_comp.position_x, unit_comp.position_y]
+            })
+            
+        return units_info
+
+    def _check_half_annihilation(self):
+        """检查半歼条件，超时时根据存活单位数量判定胜负"""
+        # 统计每个阵营的存活单位数量
+        faction_units_alive = {}
+
+        # 遍历所有单位，统计每个阵营的存活单位数量
+        for entity, (unit_comp,) in self.world.context.with_all(
+            UnitComponent
+        ).iter_components(UnitComponent):
+            if unit_comp.is_alive:
+                owner_id = unit_comp.owner_id
+                if owner_id not in faction_units_alive:
+                    faction_units_alive[owner_id] = 0
+                faction_units_alive[owner_id] += 1
+        
+        self.logger.info(f"半歼结算 - 各阵营存活单位数量: {faction_units_alive}")
+        
+        # 如果只有一个阵营有存活单位，就是常规胜利
+        if len(faction_units_alive) <= 1:
+            self._check_win_loss_conditions()
+            return
+            
+        # 如果有两个或更多阵营有存活单位，比较数量
+        # 首先获取阵营1和阵营2的存活单位数
+        faction1_alive = faction_units_alive.get(1, 0)
+        faction2_alive = faction_units_alive.get(2, 0)
+        
+        # 如果数量相同，判定为平局
+        if faction1_alive == faction2_alive:
+            # 在切换场景前清理LLM控制系统
+            if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+                self.logger.debug("游戏超时平局，清理LLM控制系统未完成任务")
+                self.llm_controller_system.cleanup()
+                
+            # 获取各阵营使用的模型和策略分数
+            model_info, strategy_scores = self._get_model_info()
+                
+            # 记录平局游戏结果
+            game_duration = time.time() - self.scene_start_time
+            self.generate_experiment_report(0, game_duration, is_tie=True, model_info=model_info, strategy_scores=strategy_scores)
+            self._experiment_report_generated = True
+                
+            self.logger.info("半歼结算 - 双方存活单位数量相同，判定为平局！")
+            self.engine.scene_manager.load_scene(
+                "end", result="tie", reason="Time limit reached, it's a tie with equal units"
+            )
+        else:
+            # 数量不同，存活单位多的一方获得半歼胜利
+            winner_faction = 1 if faction1_alive > faction2_alive else 2
+            
+            # 在切换场景前清理LLM控制系统
+            if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
+                self.logger.debug("游戏超时，半歼胜利，清理LLM控制系统未完成任务")
+                self.llm_controller_system.cleanup()
+                
+            # 获取各阵营使用的模型和策略分数
+            model_info, strategy_scores = self._get_model_info()
+                
+            # 记录游戏时长和半歼胜利阵营
+            game_duration = time.time() - self.scene_start_time
+            # 标记为半歼胜利
+            self.generate_experiment_report(winner_faction, game_duration, is_tie=False, model_info=model_info, strategy_scores=strategy_scores, is_half_win=True)
+            self._experiment_report_generated = True
+                
+            self.logger.msg(f"半歼结算 - 阵营{winner_faction}获得半歼胜利！存活单位数量: {faction1_alive} vs {faction2_alive}")
+            self.engine.scene_manager.load_scene(
+                "end", result="half_victory", reason=f"Time limit reached, faction {winner_faction} wins with more units"
+            )

@@ -3,6 +3,7 @@ import enum
 from turtle import mode
 from typing import Optional
 import datetime
+import time
 
 from framework.ecs import System
 from framework.engine.events import EventMessage, EventType
@@ -11,11 +12,14 @@ from framework.utils.logging import get_logger, configure
 from game.components import UnitComponent, UnitState
 from game.components import MapComponent
 from game.components import BattleStatsComponent
+from game.utils.game_types import UnitType
 from pathlib import Path
 import random
 import requests
 import yaml
 import json
+import math
+# from game.components.map import map_component
 
 
 class STEP(enum.Enum):
@@ -31,7 +35,7 @@ class LLMControlSystem(System):
             level="MSG",
             enable_output=True,
             log_to_file=True,
-            log_file=f"{Path(__file__).parent}/logs/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log",
+            log_file=f"{Path(__file__).parent}/logs/{datetime.datetime.now().strftime('%Y-%m-%d_%H_%M_%S')}.log",
         )
         self.logger = get_logger(__name__)
         self.ai_decision_cooldowns = {}  # 存储AI决策冷却时间
@@ -42,6 +46,22 @@ class LLMControlSystem(System):
 
         self.futures = {}
         self.step_status = {}
+        
+        # 存储每个阵营使用的模型ID
+        self.faction_models = {
+            1: "Pro/deepseek-ai/DeepSeek-V3",
+            # 2: "Qwen/Qwen3-235B-A22B"
+            2: "Pro/deepseek-ai/DeepSeek-R1"
+        }
+        
+        # 存储每个阵营的策略推理分数
+        self.strategy_scores = {
+            1: 0,  # 阵营1的策略分数
+            2: 0   # 阵营2的策略分数
+        }
+        
+        # 策略关键词列表
+        self.strategy_keywords = ["协同作战", "速战速决", "集火射击", "隐蔽"]
 
     def initialize(self, context):
         self.context = context
@@ -224,6 +244,10 @@ class LLMControlSystem(System):
             ) as f:
                 de_template = yaml.safe_load(f)
             de_prompt = de_template["prompt"].replace(
+                # "{faction}", str(faction)
+            # ).replace(
+            #     "{situation_info}", sa_prompt
+            # ).replace(
                 "{{thinking_result}}",
                 self.step_status[faction]["think"],
             )
@@ -249,36 +273,174 @@ class LLMControlSystem(System):
             # self.logger.msg(f"action: {self.step_status[faction]['action']}")
             action = self.step_status[faction]["action"]
             # 对action 进行str 2 dict 解析
+            action = action.strip()
             if action.startswith("```json"):
-                action = action[7:-3]
-                action = json.loads(action)
+                # 提取 JSON 内容并去除前后空白字符
+                action = action[7:-3].strip()
+                try:
+                    action = json.loads(action)
+                    if isinstance(action, str):
+                        self.logger.error(f"action 是字符串类型而非字典")
+                        self.logger.error(f"action 长度: {len(action)}")
+                        self.logger.error(f"action 内容: {action}")
+                        exit()
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"JSON 解析错误: {str(e)}")
+                    self.logger.error(f"原始 JSON 字符串: '{action}'")
+                    # 尝试进一步清理 JSON 字符串
+                    action = action.replace('\n', '').replace('\r', '').strip()
+                    try:
+                        action = json.loads(action)
+                        self.logger.info("清理后成功解析 JSON")
+                    except json.JSONDecodeError:
+                        self.logger.error("清理后仍无法解析 JSON，使用空字典")
+                        action = {}
             elif action.startswith("{"):
                 action = json.loads(action)
             else:
                 self.logger.error(f"error fmt action: {action}")
             self.logger.msg(f"action: {action}")
             for k, v in action.items():
+                entity_id = int(k)
+                
+                # 验证单位是否存在且存活
+                if not self.context.has_component(entity_id, UnitComponent):
+                    self.logger.warning(f"单位 ID:{entity_id} 不存在，跳过操作")
+                    continue
+                    
+                unit = self.context.get_component(entity_id, UnitComponent)
+                if not unit.is_alive:
+                    self.logger.warning(f"单位 ID:{entity_id} 已死亡，跳过操作")
+                    continue
+                
                 if v["action"] == "move":
                     self.context.event_manager.publish(
                         EventMessage(
                             EventType.UNIT_MOVED,
                             {
-                                "entity": int(k),
+                                "entity": entity_id,
                                 "target_x": float(v["args"][0]),
                                 "target_y": float(v["args"][1]),
                             },
                         )
                     )
                 if v["action"] == "attack":
-                    self.context.event_manager.publish(
-                        EventMessage(
-                            EventType.ATTACK,
-                            {
-                                "entity": int(k),
-                                "target": int(v["args"]),
-                            },
+                    # 验证单位是否存在且存活
+                    try:
+                        entity_id = int(k)
+                        target_id = int(v["args"])
+                    except ValueError:
+                        self.logger.error(f"Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values.")
+                        continue
+                        
+                    # 验证攻击者和目标是否都存在且存活
+                    if not self.context.has_component(entity_id, UnitComponent) or not self.context.has_component(target_id, UnitComponent):
+                        self.logger.warning(f"攻击者或目标不存在，跳过攻击")
+                        continue
+                        
+                    attacker = self.context.get_component(entity_id, UnitComponent)
+                    target = self.context.get_component(target_id, UnitComponent)
+                    
+                    if not attacker.is_alive:
+                        self.logger.warning(f"攻击者 ID:{entity_id} 已死亡，跳过攻击")
+                        continue
+                    
+                    if not target.is_alive:
+                        self.logger.warning(f"目标 ID:{target_id} 已死亡，跳过攻击")
+                        continue
+                    
+                    # 获取地图组件，用于计算地图边界
+                    map_entity = self.context.with_all(MapComponent).first()
+                    map_component = self.context.get_component(map_entity, MapComponent)
+                    
+                    # 确定攻击者的攻击范围
+                    attack_range = 10  # 默认为步兵和骑兵的攻击范围
+                    if attacker.unit_type == UnitType.ARCHER:
+                        attack_range = 20  # 弓箭手的攻击范围
+                    
+                    # 计算从攻击者到目标的方向向量
+                    dx = target.position_x - attacker.position_x
+                    dy = target.position_y - attacker.position_y
+                    distance = math.sqrt(dx*dx + dy*dy)
+                    
+                    # 如果已经在攻击范围内，不需要移动
+                    if distance <= attack_range:
+                        self.logger.info(f"单位 ID:{entity_id} 已在攻击范围内，无需移动")
+                        continue
+                        
+                    # 计算移动目标位置（目标位置减去攻击范围的距离）
+                    # 通过归一化方向向量并乘以(距离-攻击范围)来计算
+                    if distance > 0:  # 避免除以零
+                        # 计算单位方向向量
+                        dx_norm = dx / distance
+                        dy_norm = dy / distance
+                        
+                        # 计算需要移动的距离（确保停在攻击范围边缘）
+                        move_distance = distance - attack_range + 5  # 确保进入攻击范围
+                        
+                        # 计算最终目标位置
+                        target_x = attacker.position_x + int(dx_norm * move_distance) + 1
+                        target_y = attacker.position_y + int(dy_norm * move_distance) + 1
+                        
+                        # 确保目标位置在地图范围内
+                        target_x = max(0, min(target_x, map_component.width * map_component.tile_size))
+                        target_y = max(0, min(target_y, map_component.height * map_component.tile_size))
+                        
+                        # 发送移动事件
+                        self.context.event_manager.publish(
+                            EventMessage(
+                                EventType.UNIT_MOVED,
+                                {
+                                    "entity": entity_id,
+                                    "target_x": float(target_x),
+                                    "target_y": float(target_y),
+                                },
+                            )
                         )
-                    )
+                        self.logger.info(f"单位 ID:{entity_id} 移动到目标 ID:{target_id} 的攻击位置 ({target_x:.1f}, {target_y:.1f})")
+                    else:
+                        # 目标和攻击者在同一位置，这是一种边缘情况
+                        self.logger.warning(f"单位 ID:{entity_id} 与目标 ID:{target_id} 位置相同，无法确定攻击方向")
+
+            # 重置状态，准备下一轮OODA循环
+            self.step_status[faction]["action"] = None
+            self.step_status[faction]["step"] = STEP.ORIENT
+        else:
+            # 处理等待状态或其他未处理的状态
+            current_step = self.step_status[faction]["step"]
+            orient_future = self.futures[faction]["orient"]
+            decide_future = self.futures[faction]["decide"] 
+            
+            # 记录当前状态
+            if current_step == STEP.ORIENT and orient_future is not None:
+                # 正在等待定向思考完成
+                if not hasattr(self, '_last_status_log') or time.time() - self._last_status_log > 5:
+                    self.logger.debug(f"阵营{faction}正在思考中...(ORIENT阶段)")
+                    self._last_status_log = time.time()
+            elif current_step == STEP.DECIDE and decide_future is not None:
+                # 正在等待决策完成
+                if not hasattr(self, '_last_status_log') or time.time() - self._last_status_log > 5:
+                    self.logger.debug(f"阵营{faction}正在决策中...(DECIDE阶段)")
+                    self._last_status_log = time.time()
+            else:
+                # 未知或异常状态
+                self.logger.warning(
+                    f"阵营{faction}处于未处理状态: step={current_step}, "
+                    f"orient_future={orient_future is not None}, "
+                    f"decide_future={decide_future is not None}, "
+                    f"think={self.step_status[faction]['think'] is not None}, "
+                    f"action={self.step_status[faction]['action'] is not None}"
+                )
+                
+                # 如果处于异常状态，尝试恢复到初始状态 ## To be decided
+                if (current_step == STEP.DECIDE and self.step_status[faction]["think"] is None) or \
+                   (current_step != STEP.ORIENT and current_step != STEP.DECIDE):
+                    self.logger.warning(f"阵营{faction}状态异常，重置为ORIENT阶段")
+                    self.step_status[faction]["step"] = STEP.ORIENT
+                    self.step_status[faction]["think"] = None
+                    self.step_status[faction]["action"] = None
+                    self.futures[faction]["orient"] = None
+                    self.futures[faction]["decide"] = None
 
     def _make_ai_decision(self, entity: Entity, unit: UnitComponent):
         """为AI单位做出决策"""
@@ -491,21 +653,37 @@ class LLMControlSystem(System):
                         content_text += "\n"
                 log_content = f"{prefix} \n***阵营{log_tag}***\n 发送请求: \n------\n{content_text}\n------"
             else:  # response
-                # 对于响应，记录文本内容
-                if (
-                    "message" in content
-                    and "content" in content["message"]
-                    and "text_content" in content["message"]["content"]
-                ):
-                    response_text = content["message"]["content"]["text_content"]
-                    log_content = f"{prefix} \n***阵营{log_tag}***\n 收到响应:\n------\n{response_text}\n------"
-                else:
+                # 检查是否是增强的响应对象
+                if "response_type" in content and content["response_type"] == "LLM_API_RESPONSE":
+                    # 添加醒目的分隔线和标记
+                    separator = "=" * 50
                     log_content = (
-                        f"{prefix} 收到响应: {json.dumps(content, ensure_ascii=True)}"
+                        f"{prefix}\n{separator}\n"
+                        f"【阵营{log_tag} LLM响应 - {content['timestamp']}】\n{separator}\n"
+                        f"{content['content']}\n"
+                        f"{separator}\n响应结束\n{separator}"
                     )
+                    
+                    # 保留原始响应的日志记录
+                    original_response = content["original_response"]
+                    original_json = json.dumps(original_response, ensure_ascii=False, indent=2)
+                    log_content += f"\n\n原始响应JSON:\n{original_json}\n"
+                else:
+                    # 原有的响应处理逻辑
+                    if (
+                        "message" in content
+                        and "content" in content["message"]
+                        and "text_content" in content["message"]["content"]
+                    ):
+                        response_text = content["message"]["content"]["text_content"]
+                        log_content = f"{prefix} \n***阵营{log_tag}***\n 收到响应:\n------\n{response_text}\n------"
+                    else:
+                        log_content = (
+                                    f"{prefix} 收到响应: {json.dumps(content, ensure_ascii=False)}"
+                        )
 
             # 使用主日志记录器记录
-            self.logger.msg(log_content)
+            # self.logger.msg(log_content)
 
             # 根据log_tag将日志写入不同的文件
             if log_tag:
@@ -536,29 +714,57 @@ class LLMControlSystem(System):
         except Exception as e:
             self.logger.error(f"记录聊天内容时出错: {str(e)}")
 
+    def get_faction_models(self):
+        """返回每个阵营使用的模型信息"""
+        return self.faction_models
+
+    def get_strategy_scores(self):
+        """返回每个阵营的策略推理分数"""
+        return self.strategy_scores
+
+    def update_strategy_score(self, faction, response_text):
+        """根据响应文本中是否包含策略关键词更新策略分数
+        
+        Args:
+            faction: 阵营ID
+            response_text: 模型响应文本
+        """
+        for strategy in self.strategy_keywords:
+            if strategy in response_text:
+                self.strategy_scores[faction] += 0.5
+                self.logger.info(f"阵营{faction}使用了策略'{strategy}'，策略推理分+0.5，当前得分:{self.strategy_scores[faction]}")
+
     def chat(
         self,
         messages,
-        # model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_id="us.amazon.nova-pro-v1:0",
         stream=False,
         log_tag=None,
     ):
-        SERVER_URL = "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
-        TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
+        # SERVER_URL = "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
+        # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
+        # SERVER_URL = "https://api.deepseek.com/v1/chat/completions"
+        # TOKEN = "sk-419ab6c0fc9c4d849e5efbde67149dc5"
+        SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
+        TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
+        
         headers = {
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json",
         }
         if log_tag is not None and "1" in log_tag:
-            model_id = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+            # model_id = "Qwen/Qwen3-8B"
+            model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
-            model_id = "us.amazon.nova-pro-v1:0"
+            # model_id = "Pro/Qwen/Qwen2-1.5B-Instruct"
+            # model_id = "Qwen/Qwen3-14B"
+            model_id = self.faction_models[2]
+
         # self.logger.msg(messages)
         data = {
             "messages": messages,
-            "model_id": model_id,
+            "model": model_id,
             "temperature": 0,
             "max_token": 8192,
             "stream": stream,
@@ -575,15 +781,41 @@ class LLMControlSystem(System):
             pass
         else:
             response = requests.post(
-                f"{SERVER_URL}/api/rotk/chat", json=data, headers=headers
+                SERVER_URL, json=data, headers=headers
             )
             # self.logger.msg(f"res : {response.json()}")
-            response_text = response.json()["message"]["content"]["text_content"]
+            llm_response = response.json()
+            response_text = llm_response["choices"][0]["message"]["content"]
 
             # 记录响应内容到日志
-            self._log_chat_to_file("response", response.json(), log_tag)
-
+            self._log_chat_to_file("response", llm_response, log_tag)
+            
+            # 如果是orient_thinking阶段的响应，分析并更新策略分数
+            if log_tag and "orient_thinking" in log_tag:
+                faction_id = None
+                if "1" in log_tag:
+                    faction_id = 1
+                elif "2" in log_tag:
+                    faction_id = 2
+                    
+                if faction_id:
+                    self.update_strategy_score(faction_id, response_text)
+                    
+            self.logger.msg(f"***********************************response_text: {response_text}")
             return response_text
+
+    def cleanup(self):
+        """清理所有正在进行的API请求"""
+        self.logger.info("清理LLM控制系统的所有未完成任务")
+        for faction, futures in self.futures.items():
+            for key, future in futures.items():
+                if future is not None and not future.done():
+                    future.cancel()
+                    self.logger.info(f"取消阵营{faction}的{key}任务")
+        
+        # 清空futures和状态
+        self.futures = {}
+        self.step_status = {}
 
 
 # tpye 1
