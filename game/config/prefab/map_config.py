@@ -4,9 +4,9 @@ import numpy as np
 # 地图组件配置
 MAP_CONFIG = {
     "default": {
-        "width": 10,
-        "height": 10,
-        "tile_size": 32,
+        "width": 5,
+        "height": 5,
+        "tile_size": 16,
     },
     "tiny": {
         "width": 3,
