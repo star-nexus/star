@@ -10,6 +10,8 @@ from .camera.camera_component import CameraComponent
 ## Unit
 from .unit.unit_component import UnitComponent, UnitState, UnitType
 from .unit.unit_movement_component import UnitMovementPathComponent
+from .unit.unit_effect_component import UnitEffectComponent
+from .terrain_effect_component import TerrainEffectComponent
 
 ## Battlefield
 from .status.battle_stats_component import BattleStatsComponent
@@ -26,5 +28,7 @@ __all__ = [
     "UnitState",
     "UnitType",
     "UnitMovementPathComponent",
+    "UnitEffectComponent",
+    "TerrainEffectComponent",
     "BattleStatsComponent",
 ]

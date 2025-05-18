@@ -6,9 +6,10 @@ from framework.ecs.entity import Entity
 from framework.utils.logging import get_logger
 from framework.engine.events import EventType, EventMessage
 from game.components import UnitMovementPathComponent
-from game.components import UnitComponent, UnitState
+from game.components import UnitComponent, UnitState, UnitType
 from game.components import MapComponent
 from game.components import TileComponent, TerrainType
+from game.components.unit.unit_effect_component import UnitEffectComponent
 
 
 class UnitMovementSystem(System):
@@ -45,16 +46,19 @@ class UnitMovementSystem(System):
         # 获取地图组件
         map_component = self._get_map_component()
 
-        for entity, (unit, path) in self.context.with_all(
-            UnitComponent, UnitMovementPathComponent
-        ).iter_components(UnitComponent, UnitMovementPathComponent):
+        for entity, (unit, path, effect) in self.context.with_all(
+            UnitComponent, UnitMovementPathComponent, UnitEffectComponent
+        ).iter_components(
+            UnitComponent, UnitMovementPathComponent, UnitEffectComponent
+        ):
+            # 更新移动路径
             # 获取单位当前所在格子的地形影响因子
             terrain_factor = self._get_terrain_factor(
                 map_component, path.current_x, path.current_y
             )
 
-            # 更新移动路径
-            if self.update_path(path, delta_time, terrain_factor):
+            base_speed = self._get_modified_movement_speed(unit, effect)  # 更新移动路径
+            if self.update_path(path, delta_time, base_speed, terrain_factor):
                 # 移动完成，更新单位状态
                 unit.position_x = float("{:.1f}".format(path.target_x))
                 unit.position_y = float("{:.1f}".format(path.target_y))
@@ -88,13 +92,13 @@ class UnitMovementSystem(System):
             )
             self.logger.debug("订阅了单位移动事件")
 
-    def update_path(self, path, delta_time, terrain_factor):
+    def update_path(self, path, delta_time, base_speed, terrain_factor):
         if path.completed:
             return True
 
         # 应用地形影响因子
         path.terrain_factor = terrain_factor
-        actual_speed = path.speed * path.terrain_factor
+        actual_speed = base_speed * path.terrain_factor
 
         # 计算本帧移动距离
         distance_this_frame = actual_speed * delta_time
@@ -115,6 +119,47 @@ class UnitMovementSystem(System):
         path.current_y = path.start_y + (path.target_y - path.start_y) * move_ratio
 
         return False
+
+    def _get_modified_movement_speed(self, unit, effect) -> float:
+        """获取考虑各种效果后的移动速度
+
+        Args:
+            entity: 单位实体
+            unit: 单位组件
+
+        Returns:
+            修正后的移动速度
+        """
+        base_speed = unit.base_speed
+
+        # 检查单位是否有效果组件
+
+        # 用移动速度修正效果
+        for effect_id in effect.active_effects:
+            effect_data = effect.effect_data.get(effect_id, {})
+            # 这里可以根据效果ID来判断效果类型，并应用相应的移动速度修正
+            # 例如，"slow"效果可以将移动速度降低50%，"fast"效果可以将移动速度提高50%
+            # 这里只是一个示例，实际效果需要根据游戏逻辑进行设计
+            # 水域效果：移动速度降低
+            if "movement_speed_modifier" in effect_data:
+                base_speed *= effect_data["movement_speed_modifier"]
+
+            # 平原效果：骑兵加速
+            if (
+                "cavalry_speed_bonus" in effect_data
+                and unit.unit_type == UnitType.CAVALRY
+            ):
+                base_speed *= effect_data["cavalry_speed_bonus"]
+
+            # 山地效果：骑兵减速
+            if (
+                "cavalry_speed_reduced" in effect_data
+                and unit.unit_type == UnitType.CAVALRY
+                and effect_data["cavalry_speed_reduced"] is True
+            ):
+                base_speed *= 0.1  # 骑兵在山地移动速度降低50%
+        # self.logger.msg(f"修正后的移动速度---------: {base_speed:.2f}")
+        return base_speed
 
     def start_movement(
         self,
