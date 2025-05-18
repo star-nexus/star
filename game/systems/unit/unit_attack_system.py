@@ -5,8 +5,9 @@ from framework.ecs.system import System
 from framework.ecs.entity import Entity
 from framework.utils.logging import get_logger
 from framework.engine.events import EventType, EventMessage
-from game.components import UnitComponent, UnitState
-from game.components import MapComponent
+from game.components import UnitComponent, UnitState, TerrainType
+from game.components import MapComponent, TileComponent
+from game.components.unit.unit_effect_component import UnitEffectComponent
 
 
 class UnitAttackSystem(System):
@@ -170,18 +171,160 @@ class UnitAttackSystem(System):
 
     def calculate_damage(self, attacker: UnitComponent, target: UnitComponent) -> int:
         """计算攻击伤害"""
+        # 使用更完整的伤害计算方法
+        attacker_entity = None
+        target_entity = None
+
+        # 查找攻击者和目标的实体
+        for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
+            UnitComponent
+        ):
+            if unit == attacker:
+                attacker_entity = entity
+            elif unit == target:
+                target_entity = entity
+
+            if attacker_entity and target_entity:
+                break
+
+        if attacker_entity and target_entity:
+            return self._calculate_damage(
+                attacker_entity, target_entity, attacker, target
+            )
+        else:
+            # 基础伤害计算（如果找不到实体）
+            return max(1, attacker.attack - target.defense // 2)  # 确保至少造成1点伤害
+
+    def _calculate_damage(
+        self,
+        attacker_entity: Entity,
+        defender_entity: Entity,
+        attacker: UnitComponent,
+        defender: UnitComponent,
+    ) -> int:
+        """计算攻击伤害
+
+        Args:
+            attacker_entity: 攻击者实体
+            defender_entity: 防御者实体
+            attacker: 攻击者组件
+            defender: 防御者组件
+
+        Returns:
+            造成的伤害值
+        """
         # 基础伤害
-        base_damage = max(
-            1, attacker.attack - target.defense // 2
-        )  # 确保至少造成1点伤害
+        base_damage = attacker.attack
 
-        # 可以在这里添加更复杂的伤害计算逻辑，如：
-        # - 单位类型克制关系
-        # - 随机因素
-        # - 地形影响
-        # - 状态效果
+        # 应用地形效果加成
+        base_damage = self._apply_terrain_effects_to_damage(
+            attacker_entity, defender_entity, base_damage
+        )
 
-        return base_damage
+        # 考虑防御力
+        damage = max(1, base_damage - defender.defense)
+
+        # 随机波动（±10%）
+        import random
+
+        damage = int(damage * (0.9 + 0.2 * random.random()))
+
+        return max(1, damage)  # 确保至少造成1点伤害
+
+    def _apply_terrain_effects_to_damage(
+        self, attacker_entity: Entity, defender_entity: Entity, base_damage: float
+    ) -> float:
+        """应用地形效果到攻击伤害
+
+        Args:
+            attacker_entity: 攻击者实体
+            defender_entity: 防御者实体
+            base_damage: 基础伤害值
+
+        Returns:
+            修正后的伤害值
+        """
+        modified_damage = base_damage
+
+        # 检查攻击者是否有效果组件
+        if self.context.component_manager.has_component(
+            attacker_entity, UnitEffectComponent
+        ):
+            effect_component = self.context.component_manager.get_component(
+                attacker_entity, UnitEffectComponent
+            )
+
+            # 应用攻击加成效果
+            for effect_id in effect_component.active_effects:
+                effect_data = effect_component.effect_data.get(effect_id, {})
+
+                # 山地效果：对非山地地形攻击加成
+                if "attack_bonus" in effect_data:
+                    # 检查防御者所在地形
+                    defender_terrain = self._get_unit_terrain(defender_entity)
+                    if defender_terrain != TerrainType.MOUNTAIN:
+                        modified_damage *= effect_data["attack_bonus"]
+
+                # 城市占领效果：攻击力提高
+                if (
+                    "attack_bonus" in effect_data
+                    and "occupied_by_faction" in effect_data
+                ):
+                    if (
+                        effect_data["occupied_by_faction"]
+                        == self.context.component_manager.get_component(
+                            attacker_entity, UnitComponent
+                        ).faction
+                    ):
+                        modified_damage *= effect_data["attack_bonus"]
+
+        return modified_damage
+
+    def _get_unit_terrain(self, unit_entity: Entity) -> Optional[TerrainType]:
+        """获取单位所在的地形类型
+
+        Args:
+            unit_entity: 单位实体
+
+        Returns:
+            地形类型，如果无法确定则返回None
+        """
+        unit = self.context.component_manager.get_component(unit_entity, UnitComponent)
+        if not unit:
+            return None
+
+        # 获取地图组件
+        map_entity = None
+        for entity, (map_comp,) in self.context.with_all(MapComponent).iter_components(
+            MapComponent
+        ):
+            map_entity = entity
+            break
+
+        if not map_entity:
+            return None
+
+        map_component = self.context.component_manager.get_component(
+            map_entity, MapComponent
+        )
+        if not map_component:
+            return None
+
+        # 将世界坐标转换为格子坐标
+        tile_x = int(unit.position_x / map_component.tile_size)
+        tile_y = int(unit.position_y / map_component.tile_size)
+
+        # 确保坐标在地图范围内
+        if 0 <= tile_x < map_component.width and 0 <= tile_y < map_component.height:
+            tile_entity = map_component.tile_entities.get((tile_x, tile_y))
+            if tile_entity:
+                tile_component = self.context.component_manager.get_component(
+                    tile_entity, TileComponent
+                )
+                if tile_component:
+                    return tile_component.terrain_type
+
+        return None
 
     def is_alive(self, unit: UnitComponent) -> bool:
         """检查单位是否存活"""
@@ -195,9 +338,13 @@ class UnitAttackSystem(System):
         self, attacker: UnitComponent, target: UnitComponent
     ) -> bool:
         """检查目标是否在攻击范围内"""
-        distance = abs(target.position_x - attacker.position_x) + abs(
-            target.position_y - attacker.position_y
-        )
+        # distance = abs(target.position_x - attacker.position_x) + abs(
+        #     target.position_y - attacker.position_y
+        # )
+        dx = target.position_x - attacker.position_x
+        dy = target.position_y - attacker.position_y
+        distance = math.sqrt(dx*dx + dy*dy)
+        print(f"单位类型: {attacker.unit_type}, 攻击范围: {attacker.range}，距离: {distance}")
         return distance <= attacker.range
 
     def _check_auto_attack(self):

@@ -98,6 +98,11 @@ class EventType(Enum):
     # 天气和环境事件
     WEATHER_CHANGED = auto()
     TIME_OF_DAY_CHANGED = auto()
+
+    # 地形效果事件
+    TERRAIN_EFFECT_APPLIED = auto()
+    TERRAIN_EFFECT_REMOVED = auto()
+    TERRAIN_EFFECT_UPDATED = auto()
     SEASON_CHANGED = auto()
 
     # 特殊事件
