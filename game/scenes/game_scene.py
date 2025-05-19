@@ -528,14 +528,15 @@ class GameScene(Scene):
         """获取各阵营使用的LLM模型信息"""
         model_info = {}
         strategy_scores = {}
+        enable_thinking = {}
         
         # 从LLM控制系统获取模型信息
         if hasattr(self, 'llm_controller_system') and self.llm_controller_system:
             # 使用LLMControlSystem的get_faction_models方法获取模型信息
             model_info = self.llm_controller_system.get_faction_models()
             strategy_scores = self.llm_controller_system.get_strategy_scores()
-            
-        return model_info, strategy_scores
+            enable_thinking = self.llm_controller_system.get_enable_thinking()
+        return model_info, strategy_scores, enable_thinking
 
     def handle_custom_event(self, event: EventMessage):
         """处理自定义事件"""
@@ -869,7 +870,7 @@ class GameScene(Scene):
         # 更新状态面板
         self._update_status_display()
 
-    def generate_experiment_report(self, winner_faction, game_duration, is_tie=False, model_info=None, strategy_scores=None, is_half_win=False):
+    def generate_experiment_report(self, winner_faction, game_duration, is_tie=False, model_info=None, strategy_scores=None, is_half_win=False, enable_thinking=None):
         """
         生成实验数据报告并保存到文件
         
@@ -880,6 +881,7 @@ class GameScene(Scene):
             model_info: 各阵营使用的模型信息
             strategy_scores: 各阵营的策略推理分数
             is_half_win: 是否为半歼胜利（超时后存活单位数量较多）
+            enable_thinking: 是否开启思考
         """
         import os
         import json
@@ -910,10 +912,11 @@ class GameScene(Scene):
             },
             "units_info": self._get_units_info(),
             "model_info": model_info,
-            "strategy_scores": strategy_scores
+            "strategy_scores": strategy_scores,
+            "enable_thinking": enable_thinking
         }
         
-        # 保存为JSON文件
+        # 保存为JSON文件   
         report_file = os.path.join(report_dir, f"experiment_{timestamp}.json")
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(report_data, f, ensure_ascii=False, indent=2)
@@ -1026,11 +1029,11 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
                 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores = self._get_model_info()
+            model_info, strategy_scores, enable_thinking = self._get_model_info()
                 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
-            self.generate_experiment_report(0, game_duration, is_tie=True, model_info=model_info, strategy_scores=strategy_scores)
+            self.generate_experiment_report(0, game_duration, is_tie=True, model_info=model_info, strategy_scores=strategy_scores, enable_thinking=enable_thinking)
             self._experiment_report_generated = True
                 
             self.logger.info("半歼结算 - 双方存活单位数量相同，判定为平局！")
@@ -1047,12 +1050,12 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
                 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores = self._get_model_info()
+            model_info, strategy_scores, enable_thinking = self._get_model_info()
                 
             # 记录游戏时长和半歼胜利阵营
             game_duration = time.time() - self.scene_start_time
             # 标记为半歼胜利
-            self.generate_experiment_report(winner_faction, game_duration, is_tie=False, model_info=model_info, strategy_scores=strategy_scores, is_half_win=True)
+            self.generate_experiment_report(winner_faction, game_duration, is_tie=False, model_info=model_info, strategy_scores=strategy_scores, is_half_win=True, enable_thinking=enable_thinking)
             self._experiment_report_generated = True
                 
             self.logger.msg(f"半歼结算 - 阵营{winner_faction}获得半歼胜利！存活单位数量: {faction1_alive} vs {faction2_alive}")

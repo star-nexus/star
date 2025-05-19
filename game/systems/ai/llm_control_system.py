@@ -49,9 +49,9 @@ class LLMControlSystem(System):
         
         # 存储每个阵营使用的模型ID
         self.faction_models = {
-            1: "Pro/deepseek-ai/DeepSeek-V3",
+            1: "Qwen/Qwen3-14B",
             # 2: "Qwen/Qwen3-235B-A22B"
-            2: "Pro/deepseek-ai/DeepSeek-R1"
+            2: "Qwen/Qwen2.5-14B-Instruct"
         }
         
         # 存储每个阵营的策略推理分数
@@ -62,6 +62,7 @@ class LLMControlSystem(System):
         
         # 策略关键词列表
         self.strategy_keywords = ["协同作战", "速战速决", "集火射击", "隐蔽"]
+        self.enable_thinking = False
 
     def initialize(self, context):
         self.context = context
@@ -229,6 +230,7 @@ class LLMControlSystem(System):
                         },
                     ],
                     log_tag=f"orient_thinking_{faction}",
+                    enable_thinking=False
                 )
             except Exception as e:
                 self.logger.error(f"error: {e}")
@@ -265,6 +267,7 @@ class LLMControlSystem(System):
                         },
                     ],
                     log_tag=f"decision_{faction}",
+                    enable_thinking=False
                 )
             except Exception as e:
                 self.logger.error(f"error: {e}")
@@ -722,6 +725,10 @@ class LLMControlSystem(System):
         """返回每个阵营的策略推理分数"""
         return self.strategy_scores
 
+    def get_enable_thinking(self):
+        """返回是否开启思考"""
+        return self.enable_thinking
+
     def update_strategy_score(self, faction, response_text):
         """根据响应文本中是否包含策略关键词更新策略分数
         
@@ -740,6 +747,7 @@ class LLMControlSystem(System):
         model_id="us.amazon.nova-pro-v1:0",
         stream=False,
         log_tag=None,
+        enable_thinking=True
     ):
         # SERVER_URL = "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
         # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
@@ -768,6 +776,7 @@ class LLMControlSystem(System):
             "temperature": 0,
             "max_token": 8192,
             "stream": stream,
+            "enable_thinking": enable_thinking
         }
 
         # 记录请求内容到日志
