@@ -36,7 +36,7 @@ class GameScene(Scene):
         # 游戏场景所需的属性
         self.logger = get_logger("GameScene")
         self.scene_start_time = None
-        self.max_game_duration = 900.0  # 最大游戏时长为900秒，超时判定半歼
+        self.max_game_duration = 500  # 最大游戏时长为900秒，超时判定半歼
 
         self.map_entity = None
         self.camera_entity = None
