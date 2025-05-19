@@ -185,7 +185,7 @@ class UnitSystem(System):
         # 根据单位类型设置不同的属性
         if unit_type == UnitType.INFANTRY:
             unit = UnitComponent(
-                name="步兵",
+                name="INFANTRY",  # INFANTRY
                 unit_type=unit_type,
                 position_x=position_x,
                 position_y=position_y,
@@ -201,7 +201,7 @@ class UnitSystem(System):
             )
         elif unit_type == UnitType.CAVALRY:
             unit = UnitComponent(
-                name="骑兵",
+                name="CAVALRY",  # CAVALRY
                 unit_type=unit_type,
                 position_x=position_x,
                 position_y=position_y,
@@ -217,7 +217,7 @@ class UnitSystem(System):
             )
         elif unit_type == UnitType.ARCHER:
             unit = UnitComponent(
-                name="弓箭手",
+                name="ARCHER",  # ARCHER
                 unit_type=unit_type,
                 position_x=position_x,
                 position_y=position_y,
