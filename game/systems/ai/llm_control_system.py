@@ -55,11 +55,11 @@ class LLMControlSystem(System):
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # 2: "Pro/deepseek-ai/DeepSeek-V3" # 
-            2: "Qwen/Qwen3-14B",
+            2: "Qwen/Qwen3-8B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
-            1: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+            1: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -398,13 +398,18 @@ class LLMControlSystem(System):
                 if v["action"] == "attack":
                     # 验证单位是否存在且存活
                     try:
-                        entity_id = int(k)
                         target_id = int(v["args"])
                     except ValueError:
-                        self.logger.error(
-                            f"[Faction {faction}]: Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values."
-                        )
-                        continue
+                        # 如果失败，尝试从字符串中提取ID
+                        id_match = re.search(r'(\d+)', v["args"])
+                        if id_match:
+                            target_id = int(id_match.group(1))
+                            self.logger.info(f"[Faction {faction}]: 从键'{v['args']}'中提取ID: {target_id}")
+                        else:
+                            self.logger.error(
+                                f"[Faction {faction}]: Invalid attack target: {v['args']}. Expected numeric value."
+                            )
+                            continue
 
                     # 验证攻击者和目标是否都存在且存活
                     if not self.context.has_component(
