@@ -11,7 +11,7 @@ from game.components import (
     TerrainType,
 )
 from game.components.status.battle_stats_component import BattleStatsComponent
-from game.utils.game_types import ViewMode, TerrainTypeMapping
+from game.utils.game_types import UnitState, ViewMode, TerrainTypeMapping
 
 
 class GameStatsSystem(System):
@@ -73,6 +73,10 @@ class GameStatsSystem(System):
         """更新当前游戏统计数据。"""
         # 重置单位计数
         self.unit_counts = {}
+        not_attacking_units = {
+            1: [],
+            2: [],
+        }  # 记录当前正在攻击的单位
 
         # 统计各阵营单位数量
         for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
@@ -82,7 +86,17 @@ class GameStatsSystem(System):
             if faction not in self.unit_counts:
                 self.unit_counts[faction] = 0
             self.unit_counts[faction] += 1
-        # self.logger.msg(f"当前单位数量: {self.unit_counts}")
+
+            if unit.state != UnitState.ATTACKING:
+                not_attacking_units[faction].append(entity)
+        for entity, (battle_stats,) in self.context.with_all(
+            BattleStatsComponent
+        ).iter_components(BattleStatsComponent):
+            # 更新玩家阵营
+            if battle_stats.faction in not_attacking_units.keys():
+                for entity in not_attacking_units[faction]:
+                    if entity in battle_stats.contact_and_fire.keys():
+                        battle_stats.contact_and_fire[entity]["进攻"].clear()
 
     def record_kill(self, killer_id, killed_id):
         """记录击杀事件。"""
@@ -174,7 +188,7 @@ class GameStatsSystem(System):
                 #     + abs(target_y - unit_comp.position_y),
                 # }
                 self.logger.msg(
-                    f"阵营{faction}的{unit_comp.name}(ID:{entity}) 移动到 ({target_x}, {target_y})"
+                    f"阵营{faction}的{unit_comp.name}(ID:{entity}) 准备移动到 ({target_x}, {target_y})"
                 )
 
                 for entity, (stat_comp,) in self.context.with_all(
@@ -279,9 +293,9 @@ class GameStatsSystem(System):
 
     def _handle_damage_dealt(self, event: EventMessage):
         """处理伤害造成事件。"""
-        attacker_entity = event.data.get("entity")
+        attacker_entity = event.data.get("attacker")
         target_entity = event.data.get("target")
-        # damage = event.data.get("damage")
+        damage = event.data.get("damage")
 
         if attacker_entity and target_entity:  # and damage is not None:
             attacker_comp = self.context.get_component(attacker_entity, UnitComponent)
@@ -307,69 +321,33 @@ class GameStatsSystem(System):
                     BattleStatsComponent
                 ).iter_components(BattleStatsComponent):
                     if stat_comp.faction == attacker_faction:
-                        if target_faction not in stat_comp.contact_and_fire:
-                            stat_comp.contact_and_fire[target_faction] = []
-                        stat_comp.contact_and_fire[target_faction].append(
-                            f"阵营{attacker_faction}的{attacker_comp.name}(ID:{attacker_entity}) 对 阵营{target_faction}的{target_comp.name}(ID:{target_entity}),造成{damage}点伤害"
+                        if attacker_entity not in stat_comp.contact_and_fire:
+                            stat_comp.contact_and_fire[attacker_entity] = {
+                                "进攻": [],
+                                "遭到攻击": [],
+                            }
+                        stat_comp.contact_and_fire[attacker_entity]["进攻"].append(
+                            f"{attacker_comp.name}(ID:{attacker_entity}) 进攻 阵营{target_faction}的{target_comp.name}(ID:{target_entity})"
                         )
                         if (
-                            len(stat_comp.contact_and_fire[target_faction]) > 10
+                            len(stat_comp.contact_and_fire[attacker_entity]["进攻"])
+                            > 10
                         ):  # 限制列表长度
-                            stat_comp.contact_and_fire[target_faction].pop(0)
+                            stat_comp.contact_and_fire[attacker_entity]["进攻"].pop(0)
                     if stat_comp.faction == target_faction:
-                        if attacker_faction not in stat_comp.contact_and_fire:
-                            stat_comp.contact_and_fire[attacker_faction] = []
-                        stat_comp.contact_and_fire[attacker_faction].append(
-                            f"阵营{target_faction}的{target_comp.name}(ID:{target_entity}) 受到 阵营{attacker_faction}的{attacker_comp.name}(ID:{attacker_entity}),造成{damage}点伤害"
+                        if target_entity not in stat_comp.contact_and_fire:
+                            stat_comp.contact_and_fire[target_entity] = {
+                                "进攻": [],
+                                "遭到攻击": [],
+                            }
+                        stat_comp.contact_and_fire[target_entity]["遭到攻击"].append(
+                            f"{target_comp.name}(ID:{target_entity}) 受到 阵营{attacker_faction}的{attacker_comp.name}(ID:{attacker_entity})的攻击"
                         )
                         if (
-                            len(stat_comp.contact_and_fire[attacker_faction]) > 10
+                            len(stat_comp.contact_and_fire[target_entity]["遭到攻击"])
+                            > 10
                         ):  # 限制列表长度
-                            stat_comp.contact_and_fire[attacker_faction].pop(0)
-                # if self.battlefield_stats_component:
-                #     # 初始化交火情况数据结构
-                #     if len(self.battlefield_stats_component.contact_and_fire) == 0:
-                #         self.battlefield_stats_component.contact_and_fire[
-                #             "engagements"
-                #         ] = []
-
-                #     # 记录交火事件
-                #     engagement = {
-                #         "attacker_faction": attacker_faction,
-                #         "target_faction": target_faction,
-                #         "damage": damage,
-                #         "attacker_position": (
-                #             attacker_comp.position_x,
-                #             attacker_comp.position_y,
-                #         ),
-                #         "target_position": (
-                #             target_comp.position_x,
-                #             target_comp.position_y,
-                #         ),
-                #         "attacker_type": attacker_comp.unit_type.name,
-                #         "target_type": target_comp.unit_type.name,
-                #     }
-
-                #     # 添加到交火记录列表
-                #     self.battlefield_stats_component.contact_and_fire[
-                #         "engagements"
-                #     ].append(engagement)
-
-                #     # 限制列表长度，只保留最近的20条记录
-                #     if (
-                #         len(
-                #             self.battlefield_stats_component.contact_and_fire[
-                #                 "engagements"
-                #             ]
-                #         )
-                #         > 20
-                #     ):
-                #         self.battlefield_stats_component.contact_and_fire[
-                #             "engagements"
-                #         ].pop(0)
-
-        # After handling event-driven stats, update state-based stats
-        # self.update_current_stats()
+                            stat_comp.contact_and_fire[target_entity]["遭到攻击"].pop(0)
 
     def update_battlefield_stats(self):
         """更新战场统计数据。"""
@@ -407,7 +385,7 @@ class GameStatsSystem(System):
             battle_stats.enemy_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health}",# / {unit.max_health}",
+                "血量": f"{unit.current_health}",  # / {unit.max_health}",
                 "位置": [int(unit.position_x), int(unit.position_y)],
             }
 
@@ -425,7 +403,7 @@ class GameStatsSystem(System):
             battle_stats.my_status_info[
                 f"阵营{unit.faction}{unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health}",# / {unit.max_health}",
+                "血量": f"{unit.current_health}",  # / {unit.max_health}",
                 "位置": [int(unit.position_x), int(unit.position_y)],
             }
 
