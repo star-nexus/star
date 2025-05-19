@@ -56,6 +56,11 @@ class LLMControlSystem(System):
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
+            # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
+            # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
+            # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
+            # #     "deepseek-reasoner",
+            # 2: "Pro/deepseek-ai/DeepSeek-V3",
         }
         # "deepseek-chat",
         # "gpt-4o",
@@ -819,13 +824,13 @@ class LLMControlSystem(System):
             # model_id = "Pro/Qwen/Qwen2-1.5B-Instruct"
             # model_id = "Qwen/Qwen3-14B"
 
-            # SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
-            # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
+            SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
+            TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
 
-            SERVER_URL = (
-                "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
-            )
-            TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
+            # SERVER_URL = (
+            #     "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
+            # )
+            # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
 
             model_id = self.faction_models[2]
 
@@ -871,17 +876,15 @@ class LLMControlSystem(System):
 
             if log_tag is not None and "2" in log_tag:  # openai
                 #  ==========   Deepseek ==========
+                response = requests.post(SERVER_URL, json=data, headers=headers)
+                llm_response = response.json()
+                response_text = llm_response["choices"][0]["message"]["content"]
+                #  ==================================
                 # response = requests.post(
-                #     SERVER_URL, json=data, headers=headers
+                #     f"{SERVER_URL}/api/rotk/chat", json=data, headers=headers
                 # )
                 # llm_response = response.json()
-                # response_text = llm_response["choices"][0]["message"]["content"]
-                #  ==================================
-                response = requests.post(
-                    f"{SERVER_URL}/api/rotk/chat", json=data, headers=headers
-                )
-                llm_response = response.json()
-                response_text = llm_response["message"]["content"]["text_content"]
+                # response_text = llm_response["message"]["content"]["text_content"]
             # 记录响应内容到日志
             self._log_chat_to_file("response", llm_response, log_tag)
 

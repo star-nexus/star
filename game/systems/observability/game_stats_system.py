@@ -96,7 +96,7 @@ class GameStatsSystem(System):
             if battle_stats.faction in not_attacking_units.keys():
                 for entity in not_attacking_units[faction]:
                     if entity in battle_stats.contact_and_fire.keys():
-                        battle_stats.contact_and_fire[entity]["进攻"].clear()
+                        battle_stats.contact_and_fire[entity]["attack"].clear()
 
     def record_kill(self, killer_id, killed_id):
         """记录击杀事件。"""
@@ -196,12 +196,21 @@ class GameStatsSystem(System):
                 ).iter_components(BattleStatsComponent):
                     if stat_comp.faction == faction:
                         stat_comp.my_transfer_situation[
-                            f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
-                        ] = f"正在移动到 ({target_x}, {target_y})"
+                            f"faction {unit_comp.faction} {unit_comp.name}(ID:{entity})"
+                        ] = f"Moving ({target_x}, {target_y})"
                     else:
                         stat_comp.enemy_transfer_situation[
-                            f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
-                        ] = f"正在移动到 ({target_x}, {target_y})"
+                            f"faction {unit_comp.faction} {unit_comp.name}(ID:{entity})"
+                        ] = f"Moving ({target_x}, {target_y})"
+                    # CH version
+                    # if stat_comp.faction == faction:
+                    #     stat_comp.my_transfer_situation[
+                    #         f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
+                    #     ] = f"正在移动到 ({target_x}, {target_y})"
+                    # else:
+                    #     stat_comp.enemy_transfer_situation[
+                    #         f"阵营{unit_comp.faction}{unit_comp.name}(ID:{entity})"
+                    #     ] = f"正在移动到 ({target_x}, {target_y})"
 
                 # 添加到调动记录列表
                 # self.battlefield_stats_component.transfer_situation[faction].append(
@@ -240,15 +249,15 @@ class GameStatsSystem(System):
                     BattleStatsComponent
                 ).iter_components(BattleStatsComponent):
                     if stat_comp.faction == killed_faction:
-                        if "阵亡" not in stat_comp.death_status:
-                            stat_comp.death_status["阵亡"] = []
-                        stat_comp.death_status["阵亡"].append(
+                        if "dead" not in stat_comp.death_status:
+                            stat_comp.death_status["dead"] = []
+                        stat_comp.death_status["dead"].append(
                             f"{killed_comp.name}(ID:{killed_entity})"
                         )
                     if stat_comp.faction == killer_faction:
-                        if "击杀" not in stat_comp.death_status:
-                            stat_comp.death_status["击杀"] = []
-                        stat_comp.death_status["击杀"].append(
+                        if "kill" not in stat_comp.death_status:
+                            stat_comp.death_status["kill"] = []
+                        stat_comp.death_status["kill"].append(
                             f"{killed_comp.name}(ID:{killed_entity})"
                         )
 
@@ -323,31 +332,35 @@ class GameStatsSystem(System):
                     if stat_comp.faction == attacker_faction:
                         if attacker_entity not in stat_comp.contact_and_fire:
                             stat_comp.contact_and_fire[attacker_entity] = {
-                                "进攻": [],
-                                "遭到攻击": [],
+                                "attack": [],
+                                "be_attacked": [],
                             }
-                        stat_comp.contact_and_fire[attacker_entity]["进攻"].append(
-                            f"{attacker_comp.name}(ID:{attacker_entity}) 进攻 阵营{target_faction}的{target_comp.name}(ID:{target_entity})"
+                        stat_comp.contact_and_fire[attacker_entity]["attack"].append(
+                            f"{attacker_comp.name}(ID:{attacker_entity}) is attacking faction {target_faction} {target_comp.name}(ID:{target_entity})"
                         )
                         if (
-                            len(stat_comp.contact_and_fire[attacker_entity]["进攻"])
-                            > 10
+                            len(stat_comp.contact_and_fire[attacker_entity]["attack"])
+                            > 5
                         ):  # 限制列表长度
-                            stat_comp.contact_and_fire[attacker_entity]["进攻"].pop(0)
+                            stat_comp.contact_and_fire[attacker_entity]["attack"].pop(0)
                     if stat_comp.faction == target_faction:
                         if target_entity not in stat_comp.contact_and_fire:
                             stat_comp.contact_and_fire[target_entity] = {
-                                "进攻": [],
-                                "遭到攻击": [],
+                                "attack": [],
+                                "be_attacked": [],
                             }
-                        stat_comp.contact_and_fire[target_entity]["遭到攻击"].append(
-                            f"{target_comp.name}(ID:{target_entity}) 受到 阵营{attacker_faction}的{attacker_comp.name}(ID:{attacker_entity})的攻击"
+                        stat_comp.contact_and_fire[target_entity]["be_attacked"].append(
+                            f"{target_comp.name}(ID:{target_entity}) is being attacked by faction {attacker_faction} {attacker_comp.name}(ID:{attacker_entity})"
                         )
                         if (
-                            len(stat_comp.contact_and_fire[target_entity]["遭到攻击"])
-                            > 10
+                            len(
+                                stat_comp.contact_and_fire[target_entity]["be_attacked"]
+                            )
+                            > 5
                         ):  # 限制列表长度
-                            stat_comp.contact_and_fire[target_entity]["遭到攻击"].pop(0)
+                            stat_comp.contact_and_fire[target_entity][
+                                "be_attacked"
+                            ].pop(0)
 
     def update_battlefield_stats(self):
         """更新战场统计数据。"""
@@ -383,10 +396,10 @@ class GameStatsSystem(System):
 
             # 初始化该阵营的统计数据
             battle_stats.enemy_status_info[
-                f"阵营{unit.faction}{unit.name}(ID:{entity})"
+                f"faction {unit.faction} {unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health}",  # / {unit.max_health}",
-                "位置": [int(unit.position_x), int(unit.position_y)],
+                "health": f"{unit.current_health}",  # / {unit.max_health}",
+                "position": [int(unit.position_x), int(unit.position_y)],
             }
 
     def _update_my_status(self, battle_stats):
@@ -401,10 +414,10 @@ class GameStatsSystem(System):
                 continue
 
             battle_stats.my_status_info[
-                f"阵营{unit.faction}{unit.name}(ID:{entity})"
+                f"faction {unit.faction} {unit.name}(ID:{entity})"
             ] = {
-                "血量": f"{unit.current_health}",  # / {unit.max_health}",
-                "位置": [int(unit.position_x), int(unit.position_y)],
+                "health": f"{unit.current_health}",  # / {unit.max_health}",
+                "position": [int(unit.position_x), int(unit.position_y)],
             }
 
     def _update_terrain_environment(self, battle_stats):

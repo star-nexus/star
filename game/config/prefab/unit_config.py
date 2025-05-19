@@ -4,7 +4,7 @@ from game.utils.game_types import UnitType, UnitState
 # 单位类型配置
 UNIT_TYPE_CONFIG = {
     UnitType.INFANTRY: {
-        "name": "步兵",
+        "name": "INFANTRY",
         "unit_type": UnitType.INFANTRY,
         "max_health": 100,
         "attack": 10,
@@ -16,7 +16,7 @@ UNIT_TYPE_CONFIG = {
         "abilities": [],
     },
     UnitType.CAVALRY: {
-        "name": "骑兵",
+        "name": "CAVALRY",
         "unit_type": UnitType.CAVALRY,
         "max_health": 120,
         "attack": 12,
@@ -28,7 +28,7 @@ UNIT_TYPE_CONFIG = {
         "abilities": ["charge"],
     },
     UnitType.ARCHER: {
-        "name": "弓箭手",
+        "name": "ARCHER",
         "unit_type": UnitType.ARCHER,
         "max_health": 80,
         "attack": 7,
