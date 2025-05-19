@@ -8,7 +8,7 @@ from framework.engine.events import EventType, EventMessage
 from game.components import UnitComponent, UnitState, TerrainType
 from game.components import MapComponent, TileComponent
 from game.components.unit.unit_effect_component import UnitEffectComponent
-
+from game.components.unit.unit_type import UnitType
 
 class UnitAttackSystem(System):
     """攻击系统，负责处理单位间的攻击行为"""
