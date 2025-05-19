@@ -225,6 +225,14 @@ class UnitAttackSystem(System):
         """
         # 基础伤害
         base_damage = attacker.attack
+        base_defense = defender.defense
+
+        if attacker.decision_state == "attack":
+            base_damage *= 2  # 攻击状态下增加100%攻击力
+        if attacker.decision_state == "move":
+            base_damage *= 1.5  # 移动状态下增加50%攻击力
+        if defender.decision_state == "idle":
+            base_defense *= 0.5  # 空闲状态下减少50%防御力
 
         # 应用地形效果加成
         base_damage = self._apply_terrain_effects_to_damage(
@@ -232,7 +240,7 @@ class UnitAttackSystem(System):
         )
 
         # 考虑防御力
-        damage = max(1, base_damage - defender.defense)
+        damage = max(1, base_damage - base_defense)
 
         # 随机波动（±10%）
         import random

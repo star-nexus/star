@@ -37,6 +37,7 @@ class UnitComponent(Component):
     movement_left: int = 5  # 剩余移动力
 
     # 状态
+    decision_state: str = "idle"
     state: UnitState = UnitState.IDLE  # 当前状态
     is_selected: bool = False  # 是否被选中
     is_alive: bool = True  # 是否存活

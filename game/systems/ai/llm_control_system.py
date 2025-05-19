@@ -54,7 +54,7 @@ class LLMControlSystem(System):
             # 2: "Qwen/Qwen2.5-14B-Instruct",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
-            # 2: "Pro/deepseek-ai/DeepSeek-V3" # 
+            # 2: "Pro/deepseek-ai/DeepSeek-V3" #
             2: "Qwen/Qwen3-8B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
@@ -77,10 +77,15 @@ class LLMControlSystem(System):
 
         # 策略关键词列表
         self.strategy_keywords = [
-            "协同作战", "协同攻击", "协同进攻",
-            "速战速决", 
-            "集火射击", "集火攻击", "集中火力",
-            "隐蔽"]
+            "协同作战",
+            "协同攻击",
+            "协同进攻",
+            "速战速决",
+            "集火射击",
+            "集火攻击",
+            "集中火力",
+            "隐蔽",
+        ]
         # self.strategy_keywords = [
         #     "Coordinated", "coordinated",
         #     "Concentrated", "concentrated",
@@ -136,7 +141,11 @@ class LLMControlSystem(System):
                 # 单体决策
                 for i in range(1, 3):
                     if i not in self.ai_decision_cooldowns:
-                        self._make_type1_step(i)
+                        if i == 2:
+                            self._make_type1_step_no_think(i)
+                        else:
+                            self._make_type1_step(i)
+                        # self._make_type1_step(i)
                         self.ai_decision_cooldowns[i] = self.decision_interval
             case 2:
                 # 群体决策
@@ -181,6 +190,326 @@ class LLMControlSystem(System):
         # 移除已完成冷却的单位
         for entity in need_to_remove:
             del self.ai_decision_cooldowns[entity]
+
+    def _make_type1_step_no_think(self, faction: int):
+        if faction not in self.futures:
+            self.futures[faction] = {
+                "orient": None,
+                "decide": None,
+            }
+        if faction not in self.step_status:
+            self.step_status[faction] = {
+                "step": STEP.ORIENT,
+                "think": None,
+                "action": None,
+            }
+        if (
+            self.futures[faction]["orient"] is None
+            and self.step_status[faction]["step"] is STEP.ORIENT
+        ):
+            # observe() 收集信息
+            with open(
+                f"{Path(__file__).parent}/prompts/situation_awareness.yaml",
+                "r",
+                encoding="utf-8",
+            ) as f:
+                sa_template = yaml.safe_load(f)
+            # 遍历所有单位
+            for entity, (stats_comp,) in self.context.with_all(
+                BattleStatsComponent
+            ).iter_components(BattleStatsComponent):
+                if stats_comp.faction == faction:
+                    sa_prompt = sa_template["prompt"].format(
+                        enemy_status=stats_comp.enemy_status_info,
+                        transfer_situation=stats_comp.enemy_transfer_situation,
+                        my_status=stats_comp.my_status_info,
+                        my_transfer_situation=stats_comp.my_transfer_situation,
+                        terrain_environment=stats_comp.terrain_environment,
+                        contact_and_fire=stats_comp.contact_and_fire,
+                        death_status=stats_comp.death_status,
+                    )
+
+            # self.logger.msg(f"sa: {sa_prompt}")
+
+            # sa_template = sa_template.replace("${faction}", str(faction))
+
+            # orient() 反思定向
+            try:
+                with open(
+                    f"{Path(__file__).parent}/prompts/decision_no_cot.yaml",
+                    "r",
+                    encoding="utf-8",
+                ) as f:
+                    ot_template = yaml.safe_load(f)
+
+                ot_prompt = (
+                    ot_template["prompt"]
+                    .replace("{{faction}}", str(faction))
+                    .replace("{{situation_info}}", sa_prompt)
+                )
+                # self.logger.msg(f"ot: {ot_prompt}")
+
+                self.futures[faction]["orient"] = self.context.executor.submit(
+                    self.chat,
+                    [
+                        {
+                            "role": "system",
+                            "content": ot_template["system"],
+                        },
+                        {
+                            "role": "user",
+                            "content": ot_prompt,
+                        },
+                    ],
+                    log_tag=f"orient_thinking_{faction}",
+                    enable_thinking=self.enable_thinking,
+                )
+            except Exception as e:
+                self.logger.error(f"[Faction {faction}]: error: {e}")
+        elif self.step_status[faction]["think"] is not None:
+            # act()
+            action = self.step_status[faction]["think"]
+
+            # 处理None或空字符串
+            if action is None or action.strip() == "":
+                self.logger.warning(
+                    f"[Faction {faction}]: Empty action received, skipping"
+                )
+                self.step_status[faction]["think"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+
+            # 确保是字符串类型再进行处理
+            if not isinstance(action, str):
+                self.logger.error(
+                    f"[Faction {faction}]: Action is not a string: {type(action)}"
+                )
+                self.step_status[faction]["think"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+
+            # 标准化格式处理
+            action = action.strip()
+            json_dict = {}
+
+            try:
+                if action.startswith("```json"):
+                    # 尝试提取JSON内容
+                    content = action[7:]
+                    end_pos = content.find("```")
+                    if end_pos != -1:
+                        content = content[:end_pos].strip()
+                    json_dict = json.loads(content)
+                elif action.startswith("{") and action.endswith("}"):
+                    # 直接解析JSON
+                    json_dict = json.loads(action)
+                else:
+                    # 尝试寻找JSON部分
+                    start_pos = action.find("{")
+                    end_pos = action.rfind("}")
+                    if start_pos != -1 and end_pos != -1:
+                        json_dict = json.loads(action[start_pos : end_pos + 1])
+                    else:
+                        self.logger.error(
+                            f"[Faction {faction}]: Cannot find valid JSON in action: {action}"
+                        )
+                        self.step_status[faction]["think"] = None
+                        self.step_status[faction]["step"] = STEP.ORIENT
+                        return
+            except json.JSONDecodeError as e:
+                self.logger.error(
+                    f"[Faction {faction}]: JSON解析错误: {e}, action: {action}"
+                )
+                self.step_status[faction]["think"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+            for k, v in json_dict.items():
+                entity_id = int(k)
+
+                # 验证单位是否存在且存活
+                if not self.context.has_component(entity_id, UnitComponent):
+                    self.logger.warning(
+                        f"[Faction {faction}]: 单位 ID:{entity_id} 不存在，跳过操作"
+                    )
+                    continue
+
+                unit = self.context.get_component(entity_id, UnitComponent)
+                if not unit.is_alive:
+                    self.logger.warning(
+                        f"[Faction {faction}]: 单位 ID:{entity_id} 已死亡，跳过操作"
+                    )
+                    continue
+
+                if v["action"] == "move":
+                    unit.decision_state = "move"
+                    self.context.event_manager.publish(
+                        EventMessage(
+                            EventType.UNIT_MOVED,
+                            {
+                                "entity": entity_id,
+                                "target_x": float(v["args"][0]),
+                                "target_y": float(v["args"][1]),
+                            },
+                        )
+                    )
+                if v["action"] == "attack":
+                    # 验证单位是否存在且存活
+                    try:
+                        entity_id = int(k)
+                        target_id = int(v["args"])
+                    except ValueError:
+                        self.logger.error(
+                            f"[Faction {faction}]: Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values."
+                        )
+                        continue
+
+                    # 验证攻击者和目标是否都存在且存活
+                    if not self.context.has_component(
+                        entity_id, UnitComponent
+                    ) or not self.context.has_component(target_id, UnitComponent):
+                        self.logger.warning(
+                            f"[Faction {faction}]: 攻击者或目标不存在，跳过攻击"
+                        )
+                        continue
+
+                    attacker = self.context.get_component(entity_id, UnitComponent)
+                    attacker.decision_state = "attack"
+                    target = self.context.get_component(target_id, UnitComponent)
+
+                    if not attacker.is_alive:
+                        self.logger.warning(
+                            f"[Faction {faction}]: 攻击者 ID:{entity_id} 已死亡，跳过攻击"
+                        )
+                        continue
+
+                    if not target.is_alive:
+                        self.logger.warning(
+                            f"[Faction {faction}]: 目标 ID:{target_id} 已死亡，跳过攻击"
+                        )
+                        continue
+
+                    # 获取地图组件，用于计算地图边界
+                    map_entity = self.context.with_all(MapComponent).first()
+                    map_component = self.context.get_component(map_entity, MapComponent)
+
+                    # 确定攻击者的攻击范围
+                    attack_range = 10  # 默认为步兵和骑兵的攻击范围
+                    if attacker.unit_type == UnitType.ARCHER:
+                        attack_range = 20  # 弓箭手的攻击范围
+
+                    # 计算从攻击者到目标的方向向量
+                    dx = target.position_x - attacker.position_x
+                    dy = target.position_y - attacker.position_y
+                    distance = math.sqrt(dx * dx + dy * dy)
+
+                    # 如果已经在攻击范围内，不需要移动
+                    if distance <= attack_range:
+                        self.logger.info(
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 已在攻击范围内，无需移动"
+                        )
+                        continue
+
+                    # 计算移动目标位置（目标位置减去攻击范围的距离）
+                    # 通过归一化方向向量并乘以(距离-攻击范围)来计算
+                    if distance > 0:  # 避免除以零
+                        # 计算单位方向向量
+                        dx_norm = dx / distance
+                        dy_norm = dy / distance
+
+                        # 计算需要移动的距离（确保停在攻击范围边缘）
+                        move_distance = distance - attack_range + 5  # 确保进入攻击范围
+
+                        # 计算最终目标位置
+                        target_x = (
+                            attacker.position_x + int(dx_norm * move_distance) + 1
+                        )
+                        target_y = (
+                            attacker.position_y + int(dy_norm * move_distance) + 1
+                        )
+
+                        # 确保目标位置在地图范围内
+                        target_x = max(
+                            0,
+                            min(
+                                target_x, map_component.width * map_component.tile_size
+                            ),
+                        )
+                        target_y = max(
+                            0,
+                            min(
+                                target_y, map_component.height * map_component.tile_size
+                            ),
+                        )
+
+                        # 发送移动事件
+                        self.context.event_manager.publish(
+                            EventMessage(
+                                EventType.UNIT_MOVED,
+                                {
+                                    "entity": entity_id,
+                                    "target_x": float(target_x),
+                                    "target_y": float(target_y),
+                                },
+                            )
+                        )
+                        self.logger.info(
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 移动到目标 ID:{target_id} 的攻击位置 ({target_x:.1f}, {target_y:.1f})"
+                        )
+                    else:
+                        # 目标和攻击者在同一位置，这是一种边缘情况
+                        self.logger.warning(
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 与目标 ID:{target_id} 位置相同，无法确定攻击方向"
+                        )
+
+            # 重置状态，准备下一轮OODA循环
+            self.step_status[faction]["think"] = None
+            self.step_status[faction]["step"] = STEP.ORIENT
+        else:
+            # 处理等待状态或其他未处理的状态
+            current_step = self.step_status[faction]["step"]
+            orient_future = self.futures[faction]["orient"]
+            decide_future = self.futures[faction]["decide"]
+
+            # 记录当前状态
+            if current_step == STEP.ORIENT and orient_future is not None:
+                # 正在等待定向思考完成
+                if (
+                    not hasattr(self, "_last_status_log")
+                    or time.time() - self._last_status_log > 5
+                ):
+                    self.logger.debug(f"[Faction {faction}]: 正在思考中...(ORIENT阶段)")
+                    self._last_status_log = time.time()
+            elif current_step == STEP.DECIDE and decide_future is not None:
+                # 正在等待决策完成
+                if (
+                    not hasattr(self, "_last_status_log")
+                    or time.time() - self._last_status_log > 5
+                ):
+                    self.logger.debug(f"[Faction {faction}]: 正在决策中...(DECIDE阶段)")
+                    self._last_status_log = time.time()
+            else:
+                # 未知或异常状态
+                self.logger.warning(
+                    f"[Faction {faction}]: 处于未处理状态: step={current_step}, "
+                    f"orient_future={orient_future is not None}, "
+                    f"decide_future={decide_future is not None}, "
+                    f"think={self.step_status[faction]['think'] is not None}, "
+                    f"action={self.step_status[faction]['action'] is not None}"
+                )
+
+                # 如果处于异常状态，尝试恢复到初始状态 ## To be decided
+                if (
+                    current_step == STEP.DECIDE
+                    and self.step_status[faction]["think"] is None
+                ) or (current_step != STEP.ORIENT and current_step != STEP.DECIDE):
+                    self.logger.warning(
+                        f"[Faction {faction}]: 状态异常，重置为ORIENT阶段"
+                    )
+                    self.step_status[faction]["step"] = STEP.ORIENT
+                    self.step_status[faction]["think"] = None
+                    self.step_status[faction]["action"] = None
+                    self.futures[faction]["orient"] = None
+                    self.futures[faction]["decide"] = None
 
     def _make_type1_step(self, faction: int):
         """为type1 agent做出决策"""
@@ -306,25 +635,29 @@ class LLMControlSystem(System):
         elif self.step_status[faction]["action"] is not None:
             # act()
             action = self.step_status[faction]["action"]
-            
+
             # 处理None或空字符串
             if action is None or action.strip() == "":
-                self.logger.warning(f"[Faction {faction}]: Empty action received, skipping")
+                self.logger.warning(
+                    f"[Faction {faction}]: Empty action received, skipping"
+                )
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
-            
+
             # 确保是字符串类型再进行处理
             if not isinstance(action, str):
-                self.logger.error(f"[Faction {faction}]: Action is not a string: {type(action)}")
+                self.logger.error(
+                    f"[Faction {faction}]: Action is not a string: {type(action)}"
+                )
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
-            
+
             # 标准化格式处理
             action = action.strip()
             json_dict = {}
-            
+
             try:
                 if action.startswith("```json"):
                     # 尝试提取JSON内容
@@ -341,47 +674,59 @@ class LLMControlSystem(System):
                     start_pos = action.find("{")
                     end_pos = action.rfind("}")
                     if start_pos != -1 and end_pos != -1:
-                        json_dict = json.loads(action[start_pos:end_pos+1])
+                        json_dict = json.loads(action[start_pos : end_pos + 1])
                     else:
-                        self.logger.error(f"[Faction {faction}]: Cannot find valid JSON in action: {action}")
+                        self.logger.error(
+                            f"[Faction {faction}]: Cannot find valid JSON in action: {action}"
+                        )
                         self.step_status[faction]["action"] = None
                         self.step_status[faction]["step"] = STEP.ORIENT
                         return
             except json.JSONDecodeError as e:
-                self.logger.error(f"[Faction {faction}]: JSON解析错误: {e}, action: {action}")
+                self.logger.error(
+                    f"[Faction {faction}]: JSON解析错误: {e}, action: {action}"
+                )
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
-            
+
             # 另外，修改decision.yaml中的提示，使其更清晰地指示需要JSON格式
             # system: |
             #   ...
             #   输出必须是一个有效的JSON对象，不要包含其他任何内容。
             #   每个键是单位ID（整数），每个值是{ "action": <move|attack>, "args": <数组|整数> }。
             #   使用标准JSON格式：双引号字符串，没有注释，没有尾随逗号。
-            
+
             for k, v in json_dict.items():
                 try:
                     # 尝试直接转换为整数
                     entity_id = int(k)
                 except ValueError:
                     # 如果失败，尝试从字符串中提取ID
-                    id_match = re.search(r'ID:(\d+)', k)
+                    id_match = re.search(r"ID:(\d+)", k)
                     if id_match:
                         entity_id = int(id_match.group(1))
-                        self.logger.info(f"[Faction {faction}]: 从键'{k}'中提取ID: {entity_id}")
+                        self.logger.info(
+                            f"[Faction {faction}]: 从键'{k}'中提取ID: {entity_id}"
+                        )
                     else:
-                        self.logger.error(f"[Faction {faction}]: 无法从键'{k}'中提取有效的ID，跳过此操作")
+                        self.logger.error(
+                            f"[Faction {faction}]: 无法从键'{k}'中提取有效的ID，跳过此操作"
+                        )
                         continue
 
                 # 验证单位是否存在且存活
                 if not self.context.has_component(entity_id, UnitComponent):
-                    self.logger.warning(f"[Faction {faction}]: 单位 ID:{entity_id} 不存在，跳过操作")
+                    self.logger.warning(
+                        f"[Faction {faction}]: 单位 ID:{entity_id} 不存在，跳过操作"
+                    )
                     continue
 
                 unit = self.context.get_component(entity_id, UnitComponent)
                 if not unit.is_alive:
-                    self.logger.warning(f"[Faction {faction}]: 单位 ID:{entity_id} 已死亡，跳过操作")
+                    self.logger.warning(
+                        f"[Faction {faction}]: 单位 ID:{entity_id} 已死亡，跳过操作"
+                    )
                     continue
 
                 if v["action"] == "move":
@@ -401,10 +746,12 @@ class LLMControlSystem(System):
                         target_id = int(v["args"])
                     except ValueError:
                         # 如果失败，尝试从字符串中提取ID
-                        id_match = re.search(r'(\d+)', v["args"])
+                        id_match = re.search(r"(\d+)", v["args"])
                         if id_match:
                             target_id = int(id_match.group(1))
-                            self.logger.info(f"[Faction {faction}]: 从键'{v['args']}'中提取ID: {target_id}")
+                            self.logger.info(
+                                f"[Faction {faction}]: 从键'{v['args']}'中提取ID: {target_id}"
+                            )
                         else:
                             self.logger.error(
                                 f"[Faction {faction}]: Invalid attack target: {v['args']}. Expected numeric value."
@@ -415,18 +762,24 @@ class LLMControlSystem(System):
                     if not self.context.has_component(
                         entity_id, UnitComponent
                     ) or not self.context.has_component(target_id, UnitComponent):
-                        self.logger.warning(f"[Faction {faction}]: 攻击者或目标不存在，跳过攻击")
+                        self.logger.warning(
+                            f"[Faction {faction}]: 攻击者或目标不存在，跳过攻击"
+                        )
                         continue
 
                     attacker = self.context.get_component(entity_id, UnitComponent)
                     target = self.context.get_component(target_id, UnitComponent)
 
                     if not attacker.is_alive:
-                        self.logger.warning(f"[Faction {faction}]: 攻击者 ID:{entity_id} 已死亡，跳过攻击")
+                        self.logger.warning(
+                            f"[Faction {faction}]: 攻击者 ID:{entity_id} 已死亡，跳过攻击"
+                        )
                         continue
 
                     if not target.is_alive:
-                        self.logger.warning(f"[Faction {faction}]: 目标 ID:{target_id} 已死亡，跳过攻击")
+                        self.logger.warning(
+                            f"[Faction {faction}]: 目标 ID:{target_id} 已死亡，跳过攻击"
+                        )
                         continue
 
                     # 获取地图组件，用于计算地图边界
@@ -543,7 +896,9 @@ class LLMControlSystem(System):
                     current_step == STEP.DECIDE
                     and self.step_status[faction]["think"] is None
                 ) or (current_step != STEP.ORIENT and current_step != STEP.DECIDE):
-                    self.logger.warning(f"[Faction {faction}]: Abnormal state, resetting to ORIENT phase")
+                    self.logger.warning(
+                        f"[Faction {faction}]: 状态异常，重置为ORIENT阶段"
+                    )
                     self.step_status[faction]["step"] = STEP.ORIENT
                     self.step_status[faction]["think"] = None
                     self.step_status[faction]["action"] = None
@@ -570,11 +925,15 @@ class LLMControlSystem(System):
             if distance <= unit.range:
                 # 在攻击范围内，发起攻击
                 self._attack_target(entity, target_entity)
-                self.logger.debug(f"[Faction {unit.owner_id}]: AI单位 {unit.name} 攻击目标 {target_unit.name}")
+                self.logger.debug(
+                    f"[Faction {unit.owner_id}]: AI单位 {unit.name} 攻击目标 {target_unit.name}"
+                )
             else:
                 # 不在攻击范围内，移动接近目标
                 self._move_towards_target(entity, unit, target_unit)
-                self.logger.debug(f"[Faction {unit.owner_id}]: AI单位 {unit.name} 向目标 {target_unit.name} 移动")
+                self.logger.debug(
+                    f"[Faction {unit.owner_id}]: AI单位 {unit.name} 向目标 {target_unit.name} 移动"
+                )
         else:
             # 没有找到目标，随机移动
             self._random_movement(entity, unit)
@@ -896,7 +1255,7 @@ class LLMControlSystem(System):
         }
 
         # self.logger.msg(messages)
-        self.logger.msg(f"** enable_thinking: {enable_thinking} **")
+        # self.logger.msg(f"** enable_thinking: {enable_thinking} **")
         data = {
             "messages": messages,
             "model": model_id,
@@ -926,9 +1285,7 @@ class LLMControlSystem(System):
                 # llm_response = response.json()
                 # response_text = llm_response["message"]["content"]["text_content"]
                 #  ==========   SiliconFlow  ==========
-                response = requests.post(
-                    SERVER_URL, json=data, headers=headers
-                )
+                response = requests.post(SERVER_URL, json=data, headers=headers)
                 llm_response = response.json()
                 response_text = llm_response["choices"][0]["message"]["content"]
                 #  ==================================
@@ -961,7 +1318,9 @@ class LLMControlSystem(System):
 
             # Add validation for empty responses
             if not response_text or response_text.strip() == "":
-                self.logger.warning(f"[Faction {log_tag}]: Received empty response from LLM API")
+                self.logger.warning(
+                    f"[Faction {log_tag}]: Received empty response from LLM API"
+                )
                 return None  # Return None instead of empty string
 
             # 记录响应内容到日志
