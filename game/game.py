@@ -7,7 +7,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from framework.engine.engine import Engine
 from framework.utils.logging import log_config, get_logger
-from game.scenes import StartScene, GameScene, EndScene, EditorScene
+from game.scenes import (
+    StartScene,
+    GameScene,
+    EndScene,
+    EditorScene,
+    TransitionStartScene,
+    TransitionEndScene,
+)
+
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 
 def setup_argument_parser():
@@ -56,13 +65,15 @@ def main():
     engine = Engine(title="Demo", width=1280, height=720)
 
     # 注册场景
-    engine.scene_manager.add_scene("start", StartScene)
+    # engine.scene_manager.add_scene("start", StartScene)
     engine.scene_manager.add_scene("game", GameScene)
-    engine.scene_manager.add_scene("end", EndScene)
-    engine.scene_manager.add_scene("editor", EditorScene)
+    # engine.scene_manager.add_scene("end", EndScene)
+    # engine.scene_manager.add_scene("editor", EditorScene)
+    engine.scene_manager.add_scene("transition_start", TransitionStartScene)
+    engine.scene_manager.add_scene("transition_end", TransitionEndScene)
 
     # 设置初始场景
-    engine.scene_manager.load_scene("start")
+    engine.scene_manager.load_scene("transition_start")
 
     # 启动游戏
     engine.start()

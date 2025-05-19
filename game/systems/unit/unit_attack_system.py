@@ -32,11 +32,11 @@ class UnitAttackSystem(System):
 
     def subscribe_events(self):
         """订阅事件"""
-        if self.context.event_manager:
-            self.context.event_manager.subscribe(
-                EventType.UNIT_ATTACKED, self._handle_attack_event
-            )
-            self.logger.debug("订阅了攻击事件")
+        # if self.context.event_manager:
+            # self.context.event_manager.subscribe(
+            #     EventType.UNIT_ATTACK, self._handle_attack_event
+            # )
+            # self.logger.debug("订阅了攻击事件")
 
     def update(self, delta_time: float):
         """更新攻击系统"""
@@ -112,14 +112,14 @@ class UnitAttackSystem(System):
             return False
 
         # 计算攻击距离
-        distance = abs(target.position_x - attacker.position_x) + abs(
-            target.position_y - attacker.position_y
-        )
+        # distance = abs(target.position_x - attacker.position_x) + abs(
+        #     target.position_y - attacker.position_y
+        # )
 
-        # 检查攻击距离是否在攻击范围内
-        if distance > attacker.range:
-            self.logger.info(f"目标单位超出单位 {attacker.name} 的攻击范围")
-            return False
+        # # 检查攻击距离是否在攻击范围内
+        # if distance > attacker.range:
+        #     self.logger.info(f"目标单位超出单位 {attacker.name} 的攻击范围")
+        #     return False
 
         # 计算伤害
         damage = self.calculate_damage(attacker, target)
@@ -148,6 +148,16 @@ class UnitAttackSystem(System):
 
         self.logger.info(
             f"单位 {attacker.name} 攻击单位 {target.name}，造成 {damage} 点伤害"
+        )
+        self.context.event_manager.publish(
+            EventMessage(
+                EventType.UNIT_ATTACKED,
+                {
+                    "attacker": attacker_entity,
+                    "target": target_entity,
+                    "damage": damage,
+                },
+            )
         )
 
         # 检查目标是否阵亡
@@ -341,11 +351,13 @@ class UnitAttackSystem(System):
         # distance = abs(target.position_x - attacker.position_x) + abs(
         #     target.position_y - attacker.position_y
         # )
-        dx = target.position_x - attacker.position_x
-        dy = target.position_y - attacker.position_y
-        distance = math.sqrt(dx*dx + dy*dy)
-        print(f"单位类型: {attacker.unit_type}, 攻击范围: {attacker.range}，距离: {distance}")
-        return distance <= attacker.range
+        # dx = target.position_x - attacker.position_x
+        # dy = target.position_y - attacker.position_y
+        # distance = math.sqrt(dx*dx + dy*dy)
+        distance = math.hypot(attacker.position_x - target.position_x, attacker.position_y - target.position_y)
+
+        # print(f"单位类型: {attacker.unit_type}, 攻击范围: {attacker.range}，距离: {distance}")
+        return int(distance+1) <= attacker.range
 
     def _check_auto_attack(self):
         """检测并执行自动攻击"""
