@@ -227,12 +227,25 @@ class UnitAttackSystem(System):
         base_damage = attacker.attack
         base_defense = defender.defense
 
-        if attacker.decision_state == "attack":
-            base_damage *= 2  # 攻击状态下增加100%攻击力
-        if attacker.decision_state == "move":
-            base_damage *= 1.5  # 移动状态下增加50%攻击力
-        if defender.decision_state == "idle":
-            base_defense *= 0.5  # 空闲状态下减少50%防御力
+        # if attacker.decision_state == "attack":
+        #     base_damage *= 2  # 攻击状态下增加100%攻击力
+        # if attacker.decision_state == "move":
+        #     base_damage *= 1.5  # 移动状态下增加50%攻击力
+        # if defender.decision_state == "idle":
+        #     base_defense *= 0.5  # 空闲状态下减少50%防御力
+
+        # 单位类型相克系统：
+        # - 骑兵(CAVALRY)克制弓箭手(ARCHER)：骑兵对弓箭手伤害+50%
+        # - 步兵(INFANTRY)克制骑兵(CAVALRY)：步兵对骑兵伤害+20%
+        # - 弓箭手(ARCHER)克制步兵(INFANTRY)：弓箭手对步兵伤害+20%
+        # 形成三角相克关系：骑兵→弓箭手→步兵→骑兵
+        if attacker.unit_type == UnitType.CAVALRY and defender.unit_type == UnitType.ARCHER:
+            base_damage *= 1.5  # 骑兵攻击弓箭兵时伤害提升50%
+        elif attacker.unit_type == UnitType.INFANTRY and defender.unit_type == UnitType.CAVALRY:
+            base_damage *= 1.2  # 步兵攻击骑兵时伤害提升20%
+        elif attacker.unit_type == UnitType.ARCHER and defender.unit_type == UnitType.INFANTRY:
+            base_damage *= 1.2  # 弓箭兵攻击步兵时伤害提升20%
+  
 
         # 应用地形效果加成
         base_damage = self._apply_terrain_effects_to_damage(
