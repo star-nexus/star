@@ -159,7 +159,7 @@ class UnitHealthSystem(System):
                 {
                     "killer": None,
                     "target": unit_entity,
-                    "unit_component": unit_component,
+                    # "unit_component": unit_component,
                 },
             )
         )

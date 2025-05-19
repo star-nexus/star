@@ -1,11 +1,11 @@
 prompt: |
-  # 敌方情况
-    观测范围内敌方兵力部署与调动
-    敌方单位状态:{enemy_status}
-    敌方调动情况:{transfer_situation}
-  # 我方情况
-    我方单位状态: {my_status}
-    我方调动情况: {my_transfer_situation}
-  # 作战进程
-    交战双方交火情况: {contact_and_fire}
-    交战双方伤亡情况: {death_status}
+  # Enemy Situation
+    Observation of enemy troops deployment and movement within range
+    Enemy unit status: {enemy_status}
+    Enemy movement: {transfer_situation}
+  # My Situation
+    My unit status: {my_status}
+    My movement: {my_transfer_situation}
+  # Combat Progress
+    Engagement : {contact_and_fire}
+    Casualties : {death_status}
