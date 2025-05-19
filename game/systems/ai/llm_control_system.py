@@ -17,6 +17,7 @@ import requests
 import yaml
 import json
 import math
+import re
 
 # from game.components.map import map_component
 
@@ -49,14 +50,16 @@ class LLMControlSystem(System):
         # 存储每个阵营使用的模型ID
         self.faction_models = {
             # 1: "Qwen/Qwen3-14B",
-            # # 2: "Qwen/Qwen3-235B-A22B"
-            2: "Qwen/Qwen2.5-14B-Instruct",
+            # 2: "Qwen/Qwen3-8B",
+            # 2: "Qwen/Qwen2.5-14B-Instruct",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
-            # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
+            # 2: "Pro/deepseek-ai/DeepSeek-V3" # 
+            2: "Qwen/Qwen3-32B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
-            1: "us.meta.llama4-scout-17b-instruct-v1:0",
+            # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
+            1: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -73,13 +76,16 @@ class LLMControlSystem(System):
         self.strategy_scores = {1: 0, 2: 0}  # 阵营1的策略分数  # 阵营2的策略分数
 
         # 策略关键词列表
-        # self.strategy_keywords = ["协同作战", "速战速决", "集火射击", "隐蔽"]
         self.strategy_keywords = [
-            "「Coordinated Combat」",
-            "「Swift Victory」",
-            "「Concentrated Fire」",
-            "「Stealth」",
-        ]
+            "协同作战", "协同攻击", "协同进攻",
+            "速战速决", 
+            "集火射击", "集火攻击", "集中火力",
+            "隐蔽"]
+        # self.strategy_keywords = [
+        #     "Coordinated", "coordinated",
+        #     "Concentrated", "concentrated",
+        #     "Stealth", "stealth"
+        # ]
         self.enable_thinking = False
 
     def initialize(self, context):
@@ -253,7 +259,7 @@ class LLMControlSystem(System):
                         },
                     ],
                     log_tag=f"orient_thinking_{faction}",
-                    enable_thinking=False,
+                    enable_thinking=self.enable_thinking,
                 )
             except Exception as e:
                 self.logger.error(f"error: {e}")
@@ -290,43 +296,68 @@ class LLMControlSystem(System):
                         },
                     ],
                     log_tag=f"decision_{faction}",
-                    enable_thinking=False,
+                    enable_thinking=self.enable_thinking,
                 )
             except Exception as e:
                 self.logger.error(f"error: {e}")
         elif self.step_status[faction]["action"] is not None:
             # act()
-            # self.logger.msg(f"action: {self.step_status[faction]['action']}")
             action = self.step_status[faction]["action"]
-            # 对action 进行str 2 dict 解析
+            
+            # 处理None或空字符串
+            if action is None or action.strip() == "":
+                self.logger.warning(f"Empty action received for faction {faction}, skipping")
+                self.step_status[faction]["action"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+            
+            # 确保是字符串类型再进行处理
+            if not isinstance(action, str):
+                self.logger.error(f"Action is not a string: {type(action)}")
+                self.step_status[faction]["action"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+            
+            # 标准化格式处理
             action = action.strip()
-            if action.startswith("```json"):
-                # 提取 JSON 内容并去除前后空白字符
-                action = action[7:-3].strip()
-                try:
-                    action = json.loads(action)
-                    if isinstance(action, str):
-                        self.logger.error(f"action 是字符串类型而非字典")
-                        self.logger.error(f"action 长度: {len(action)}")
-                        self.logger.error(f"action 内容: {action}")
-                        exit()
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"JSON 解析错误: {str(e)}")
-                    self.logger.error(f"原始 JSON 字符串: '{action}'")
-                    # 尝试进一步清理 JSON 字符串
-                    action = action.replace("\n", "").replace("\r", "").strip()
-                    try:
-                        action = json.loads(action)
-                        self.logger.info("清理后成功解析 JSON")
-                    except json.JSONDecodeError:
-                        self.logger.error("清理后仍无法解析 JSON，使用空字典")
-                        action = {}
-            elif action.startswith("{"):
-                action = json.loads(action)
-            else:
-                self.logger.error(f"error fmt action: {action}")
-            # self.logger.msg(f"action: {action}")
-            for k, v in action.items():
+            json_dict = {}
+            
+            try:
+                if action.startswith("```json"):
+                    # 尝试提取JSON内容
+                    content = action[7:]
+                    end_pos = content.find("```")
+                    if end_pos != -1:
+                        content = content[:end_pos].strip()
+                    json_dict = json.loads(content)
+                elif action.startswith("{") and action.endswith("}"):
+                    # 直接解析JSON
+                    json_dict = json.loads(action)
+                else:
+                    # 尝试寻找JSON部分
+                    start_pos = action.find("{")
+                    end_pos = action.rfind("}")
+                    if start_pos != -1 and end_pos != -1:
+                        json_dict = json.loads(action[start_pos:end_pos+1])
+                    else:
+                        self.logger.error(f"Cannot find valid JSON in action: {action}")
+                        self.step_status[faction]["action"] = None
+                        self.step_status[faction]["step"] = STEP.ORIENT
+                        return
+            except json.JSONDecodeError as e:
+                self.logger.error(f"JSON解析错误: {e}, action: {action}")
+                self.step_status[faction]["action"] = None
+                self.step_status[faction]["step"] = STEP.ORIENT
+                return
+            
+            # 另外，修改decision.yaml中的提示，使其更清晰地指示需要JSON格式
+            # system: |
+            #   ...
+            #   输出必须是一个有效的JSON对象，不要包含其他任何内容。
+            #   每个键是单位ID（整数），每个值是{ "action": <move|attack>, "args": <数组|整数> }。
+            #   使用标准JSON格式：双引号字符串，没有注释，没有尾随逗号。
+            
+            for k, v in json_dict.items():
                 entity_id = int(k)
 
                 # 验证单位是否存在且存活
@@ -816,13 +847,13 @@ class LLMControlSystem(System):
 
         if log_tag is not None and "1" in log_tag:
             # model_id = "Qwen/Qwen3-8B"
-            SERVER_URL = (
-                "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
-            )
-            TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
+            # SERVER_URL = (
+            #     "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
+            # )
+            # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
 
-            # SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
-            # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
+            SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
+            TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
 
             model_id = self.faction_models[1]
 
@@ -846,13 +877,14 @@ class LLMControlSystem(System):
         }
 
         # self.logger.msg(messages)
+        self.logger.msg(f"** enable_thinking: {enable_thinking} **")
         data = {
             "messages": messages,
             "model": model_id,
             "temperature": 0,
             "max_token": 8192,
             "stream": stream,
-            "enable_thinking": enable_thinking,
+            # "enable_thinking": enable_thinking,
             "response_format": {"type": "json_object"},
         }
 
@@ -868,21 +900,26 @@ class LLMControlSystem(System):
         else:
             # 发送请求
             if log_tag is not None and "1" in log_tag:
-                response = requests.post(
-                    f"{SERVER_URL}/api/rotk/chat", json=data, headers=headers
-                )
-                llm_response = response.json()
-                response_text = llm_response["message"]["content"]["text_content"]
-                #  ==========   Qwen  ==========
+                #  ==========   AWS  ==========
                 # response = requests.post(
-                #     SERVER_URL, json=data, headers=headers
+                #     f"{SERVER_URL}/api/rotk/chat", json=data, headers=headers
                 # )
                 # llm_response = response.json()
-                # response_text = llm_response["choices"][0]["message"]["content"]
+                # response_text = llm_response["message"]["content"]["text_content"]
+                #  ==========   SiliconFlow  ==========
+                response = requests.post(
+                    SERVER_URL, json=data, headers=headers
+                )
+                llm_response = response.json()
+                response_text = llm_response["choices"][0]["message"]["content"]
                 #  ==================================
 
+                # 添加此段代码以更新策略分数
+                if "orient_thinking" in log_tag:
+                    self.update_strategy_score(1, response_text)
+
             if log_tag is not None and "2" in log_tag:  # openai
-                #  ==========   Deepseek ==========
+                #  ==========   SiliconFlow  ==========
                 response = requests.post(SERVER_URL, json=data, headers=headers)
                 llm_response = response.json()
                 response_text = llm_response["choices"][0]["message"]["content"]
@@ -892,19 +929,18 @@ class LLMControlSystem(System):
                 # )
                 # llm_response = response.json()
                 # response_text = llm_response["message"]["content"]["text_content"]
+
+                # 添加此段代码以更新策略分数
+                if "orient_thinking" in log_tag:
+                    self.update_strategy_score(2, response_text)
+
+            # Add validation for empty responses
+            if not response_text or response_text.strip() == "":
+                self.logger.warning(f"Received empty response from LLM API for {log_tag}")
+                return None  # Return None instead of empty string
+
             # 记录响应内容到日志
             self._log_chat_to_file("response", llm_response, log_tag)
-
-            # 如果是orient_thinking阶段的响应，分析并更新策略分数
-            if log_tag and "orient_thinking" in log_tag:
-                faction_id = None
-                if "1" in log_tag:
-                    faction_id = 1
-                elif "2" in log_tag:
-                    faction_id = 2
-
-                if faction_id:
-                    self.update_strategy_score(faction_id, response_text)
 
             self.logger.msg(f"** {log_tag} ** Response :\n {response_text}")
             return response_text

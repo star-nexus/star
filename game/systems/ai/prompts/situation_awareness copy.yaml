@@ -1,0 +1,11 @@
+prompt: |
+  # Enemy Situation
+    Observation of enemy troops deployment and movement within range
+    Enemy unit status: {enemy_status}
+    Enemy movement: {transfer_situation}
+  # My Situation
+    My unit status: {my_status}
+    My movement: {my_transfer_situation}
+  # Combat Progress
+    Engagement : {contact_and_fire}
+    Casualties : {death_status}

@@ -399,6 +399,7 @@ class GameScene(Scene):
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
+                enable_thinking=enable_thinking
             )
             self._experiment_report_generated = True
 
@@ -517,6 +518,7 @@ class GameScene(Scene):
                 is_tie=False,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
+                enable_thinking=enable_thinking,
             )
             self._experiment_report_generated = True
 
@@ -545,6 +547,7 @@ class GameScene(Scene):
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
+                enable_thinking=enable_thinking
             )
             self._experiment_report_generated = True
 
@@ -1091,7 +1094,7 @@ class GameScene(Scene):
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
-                enable_thinking=enable_thinking,
+                enable_thinking=enable_thinking
             )
             self._experiment_report_generated = True
 
@@ -1127,7 +1130,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 is_half_win=True,
-                enable_thinking=enable_thinking,
+                enable_thinking=enable_thinking
             )
             self._experiment_report_generated = True
 
