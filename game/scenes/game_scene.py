@@ -392,14 +392,15 @@ class GameScene(Scene):
             or not self._experiment_report_generated
         ):
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
             self.generate_experiment_report(
                 None,
                 game_duration,
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
-                enable_thinking=enable_thinking
+                enable_thinking=enable_thinking,
+                response_times=response_times
             )
             self._experiment_report_generated = True
 
@@ -508,7 +509,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
 
             # 记录游戏时长和胜利阵营
             game_duration = time.time() - self.scene_start_time
@@ -519,6 +520,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 enable_thinking=enable_thinking,
+                response_times=response_times
             )
             self._experiment_report_generated = True
 
@@ -537,7 +539,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
@@ -547,7 +549,8 @@ class GameScene(Scene):
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
-                enable_thinking=enable_thinking
+                enable_thinking=enable_thinking,
+                response_times=response_times
             )
             self._experiment_report_generated = True
 
@@ -561,18 +564,18 @@ class GameScene(Scene):
                 )
 
     def _get_model_info(self):
-        """获取各阵营使用的LLM模型信息"""
+        """Get various LLM-related metrics"""
         model_info = {}
         strategy_scores = {}
         enable_thinking = {}
+        response_times = {}
 
-        # 从LLM控制系统获取模型信息
         if hasattr(self, "llm_controller_system") and self.llm_controller_system:
-            # 使用LLMControlSystem的get_faction_models方法获取模型信息
             model_info = self.llm_controller_system.get_faction_models()
             strategy_scores = self.llm_controller_system.get_strategy_scores()
             enable_thinking = self.llm_controller_system.get_enable_thinking()
-        return model_info, strategy_scores, enable_thinking
+            response_times = self.llm_controller_system.get_response_times()
+        return model_info, strategy_scores, enable_thinking, response_times
 
     def handle_custom_event(self, event: EventMessage):
         """处理自定义事件"""
@@ -917,6 +920,7 @@ class GameScene(Scene):
         strategy_scores=None,
         is_half_win=False,
         enable_thinking=None,
+        response_times=None,
     ):
         """
         生成实验数据报告并保存到文件
@@ -929,6 +933,7 @@ class GameScene(Scene):
             strategy_scores: 各阵营的策略推理分数
             is_half_win: 是否为半歼胜利（超时后存活单位数量较多）
             enable_thinking: 是否开启思考
+            response_times: 各阵营的响应次数
         """
         import os
         import json
@@ -965,6 +970,7 @@ class GameScene(Scene):
             "model_info": model_info,
             "strategy_scores": strategy_scores,
             "enable_thinking": enable_thinking,
+            "response_times": response_times,
         }
 
         # 保存为JSON文件
@@ -979,7 +985,7 @@ class GameScene(Scene):
         with open(csv_file, "a", encoding="utf-8", newline="") as f:
             if not csv_exists:
                 f.write(
-                    "experiment_id,timestamp,map_type,is_tie,winner_faction,is_half_win,game_duration_seconds,faction1_model,faction2_model,faction1_strategy_score,faction2_strategy_score\n"
+                    "experiment_id,timestamp,map_type,is_tie,winner_faction,is_half_win,game_duration_seconds,faction1_model,faction2_model,faction1_strategy_score,faction2_strategy_score,faction1_response_times,faction2_response_times\n"
                 )
 
             # 获取各阵营模型信息
@@ -990,7 +996,11 @@ class GameScene(Scene):
             faction1_strategy = strategy_scores.get(1, 0) if strategy_scores else 0
             faction2_strategy = strategy_scores.get(2, 0) if strategy_scores else 0
 
-            csv_row = f"{timestamp},{report_data['timestamp']},{map_type},{is_tie},{winner_faction if not is_tie else 'tie'},{is_half_win},{game_duration:.2f},{faction1_model},{faction2_model},{faction1_strategy},{faction2_strategy}\n"
+            # 获取各阵营响应时间
+            faction1_response_times = response_times.get(1, 0) if response_times else 0
+            faction2_response_times = response_times.get(2, 0) if response_times else 0
+
+            csv_row = f"{timestamp},{report_data['timestamp']},{map_type},{is_tie},{winner_faction if not is_tie else 'tie'},{is_half_win},{game_duration:.2f},{faction1_model},{faction2_model},{faction1_strategy},{faction2_strategy},{faction1_response_times},{faction2_response_times}\n"
             f.write(csv_row)
 
         # 输出到控制台
@@ -1009,6 +1019,9 @@ class GameScene(Scene):
         if strategy_scores:
             self.logger.info(f"阵营1策略推理分: {strategy_scores.get(1, 0)}")
             self.logger.info(f"阵营2策略推理分: {strategy_scores.get(2, 0)}")
+        if response_times:
+            self.logger.info(f"阵营1响应次数: {response_times.get(1, 0)}")
+            self.logger.info(f"阵营2响应次数: {response_times.get(2, 0)}")
         self.logger.info(f"报告文件: {report_file}")
         self.logger.info("=" * 50)
 
@@ -1084,7 +1097,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
@@ -1094,7 +1107,8 @@ class GameScene(Scene):
                 is_tie=True,
                 model_info=model_info,
                 strategy_scores=strategy_scores,
-                enable_thinking=enable_thinking
+                enable_thinking=enable_thinking,
+                response_times=response_times
             )
             self._experiment_report_generated = True
 
@@ -1118,7 +1132,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
 
             # 记录游戏时长和半歼胜利阵营
             game_duration = time.time() - self.scene_start_time
@@ -1130,7 +1144,8 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 is_half_win=True,
-                enable_thinking=enable_thinking
+                enable_thinking=enable_thinking,
+                response_times=response_times
             )
             self._experiment_report_generated = True
 

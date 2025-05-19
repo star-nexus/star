@@ -88,6 +88,9 @@ class LLMControlSystem(System):
         # ]
         self.enable_thinking = False
 
+        # Add new counter to track response times
+        self.response_times = {1: 0, 2: 0}  # Track responses per faction
+
     def initialize(self, context):
         self.context = context
         self.logger.info("LLM控制系统初始化")
@@ -262,7 +265,7 @@ class LLMControlSystem(System):
                     enable_thinking=self.enable_thinking,
                 )
             except Exception as e:
-                self.logger.error(f"error: {e}")
+                self.logger.error(f"[Faction {faction}]: error: {e}")
         elif (
             self.futures[faction]["decide"] is None
             and self.step_status[faction]["step"] is STEP.DECIDE
@@ -299,21 +302,21 @@ class LLMControlSystem(System):
                     enable_thinking=self.enable_thinking,
                 )
             except Exception as e:
-                self.logger.error(f"error: {e}")
+                self.logger.error(f"[Faction {faction}]: error: {e}")
         elif self.step_status[faction]["action"] is not None:
             # act()
             action = self.step_status[faction]["action"]
             
             # 处理None或空字符串
             if action is None or action.strip() == "":
-                self.logger.warning(f"Empty action received for faction {faction}, skipping")
+                self.logger.warning(f"[Faction {faction}]: Empty action received, skipping")
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
             
             # 确保是字符串类型再进行处理
             if not isinstance(action, str):
-                self.logger.error(f"Action is not a string: {type(action)}")
+                self.logger.error(f"[Faction {faction}]: Action is not a string: {type(action)}")
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
@@ -340,12 +343,12 @@ class LLMControlSystem(System):
                     if start_pos != -1 and end_pos != -1:
                         json_dict = json.loads(action[start_pos:end_pos+1])
                     else:
-                        self.logger.error(f"Cannot find valid JSON in action: {action}")
+                        self.logger.error(f"[Faction {faction}]: Cannot find valid JSON in action: {action}")
                         self.step_status[faction]["action"] = None
                         self.step_status[faction]["step"] = STEP.ORIENT
                         return
             except json.JSONDecodeError as e:
-                self.logger.error(f"JSON解析错误: {e}, action: {action}")
+                self.logger.error(f"[Faction {faction}]: JSON解析错误: {e}, action: {action}")
                 self.step_status[faction]["action"] = None
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
@@ -362,12 +365,12 @@ class LLMControlSystem(System):
 
                 # 验证单位是否存在且存活
                 if not self.context.has_component(entity_id, UnitComponent):
-                    self.logger.warning(f"单位 ID:{entity_id} 不存在，跳过操作")
+                    self.logger.warning(f"[Faction {faction}]: 单位 ID:{entity_id} 不存在，跳过操作")
                     continue
 
                 unit = self.context.get_component(entity_id, UnitComponent)
                 if not unit.is_alive:
-                    self.logger.warning(f"单位 ID:{entity_id} 已死亡，跳过操作")
+                    self.logger.warning(f"[Faction {faction}]: 单位 ID:{entity_id} 已死亡，跳过操作")
                     continue
 
                 if v["action"] == "move":
@@ -388,7 +391,7 @@ class LLMControlSystem(System):
                         target_id = int(v["args"])
                     except ValueError:
                         self.logger.error(
-                            f"Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values."
+                            f"[Faction {faction}]: Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values."
                         )
                         continue
 
@@ -396,18 +399,18 @@ class LLMControlSystem(System):
                     if not self.context.has_component(
                         entity_id, UnitComponent
                     ) or not self.context.has_component(target_id, UnitComponent):
-                        self.logger.warning(f"攻击者或目标不存在，跳过攻击")
+                        self.logger.warning(f"[Faction {faction}]: 攻击者或目标不存在，跳过攻击")
                         continue
 
                     attacker = self.context.get_component(entity_id, UnitComponent)
                     target = self.context.get_component(target_id, UnitComponent)
 
                     if not attacker.is_alive:
-                        self.logger.warning(f"攻击者 ID:{entity_id} 已死亡，跳过攻击")
+                        self.logger.warning(f"[Faction {faction}]: 攻击者 ID:{entity_id} 已死亡，跳过攻击")
                         continue
 
                     if not target.is_alive:
-                        self.logger.warning(f"目标 ID:{target_id} 已死亡，跳过攻击")
+                        self.logger.warning(f"[Faction {faction}]: 目标 ID:{target_id} 已死亡，跳过攻击")
                         continue
 
                     # 获取地图组件，用于计算地图边界
@@ -427,7 +430,7 @@ class LLMControlSystem(System):
                     # 如果已经在攻击范围内，不需要移动
                     if distance <= attack_range:
                         self.logger.info(
-                            f"单位 ID:{entity_id} 已在攻击范围内，无需移动"
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 已在攻击范围内，无需移动"
                         )
                         continue
 
@@ -475,12 +478,12 @@ class LLMControlSystem(System):
                             )
                         )
                         self.logger.info(
-                            f"单位 ID:{entity_id} 移动到目标 ID:{target_id} 的攻击位置 ({target_x:.1f}, {target_y:.1f})"
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 移动到目标 ID:{target_id} 的攻击位置 ({target_x:.1f}, {target_y:.1f})"
                         )
                     else:
                         # 目标和攻击者在同一位置，这是一种边缘情况
                         self.logger.warning(
-                            f"单位 ID:{entity_id} 与目标 ID:{target_id} 位置相同，无法确定攻击方向"
+                            f"[Faction {faction}]: 单位 ID:{entity_id} 与目标 ID:{target_id} 位置相同，无法确定攻击方向"
                         )
 
             # 重置状态，准备下一轮OODA循环
@@ -499,7 +502,7 @@ class LLMControlSystem(System):
                     not hasattr(self, "_last_status_log")
                     or time.time() - self._last_status_log > 5
                 ):
-                    self.logger.debug(f"阵营{faction}正在思考中...(ORIENT阶段)")
+                    self.logger.debug(f"[Faction {faction}]: 正在思考中...(ORIENT阶段)")
                     self._last_status_log = time.time()
             elif current_step == STEP.DECIDE and decide_future is not None:
                 # 正在等待决策完成
@@ -507,12 +510,12 @@ class LLMControlSystem(System):
                     not hasattr(self, "_last_status_log")
                     or time.time() - self._last_status_log > 5
                 ):
-                    self.logger.debug(f"阵营{faction}正在决策中...(DECIDE阶段)")
+                    self.logger.debug(f"[Faction {faction}]: 正在决策中...(DECIDE阶段)")
                     self._last_status_log = time.time()
             else:
                 # 未知或异常状态
                 self.logger.warning(
-                    f"阵营{faction}处于未处理状态: step={current_step}, "
+                    f"[Faction {faction}]: 处于未处理状态: step={current_step}, "
                     f"orient_future={orient_future is not None}, "
                     f"decide_future={decide_future is not None}, "
                     f"think={self.step_status[faction]['think'] is not None}, "
@@ -524,7 +527,7 @@ class LLMControlSystem(System):
                     current_step == STEP.DECIDE
                     and self.step_status[faction]["think"] is None
                 ) or (current_step != STEP.ORIENT and current_step != STEP.DECIDE):
-                    self.logger.warning(f"阵营{faction}状态异常，重置为ORIENT阶段")
+                    self.logger.warning(f"[Faction {faction}]: 状态异常，重置为ORIENT阶段")
                     self.step_status[faction]["step"] = STEP.ORIENT
                     self.step_status[faction]["think"] = None
                     self.step_status[faction]["action"] = None
@@ -551,15 +554,15 @@ class LLMControlSystem(System):
             if distance <= unit.range:
                 # 在攻击范围内，发起攻击
                 self._attack_target(entity, target_entity)
-                self.logger.debug(f"AI单位 {unit.name} 攻击目标 {target_unit.name}")
+                self.logger.debug(f"[Faction {unit.owner_id}]: AI单位 {unit.name} 攻击目标 {target_unit.name}")
             else:
                 # 不在攻击范围内，移动接近目标
                 self._move_towards_target(entity, unit, target_unit)
-                self.logger.debug(f"AI单位 {unit.name} 向目标 {target_unit.name} 移动")
+                self.logger.debug(f"[Faction {unit.owner_id}]: AI单位 {unit.name} 向目标 {target_unit.name} 移动")
         else:
             # 没有找到目标，随机移动
             self._random_movement(entity, unit)
-            self.logger.debug(f"AI单位 {unit.name} 随机移动")
+            self.logger.debug(f"[Faction {unit.owner_id}]: AI单位 {unit.name} 随机移动")
 
     def _find_target(self, entity: Entity, unit: UnitComponent) -> Optional[Entity]:
         """寻找攻击目标"""
@@ -829,7 +832,7 @@ class LLMControlSystem(System):
             if strategy in response_text:
                 self.strategy_scores[faction] += 0.5
                 self.logger.info(
-                    f"阵营{faction}使用了策略'{strategy}'，策略推理分+0.5，当前得分:{self.strategy_scores[faction]}"
+                    f"[Faction {faction}]: 使用了策略'{strategy}'，策略推理分+0.5，当前得分:{self.strategy_scores[faction]}"
                 )
 
     def chat(
@@ -918,6 +921,9 @@ class LLMControlSystem(System):
                 if "orient_thinking" in log_tag:
                     self.update_strategy_score(1, response_text)
 
+                # Increment response counter for faction 1
+                self.response_times[1] += 1
+
             if log_tag is not None and "2" in log_tag:  # openai
                 #  ==========   SiliconFlow  ==========
                 response = requests.post(SERVER_URL, json=data, headers=headers)
@@ -934,15 +940,18 @@ class LLMControlSystem(System):
                 if "orient_thinking" in log_tag:
                     self.update_strategy_score(2, response_text)
 
+                # Increment response counter for faction 2
+                self.response_times[2] += 1
+
             # Add validation for empty responses
             if not response_text or response_text.strip() == "":
-                self.logger.warning(f"Received empty response from LLM API for {log_tag}")
+                self.logger.warning(f"[Faction {log_tag}]: Received empty response from LLM API")
                 return None  # Return None instead of empty string
 
             # 记录响应内容到日志
             self._log_chat_to_file("response", llm_response, log_tag)
 
-            self.logger.msg(f"** {log_tag} ** Response :\n {response_text}")
+            self.logger.msg(f"** [Faction {log_tag}] ** Response :\n {response_text}")
             return response_text
 
     def cleanup(self):
@@ -957,6 +966,10 @@ class LLMControlSystem(System):
         # 清空futures和状态
         self.futures = {}
         self.step_status = {}
+
+    def get_response_times(self):
+        """Return the number of responses received from the LLM API for each faction"""
+        return self.response_times
 
 
 # tpye 1
