@@ -33,10 +33,10 @@ class UnitAttackSystem(System):
     def subscribe_events(self):
         """订阅事件"""
         # if self.context.event_manager:
-            # self.context.event_manager.subscribe(
-            #     EventType.UNIT_ATTACK, self._handle_attack_event
-            # )
-            # self.logger.debug("订阅了攻击事件")
+        # self.context.event_manager.subscribe(
+        #     EventType.UNIT_ATTACK, self._handle_attack_event
+        # )
+        # self.logger.debug("订阅了攻击事件")
 
     def update(self, delta_time: float):
         """更新攻击系统"""
@@ -172,7 +172,7 @@ class UnitAttackSystem(System):
                     {
                         "killer": attacker_entity,
                         "target": target_entity,
-                        "unit_component": target,
+                        # "unit_component": target,
                     },
                 )
             )
@@ -354,10 +354,13 @@ class UnitAttackSystem(System):
         # dx = target.position_x - attacker.position_x
         # dy = target.position_y - attacker.position_y
         # distance = math.sqrt(dx*dx + dy*dy)
-        distance = math.hypot(attacker.position_x - target.position_x, attacker.position_y - target.position_y)
+        distance = math.hypot(
+            attacker.position_x - target.position_x,
+            attacker.position_y - target.position_y,
+        )
 
         # print(f"单位类型: {attacker.unit_type}, 攻击范围: {attacker.range}，距离: {distance}")
-        return int(distance+1) <= attacker.range
+        return int(distance + 1) <= attacker.range
 
     def _check_auto_attack(self):
         """检测并执行自动攻击"""

@@ -465,7 +465,7 @@ class GameScene(Scene):
             self.logger.warning("无法订阅场景事件：事件管理器未设置")
 
     def _handle_unit_killed_event(self, event: EventMessage):
-        self.logger.info(f"GameScene: Unit killed event received: {event.data}")
+        # self.logger.info(f"GameScene: Unit killed event received: {event.data}")
         # 在这里可以更新游戏统计数据，例如 GameStatsSystem
         # killer_entity = event.data.get("killer")
         # killed_entity = event.data.get("target")
@@ -480,7 +480,7 @@ class GameScene(Scene):
         self._check_win_loss_conditions()
 
         # 更新状态面板
-        self._update_status_display()
+        # self._update_status_display()
 
     def _check_win_loss_conditions(self):
         # 统计每个阵营的存活单位数量

@@ -48,15 +48,15 @@ class LLMControlSystem(System):
 
         # 存储每个阵营使用的模型ID
         self.faction_models = {
-            1: "Qwen/Qwen3-14B",
-            # 2: "Qwen/Qwen3-235B-A22B"
+            # 1: "Qwen/Qwen3-14B",
+            # # 2: "Qwen/Qwen3-235B-A22B"
             2: "Qwen/Qwen2.5-14B-Instruct",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
-            # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
+            1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -73,7 +73,13 @@ class LLMControlSystem(System):
         self.strategy_scores = {1: 0, 2: 0}  # 阵营1的策略分数  # 阵营2的策略分数
 
         # 策略关键词列表
-        self.strategy_keywords = ["协同作战", "速战速决", "集火射击", "隐蔽"]
+        # self.strategy_keywords = ["协同作战", "速战速决", "集火射击", "隐蔽"]
+        self.strategy_keywords = [
+            "「Coordinated Combat」",
+            "「Swift Victory」",
+            "「Concentrated Fire」",
+            "「Stealth」",
+        ]
         self.enable_thinking = False
 
     def initialize(self, context):
@@ -847,6 +853,7 @@ class LLMControlSystem(System):
             "max_token": 8192,
             "stream": stream,
             "enable_thinking": enable_thinking,
+            "response_format": {"type": "json_object"},
         }
 
         # 记录请求内容到日志
