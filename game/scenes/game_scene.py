@@ -392,7 +392,7 @@ class GameScene(Scene):
             or not self._experiment_report_generated
         ):
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores = self._get_model_info()
+            model_info, strategy_scores, enable_thinking = self._get_model_info()
             self.generate_experiment_report(
                 None,
                 game_duration,
@@ -507,7 +507,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores = self._get_model_info()
+            model_info, strategy_scores, enable_thinking = self._get_model_info()
 
             # 记录游戏时长和胜利阵营
             game_duration = time.time() - self.scene_start_time
@@ -535,7 +535,7 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores = self._get_model_info()
+            model_info, strategy_scores, enable_thinking = self._get_model_info()
 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
