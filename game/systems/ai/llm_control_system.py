@@ -55,11 +55,11 @@ class LLMControlSystem(System):
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # 2: "Pro/deepseek-ai/DeepSeek-V3" # 
-            2: "Qwen/Qwen3-32B",
+            2: "Qwen/Qwen3-14B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
-            1: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            1: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -361,7 +361,18 @@ class LLMControlSystem(System):
             #   使用标准JSON格式：双引号字符串，没有注释，没有尾随逗号。
             
             for k, v in json_dict.items():
-                entity_id = int(k)
+                try:
+                    # 尝试直接转换为整数
+                    entity_id = int(k)
+                except ValueError:
+                    # 如果失败，尝试从字符串中提取ID
+                    id_match = re.search(r'ID:(\d+)', k)
+                    if id_match:
+                        entity_id = int(id_match.group(1))
+                        self.logger.info(f"[Faction {faction}]: 从键'{k}'中提取ID: {entity_id}")
+                    else:
+                        self.logger.error(f"[Faction {faction}]: 无法从键'{k}'中提取有效的ID，跳过此操作")
+                        continue
 
                 # 验证单位是否存在且存活
                 if not self.context.has_component(entity_id, UnitComponent):
@@ -515,7 +526,7 @@ class LLMControlSystem(System):
             else:
                 # 未知或异常状态
                 self.logger.warning(
-                    f"[Faction {faction}]: 处于未处理状态: step={current_step}, "
+                    f"[Faction {faction}]: In unhandled state: step={current_step}, "
                     f"orient_future={orient_future is not None}, "
                     f"decide_future={decide_future is not None}, "
                     f"think={self.step_status[faction]['think'] is not None}, "
@@ -527,7 +538,7 @@ class LLMControlSystem(System):
                     current_step == STEP.DECIDE
                     and self.step_status[faction]["think"] is None
                 ) or (current_step != STEP.ORIENT and current_step != STEP.DECIDE):
-                    self.logger.warning(f"[Faction {faction}]: 状态异常，重置为ORIENT阶段")
+                    self.logger.warning(f"[Faction {faction}]: Abnormal state, resetting to ORIENT phase")
                     self.step_status[faction]["step"] = STEP.ORIENT
                     self.step_status[faction]["think"] = None
                     self.step_status[faction]["action"] = None
