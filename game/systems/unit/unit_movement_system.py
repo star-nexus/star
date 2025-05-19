@@ -63,6 +63,7 @@ class UnitMovementSystem(System):
                 unit.position_x = float("{:.1f}".format(path.target_x))
                 unit.position_y = float("{:.1f}".format(path.target_y))
                 unit.state = UnitState.IDLE
+                unit.decision_state = "idle"
                 self.logger.debug(
                     f"单位 {unit.name} 完成移动到 ({unit.position_x}, {unit.position_y})"
                 )
