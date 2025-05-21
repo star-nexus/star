@@ -350,13 +350,15 @@ class UnitAttackSystem(System):
         if 0 <= tile_x < map_component.width and 0 <= tile_y < map_component.height:
             tile_entity = map_component.tile_entities.get((tile_x, tile_y))
             if tile_entity:
-                tile_component = self.context.component_manager.get_component(
-                    tile_entity, TileComponent
-                )
-                if tile_component:
-                    return tile_component.terrain_type
-
-        return None
+                try:
+                    tile_component = self.context.component_manager.get_component(
+                        tile_entity, TileComponent
+                    )
+                    return tile_component.terrain_type if tile_component else None
+                except Exception as e:
+                    self.logger.error(f"Error getting terrain type: {e}")
+                    return None
+        return None  # 明确指定默认返回值
 
     def is_alive(self, unit: UnitComponent) -> bool:
         """检查单位是否存活"""
