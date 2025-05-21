@@ -147,7 +147,8 @@ class UnitAttackSystem(System):
         # )
 
         self.logger.info(
-            f"单位 {attacker.name} 攻击单位 {target.name}，造成 {damage} 点伤害"
+            # f"单位 {attacker.name} 攻击单位 {target.name}，造成 {damage} 点伤害"
+            f"Unit {attacker.name} dealt {damage} damage to {target.name}."
         )
         self.context.event_manager.publish(
             EventMessage(
@@ -240,7 +241,7 @@ class UnitAttackSystem(System):
         # - 弓箭手(ARCHER)克制步兵(INFANTRY)：弓箭手对步兵伤害+20%
         # 形成三角相克关系：骑兵→弓箭手→步兵→骑兵
         if attacker.unit_type == UnitType.CAVALRY and defender.unit_type == UnitType.ARCHER:
-            base_damage *= 1.5  # 骑兵攻击弓箭兵时伤害提升50%
+            base_damage *= 1.2  # 骑兵攻击弓箭兵时伤害提升20%
         elif attacker.unit_type == UnitType.INFANTRY and defender.unit_type == UnitType.CAVALRY:
             base_damage *= 1.2  # 步兵攻击骑兵时伤害提升20%
         elif attacker.unit_type == UnitType.ARCHER and defender.unit_type == UnitType.INFANTRY:
@@ -342,8 +343,8 @@ class UnitAttackSystem(System):
             return None
 
         # 将世界坐标转换为格子坐标
-        tile_x = int(unit.position_x / map_component.tile_size)
-        tile_y = int(unit.position_y / map_component.tile_size)
+        tile_x = math.floor(unit.position_x / map_component.tile_size)
+        tile_y = math.floor(unit.position_y / map_component.tile_size)
 
         # 确保坐标在地图范围内
         if 0 <= tile_x < map_component.width and 0 <= tile_y < map_component.height:
