@@ -56,11 +56,11 @@ class LLMControlSystem(System):
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # 2: "Pro/deepseek-ai/DeepSeek-V3" #
-            2: "qwen3:8b",
+            2: "qwen3:32b",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
-            1: "qwen3:32b",
+            1: "qwen3:8b",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -324,7 +324,22 @@ class LLMControlSystem(System):
                 self.step_status[faction]["step"] = STEP.ORIENT
                 return
             for k, v in json_dict.items():
-                entity_id = int(k)
+                try:
+                    # Try to convert directly to an integer
+                    entity_id = int(k)
+                except ValueError:
+                    # If failed, try to extract ID from string
+                    id_match = re.search(r"ID:(\d+)", k)
+                    if id_match:
+                        entity_id = int(id_match.group(1))
+                        self.logger.info(
+                            f"[Faction {faction}]: Extracted ID: {entity_id} from key: {k}"
+                        )
+                    else:
+                        self.logger.error(
+                            f"[Faction {faction}]: Cannot extract a valid ID from key: '{k}', skipping this operation"
+                        )
+                        continue
 
                 # Verify if the unit exists and is alive
                 if not self.context.has_component(entity_id, UnitComponent):
@@ -1314,15 +1329,17 @@ class LLMControlSystem(System):
 
     def chat_ollama(self, messages, model_id="qwen3:8b", stream=False, log_tag=None, enable_thinking=True):
 
-        SERVER_URL = "http://172.16.75.204:11434/api/chat"
         headers = {
             "Content-Type": "application/json",
         }
+
         if log_tag is not None and "1" in log_tag:
-            model_id = "qwen3:32b"  
+            SERVER_URL = "http://172.16.75.202:11434/api/chat"
+            model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
-            model_id = "qwen3:8b"
+            SERVER_URL = "http://172.16.75.204:11434/api/chat"
+            model_id = self.faction_models[2]
 
         data = {
             "model": model_id,
@@ -1330,6 +1347,7 @@ class LLMControlSystem(System):
             "stream": stream,
         }
         self._log_chat_to_file("request", data, log_tag)
+
         if stream:
             # Ollama stream return JSON string line by line
             response = requests.post(SERVER_URL, json=data, headers=headers, stream=True)
@@ -1357,10 +1375,20 @@ class LLMControlSystem(System):
                 f"[Ollama {model_id}]: Received empty response from local LLM"
             )
             return None
-        self._log_chat_to_file("response", llm_response, log_tag)
-        self.logger.msg(f"** [Ollama:{model_id}] ** Response :\n {response_text}")
-        return response_text
 
+        def extract_after_think(content: str) -> str:
+            match = re.search(r"</think>(.*)", content, flags=re.DOTALL)
+            if match:
+                return match.group(1).strip()
+            else:
+                return content.strip()  # 如果没有 <think> 标签，保留全部内容
+
+        cleaned_output = extract_after_think(response_text)
+
+
+        self._log_chat_to_file("response", llm_response, log_tag)
+        self.logger.msg(f"** [Ollama:{model_id}] ** Response :\n {cleaned_output}")
+        return cleaned_output
 
 
     def cleanup(self):
