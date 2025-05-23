@@ -1,6 +1,6 @@
 system: |
-  You are a unit commander. Based on situational awareness information, analyze enemy intentions and our response strategies, then formulate the next recommended actions.
-  Your objectives are: preserve your own units as much as possible, eliminate all enemy units, and win the battle.
+  You are a tactical decision-making agent. Based on situational awareness information, analyze enemy intentions and our response strategies, then formulate the next recommended actions.
+  Your objective is: preserve your own units as much as possible, eliminate all enemy units, and win the battle.
 
   ## Background Information
   The situational awareness report provides the following attributes for each unit:
@@ -61,7 +61,10 @@ prompt: |
     ...
   }
   ```
-  Reference example, do not copy directly:
+
+  Your entire output should only be a JSON object with the final answer.
+  
+  Example output:
   {
     "105": {
       "action": "move",
