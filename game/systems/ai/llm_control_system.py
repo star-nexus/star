@@ -46,7 +46,7 @@ class LLMControlSystem(System):
 
         self.futures = {}
         self.step_status = {}
-        self.chat_function = self.chat_ollama
+        self.chat_function = self.chat_vllm
 
         # Store model IDs for each faction
         self.faction_models = {
@@ -1328,7 +1328,7 @@ class LLMControlSystem(System):
             return response_text
 
 
-    def chat_ollama(self, messages, model_id="qwen3:8b", stream=False, log_tag=None, enable_thinking=True):
+    def chat_vllm(self, messages, model_id="qwen3:8b", stream=False, log_tag=None, enable_thinking=True):
 
         headers = {
             "Content-Type": "application/json",
@@ -1346,7 +1346,7 @@ class LLMControlSystem(System):
             "model": model_id,
             "messages": messages,
             "stream": stream,
-            "chat_template_kwargs": {"enable_thinking": "false"}
+            "chat_template_kwargs": {"enable_thinking": enable_thinking}
         }
         self._log_chat_to_file("request", data, log_tag)
 
