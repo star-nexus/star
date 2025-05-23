@@ -46,7 +46,7 @@ class LLMControlSystem(System):
 
         self.futures = {}
         self.step_status = {}
-        self.chat_function = self.chat_vllm
+        self.chat_function = self.chat
 
         # Store model IDs for each faction
         self.faction_models = {
@@ -55,16 +55,16 @@ class LLMControlSystem(System):
             # 2: "Qwen/Qwen2.5-14B-Instruct",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
-            # 2: "Pro/deepseek-ai/DeepSeek-V3" #
-            1: "Qwen/Qwen3-32B",
+            1: "Pro/deepseek-ai/DeepSeek-V3", #
+            # 1: "Qwen/Qwen3-32B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
-            2: "/data/models/Qwen3-8B",
+            # 2: "/data/models/Qwen3-8B",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
-            # 2: "Pro/deepseek-ai/DeepSeek-V3",
+            2: "Pro/deepseek-ai/DeepSeek-V3",
         }
         # "deepseek-chat",
         # "gpt-4o",
@@ -371,10 +371,10 @@ class LLMControlSystem(System):
                     # Verify if the unit exists and is alive
                     try:
                         entity_id = int(k)
-                        target_id = int(v["args"])
-                    except ValueError:
+                        target_id = int(v.get("args", 0))
+                    except (ValueError, KeyError) as e:
                         self.logger.error(
-                            f"[Faction {faction}]: Invalid attack parameters: entity={k}, target={v['args']}. Expected numeric values."
+                            f"[Faction {faction}]: Invalid attack parameters: entity={k}, error={str(e)}"
                         )
                         continue
 
@@ -1236,15 +1236,15 @@ class LLMControlSystem(System):
             # )
             # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
 
-            SERVER_URL = "http://172.16.75.202:10000/v1/chat/completions"
-            # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
+            SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
+            TOKEN = ""
 
             model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
 
-            SERVER_URL = "http://172.16.75.204:10000/v1/chat/completions"
-            # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
+            SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
+            TOKEN = ""
 
             # SERVER_URL = (
             #     "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
@@ -1254,7 +1254,7 @@ class LLMControlSystem(System):
             model_id = self.faction_models[2]
 
         headers = {
-            # "Authorization": f"Bearer {TOKEN}",
+            "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json",
         }
 
@@ -1264,9 +1264,8 @@ class LLMControlSystem(System):
             "temperature": 0,
             "max_token": 8192,
             "stream": stream,
-            # "enable_thinking": enable_thinking,
-            "response_format": {"type": "json_object"},
-            "chat_template_kwargs": {"enable_thinking": false}
+            "enable_thinking": enable_thinking,
+            "response_format": {"type": "json_object"}
         }
 
         self._log_chat_to_file("request", data, log_tag)
