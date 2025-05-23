@@ -56,11 +56,11 @@ class LLMControlSystem(System):
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # 2: "Pro/deepseek-ai/DeepSeek-V3" #
-            2: "qwen3:32b",
+            1: "Qwen/Qwen3-32B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
-            1: "qwen3:8b",
+            2: "/data/models/Qwen3-8B",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
             # # 2: "Pro/deepseek-ai/DeepSeek-V3" # "Pro/deepseek-ai/DeepSeek-R1"
             # #     "deepseek-reasoner",
@@ -1236,14 +1236,14 @@ class LLMControlSystem(System):
             # )
             # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
 
-            SERVER_URL = "http://172.16.75.204:11434/api/generate"
+            SERVER_URL = "http://172.16.75.202:10000/v1/chat/completions"
             # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
 
             model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
 
-            SERVER_URL = "http://172.16.75.204:11434/api/generate"
+            SERVER_URL = "http://172.16.75.204:10000/v1/chat/completions"
             # TOKEN = "sk-iciaxzpoxqwfmubueuobhlocgezdojutrreqhrhuthclkebt"
 
             # SERVER_URL = (
@@ -1266,6 +1266,7 @@ class LLMControlSystem(System):
             "stream": stream,
             # "enable_thinking": enable_thinking,
             "response_format": {"type": "json_object"},
+            "chat_template_kwargs": {"enable_thinking": false}
         }
 
         self._log_chat_to_file("request", data, log_tag)
@@ -1334,17 +1335,18 @@ class LLMControlSystem(System):
         }
 
         if log_tag is not None and "1" in log_tag:
-            SERVER_URL = "http://172.16.75.202:11434/api/chat"
+            SERVER_URL = "http://172.16.75.202:10000/v1/chat/completions"
             model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
-            SERVER_URL = "http://172.16.75.204:11434/api/chat"
+            SERVER_URL = "http://172.16.75.204:10000/v1/chat/completions"
             model_id = self.faction_models[2]
 
         data = {
             "model": model_id,
             "messages": messages,
             "stream": stream,
+            "chat_template_kwargs": {"enable_thinking": "false"}
         }
         self._log_chat_to_file("request", data, log_tag)
 
@@ -1359,7 +1361,7 @@ class LLMControlSystem(System):
         else:
             response = requests.post(SERVER_URL, json=data, headers=headers)
             llm_response = response.json()
-            response_text = llm_response["message"]["content"]
+            response_text = llm_response["choices"][0]["message"]["content"]
 
             if log_tag is not None and "1" in log_tag:
                 self.update_strategy_score(1, response_text)
