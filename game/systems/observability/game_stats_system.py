@@ -240,10 +240,12 @@ class GameStatsSystem(System):
                 killed_faction = killed_comp.faction
 
                 self.record_kill(killer_faction, killed_faction)
+                # self.logger.msg(
+                #     f"阵营{killer_faction}的{killer_comp.name}(ID:{killer_entity}) 击杀 阵营{killed_faction}的{killed_comp.name}(ID:{killed_entity})"
+                # )
                 self.logger.msg(
-                    f"阵营{killer_faction}的{killer_comp.name}(ID:{killer_entity}) 击杀 阵营{killed_faction}的{killed_comp.name}(ID:{killed_entity})"
+                    f"Fraction {killer_faction} {killer_comp.name}(ID:{killer_entity}) killed Fraction{killed_faction} {killed_comp.name}(ID:{killed_entity})"
                 )
-
                 # 更新战场统计组件中的伤亡情况
                 for entity, (stat_comp,) in self.context.with_all(
                     BattleStatsComponent
@@ -279,7 +281,7 @@ class GameStatsSystem(System):
         if active_factions_count == 1 and not self.game_over:
             self.game_over = True
             self.winner = self.unit_counts.keys()[0]
-            self.logger.info(f"游戏结束，胜利者: {self.winner}")
+            self.logger.info(f"Game Over, Victory: {self.winner}")
             # Post GAME_OVER event if your event system supports it
             # self.context.event_manager.post(EventMessage(EventType.GAME_OVER, {"winner": self.winner}))
 
@@ -291,7 +293,7 @@ class GameStatsSystem(System):
             # 所有阵营都没有单位，平局
             self.game_over = True
             self.winner = None  # Or a special 'DRAW' status
-            self.logger.info("游戏结束，平局")
+            self.logger.info("Game Over: Draw")
             # self.context.event_manager.post(EventMessage(EventType.GAME_OVER, {"winner": None}))
 
             # 更新战场统计组件中的作战进程信息
@@ -322,7 +324,7 @@ class GameStatsSystem(System):
 
                 self.record_damage(attacker_faction, target_faction, damage)
                 self.logger.msg(
-                    f"阵营{attacker_faction}的{attacker_comp.name}(ID:{attacker_entity}) 对 阵营{target_faction}的{target_comp.name}(ID:{target_entity}),造成{damage}点伤害"
+                    f"Fraction {attacker_faction} {attacker_comp.name}(ID:{attacker_entity}) attacked Fraction {target_faction} {target_comp.name}(ID:{target_entity}), dealing {damage} damage"
                 )
 
                 # # 更新战场统计组件中的交火情况
@@ -423,11 +425,17 @@ class GameStatsSystem(System):
     def _update_terrain_environment(self, battle_stats):
         """更新战场地理环境信息。"""
 
+        # terrain_environment = {
+        #     "地图元信息": {},
+        #     "地形描述": {},
+        #     "地形分布": [],
+        #     "战略点": [],
+        # }
         terrain_environment = {
-            "地图元信息": {},
-            "地形描述": {},
-            "地形分布": [],
-            "战略点": [],
+            "map_element_info": {},
+            "terrain_descrip": {},
+            "terrain_distribution": [],
+            "strategy_position": [],
         }
 
         # 统计地形类型分布
@@ -435,23 +443,23 @@ class GameStatsSystem(System):
             MapComponent
         ).iter_components(MapComponent):
             meta_info = ""
-            meta_info += f"地图大小: {map_component.width * map_component.tile_size}x{map_component.height * map_component.tile_size}, "
-            meta_info += f"方向: 地图西北角为(0,0),东南角为({map_component.width * map_component.tile_size},{map_component.height * map_component.tile_size}), "
-            terrain_environment["地图元信息"] = meta_info
+            meta_info += f"Map size: {map_component.width * map_component.tile_size}x{map_component.height * map_component.tile_size}, "
+            meta_info += f"West North: (0,0),South East: ({map_component.width * map_component.tile_size},{map_component.height * map_component.tile_size}), "
+            terrain_environment["map_element_info"] = meta_info
             for pos, tile_entity in map_component.tile_entities.items():
                 tile_component = self.context.get_component(tile_entity, TileComponent)
                 if tile_component:
                     terrain_type = tile_component.type_name
-                    terrain_environment["地形描述"][terrain_type] = {
-                        "移动成本": tile_component.movement_cost,
-                        "防御加成": tile_component.defense_bonus,
+                    terrain_environment["terrain_descrip"][terrain_type] = {
+                        "Movement cost": tile_component.movement_cost,
+                        "Defense bonus": tile_component.defense_bonus,
                     }
 
                     # # 记录地形分布
                     # if terrain_type not in terrain_environment["地形分布"]:
                     #     terrain_environment["地形分布"] = []
-                    terrain_environment["地形分布"].append(
-                        f"位置在 x:{pos[0] * map_component.tile_size}到{(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size}到{(pos[1] + 1) * map_component.tile_size}间的坐标,地形类型:{terrain_type}"
+                    terrain_environment["terrain_distribution"].append(
+                        f"from x:{pos[0] * map_component.tile_size} to {(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size} to {(pos[1] + 1) * map_component.tile_size}, tertrain is :{terrain_type}"
                     )
 
                     # 识别战略要点（例如，关隘、城市、城堡等）
@@ -460,10 +468,10 @@ class GameStatsSystem(System):
                         TerrainType.CASTLE,
                         TerrainType.PASS,
                     ]:
-                        terrain_environment["战略点"].append(
+                        terrain_environment["strategy_position"].append(
                             {
-                                "位置": f"{pos[0] * map_component.tile_size}到{(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size}到{(pos[1] + 1) * map_component.tile_size}",
-                                "类型": terrain_type,
+                                "position": f"{pos[0] * map_component.tile_size} to {(pos[0] + 1) * map_component.tile_size - 1},y:{pos[1] * map_component.tile_size} to {(pos[1] + 1) * map_component.tile_size}",
+                                "type": terrain_type,
                             }
                         )
 
@@ -496,7 +504,7 @@ class GameStatsSystem(System):
                 #     + abs(target_y - unit_comp.position_y),
                 # }
                 self.logger.msg(
-                    f"阵营{faction}的{unit_comp.name}(ID:{entity}) 到达 ({target_x}, {target_y})"
+                    f"Fraction {faction} {unit_comp.name}(ID:{entity}) arrived at ({target_x}, {target_y})"
                 )
 
                 for entity, (stat_comp,) in self.context.with_all(
