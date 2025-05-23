@@ -221,6 +221,8 @@ class LLMControlSystem(System):
                 encoding="utf-8",
             ) as f:
                 sa_template = yaml.safe_load(f)
+
+            sa_prompt = ""
             # Iterate through all units
             for entity, (stats_comp,) in self.context.with_all(
                 BattleStatsComponent
@@ -1237,14 +1239,14 @@ class LLMControlSystem(System):
             # TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjeCJ9.Gb_y2viQzURkq9cTmP9bdE6I_c1RZZcKLrnZgluLZP0"
 
             SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
-            TOKEN = ""
+            TOKEN = "sk-mrsaflpnhkwvcslgufrfmwiwnfpyvlkmzdenqgwxghchldsh"
 
             model_id = self.faction_models[1]
 
         if log_tag is not None and "2" in log_tag:
 
             SERVER_URL = "https://api.siliconflow.cn/v1/chat/completions"
-            TOKEN = ""
+            TOKEN = "sk-mrsaflpnhkwvcslgufrfmwiwnfpyvlkmzdenqgwxghchldsh"
 
             # SERVER_URL = (
             #     "http://ec2-100-20-214-248.us-west-2.compute.amazonaws.com:8000"
