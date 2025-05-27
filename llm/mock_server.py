@@ -12,8 +12,14 @@ async def handler(ws):
                 "type": "observation",
                 "payload": {
                     "turn": 1,
-                    "units": {"34": {"hp": 50, "pos": [1,2]},
-                              "105": {"hp": 40, "pos": [0,0]}}
+                    "friendly_unit_ids": {
+                        "34": {"hp": 50, "pos": [100, 22]},
+                        "105": {"hp": 40, "pos": [200, 25]}
+                    },
+                    "enemy_unit_ids": {
+                        "201": {"hp": 60, "pos": [65, 40]},
+                        "205": {"hp": 70, "pos": [88, 55]}
+                    }
                 }
             }
             await ws.send(json.dumps(obs))
