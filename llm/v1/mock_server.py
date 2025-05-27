@@ -1,6 +1,7 @@
 # mock_server.py
 import asyncio, json, websockets, time
 
+# 当前 handler 每个连接独立执行；你可以在 obs 里放 session_id 来区分，或让不同客户端收到不同战场。
 async def handler(ws):
     print("★ Client connected")
     async for raw in ws:
