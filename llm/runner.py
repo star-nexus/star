@@ -32,6 +32,7 @@ client = AsyncOpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger("LLMClient")
+log.setLevel(logging.DEBUG)
 
 # ----------------- Prompt 构造 -----------------
 TEMPLATE_DIR   = Path(__file__).parent / "templates"
@@ -108,14 +109,17 @@ class LLMClient:
     # ---------- 调用 LLM ----------
     async def _handle_observation(self, payload: dict) -> dict:
         prompt = build_prompt(payload)
+        log.debug("🛈 Prompt sent to LLM:\n%s", prompt)
         try:
             completion = await client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=prompt,
-                temperature=0,
+                temperature=0.2,
                 response_format={"type": "json_object"},  # 推荐要求模型输出 JSON
             )
+            log.debug("🛈 Completion raw object: %s", completion)
             content = completion.choices[0].message.content.strip()
+            log.debug("🛈 Raw LLM response: %s", content)
             actions = json.loads(content)  # 模型需保证输出的是符合协议的 JSON
         except Exception as e:
             log.error(f"模型调用或解析失败：{e}")
