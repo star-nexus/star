@@ -24,9 +24,6 @@ OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 HEARTBEAT_SEC  = int(os.getenv("HEARTBEAT_SEC", 30))
 SESSION_ID     = os.getenv("SESSION_ID") or f"client-{uuid.uuid4().hex[:8]}"
 
-# openai.api_key = OPENAI_API_KEY
-# openai.base_url = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions") 
-# OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
 client = AsyncOpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
