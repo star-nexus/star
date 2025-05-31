@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 from framework.ecs.component import Component
 
 
@@ -44,3 +45,22 @@ class TextComponent(Component):
     color: tuple = (255, 255, 255)
     font_size: int = 20
     centered: bool = False
+
+
+@dataclass
+class ScrollableListComponent(Component):
+    """可滚动列表组件，用于显示消息记录等"""
+
+    messages: List[dict] = field(
+        default_factory=list
+    )  # 消息列表，每个消息包含{text, color, timestamp}
+    max_visible_messages: int = 5  # 最多显示的消息数量
+    max_stored_messages: int = 50  # 最多存储的消息数量
+    scroll_offset: int = 0  # 滚动偏移量
+    line_height: int = 25  # 每行高度
+    font_size: int = 16  # 字体大小
+    text_color: tuple = (255, 255, 255)  # 默认文本颜色
+    background_color: tuple = (40, 40, 60, 200)  # 背景颜色
+    scroll_bar_color: tuple = (100, 100, 100)  # 滚动条颜色
+    show_timestamps: bool = True  # 是否显示时间戳
+    auto_scroll: bool = True  # 新消息时自动滚动到底部

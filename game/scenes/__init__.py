@@ -4,6 +4,7 @@ from .end_scene import EndScene
 from .editor_scene import EditorScene
 from .transition_start_scene import TransitionStartScene
 from .transition_end_scene import TransitionEndScene
+from .ui_scene import UIScene
 
 __all__ = [
     "StartScene",
@@ -12,4 +13,5 @@ __all__ = [
     "EditorScene",
     "TransitionStartScene",
     "TransitionEndScene",
+    "UIScene",
 ]

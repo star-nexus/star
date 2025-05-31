@@ -31,6 +31,7 @@ from game.config.prefab.camera_config import get_camera_config
 from game.config.prefab.fog_of_war_config import get_fog_of_war_config
 from game.utils.map_generator import MapGenerator
 from game.utils.game_types import TerrainTypeMapping, ViewMode
+from game.utils.hex_utils import HexCoordinate, create_hex_map_coordinates, hex_to_pixel
 
 import random
 import time
@@ -38,6 +39,7 @@ import numpy as np
 
 # 使用当前时间作为随机种子，确保每次运行生成不同的随机序列
 random.seed(int(time.time()))
+
 
 class PrefabFactory:
     """组件工厂类，负责根据配置创建和初始化各种组件"""
@@ -76,132 +78,213 @@ class PrefabFactory:
 
         # 创建地图组件
         map_component = MapComponent(
+            map_type=map_config.get("map_type", "hexagonal"),
             width=map_config["width"],
             height=map_config["height"],
+            radius=map_config.get("radius", 3),
+            hex_size=map_config.get("hex_size", 20.0),
             tile_size=map_config["tile_size"],
         )
 
         # 添加组件到实体
         self.world.add_component(map_entity, map_component)
 
-        # 根据symmetric参数决定生成随机地图还是对称地图
-        if symmetric:
-            # 生成5x5对称地图
-            terrain = self.create_symmetric_terrain(5, 5)
-            # 创建默认的海拔和湿度地图（不会被使用，但需要避免None错误）
-            elevation = np.zeros((5, 5), dtype=np.int32)
-            moisture = np.zeros((5, 5), dtype=np.float32)
+        # 根据地图类型生成地形
+        if map_component.map_type == "hexagonal":
+            if symmetric:
+                terrain_dict = self.create_symmetric_hex_terrain(map_component.radius)
+                self._generate_hex_tile_entities(
+                    map_entity, map_component, terrain_dict
+                )
+            else:
+                map_generator = MapGenerator(
+                    map_config["width"],
+                    map_config["height"],
+                    map_gen_config["seed"],
+                    map_type="hexagonal",
+                    radius=map_component.radius,
+                )
+                elevation, terrain, moisture = map_generator.generate_map()
+                map_component.terrain_map = terrain
+                # 从terrain数组生成六边形地图格子实体
+                self._generate_hex_tile_entities_from_terrain(
+                    map_entity, map_component, terrain
+                )
         else:
-            # 使用地图生成器生成地形
-            map_generator = MapGenerator(
-                map_config["width"], map_config["height"], map_gen_config["seed"]
-            )
-            elevation, terrain, moisture = map_generator.generate_map()
-            # elevation, terrain, moisture = map_generator.generate_v1_map()
+            # 原有的方形地图逻辑
+            if symmetric:
+                terrain = self.create_symmetric_terrain(5, 5)
+                elevation = np.zeros((5, 5), dtype=np.int32)
+                moisture = np.zeros((5, 5), dtype=np.float32)
+            else:
+                map_generator = MapGenerator(
+                    map_config["width"], map_config["height"], map_gen_config["seed"]
+                )
+                elevation, terrain, moisture = map_generator.generate_map()
 
-        # 存储地图数据
-        # map_component.elevation_map = elevation
-        map_component.terrain_map = terrain
-        # map_component.moisture_map = moisture
+            map_component.terrain_map = terrain
+            # 生成方形地图格子实体
+            self._generate_tile_entities(map_entity, map_component, terrain)
 
-        # 生成地图格子实体
-        self._generate_tile_entities(map_entity, map_component, terrain)
         print("terrain_map", map_component.terrain_map)
         print("map_entity", map_entity)
 
-        # 创建随机单位
         return map_entity, map_component
 
-    def create_symmetric_terrain(self, width: int, height: int) -> np.ndarray:
-        """创建对称的地形图
-        
-        设计一个对战公平的对称地图，包含河流、平原、山地、森林和城堡
-        
-        Args:
-            width: 地图宽度
-            height: 地图高度
-            
-        Returns:
-            地形地图数组
-        """
-        # 创建地形数组
-        terrain = np.zeros((height, width), dtype=np.int32)
-        
-        # 使用TerrainType的value值填充地图
-        # 对于5x5的地图，我们可以设计如下布局：
-        
-        # 中心列为河流，将地图分为左右两个区域
-        for y in range(height):
-            terrain[y, width // 2] = TerrainType.RIVER.value
-            
-        # 两侧对称放置平原
-        terrain[1, 0] = TerrainType.PLAIN.value
-        terrain[1, width-1] = TerrainType.PLAIN.value
-        terrain[3, 0] = TerrainType.PLAIN.value
-        terrain[3, width-1] = TerrainType.PLAIN.value
-        
-        # 两侧对称放置森林
-        terrain[2, 1] = TerrainType.FOREST.value
-        terrain[2, width-2] = TerrainType.FOREST.value
-        
-        # 两侧对称放置山地
-        terrain[0, 1] = TerrainType.MOUNTAIN.value
-        terrain[0, width-2] = TerrainType.MOUNTAIN.value
-        terrain[4, 1] = TerrainType.MOUNTAIN.value
-        terrain[4, width-2] = TerrainType.MOUNTAIN.value
-        
-        # 两侧对称放置城堡（出生点）
-        terrain[2, 0] = TerrainType.CITY.value  
-        terrain[2, width-1] = TerrainType.CITY.value
-        
-        # 在河流中间添加一座桥梁
-        middle_y = height // 2
-        terrain[middle_y, width // 2] = TerrainType.BRIDGE.value
+    def create_symmetric_hex_terrain(
+        self, radius: int
+    ) -> Dict[Tuple[int, int, int], int]:
+        """创建对称的六边形地形图"""
+        hex_coords = create_hex_map_coordinates(radius)
+        terrain_dict = {}
 
-        # 填充其余区域为平原
-        for y in range(height):
-            for x in range(width):
-                # 如果该位置尚未设置地形
-                if terrain[y, x] == 0:
-                    terrain[y, x] = TerrainType.PLAIN.value
-        
-        return terrain
+        # 初始化为平原
+        for coord in hex_coords:
+            terrain_dict[coord.to_tuple()] = TerrainType.PLAIN.value
 
-    def _generate_tile_entities(
-        self, map_entity: Entity, map_component: MapComponent, terrain_map
+        # 中心为湖泊
+        center = HexCoordinate(0, 0, 0)
+        terrain_dict[center.to_tuple()] = TerrainType.LAKE.value
+
+        # 在特定位置放置山脉（对称）
+        if radius >= 2:
+            mountains = [
+                HexCoordinate(2, -1, -1),  # 右上
+                HexCoordinate(-1, 2, -1),  # 左下
+                HexCoordinate(-1, -1, 2),  # 左上
+            ]
+            for mountain in mountains:
+                if mountain.to_tuple() in terrain_dict:
+                    terrain_dict[mountain.to_tuple()] = TerrainType.MOUNTAIN.value
+
+        # 在特定位置放置森林
+        if radius >= 2:
+            forests = [
+                HexCoordinate(1, 0, -1),  # 右
+                HexCoordinate(-1, 0, 1),  # 左
+                HexCoordinate(0, 1, -1),  # 右下
+                HexCoordinate(0, -1, 1),  # 左上
+            ]
+            for forest in forests:
+                if forest.to_tuple() in terrain_dict:
+                    terrain_dict[forest.to_tuple()] = TerrainType.FOREST.value
+
+        # 在边缘放置城市作为出生点
+        if radius >= 3:
+            cities = [
+                HexCoordinate(radius, 0, -radius),  # 右边缘
+                HexCoordinate(-radius, 0, radius),  # 左边缘
+            ]
+            for city in cities:
+                if city.to_tuple() in terrain_dict:
+                    terrain_dict[city.to_tuple()] = TerrainType.CITY.value
+
+        return terrain_dict
+
+    def _generate_hex_tile_entities(
+        self,
+        map_entity: Entity,
+        map_component: MapComponent,
+        terrain_dict: Dict[Tuple[int, int, int], int],
     ):
-        """为每个地图格子生成实体"""
-        for y in range(map_component.height):
-            for x in range(map_component.width):
-                # 创建格子实体
-                tile_entity = self.world.create_entity()
+        """为六边形地图生成格子实体"""
+        hex_coords = create_hex_map_coordinates(map_component.radius)
 
-                # 获取地形类型和属性
-                terrain_type = TerrainType(terrain_map[y, x])
-                terrain_props = get_terrain_properties(terrain_type.value)
+        for hex_coord in hex_coords:
+            # 创建格子实体
+            tile_entity = self.world.create_entity()
 
-                # 创建格子组件
-                tile_component = TileComponent(
-                    terrain_type=terrain_type,
-                    type_name=TerrainTypeMapping[terrain_type],
-                    elevation=map_component.elevation_map[y, x],  # 添加海拔数据
-                    moisture=map_component.moisture_map[y, x],
-                    movement_cost=terrain_props["movement_cost"],
-                    defense_bonus=terrain_props["defense_bonus"],
-                    x=x,
-                    y=y,
-                    visible=True,
-                    explored=False,
-                )
+            # 获取地形类型和属性
+            terrain_type_value = terrain_dict.get(
+                hex_coord.to_tuple(), TerrainType.PLAIN.value
+            )
+            terrain_type = TerrainType(terrain_type_value)
+            terrain_props = get_terrain_properties(terrain_type.value)
 
-                # 添加组件到实体
-                self.world.add_component(tile_entity, tile_component)
+            # 将六边形坐标转换为像素坐标
+            pixel_x, pixel_y = hex_to_pixel(hex_coord, map_component.hex_size)
 
-                # 为地形添加效果组件
-                self.create_terrain_effect(tile_entity, tile_component)
+            # 创建格子组件
+            tile_component = TileComponent(
+                terrain_type=terrain_type,
+                type_name=TerrainTypeMapping[terrain_type],
+                elevation=50,  # 默认海拔
+                moisture=0.5,  # 默认湿度
+                movement_cost=terrain_props["movement_cost"],
+                defense_bonus=terrain_props["defense_bonus"],
+                x=int(pixel_x),
+                y=int(pixel_y),
+                hex_q=hex_coord.q,
+                hex_r=hex_coord.r,
+                hex_s=hex_coord.s,
+                visible=True,
+                explored=False,
+            )
 
-                # 记录格子实体
-                map_component.tile_entities[(x, y)] = tile_entity
+            # 添加组件到实体
+            self.world.add_component(tile_entity, tile_component)
+
+            # 为地形添加效果组件
+            self.create_terrain_effect(tile_entity, tile_component)
+
+            # 记录格子实体（使用六边形坐标作为主键）
+            map_component.hex_entities[hex_coord.to_tuple()] = tile_entity
+            # 不再使用像素坐标作为键，因为会导致重叠问题
+
+    def _generate_hex_tile_entities_from_terrain(
+        self,
+        map_entity: Entity,
+        map_component: MapComponent,
+        terrain_array: np.ndarray,
+    ):
+        """从地形数组为六边形地图生成格子实体"""
+        hex_coords = create_hex_map_coordinates(map_component.radius)
+
+        for hex_coord in hex_coords:
+            # 创建格子实体
+            tile_entity = self.world.create_entity()
+
+            # 将六边形坐标转换为数组索引
+            col = hex_coord.q + map_component.radius
+            row = hex_coord.r + map_component.radius
+
+            # 获取地形类型和属性
+            if 0 <= row < terrain_array.shape[0] and 0 <= col < terrain_array.shape[1]:
+                terrain_type_value = terrain_array[row, col]
+            else:
+                terrain_type_value = TerrainType.PLAIN.value
+
+            terrain_type = TerrainType(terrain_type_value)
+            terrain_props = get_terrain_properties(terrain_type.value)
+
+            # 将六边形坐标转换为像素坐标
+            pixel_x, pixel_y = hex_to_pixel(hex_coord, map_component.hex_size)
+
+            # 创建格子组件
+            tile_component = TileComponent(
+                terrain_type=terrain_type,
+                type_name=TerrainTypeMapping[terrain_type],
+                elevation=50,  # 默认海拔
+                moisture=0.5,  # 默认湿度
+                movement_cost=terrain_props["movement_cost"],
+                defense_bonus=terrain_props["defense_bonus"],
+                x=int(pixel_x),
+                y=int(pixel_y),
+                hex_q=hex_coord.q,
+                hex_r=hex_coord.r,
+                hex_s=hex_coord.s,
+                visible=True,
+                explored=False,
+            )
+
+            # 添加组件到实体
+            self.world.add_component(tile_entity, tile_component)
+
+            # 为地形添加效果组件
+            self.create_terrain_effect(tile_entity, tile_component)
+
+            # 记录格子实体（使用六边形坐标作为主键）
+            map_component.hex_entities[hex_coord.to_tuple()] = tile_entity
 
     def create_unit(
         self,
@@ -411,67 +494,126 @@ class PrefabFactory:
     def create_random_unit(self, faction_num: int = 3, unit_num: int = 5):
         import random
         import time
-        
+
         # 使用当前时间作为随机种子
         random.seed(int(time.time()))
-        
+
         # 获取所有单位类型
-        unit_types = [UnitType.INFANTRY, UnitType.CAVALRY, UnitType.ARCHER, UnitType.ARCHER, UnitType.ARCHER]
+        unit_types = [
+            UnitType.INFANTRY,
+            UnitType.CAVALRY,
+            UnitType.ARCHER,
+            UnitType.ARCHER,
+            UnitType.ARCHER,
+        ]
 
         # 获取地图
         map_entity = self.world.query_manager.with_all(MapComponent).first()
         map_component = self.world.component_manager.get_component(
             map_entity, MapComponent
         )
-        
-        map_width = map_component.width * map_component.tile_size
-        map_height = map_component.height * map_component.tile_size
-        
-        # 边缘缓冲区大小，避免单位生成在地图最边缘
-        buffer = int(map_width * 0.05)
-        
-        for faction_id in range(faction_num):
-            # 跳过faction_id=0（可能是中立阵营）
-            if faction_id == 0:
-                continue
-            
-            # 为该阵营的每个单位计算均匀分布的Y坐标
-            y_positions = []
-            if unit_num > 1:
-                # 计算均匀分布的y坐标
-                y_step = (map_height - 2 * buffer) / (unit_num - 1)
+
+        if map_component.map_type == "hexagonal":
+            # 六边形地图的单位放置
+            self._place_units_on_hex_map(
+                map_component, faction_num, unit_num, unit_types
+            )
+        else:
+            # 原有的方形地图逻辑
+            map_width = map_component.width * map_component.tile_size
+            map_height = map_component.height * map_component.tile_size
+
+            # 边缘缓冲区大小，避免单位生成在地图最边缘
+            buffer = int(map_width * 0.05)
+
+            for faction_id in range(faction_num):
+                # 跳过faction_id=0（可能是中立阵营）
+                if faction_id == 0:
+                    continue
+
+                # 为该阵营的每个单位计算均匀分布的Y坐标
+                y_positions = []
+                if unit_num > 1:
+                    # 计算均匀分布的y坐标
+                    y_step = (map_height - 2 * buffer) / (unit_num - 1)
+                    for i in range(unit_num):
+                        y_positions.append(buffer + int(i * y_step))
+                else:
+                    # 如果只有一个单位，放在中间
+                    y_positions.append(map_height // 2)
+
+                # 根据阵营确定x坐标范围
+                if faction_id == 1:  # 第一个阵营在左侧
+                    x_min = buffer
+                    x_max = int(map_width * 0.2)  # 地图宽度的20%
+                elif faction_id == 2:  # 第二个阵营在右侧
+                    x_min = int(map_width * 0.8)  # 地图宽度的80%
+                    x_max = map_width - buffer
+                else:  # 其他阵营（如果有）可以在中间或做其他安排
+                    x_min = int(map_width * 0.4)
+                    x_max = int(map_width * 0.6)
+
+                # 创建该阵营的单位
                 for i in range(unit_num):
-                    y_positions.append(buffer + int(i * y_step))
-            else:
-                # 如果只有一个单位，放在中间
-                y_positions.append(map_height // 2)
-            
-            # 根据阵营确定x坐标范围
-            if faction_id == 1:  # 第一个阵营在左侧
-                x_min = buffer
-                x_max = int(map_width * 0.2)  # 地图宽度的20%
-            elif faction_id == 2:  # 第二个阵营在右侧
-                x_min = int(map_width * 0.8)  # 地图宽度的80%
-                x_max = map_width - buffer
-            else:  # 其他阵营（如果有）可以在中间或做其他安排
-                x_min = int(map_width * 0.4)
-                x_max = int(map_width * 0.6)
-            
-            # 创建该阵营的单位
-            for i in range(unit_num):
-                # 在区域范围内添加一些随机性
-                x = random.randint(x_min, x_max)
-                y = y_positions[i] + random.randint(-buffer, buffer)
-                
-                # 确保y坐标不超出地图边界
-                y = max(0, min(y, map_height - 1))
-                
-                unit_type = unit_types[i]
-                # 创建单位
-                self.create_unit(unit_type, faction_id, x, y, owner_id=faction_id)
-            
-            # 为阵营创建战场统计组件
-            self.create_battle_stats(faction_id)
+                    # 在区域范围内添加一些随机性
+                    x = random.randint(x_min, x_max)
+                    y = y_positions[i] + random.randint(-buffer, buffer)
+
+                    # 确保y坐标不超出地图边界
+                    y = max(0, min(y, map_height - 1))
+
+                    unit_type = unit_types[i]
+                    # 创建单位
+                    self.create_unit(unit_type, faction_id, x, y, owner_id=faction_id)
+
+                # 为阵营创建战场统计组件
+                self.create_battle_stats(faction_id)
+
+    def _place_units_on_hex_map(
+        self,
+        map_component: MapComponent,
+        faction_num: int,
+        unit_num: int,
+        unit_types: list,
+    ):
+        """在六边形地图上放置单位"""
+        # 获取城市位置作为出生点
+        city_coords = []
+        for hex_coord_tuple, tile_entity in map_component.hex_entities.items():
+            tile_component = self.world.component_manager.get_component(
+                tile_entity, TileComponent
+            )
+            if tile_component and tile_component.terrain_type == TerrainType.CITY:
+                city_coords.append(HexCoordinate(*hex_coord_tuple))
+
+        # 如果没有城市，使用地图边缘
+        if not city_coords:
+            radius = map_component.radius
+            city_coords = [
+                HexCoordinate(radius, 0, -radius),  # 右边缘
+                HexCoordinate(-radius, 0, radius),  # 左边缘
+            ]
+
+        for faction_id in range(1, faction_num):  # 跳过faction_id=0
+            if faction_id - 1 < len(city_coords):
+                spawn_hex = city_coords[faction_id - 1]
+                spawn_pixel_x, spawn_pixel_y = hex_to_pixel(
+                    spawn_hex, map_component.hex_size
+                )
+
+                # 在出生点周围放置单位
+                for i in range(unit_num):
+                    # 在出生点附近随机放置
+                    offset_x = random.randint(-50, 50)
+                    offset_y = random.randint(-50, 50)
+                    x = int(spawn_pixel_x + offset_x)
+                    y = int(spawn_pixel_y + offset_y)
+
+                    unit_type = unit_types[i % len(unit_types)]
+                    self.create_unit(unit_type, faction_id, x, y, owner_id=faction_id)
+
+                # 为阵营创建战场统计组件
+                self.create_battle_stats(faction_id)
 
     def create_benchmark_unit(
         self, faction_num: int = 3
@@ -510,4 +652,5 @@ class PrefabFactory:
                 unit_type = unit_types[i]
                 # 创建单位
                 self.create_unit(unit_type, faction_id, x, y, owner_id=faction_id)
+            self.create_battle_stats(faction_id)
             self.create_battle_stats(faction_id)

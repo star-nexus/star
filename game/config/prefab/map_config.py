@@ -4,43 +4,78 @@ import numpy as np
 # 地图组件配置
 MAP_CONFIG = {
     "default": {
-        "width": 5,
-        "height": 5,
-        "tile_size": 16,
+        "map_type": "hexagonal",  # 新增：地图类型
+        "orientation": "flat_top",  # 新增：六边形方向 (flat_top, pointy_top)
+        "radius": 3,  # 六边形地图半径
+        "hex_size": 30,  # 增加六边形大小以避免重叠
+        "width": 7,  # 计算得出的宽度 (2*radius + 1)
+        "height": 7,  # 计算得出的高度
+        "tile_size": 16,  # 保持兼容性
     },
     "tiny": {
-        "width": 3,
-        "height": 3,
+        "map_type": "hexagonal",
+        "orientation": "flat_top",
+        "radius": 2,
+        "hex_size": 35,  # 增加尺寸
+        "width": 5,
+        "height": 5,
         "tile_size": 32,
     },
     "tiny2": {
-        "width": 3,
-        "height": 3,
+        "map_type": "hexagonal",
+        "orientation": "pointy_top",  # 测试尖顶布局
+        "radius": 2,
+        "hex_size": 35,
+        "width": 5,
+        "height": 5,
         "tile_size": 8,
     },
     "tiny3": {
-        "width": 10,
-        "height": 10,
+        "map_type": "hexagonal",
+        "orientation": "pointy_top",
+        "radius": 2,
+        "hex_size": 35,
+        "width": 5,
+        "height": 5,
         "tile_size": 20,
     },
     "small": {
-        "width": 8,
-        "height": 8,
+        "map_type": "hexagonal",
+        "orientation": "flat_top",
+        "radius": 4,
+        "hex_size": 28,  # 调整尺寸
+        "width": 9,
+        "height": 9,
         "tile_size": 32,
     },
     "medium": {
-        "width": 15,
-        "height": 15,
+        "map_type": "hexagonal",
+        "orientation": "flat_top",
+        "radius": 6,
+        "hex_size": 25,  # 调整尺寸
+        "width": 13,
+        "height": 13,
         "tile_size": 32,
     },
     "large": {
-        "width": 20,
-        "height": 20,
+        "map_type": "hexagonal",
+        "orientation": "flat_top",
+        "radius": 8,
+        "hex_size": 22,  # 调整尺寸
+        "width": 17,
+        "height": 17,
         "tile_size": 32,
     },
     "huge": {
         "width": 50,
         "height": 50,
+        "tile_size": 32,
+    },
+    # 保留方形地图选项
+    "square_tiny": {
+        "map_type": "square",
+        "width": 3,
+        "height": 3,
         "tile_size": 32,
     },
 }
@@ -71,7 +106,15 @@ MAP_GENERATION_CONFIG = {
 
 def get_map_config(config_name: str = "default") -> Dict[str, Any]:
     """获取指定名称的地图配置"""
-    return MAP_CONFIG.get(config_name, MAP_CONFIG["default"])
+    config = MAP_CONFIG.get(config_name, MAP_CONFIG["default"])
+
+    # 为六边形地图计算实际尺寸
+    if config.get("map_type") == "hexagonal" and "radius" in config:
+        radius = config["radius"]
+        config["width"] = 2 * radius + 1
+        config["height"] = 2 * radius + 1
+
+    return config
 
 
 def get_terrain_properties(terrain_type: int) -> Dict[str, float]:

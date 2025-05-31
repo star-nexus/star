@@ -4,15 +4,30 @@ import random
 from typing import Tuple, List, Dict, Any
 import math
 from .game_types import TerrainType
+from .hex_utils import (
+    HexCoordinate,
+    create_hex_map_coordinates,
+    hex_neighbors,
+    hex_distance,
+)
 
 
 class MapGenerator:
-    """地图生成器，使用噪声算法生成地形，支持等高线地图、道路和水系"""
+    """地图生成器，支持六边形和方形地图"""
 
-    def __init__(self, width: int, height: int, seed: int = None):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        seed: int = None,
+        map_type: str = "square",
+        radius: int = None,
+    ):
         """初始化地图生成器"""
         self.width = width
         self.height = height
+        self.map_type = map_type
+        self.radius = radius if radius is not None else min(width, height) // 2
         self.seed = seed if seed is not None else random.randint(0, 999999)
         random.seed(self.seed)
         np.random.seed(self.seed)
@@ -459,14 +474,216 @@ class MapGenerator:
                 err += dx
                 y += sy
 
+    def generate_hex_terrain_map(self, radius: int) -> Dict[Tuple[int, int, int], int]:
+        """为六边形地图生成地形"""
+        # 获取所有六边形坐标
+        hex_coords = create_hex_map_coordinates(radius)
+        terrain_map = {}
+
+        # 使用噪声生成基础地形
+        for hex_coord in hex_coords:
+            # 将六边形坐标转换为噪声输入
+            x_noise = hex_coord.q * 0.3
+            y_noise = hex_coord.r * 0.3
+
+            # 生成噪声值
+            elevation_noise = snoise2(x_noise, y_noise, octaves=4, base=self.seed)
+            moisture_noise = snoise2(
+                x_noise + 100, y_noise + 100, octaves=2, base=self.seed + 1000
+            )
+
+            # 归一化
+            elevation = (elevation_noise + 1) * 50  # 0-100
+            moisture = (moisture_noise + 1) * 0.5  # 0-1
+
+            # 根据elevation和moisture确定地形类型
+            terrain_type = self._determine_terrain_type(elevation, moisture)
+            terrain_map[hex_coord.to_tuple()] = terrain_type.value
+
+        # 生成河流网络
+        self._generate_hex_rivers(terrain_map, hex_coords)
+
+        # 生成城市
+        self._generate_hex_cities(terrain_map, hex_coords)
+
+        return terrain_map
+
+    def _determine_terrain_type(self, elevation: float, moisture: float) -> TerrainType:
+        """根据海拔和湿度确定地形类型"""
+        if elevation < 20:
+            return TerrainType.LAKE
+        elif elevation < 60:
+            if moisture < 0.3:
+                return TerrainType.PLAIN
+            else:
+                return TerrainType.FOREST
+        else:
+            return TerrainType.MOUNTAIN
+
+    def _generate_hex_rivers(
+        self,
+        terrain_map: Dict[Tuple[int, int, int], int],
+        hex_coords: List[HexCoordinate],
+    ):
+        """在六边形地图上生成河流"""
+        num_rivers = max(1, len(hex_coords) // 20)
+
+        for _ in range(num_rivers):
+            # 选择高地作为河流源头
+            mountain_coords = [
+                coord
+                for coord in hex_coords
+                if terrain_map[coord.to_tuple()] == TerrainType.MOUNTAIN.value
+            ]
+
+            if not mountain_coords:
+                continue
+
+            start_coord = random.choice(mountain_coords)
+            self._create_hex_river(terrain_map, start_coord, hex_coords)
+
+    def _create_hex_river(
+        self,
+        terrain_map: Dict[Tuple[int, int, int], int],
+        start: HexCoordinate,
+        all_coords: List[HexCoordinate],
+    ):
+        """创建一条六边形河流"""
+        current = start
+        visited = set()
+        max_length = len(all_coords) // 4
+
+        for _ in range(max_length):
+            if current.to_tuple() in visited:
+                break
+
+            visited.add(current.to_tuple())
+
+            # 标记为河流
+            if terrain_map.get(current.to_tuple()) != TerrainType.LAKE.value:
+                terrain_map[current.to_tuple()] = TerrainType.RIVER.value
+
+            # 寻找下一个位置（向中心或随机方向）
+            neighbors = hex_neighbors(current)
+            valid_neighbors = [n for n in neighbors if n.to_tuple() in terrain_map]
+
+            if not valid_neighbors:
+                break
+
+            # 优先选择距离地图中心更远的邻居（模拟流向边缘）
+            center = HexCoordinate(0, 0, 0)
+            current = min(valid_neighbors, key=lambda n: hex_distance(n, center))
+
+    def _generate_hex_cities(
+        self,
+        terrain_map: Dict[Tuple[int, int, int], int],
+        hex_coords: List[HexCoordinate],
+    ):
+        """在六边形地图上生成城市"""
+        num_cities = max(2, len(hex_coords) // 15)
+
+        # 选择平原或森林作为城市位置
+        suitable_coords = [
+            coord
+            for coord in hex_coords
+            if terrain_map[coord.to_tuple()]
+            in [TerrainType.PLAIN.value, TerrainType.FOREST.value]
+        ]
+
+        if len(suitable_coords) < num_cities:
+            return
+
+        # 随机选择城市位置，确保它们不会太靠近
+        cities = []
+        for _ in range(num_cities):
+            available = [
+                coord
+                for coord in suitable_coords
+                if all(hex_distance(coord, city) >= 2 for city in cities)
+            ]
+            if available:
+                city = random.choice(available)
+                cities.append(city)
+                terrain_map[city.to_tuple()] = TerrainType.CITY.value
+
+    def create_symmetric_hex_terrain(
+        self, radius: int
+    ) -> Dict[Tuple[int, int, int], int]:
+        """创建对称的六边形地形图"""
+        hex_coords = create_hex_map_coordinates(radius)
+        terrain_map = {}
+
+        # 初始化为平原
+        for coord in hex_coords:
+            terrain_map[coord.to_tuple()] = TerrainType.PLAIN.value
+
+        # 中心为河流/湖泊
+        center = HexCoordinate(0, 0, 0)
+        terrain_map[center.to_tuple()] = TerrainType.LAKE.value
+
+        # 在特定位置放置山脉（对称）
+        if radius >= 2:
+            mountains = [
+                HexCoordinate(2, -1, -1),  # 右上
+                HexCoordinate(-1, 2, -1),  # 左下
+                HexCoordinate(-1, -1, 2),  # 左上
+            ]
+            for mountain in mountains:
+                if mountain.to_tuple() in terrain_map:
+                    terrain_map[mountain.to_tuple()] = TerrainType.MOUNTAIN.value
+
+        # 在特定位置放置森林
+        if radius >= 2:
+            forests = [
+                HexCoordinate(1, 0, -1),  # 右
+                HexCoordinate(-1, 0, 1),  # 左
+                HexCoordinate(0, 1, -1),  # 右下
+                HexCoordinate(0, -1, 1),  # 左上
+            ]
+            for forest in forests:
+                if forest.to_tuple() in terrain_map:
+                    terrain_map[forest.to_tuple()] = TerrainType.FOREST.value
+
+        # 在边缘放置城市
+        if radius >= 3:
+            cities = [
+                HexCoordinate(radius, 0, -radius),  # 右边缘
+                HexCoordinate(-radius, 0, radius),  # 左边缘
+            ]
+            for city in cities:
+                if city.to_tuple() in terrain_map:
+                    terrain_map[city.to_tuple()] = TerrainType.CITY.value
+
+        return terrain_map
+
     def generate_map(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """生成完整地图，返回(海拔图, 地形图, 湿度图)"""
-        # 海拔
-        elevation = self.generate_elevation_map()
-        # 湿度
-        moisture = self.generate_moisture_map()
-        terrain = self.generate_terrain_map(elevation, moisture)
-        return elevation, terrain, moisture
+        if self.map_type == "hexagonal":
+            # 为六边形地图生成伪方形数组以保持兼容性
+            terrain_dict = self.generate_hex_terrain_map(self.radius)
+
+            # 创建方形数组存储（用于兼容现有代码）
+            terrain = np.zeros((self.height, self.width), dtype=np.int32)
+            elevation = np.zeros((self.height, self.width), dtype=np.int32)
+            moisture = np.zeros((self.height, self.width), dtype=np.float32)
+
+            # 将六边形数据映射到方形数组（简化处理）
+            for (q, r, s), terrain_type in terrain_dict.items():
+                # 转换为偏移坐标
+                col = q + self.radius
+                row = r + self.radius
+                if 0 <= col < self.width and 0 <= row < self.height:
+                    terrain[row, col] = terrain_type
+                    elevation[row, col] = 50  # 默认海拔
+                    moisture[row, col] = 0.5  # 默认湿度
+
+            return elevation, terrain, moisture
+        else:
+            # 原有的方形地图生成逻辑
+            elevation = self.generate_elevation_map()
+            moisture = self.generate_moisture_map()
+            terrain = self.generate_terrain_map(elevation, moisture)
+            return elevation, terrain, moisture
 
     def generate_v1_map(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """生成完整地图，返回(海拔图, 地形图, 湿度图)"""

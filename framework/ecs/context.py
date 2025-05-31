@@ -1,23 +1,15 @@
 from turtle import Screen
 from typing import (
-    Dict,
-    List,
-    Set,
     Type,
     Optional,
     Callable,
     Any,
     TypeVar,
-    Union,
-    Iterator,
-    Tuple,
-    override,
 )
 import logging
 
 from framework.ecs.entity import Entity
 from framework.ecs.component import Component
-from framework.ecs.system import System
 from framework.ecs.query import QueryManager, QueryBuilder, Query
 from framework.ecs.manager import EntityManager, ComponentManager, SystemManager
 from framework.engine.events import EventManager
@@ -109,6 +101,13 @@ class ECSContext:
             return self.component_manager.has_component(entity, component_type)
         self.logger.error("尝试检查组件，但组件管理器未设置")
         return False
+
+    def add_component(self, entity: Entity, component: C) -> None:
+        """添加组件到实体"""
+        if self.component_manager:
+            self.component_manager.add_component(entity, component)
+        else:
+            self.logger.error("尝试添加组件，但组件管理器未设置")
 
     def get_component(self, entity: Entity, component_type: Type[C]) -> Optional[C]:
         """获取实体的指定组件"""

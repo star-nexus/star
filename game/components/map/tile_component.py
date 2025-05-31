@@ -22,9 +22,14 @@ class TileComponent(Component):
     has_river: bool = False  # 是否有河流
     has_bridge: bool = False  # 是否有桥
 
-    # 位置属性
-    x: int = 0  # 格子的x坐标
-    y: int = 0  # 格子的y坐标
+    # 位置属性 - 支持六边形和方形坐标
+    x: int = 0  # 格子的x坐标（方形地图或偏移坐标）
+    y: int = 0  # 格子的y坐标（方形地图或偏移坐标）
+
+    # 六边形坐标（仅用于六边形地图）
+    hex_q: int = 0  # 六边形坐标 q
+    hex_r: int = 0  # 六边形坐标 r
+    hex_s: int = 0  # 六边形坐标 s
 
     # 状态属性
     visible: bool = True  # 是否可见

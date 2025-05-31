@@ -14,9 +14,10 @@ from game.scenes import (
     EditorScene,
     TransitionStartScene,
     TransitionEndScene,
+    UIScene,
 )
 
-os.environ["SDL_VIDEODRIVER"] = "dummy"
+# os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 
 def setup_argument_parser():
@@ -26,7 +27,7 @@ def setup_argument_parser():
     # 日志相关参数
     parser.add_argument(
         "--log-level",
-        default="MSG",
+        default="info",
         choices=["DEBUG", "INFO", "MSG", "WARNING", "ERROR", "CRITICAL"],
         help="日志级别 (默认: INFO)",
     )
@@ -65,15 +66,16 @@ def main():
     engine = Engine(title="Demo", width=1280, height=720)
 
     # 注册场景
-    # engine.scene_manager.add_scene("start", StartScene)
+    engine.scene_manager.add_scene("start", StartScene)
     engine.scene_manager.add_scene("game", GameScene)
-    # engine.scene_manager.add_scene("end", EndScene)
-    # engine.scene_manager.add_scene("editor", EditorScene)
+    engine.scene_manager.add_scene("end", EndScene)
+    engine.scene_manager.add_scene("editor", EditorScene)
     engine.scene_manager.add_scene("transition_start", TransitionStartScene)
     engine.scene_manager.add_scene("transition_end", TransitionEndScene)
+    engine.scene_manager.add_scene("ui", UIScene)
 
     # 设置初始场景
-    engine.scene_manager.load_scene("transition_start")
+    engine.scene_manager.load_scene("ui")
 
     # 启动游戏
     engine.start()

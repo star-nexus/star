@@ -4,6 +4,7 @@ from framework.ecs.system import System
 from framework.utils.logging import get_logger
 from game.components import MapComponent
 from game.components import TileComponent, TerrainType
+from game.utils.hex_utils import HexCoordinate, pixel_to_hex
 
 
 class MapSystem(System):
@@ -27,7 +28,7 @@ class MapSystem(System):
                 self.map_entity, MapComponent
             )
             self.logger.info(
-                f"地图系统设置地图实体: {self.map_entity}, 尺寸: {self.map_component.width}x{self.map_component.height}"
+                f"地图系统设置地图实体: {self.map_entity}, 尺寸: {self.map_component.width}x{self.map_component.height}, 类型: {self.map_component.map_type}"
             )
         return self.map_entity
 
@@ -37,8 +38,24 @@ class MapSystem(System):
 
     def get_tile_at(self, x, y):
         """获取指定位置的格子实体"""
-        if (x, y) in self.map_component.tile_entities:
-            return self.map_component.tile_entities[(x, y)]
+        if self.map_component.map_type == "hexagonal":
+            # 六边形地图：将像素坐标转换为六边形坐标
+            hex_coord = pixel_to_hex(
+                x, y, self.map_component.hex_size, self.map_component.orientation
+            )
+            hex_tuple = hex_coord.to_tuple()
+            return self.map_component.hex_entities.get(hex_tuple)
+        else:
+            # 方形地图：使用原有逻辑
+            if (x, y) in self.map_component.tile_entities:
+                return self.map_component.tile_entities[(x, y)]
+        return None
+
+    def get_hex_tile_at(self, hex_coord: HexCoordinate):
+        """获取指定六边形坐标的格子实体"""
+        if self.map_component.map_type == "hexagonal":
+            hex_tuple = hex_coord.to_tuple()
+            return self.map_component.hex_entities.get(hex_tuple)
         return None
 
     def update(self, delta_time: float) -> None:
