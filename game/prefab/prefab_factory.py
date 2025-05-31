@@ -16,19 +16,19 @@ from game.components import (
 from game.components.unit.unit_effect_component import UnitEffectComponent
 from game.components.terrain_effect_component import TerrainEffectComponent
 
-from game.config.prefab.map_config import (
+from .prefab_config.map_config import (
     get_map_config,
     get_terrain_properties,
     get_map_generation_config,
 )
-from game.config.prefab.unit_config import (
+from .prefab_config.unit_config import (
     get_unit_config,
     get_faction_config,
     create_unit_config,
 )
 
-from game.config.prefab.camera_config import get_camera_config
-from game.config.prefab.fog_of_war_config import get_fog_of_war_config
+from .prefab_config.camera_config import get_camera_config
+from .prefab_config.fog_of_war_config import get_fog_of_war_config
 from game.utils.map_generator import MapGenerator
 from game.utils.game_types import TerrainTypeMapping, ViewMode
 from game.utils.hex_utils import HexCoordinate, create_hex_map_coordinates, hex_to_pixel
@@ -78,7 +78,7 @@ class PrefabFactory:
 
         # 创建地图组件
         map_component = MapComponent(
-            map_type=map_config.get("map_type", "hexagonal"),
+            map_type=map_config.get("map_type", "square"),
             width=map_config["width"],
             height=map_config["height"],
             radius=map_config.get("radius", 3),
@@ -131,6 +131,13 @@ class PrefabFactory:
 
         return map_entity, map_component
 
+    def _create_hex_map():
+        pass
+
+    def _create_square_map():
+        pass
+
+    # Hex
     def create_symmetric_hex_terrain(
         self, radius: int
     ) -> Dict[Tuple[int, int, int], int]:
@@ -286,6 +293,95 @@ class PrefabFactory:
             # 记录格子实体（使用六边形坐标作为主键）
             map_component.hex_entities[hex_coord.to_tuple()] = tile_entity
 
+    # Square
+    def create_symmetric_terrain(self, width: int, height: int) -> np.ndarray:
+        """创建对称的地形图
+
+        设计一个对战公平的对称地图，包含河流、平原、山地、森林和城堡
+
+        Args:
+            width: 地图宽度
+            height: 地图高度
+
+        Returns:
+            地形地图数组
+        """
+        # 创建地形数组
+        terrain = np.zeros((height, width), dtype=np.int32)
+
+        # 使用TerrainType的value值填充地图
+        # 对于5x5的地图，我们可以设计如下布局：
+
+        # 中心列为河流，将地图分为左右两个区域
+        for y in range(height):
+            terrain[y, width // 2] = TerrainType.RIVER.value
+
+        # 两侧对称放置平原
+        terrain[1, 0] = TerrainType.PLAIN.value
+        terrain[1, width - 1] = TerrainType.PLAIN.value
+        terrain[3, 0] = TerrainType.PLAIN.value
+        terrain[3, width - 1] = TerrainType.PLAIN.value
+
+        # 两侧对称放置森林
+        terrain[2, 1] = TerrainType.FOREST.value
+        terrain[2, width - 2] = TerrainType.FOREST.value
+
+        # 两侧对称放置山地
+        terrain[0, 1] = TerrainType.MOUNTAIN.value
+        terrain[0, width - 2] = TerrainType.MOUNTAIN.value
+        terrain[4, 1] = TerrainType.MOUNTAIN.value
+        terrain[4, width - 2] = TerrainType.MOUNTAIN.value
+
+        # 两侧对称放置城堡（出生点）
+        terrain[2, 0] = TerrainType.CITY.value
+        terrain[2, width - 1] = TerrainType.CITY.value
+
+        # 在河流中间添加一座桥梁
+        middle_y = height // 2
+        terrain[middle_y, width // 2] = TerrainType.BRIDGE.value
+
+        # 填充其余区域为平原
+        for y in range(height):
+            for x in range(width):
+                # 如果该位置尚未设置地形
+                if terrain[y, x] == 0:
+                    terrain[y, x] = TerrainType.PLAIN.value
+
+        return terrain
+
+    def _generate_tile_entities(
+        self, map_entity: Entity, map_component: MapComponent, terrain_map
+    ):
+        """为每个地图格子生成实体"""
+        for y in range(map_component.height):
+            for x in range(map_component.width):
+                # 创建格子实体
+                tile_entity = self.world.create_entity()
+
+                # 获取地形类型和属性
+                terrain_type = TerrainType(terrain_map[y, x])
+                terrain_props = get_terrain_properties(terrain_type.value)
+
+                # 创建格子组件
+                tile_component = TileComponent(
+                    terrain_type=terrain_type,
+                    type_name=TerrainTypeMapping[terrain_type],
+                    elevation=map_component.elevation_map[y, x],  # 添加海拔数据
+                    moisture=map_component.moisture_map[y, x],
+                    movement_cost=terrain_props["movement_cost"],
+                    defense_bonus=terrain_props["defense_bonus"],
+                    x=x,
+                    y=y,
+                    visible=True,
+                    explored=False,
+                )
+                # 添加组件到实体Add commentMore actions
+                self.world.add_component(tile_entity, tile_component)
+                # 为地形添加效果组件Add commentMore actions
+                self.create_terrain_effect(tile_entity, tile_component)
+                # 记录格子实体Add commentMore actions
+                map_component.tile_entities[(x, y)] = tile_entity
+
     def create_unit(
         self,
         unit_type: UnitType,
@@ -318,7 +414,7 @@ class PrefabFactory:
         self, unit_id: str, x: int, y: int
     ) -> Optional[Tuple[Entity, UnitComponent]]:
         """创建预定义的单位"""
-        from game.config.prefab.unit_config import get_predefined_unit
+        from game.prefab.prefab_config.unit_config import get_predefined_unit
 
         # 获取预定义单位配置
         unit_config = get_predefined_unit(unit_id)

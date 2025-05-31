@@ -75,7 +75,7 @@ def main():
     engine.scene_manager.add_scene("ui", UIScene)
 
     # 设置初始场景
-    engine.scene_manager.load_scene("ui")
+    engine.scene_manager.load_scene("start")
 
     # 启动游戏
     engine.start()

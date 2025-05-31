@@ -43,7 +43,7 @@ class UnitRenderSystem(System):
         self.unit_cache = {}  # 缓存渲染过的单位，提高性能
         self.texture_cache = {}  # 缓存加载过的贴图
         self.texture_path = os.path.join(
-            "game", "config", "prefab", "unit_texture"
+            "game", "prefab", "prefab_config", "unit_texture"
         )  # 贴图路径
 
     def initialize(self, context):

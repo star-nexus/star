@@ -67,7 +67,7 @@ class FogOfWarSystem(System):
             self.logger.debug(f"找到战争迷雾实体: {fog_of_war_entity}")
         else:
             # 使用组件工厂创建战争迷雾组件
-            from game.config.prefab_factory import PrefabFactory
+            from game.prefab.prefab_factory import PrefabFactory
 
             prefab_factory = PrefabFactory(self.context)
             fog_of_war_entity, fog_of_war_component = prefab_factory.create_fog_of_war(

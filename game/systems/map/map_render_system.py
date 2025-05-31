@@ -30,7 +30,7 @@ class MapRenderSystem(System):
         self.texture_cache = {}  # 贴图缓存
         self.use_textures = True  # 是否使用贴图渲染
         self.texture_path = os.path.join(
-            "game", "config", "prefab", "tile_texture"
+            "game", "prefab", "prefab_config", "tile_texture"
         )  # 贴图路径
         self.terrain_textures = {}  # 地形类型对应的贴图
 
@@ -277,6 +277,8 @@ class MapRenderSystem(System):
             self._render_hexagonal_map(map_component, camera_component)
         else:
             # 原有的方形地图渲染逻辑
+            # print("渲染方形地图")
+            # print("map_component:", map_component)
             self._render_square_map(map_component, camera_component)
 
     def _render_hexagonal_map(
@@ -963,6 +965,69 @@ class MapRenderSystem(System):
         # 绘制边框
         border_color = (60, 60, 60)
         pygame.draw.polygon(tile_surface, border_color, adjusted_points, 1)
+
+        return tile_surface
+
+    def _render_tile(self, tile_component: TileComponent, size: int) -> pygame.Surface:
+        """渲染单个格子，考虑海拔高度、道路和水系特性"""
+        # 创建格子表面 - 使用比请求的尺寸略大的表面以消除缩放时的边缘缝隙Add commentMore actions
+        extra_pixel = 1  # 额外添加1像素来避免边缘出现缝隙
+        actual_size = size + extra_pixel
+        tile_surface = pygame.Surface((actual_size, actual_size), pygame.SRCALPHA)
+
+        # 尝试使用贴图渲染
+        if self.use_textures and tile_component.terrain_type in self.terrain_textures:
+            texture = self.terrain_textures[tile_component.terrain_type]
+            if texture is not None:
+                # 缩放贴图到格子大小
+                scaled_texture = pygame.transform.scale(
+                    texture, (actual_size, actual_size)
+                )
+                tile_surface.blit(scaled_texture, (0, 0))
+
+                # 根据海拔调整亮度
+                # if tile_component.terrain_type not in [
+                #     TerrainType.RIVER,
+                #     TerrainType.LAKE,
+                #     TerrainType.OCEAN,
+                #     TerrainType.WETLAND,
+                # ]:
+                #     elevation_factor = min(
+                #         1.0, tile_component.elevation / 100.0
+                #     )  # 归一化到0-1
+                #     brightness_factor = 0.7 + (
+                #         elevation_factor * 0.6
+                #     )  # 0.7-1.3范围内的亮度
+
+                #     # 创建一个调整亮度的表面
+                #     brightness_surface = pygame.Surface(
+                #         (actual_size, actual_size), pygame.SRCALPHA
+                #     )
+                #     if brightness_factor < 1.0:
+                #         # 变暗
+                #         brightness_surface.fill(
+                #             (0, 0, 0, int((1.0 - brightness_factor) * 255))
+                #         )
+                #     else:
+                #         # 变亮
+                #         brightness_surface.fill(
+                #             (255, 255, 255, int((brightness_factor - 1.0) * 100))
+                #         )
+
+                #     # 应用亮度调整
+                #     tile_surface.blit(
+                #         brightness_surface,
+                #         (0, 0),
+                #         special_flags=pygame.BLEND_RGBA_MULT
+                #         if brightness_factor < 1.0
+                #         else pygame.BLEND_RGBA_ADD,
+                #     )
+            else:
+                # 如果没有贴图，使用颜色渲染
+                self._render_tile_with_color(tile_component, tile_surface, size)
+        else:
+            # 使用颜色渲染
+            self._render_tile_with_color(tile_component, tile_surface, size)
 
         return tile_surface
 

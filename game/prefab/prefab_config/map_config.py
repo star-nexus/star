@@ -4,6 +4,14 @@ import numpy as np
 # 地图组件配置
 MAP_CONFIG = {
     "default": {
+        "map_type": "square",
+        "width": 5,
+        "height": 5,
+        "tile_size": 32,
+    },
+}
+HEX_MAP_CONFIG = {
+    "default": {
         "map_type": "hexagonal",  # 新增：地图类型
         "orientation": "flat_top",  # 新增：六边形方向 (flat_top, pointy_top)
         "radius": 3,  # 六边形地图半径

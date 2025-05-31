@@ -28,7 +28,7 @@ from game.systems import (
 )
 from game.systems.unit.unit_health_system import UnitHealthSystem
 from game.utils.game_types import UnitType, TerrainType
-from game.config.prefab_factory import PrefabFactory
+from game.prefab.prefab_factory import PrefabFactory
 
 
 class EditorScene(Scene):
@@ -65,7 +65,7 @@ class EditorScene(Scene):
 
         self.prefab_factory = PrefabFactory(self.world)
 
-        _, map_component = self.prefab_factory.create_map("tiny2")
+        _, map_component = self.prefab_factory.create_map("default")
 
         self.prefab_factory.create_camera("default")
 
@@ -668,7 +668,7 @@ class EditorScene(Scene):
             self.logger.info(f"使用随机种子生成地图: {random_seed}")
 
             # 修改地图生成配置中的种子
-            from game.config.prefab.map_config import MAP_GENERATION_CONFIG
+            from game.prefab.prefab_config.map_config import MAP_GENERATION_CONFIG
 
             MAP_GENERATION_CONFIG["default"]["seed"] = random_seed
 

@@ -95,15 +95,15 @@ class CameraSystem(System):
         map_height_pixels = map_component.height * map_component.tile_size
 
         # 计算最小缩放，确保地图完全填满屏幕
-        min_zoom_x = self.screen_width / map_width_pixels
-        min_zoom_y = self.screen_height / map_height_pixels
+        min_zoom_x = self.screen_width / map_width_pixels / 2
+        min_zoom_y = self.screen_height / map_height_pixels / 2
         self.adaptive_min_zoom = max(min_zoom_x, min_zoom_y)
 
         # 确保最小缩放不会太小
         self.adaptive_min_zoom = max(self.adaptive_min_zoom, 0.1)
 
         # 最大缩放保持合理范围
-        self.adaptive_max_zoom = max(self.adaptive_min_zoom * 10, 3.0)
+        self.adaptive_max_zoom = max(self.adaptive_min_zoom * 100, 10.0)
 
         self.logger.debug(
             f"自适应缩放限制: {self.adaptive_min_zoom:.3f} - {self.adaptive_max_zoom:.3f}"
@@ -287,7 +287,7 @@ class CameraSystem(System):
                 # 调整摄像机位置
                 map_component = self._get_map_component()
                 self._clamp_camera_position(camera_component, map_component)
-                self.logger.debug(f"摄像机放大 - 当前缩放: {camera_component.zoom:.3f}")
+                self.logger.info(f"摄像机放大 - 当前缩放: {camera_component.zoom:.3f}")
 
     def _zoom_out(self, camera_component: CameraComponent):
         """缩小视图"""

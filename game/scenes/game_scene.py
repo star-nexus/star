@@ -24,7 +24,7 @@ from game.systems import FogOfWarSystem
 from game.systems import LLMControlSystem
 from game.systems.terrain.terrain_effect_system import TerrainEffectSystem
 
-from game.config.prefab_factory import PrefabFactory
+from game.prefab.prefab_factory import PrefabFactory
 
 from game.utils import UnitType
 from game.components import UnitComponent
@@ -392,7 +392,9 @@ class GameScene(Scene):
             or not self._experiment_report_generated
         ):
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = (
+                self._get_model_info()
+            )
             self.generate_experiment_report(
                 None,
                 game_duration,
@@ -400,7 +402,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 enable_thinking=enable_thinking,
-                response_times=response_times
+                response_times=response_times,
             )
             self._experiment_report_generated = True
 
@@ -509,7 +511,9 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = (
+                self._get_model_info()
+            )
 
             # 记录游戏时长和胜利阵营
             game_duration = time.time() - self.scene_start_time
@@ -520,7 +524,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 enable_thinking=enable_thinking,
-                response_times=response_times
+                response_times=response_times,
             )
             self._experiment_report_generated = True
 
@@ -539,7 +543,9 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = (
+                self._get_model_info()
+            )
 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
@@ -550,7 +556,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 enable_thinking=enable_thinking,
-                response_times=response_times
+                response_times=response_times,
             )
             self._experiment_report_generated = True
 
@@ -1097,7 +1103,9 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = (
+                self._get_model_info()
+            )
 
             # 记录平局游戏结果
             game_duration = time.time() - self.scene_start_time
@@ -1108,7 +1116,7 @@ class GameScene(Scene):
                 model_info=model_info,
                 strategy_scores=strategy_scores,
                 enable_thinking=enable_thinking,
-                response_times=response_times
+                response_times=response_times,
             )
             self._experiment_report_generated = True
 
@@ -1132,7 +1140,9 @@ class GameScene(Scene):
                 self.llm_controller_system.cleanup()
 
             # 获取各阵营使用的模型和策略分数
-            model_info, strategy_scores, enable_thinking, response_times = self._get_model_info()
+            model_info, strategy_scores, enable_thinking, response_times = (
+                self._get_model_info()
+            )
 
             # 记录游戏时长和半歼胜利阵营
             game_duration = time.time() - self.scene_start_time
@@ -1145,7 +1155,7 @@ class GameScene(Scene):
                 strategy_scores=strategy_scores,
                 is_half_win=True,
                 enable_thinking=enable_thinking,
-                response_times=response_times
+                response_times=response_times,
             )
             self._experiment_report_generated = True
 
