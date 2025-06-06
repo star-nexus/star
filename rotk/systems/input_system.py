@@ -13,7 +13,7 @@ from framework_v2 import (
     MouseMotionEvent,
 )
 from framework_v2.engine.events import EBS
-from ..components import InputState, UIState, HexPosition, Unit, GameState
+from ..components import InputState, UIState, HexPosition, Unit, GameState, Camera
 from ..prefabs.config import GameConfig
 from ..utils.hex_utils import HexConverter
 from ..events import TileClickedEvent, UnitSelectedEvent
@@ -25,14 +25,11 @@ class InputHandlingSystem(System):
     def __init__(self):
         super().__init__(priority=10)  # 高优先级
         self.hex_converter = HexConverter(GameConfig.HEX_SIZE)
-        # 摄像机偏移：将地图中心(0,0)放在屏幕中心
-        self.camera_offset = [
-            GameConfig.WINDOW_WIDTH // 2,
-            GameConfig.WINDOW_HEIGHT // 2,
-        ]
 
     def initialize(self, world: World) -> None:
+        """初始化系统"""
         self.world = world
+
         # 初始化输入状态
         input_state = InputState()
         self.world.add_singleton_component(input_state)
@@ -40,6 +37,11 @@ class InputHandlingSystem(System):
         # 初始化UI状态
         ui_state = UIState()
         self.world.add_singleton_component(ui_state)
+
+        # 初始化摄像机 - 将地图中心(0,0)放在屏幕中心
+        camera = Camera()
+        camera.set_offset(GameConfig.WINDOW_WIDTH // 2, GameConfig.WINDOW_HEIGHT // 2)
+        self.world.add_singleton_component(camera)
 
     def subscribe_events(self):
         """订阅事件"""
@@ -117,18 +119,22 @@ class InputHandlingSystem(System):
         ui_state = self.world.get_singleton_component(UIState)
         if event.key == pygame.K_SPACE:
             # 空格键结束回合
+            print("结束当前回合")
             self._end_current_turn()
 
         elif event.key == pygame.K_TAB:
             # Tab键切换统计界面
+            print("切换统计界面")
             ui_state.show_stats = not ui_state.show_stats
 
         elif event.key == pygame.K_F1:
             # F1键显示帮助
+            print("切换帮助界面")
             ui_state.show_help = not ui_state.show_help
 
         elif event.key == pygame.K_ESCAPE:
             # ESC键取消选择
+            print("取消选择")
             ui_state.selected_unit = None
 
     def _handle_keyboard(
@@ -138,25 +144,32 @@ class InputHandlingSystem(System):
         delta_time: float,
     ):
         """处理持续按键"""
-        camera_speed = 200  # 像素/秒
+        camera = self.world.get_singleton_component(Camera)
+        if not camera:
+            return
 
         # 摄像机移动
         if keys[pygame.K_w] or keys[pygame.K_UP]:
-            self.camera_offset[1] += camera_speed * delta_time
+            camera.move(0, camera.speed * delta_time)
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            self.camera_offset[1] -= camera_speed * delta_time
+            camera.move(0, -camera.speed * delta_time)
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            self.camera_offset[0] += camera_speed * delta_time
+            camera.move(camera.speed * delta_time, 0)
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            self.camera_offset[0] -= camera_speed * delta_time
+            camera.move(-camera.speed * delta_time, 0)
 
     def _screen_to_hex(self, screen_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """屏幕坐标转六边形坐标 - 高精度版本"""
+        camera = self.world.get_singleton_component(Camera)
+        if not camera:
+            return None
+
         x, y = screen_pos
+        camera_offset = camera.get_offset()
 
         # 应用摄像机偏移 - 确保精确的浮点运算
-        world_x = float(x) - float(self.camera_offset[0])
-        world_y = float(y) - float(self.camera_offset[1])
+        world_x = float(x) - float(camera_offset[0])
+        world_y = float(y) - float(camera_offset[1])
 
         # 使用高精度转换
         hex_pos = self.hex_converter.pixel_to_hex(world_x, world_y)
@@ -165,9 +178,14 @@ class InputHandlingSystem(System):
 
     def _hex_to_screen(self, hex_pos: Tuple[int, int]) -> Tuple[float, float]:
         """六边形坐标转屏幕坐标"""
+        camera = self.world.get_singleton_component(Camera)
+        if not camera:
+            return (0.0, 0.0)
+
+        camera_offset = camera.get_offset()
         world_x, world_y = self.hex_converter.hex_to_pixel(*hex_pos)
-        screen_x = world_x + self.camera_offset[0]
-        screen_y = world_y + self.camera_offset[1]
+        screen_x = world_x + camera_offset[0]
+        screen_y = world_y + camera_offset[1]
         return screen_x, screen_y
 
     def _get_unit_at_position(self, hex_pos: Tuple[int, int]) -> Optional[int]:

@@ -19,6 +19,7 @@ from ..components import (
     Movement,
     Combat,
     Tile,
+    Camera,
 )
 from ..prefabs.config import GameConfig, UnitType, Faction
 from ..utils.hex_utils import HexConverter, HexMath, PathFinding
@@ -51,9 +52,13 @@ class RenderSystem(System):
 
     def update(self, delta_time: float) -> None:
         """渲染游戏"""
-        # 获取输入系统的摄像机偏移
-        input_system = self._get_input_system()
-        camera_offset = input_system.camera_offset if input_system else [400, 300]
+        # 获取摄像机组件
+        camera = self.world.get_singleton_component(Camera)
+        if not camera:
+            # 如果没有摄像机组件，使用默认偏移
+            camera_offset = [400, 300]
+        else:
+            camera_offset = list(camera.get_offset())
 
         # 渲染地图
         self._render_map(camera_offset)
@@ -499,12 +504,11 @@ class RenderSystem(System):
         stats = self.world.get_singleton_component(GameStats)
         if not stats:
             return
-
         # 创建半透明背景
         panel_width = 300
         panel_height = 400
-        panel_x = GameConfig.WINDOW_WIDTH - panel_width - 10
-        panel_y = 10
+        panel_x = (GameConfig.WINDOW_WIDTH - panel_width) - 400
+        panel_y = panel_height / 3
 
         panel_surface = pygame.Surface((panel_width, panel_height))
         panel_surface.set_alpha(200)
@@ -631,11 +635,4 @@ class RenderSystem(System):
             ):
                 return entity
 
-        return None
-
-    def _get_input_system(self):
-        """获取输入系统"""
-        for system in self.world.systems:
-            if system.__class__.__name__ == "InputHandlingSystem":
-                return system
         return None

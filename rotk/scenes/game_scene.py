@@ -4,7 +4,7 @@
 
 import pygame
 from typing import Dict
-from framework_v2.engine.scenes import Scene
+from framework_v2.engine.scenes import Scene, SMS
 from framework_v2 import World
 from ..systems import (
     MapSystem,
