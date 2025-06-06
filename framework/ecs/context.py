@@ -5,6 +5,7 @@ from typing import (
     Callable,
     Any,
     TypeVar,
+    # TYPE_CHECKING,
 )
 import logging
 
@@ -12,7 +13,15 @@ from framework.ecs.entity import Entity
 from framework.ecs.component import Component
 from framework.ecs.query import QueryManager, QueryBuilder, Query
 from framework.ecs.manager import EntityManager, ComponentManager, SystemManager
-from framework.engine.events import EventManager
+
+# Avoid circular imports by importing these only when needed
+# from framework.engine.events import EventManager
+# from framework.engine.inputs import InputManager
+# from framework.engine.renders import RenderManager
+# from framework.engine.scenes import SceneManager
+
+# if TYPE_CHECKING:
+from framework.engine.events import EventManager, EventMessage
 from framework.engine.inputs import InputManager
 from framework.engine.renders import RenderManager
 from framework.engine.scenes import SceneManager
@@ -33,10 +42,10 @@ class ECSContext:
         self.query_manager: Optional[QueryManager] = None
 
         # 扩展管理器
-        self.event_manager: Optional[EventManager] = None
-        self.input_manager: Optional[InputManager] = None
-        self.render_manager: Optional[RenderManager] = None
-        self.scene_manager: Optional[SceneManager] = None
+        self.event_manager: Optional["EventManager"] = None
+        self.input_manager: Optional["InputManager"] = None
+        self.render_manager: Optional["RenderManager"] = None
+        self.scene_manager: Optional["SceneManager"] = None
         # self.resource_manager = None
 
         self.executor = None
@@ -181,7 +190,7 @@ class ECSContext:
             self.logger.error("尝试清除查询缓存，但查询管理器未设置")
 
     # EventManager 统一接口
-    def publish(self, event: EventManager) -> None:
+    def publish(self, event: "EventMessage") -> None:
         """发送事件"""
         if self.event_manager:
             self.event_manager.publish(event)

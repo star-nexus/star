@@ -3,7 +3,7 @@ import numpy as np
 import os
 from typing import Dict, Tuple, List, Optional
 from framework.ecs.system import System
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from game.components import (
     UnitComponent,
     CameraComponent,

@@ -9,7 +9,7 @@ from framework.ui.components.ui_components import (
     ScrollableListComponent,
 )
 from framework.engine.events import EventMessage, EventType
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 
 
 class UISystem(System):

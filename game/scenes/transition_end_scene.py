@@ -1,5 +1,5 @@
 from framework.engine.scenes import Scene
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 import time
 
 
@@ -18,10 +18,15 @@ class TransitionEndScene(Scene):
 
     def update(self, dt):
         super().update(dt)
-        
+
         # 检查是否已经过了指定的时间
-        if self.start_time and time.time() - self.start_time >= self.transition_duration:
-            self.logger.info(f"过渡结束场景已经运行{self.transition_duration}秒，准备关闭游戏")
+        if (
+            self.start_time
+            and time.time() - self.start_time >= self.transition_duration
+        ):
+            self.logger.info(
+                f"过渡结束场景已经运行{self.transition_duration}秒，准备关闭游戏"
+            )
             self.engine.stop()
 
     def exit(self):

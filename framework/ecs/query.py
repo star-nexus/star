@@ -19,7 +19,7 @@ import functools
 from framework.ecs.entity import Entity
 from framework.ecs.component import Component
 
-T = TypeVar("T", bound=Component)
+# T = TypeVar("T", bound=Component)
 C = TypeVar("C", bound=Component)
 
 

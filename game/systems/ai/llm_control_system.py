@@ -6,7 +6,7 @@ import time
 from framework.ecs import System
 from framework.engine.events import EventMessage, EventType
 from framework.ecs.entity import Entity
-from framework.utils.logging import get_logger, configure
+from framework.utils.logging_tool import get_logger, configure
 from game.components import UnitComponent, UnitState
 from game.components import MapComponent
 from game.components import BattleStatsComponent
@@ -42,7 +42,9 @@ class LLMControlSystem(System):
 
         self.ai_targets = {}  # {ai_entity: target_entity} Store AI unit targets
         self.decision_interval = 5.0  # AI决策间隔（秒） AI decision interval (seconds)
-        self.agent_type = 1  # Agent type: 1: single decision, 2: group decision, 3: mixed decision
+        self.agent_type = (
+            1  # Agent type: 1: single decision, 2: group decision, 3: mixed decision
+        )
 
         self.futures = {}
         self.step_status = {}
@@ -55,7 +57,7 @@ class LLMControlSystem(System):
             # 2: "Qwen/Qwen2.5-14B-Instruct",
             # 1: "us.meta.llama4-scout-17b-instruct-v1:0",
             # # 2: "Qwen/Qwen3-235B-A22B"# "Pro/deepseek-ai/DeepSeek-V3",#
-            1: "Pro/deepseek-ai/DeepSeek-V3", #
+            1: "Pro/deepseek-ai/DeepSeek-V3",  #
             # 1: "Qwen/Qwen3-32B",
             # #     "deepseek-reasoner",
             # 2: "us.amazon.nova-pro-v1:0",
@@ -74,7 +76,7 @@ class LLMControlSystem(System):
         # "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
 
         # Store strategy reasoning scores for each faction
-        self.strategy_scores = {1: 0, 2: 0} 
+        self.strategy_scores = {1: 0, 2: 0}
         # Add new counter to track response times
         self.response_times = {1: 0, 2: 0}  # Track responses per faction
 
@@ -90,16 +92,18 @@ class LLMControlSystem(System):
             "隐蔽",
         ]
         self.strategy_keywords_en = [
-            "Coordinated", "coordinated",
-            "Concentrated", "concentrated",
-            "Stealth", "stealth"
+            "Coordinated",
+            "coordinated",
+            "Concentrated",
+            "concentrated",
+            "Stealth",
+            "stealth",
         ]
         self.enable_thinking = False
 
-
     def initialize(self, context):
         self.context = context
-        self.logger.info("LLM Control System initialized") 
+        self.logger.info("LLM Control System initialized")
 
     def subscribe_events(self):
         pass
@@ -142,7 +146,7 @@ class LLMControlSystem(System):
         # type 2
         ## Group decision: Each agent control a single unit.
         # type 3
-        ## Mixed decision: An agent being as the main controler. Other agents excute actions. 
+        ## Mixed decision: An agent being as the main controler. Other agents excute actions.
         match self.agent_type:
             case 1:
                 # Single decision
@@ -159,7 +163,7 @@ class LLMControlSystem(System):
                 self._update_type2_agents()
                 self._update_ai_decisions_type2(delta_time)
             case 3:
-                # Mixed decision   
+                # Mixed decision
                 self._update_type3_agents()
                 self._update_ai_decisions_type3(delta_time)
             case _:
@@ -187,7 +191,7 @@ class LLMControlSystem(System):
                 # Mixed decision
                 need_to_remove = []
             case _:
-                # agent Other types of agents     
+                # agent Other types of agents
                 need_to_remove = []
                 for entity, cooldown in self.ai_decision_cooldowns.items():
                     self.ai_decision_cooldowns[entity] = cooldown - delta_time
@@ -410,7 +414,9 @@ class LLMControlSystem(System):
                     map_component = self.context.get_component(map_entity, MapComponent)
 
                     # Determine the attack range of the attacker
-                    attack_range = 10  # Default to the attack range of infantry and cavalry
+                    attack_range = (
+                        10  # Default to the attack range of infantry and cavalry
+                    )
                     if attacker.unit_type == UnitType.ARCHER:
                         attack_range = 20  # The attack range of archers
 
@@ -434,7 +440,9 @@ class LLMControlSystem(System):
                         dy_norm = dy / distance
 
                         # Calculate the distance to move (ensure stopping at the attack range edge)
-                        move_distance = distance - attack_range + 5  # 确保进入攻击范围 Ensure entering the attack range
+                        move_distance = (
+                            distance - attack_range + 5
+                        )  # 确保进入攻击范围 Ensure entering the attack range
 
                         # Calculate the final target position
                         target_x = (
@@ -555,7 +563,7 @@ class LLMControlSystem(System):
             self.futures[faction]["orient"] is None
             and self.step_status[faction]["step"] is STEP.ORIENT
         ):
-            # observe() 
+            # observe()
             with open(
                 f"{Path(__file__).parent}/prompts/situation_awareness_en.yaml",
                 "r",
@@ -704,10 +712,10 @@ class LLMControlSystem(System):
 
             # Also, modify the prompt in decision.yaml to make it clearer that JSON format is required
             # system: |
-                #   ...
-                #   Output must be a valid JSON object, do not include any other content.
-                #   Each key is the unit ID (integer), each value is { "action": <move|attack>, "args": <array|integer> }.
-                #   Use standard JSON format: double-quoted strings, no comments, no trailing commas.
+            #   ...
+            #   Output must be a valid JSON object, do not include any other content.
+            #   Each key is the unit ID (integer), each value is { "action": <move|attack>, "args": <array|integer> }.
+            #   Use standard JSON format: double-quoted strings, no comments, no trailing commas.
 
             for k, v in json_dict.items():
                 try:
@@ -799,7 +807,9 @@ class LLMControlSystem(System):
                     map_component = self.context.get_component(map_entity, MapComponent)
 
                     # Determine the attack range of the attacker
-                    attack_range = 10  # Default to the attack range of infantry and cavalry
+                    attack_range = (
+                        10  # Default to the attack range of infantry and cavalry
+                    )
                     if attacker.unit_type == UnitType.ARCHER:
                         attack_range = 20  # The attack range of archers
 
@@ -823,7 +833,9 @@ class LLMControlSystem(System):
                         dy_norm = dy / distance
 
                         # Calculate the distance to move (ensure stopping at the attack range edge)
-                        move_distance = distance - attack_range + 5  # Ensure entering the attack range
+                        move_distance = (
+                            distance - attack_range + 5
+                        )  # Ensure entering the attack range
 
                         # Calculate the final target position
                         target_x = (
@@ -948,7 +960,9 @@ class LLMControlSystem(System):
         else:
             # No target found, random movement
             self._random_movement(entity, unit)
-            self.logger.debug(f"[Faction {unit.owner_id}]: AI unit {unit.name} random movement")
+            self.logger.debug(
+                f"[Faction {unit.owner_id}]: AI unit {unit.name} random movement"
+            )
 
     def _find_target(self, entity: Entity, unit: UnitComponent) -> Optional[Entity]:
         """Find the target to attack"""
@@ -1013,7 +1027,9 @@ class LLMControlSystem(System):
         #     unit1.position_y - unit2.position_y
         # )
         # Use Euclidean distance
-        return math.hypot(unit1.position_x - unit2.position_x, unit1.position_y - unit2.position_y)
+        return math.hypot(
+            unit1.position_x - unit2.position_x, unit1.position_y - unit2.position_y
+        )
 
     def _attack_target(self, attacker_entity: Entity, target_entity: Entity):
         """Launch an attack"""
@@ -1168,7 +1184,7 @@ class LLMControlSystem(System):
 
             # self.logger.msg(log_content)
 
-            # Write to log file according to log_tag 
+            # Write to log file according to log_tag
             if log_tag:
                 log_dir = Path(__file__).parent / "logs"
                 log_dir.mkdir(exist_ok=True)
@@ -1267,7 +1283,7 @@ class LLMControlSystem(System):
             "max_token": 8192,
             "stream": stream,
             "enable_thinking": enable_thinking,
-            "response_format": {"type": "json_object"}
+            "response_format": {"type": "json_object"},
         }
 
         self._log_chat_to_file("request", data, log_tag)
@@ -1328,8 +1344,14 @@ class LLMControlSystem(System):
             self.logger.msg(f"** [Faction {log_tag}] ** Response :\n {response_text}")
             return response_text
 
-
-    def chat_vllm(self, messages, model_id="qwen3:8b", stream=False, log_tag=None, enable_thinking=True):
+    def chat_vllm(
+        self,
+        messages,
+        model_id="qwen3:8b",
+        stream=False,
+        log_tag=None,
+        enable_thinking=True,
+    ):
 
         headers = {
             "Content-Type": "application/json",
@@ -1347,13 +1369,15 @@ class LLMControlSystem(System):
             "model": model_id,
             "messages": messages,
             "stream": stream,
-            "chat_template_kwargs": {"enable_thinking": enable_thinking}
+            "chat_template_kwargs": {"enable_thinking": enable_thinking},
         }
         self._log_chat_to_file("request", data, log_tag)
 
         if stream:
             # Ollama stream return JSON string line by line
-            response = requests.post(SERVER_URL, json=data, headers=headers, stream=True)
+            response = requests.post(
+                SERVER_URL, json=data, headers=headers, stream=True
+            )
             response_text = ""
             for line in response.iter_lines():
                 if line:
@@ -1388,14 +1412,12 @@ class LLMControlSystem(System):
 
         cleaned_output = extract_after_think(response_text)
 
-
         self._log_chat_to_file("response", llm_response, log_tag)
         self.logger.msg(f"** [Ollama:{model_id}] ** Response :\n {cleaned_output}")
         return cleaned_output
 
-
     def cleanup(self):
-        """Clean all the LLM API request. """
+        """Clean all the LLM API request."""
         self.logger.info("Clean all the unfinished tasked of LLM")
         for faction, futures in self.futures.items():
             for key, future in futures.items():
@@ -1410,4 +1432,3 @@ class LLMControlSystem(System):
     def get_response_times(self):
         """Return the number of responses received from the LLM API for each faction"""
         return self.response_times
-

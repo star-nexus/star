@@ -186,3 +186,7 @@ env_status.txt
 
 screenshots/
 .trae/
+archive_*/
+go/
+go_web/
+go_web.zip

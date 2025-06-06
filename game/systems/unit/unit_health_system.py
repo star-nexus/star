@@ -2,7 +2,7 @@ from typing import Dict, List, Tuple, Any
 
 from framework.ecs.system import System
 from framework.ecs.entity import Entity
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 
 from game.components import UnitComponent, UnitState, UnitType
 from game.components.unit.unit_effect_component import UnitEffectComponent

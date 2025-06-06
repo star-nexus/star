@@ -103,6 +103,8 @@ class World:
         """添加系统"""
         if self.system_manager:
             # 设置系统的上下文
+            system.initialize(self.context)
+            system.subscribe_events()  # 订阅事件
             self.system_manager.add_system(system)
         else:
             self.logger.error("尝试添加系统，但系统管理器未设置")

@@ -107,8 +107,3 @@ class SceneManager:
             else:
                 # 场景退出过程中的更新
                 self.current_scene.update(delta_time)
-
-    # def render(self) -> None:
-    #     """渲染场景"""
-    #     if self.current_scene:
-    #         self.current_scene.render(self.engine.screen)

@@ -6,7 +6,7 @@ import argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from framework.engine.engine import Engine
-from framework.utils.logging import log_config, get_logger
+from framework.utils.logging_tool import log_config, get_logger
 from game.scenes import (
     StartScene,
     GameScene,

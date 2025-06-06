@@ -4,12 +4,13 @@ import random
 from typing import Dict, Tuple, List, Optional, Set
 from framework.ecs.system import System
 from framework.ecs.entity import Entity
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from framework.engine.events import EventType, EventMessage
 from game.components import UnitComponent, UnitState, TerrainType
 from game.components import MapComponent, TileComponent
 from game.components.unit.unit_effect_component import UnitEffectComponent
 from game.utils.game_types import UnitType
+
 
 class UnitAttackSystem(System):
     """攻击系统，负责处理单位间的攻击行为"""
@@ -241,13 +242,21 @@ class UnitAttackSystem(System):
         # - 步兵(INFANTRY)克制骑兵(CAVALRY)：步兵对骑兵伤害+20%
         # - 弓箭手(ARCHER)克制步兵(INFANTRY)：弓箭手对步兵伤害+20%
         # 形成三角相克关系：骑兵→弓箭手→步兵→骑兵
-        if attacker.unit_type == UnitType.CAVALRY and defender.unit_type == UnitType.ARCHER:
+        if (
+            attacker.unit_type == UnitType.CAVALRY
+            and defender.unit_type == UnitType.ARCHER
+        ):
             base_damage *= 1.2  # 骑兵攻击弓箭兵时伤害提升20%
-        elif attacker.unit_type == UnitType.INFANTRY and defender.unit_type == UnitType.CAVALRY:
+        elif (
+            attacker.unit_type == UnitType.INFANTRY
+            and defender.unit_type == UnitType.CAVALRY
+        ):
             base_damage *= 1.2  # 步兵攻击骑兵时伤害提升20%
-        elif attacker.unit_type == UnitType.ARCHER and defender.unit_type == UnitType.INFANTRY:
+        elif (
+            attacker.unit_type == UnitType.ARCHER
+            and defender.unit_type == UnitType.INFANTRY
+        ):
             base_damage *= 1.2  # 弓箭兵攻击步兵时伤害提升20%
-  
 
         # 应用地形效果加成
         base_damage = self._apply_terrain_effects_to_damage(
@@ -423,25 +432,29 @@ class UnitAttackSystem(System):
     #                 self.attack_unit(attacker_entity, target_entity)
     #                 break  # 每次只攻击一个目标
 
-
     def _check_auto_attack(self):
         """检测并执行自动攻击"""
         try:
             # 1. 按阵营分组收集单位，减少后续比较次数
             units_by_faction = {}
             cooldown_units = set()
-            
+
             # 一次性收集所有相关数据
-            for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(UnitComponent):
+            for entity, (unit,) in self.context.with_all(UnitComponent).iter_components(
+                UnitComponent
+            ):
                 # 筛选有效单位
                 if not unit.is_alive or unit.state == UnitState.ATTACKING:
                     continue
-                    
+
                 # 检查冷却
-                if entity in self.attack_cooldowns and self.attack_cooldowns[entity] > 0:
+                if (
+                    entity in self.attack_cooldowns
+                    and self.attack_cooldowns[entity] > 0
+                ):
                     cooldown_units.add(entity)
                     continue
-                    
+
                 # 按阵营分组
                 # 减少比较次数：自动攻击时，只需要比较不同阵营的单位，同一阵营内部不需要互相比较
                 # 提高效率：O(n²) 复杂度降低到 O(n + m²/k)，n 是单位总数，m 是每个阵营的平均单位数，k 是阵营数
@@ -449,10 +462,10 @@ class UnitAttackSystem(System):
                 if faction not in units_by_faction:
                     units_by_faction[faction] = []
                 units_by_faction[faction].append((entity, unit))
-            
+
             # 2. 使用空间网格优化
             # spatial_grid = self._build_spatial_grid(units_by_faction)
-            
+
             # 2.5 打乱单位顺序
             faction_items = list(units_by_faction.items())
             random.shuffle(faction_items)
@@ -464,49 +477,51 @@ class UnitAttackSystem(System):
                 enemy_units = []
                 for enemy_faction, units in units_by_faction.items():
                     if enemy_faction != faction:
-                        enemy_units.extend(units) # 将所有敌对阵营的单位加入列表
-                
+                        enemy_units.extend(units)  # 将所有敌对阵营的单位加入列表
+
                 # 如果没有敌人，跳过这个阵营
                 if not enemy_units:
                     continue
-                    
+
                 # 4. 处理每个攻击者
                 for attacker_entity, attacker_unit in attackers:
                     if attacker_entity in cooldown_units:
                         continue
-                        
+
                     # 5. 查找最佳目标（最近的敌人）
                     best_target = None
-                    best_distance = float('inf')
-                    
+                    best_distance = float("inf")
+
                     # 获取攻击者的攻击范围
                     attack_range = attacker_unit.range
-                    
+
                     # 使用攻击范围预筛选（空间优化）
                     # nearby_enemies = spatial_grid.get_nearby(attacker_unit.position_x, attacker_unit.position_y, attack_range)
                     nearby_enemies = enemy_units  # 如果没有空间优化，使用所有敌人
-                    
+
                     for target_entity, target_unit in nearby_enemies:
                         # 计算距离（使用平方距离避免开方，提高性能）
                         dx = target_unit.position_x - attacker_unit.position_x
                         dy = target_unit.position_y - attacker_unit.position_y
-                        distance_squared = dx*dx + dy*dy
-                        
+                        distance_squared = dx * dx + dy * dy
+
                         # 检查是否在攻击范围内（平方比较避免开方）
-                        if distance_squared <= attack_range*attack_range:
+                        if distance_squared <= attack_range * attack_range:
                             # 更新最佳目标
                             if distance_squared < best_distance:
                                 best_distance = distance_squared
                                 best_target = (target_entity, target_unit)
-                    
+
                     # 6. 攻击最佳目标
                     if best_target:
                         target_entity, target_unit = best_target
-                        self.logger.info(f"Unit {attacker_unit.name} auto-attacking nearest enemy unit {target_unit.name}")
+                        self.logger.info(
+                            f"Unit {attacker_unit.name} auto-attacking nearest enemy unit {target_unit.name}"
+                        )
                         self.attack_unit(attacker_entity, target_entity)
                         # 攻击后立即将单位加入冷却集合，避免在同一帧被多次选为攻击者
                         cooldown_units.add(attacker_entity)
-            
+
             return True
         except Exception as e:
             self.logger.error(f"Error in auto attack check: {e}")

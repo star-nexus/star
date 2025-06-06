@@ -4,7 +4,7 @@ import random
 from typing import Dict, Tuple, List, Optional, Set
 from framework.ecs.system import System
 from framework.ecs.entity import Entity
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from framework.engine.events import EventType, EventMessage
 from game.components import UnitComponent, UnitState, UnitType
 from game.components import MapComponent

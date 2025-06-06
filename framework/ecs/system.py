@@ -23,14 +23,20 @@ class System(ABC):
         self.enabled = True  # 系统是否启用
         self.context = None  # ECS上下文，用于获取其他系统和管理器
 
-    # def initialize(self, context: Any) -> None:
-    #     """
-    #     初始化系统，设置上下文
-        
-    #     参数:
-    #         context: ECS上下文，包含实体、组件、系统管理器等
-    #     """
-    #     self.context = context
+    def initialize(self, context: Any) -> None:
+        """
+        初始化系统，设置上下文
+
+        参数:
+            context: ECS上下文，包含实体、组件、系统管理器等
+        """
+        self.context = context
+
+    def subscribe_events(self) -> None:
+        """
+        订阅事件，子类可以重写此方法来订阅特定事件
+        """
+        pass
 
     def is_enabled(self) -> bool:
         """

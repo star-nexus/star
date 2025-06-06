@@ -8,7 +8,7 @@ from framework.ui import (
     TextComponent,
 )
 from framework.ui.systems import UISystem
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from framework.engine.events import EventType, EventMessage
 
 from game.components import MapComponent, UnitComponent, CameraComponent, TileComponent

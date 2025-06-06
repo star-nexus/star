@@ -2,7 +2,7 @@ import pygame
 import numpy as np
 from typing import Tuple, List, Dict, Optional
 from framework.ecs.system import System
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from framework.engine.events import EventType, EventMessage
 from game.components import MapComponent
 from game.components import TileComponent

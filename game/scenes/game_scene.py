@@ -1,7 +1,7 @@
 import time
 from typing import override
 from framework.engine.scenes import Scene
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from framework.engine.events import EventMessage, EventType
 from framework.ui import (
     UITransformComponent,

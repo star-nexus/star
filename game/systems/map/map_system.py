@@ -1,7 +1,7 @@
 import numpy as np
 import pygame
 from framework.ecs.system import System
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 from game.components import MapComponent
 from game.components import TileComponent, TerrainType
 from game.utils.hex_utils import HexCoordinate, pixel_to_hex

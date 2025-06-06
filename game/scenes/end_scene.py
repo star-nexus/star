@@ -7,7 +7,7 @@ from framework.ui import (
 )
 from framework.ui.systems import UISystem
 
-from framework.utils.logging import get_logger
+from framework.utils.logging_tool import get_logger
 
 
 class EndScene(Scene):

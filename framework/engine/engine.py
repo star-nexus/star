@@ -39,7 +39,7 @@ class Engine:
         self.running = False
         self.delta_time = 0
 
-        # 创建世界和管理器
+        # 创建世界和管理器（保持原有接口）
         self.world = World()
 
         # 先创建管理器，然后再设置引用关系
@@ -57,7 +57,6 @@ class Engine:
         # 设置世界上下文
         self.world.context.scene_manager = self.scene_manager
         self.world.context.event_manager = self.event_manager
-        # self.world.context.input_manager = self.input_manager
         self.world.context.render_manager = self.render_manager
 
     def start(self) -> None:
@@ -77,7 +76,6 @@ class Engine:
 
     def _quit(self) -> None:
         """退出游戏"""
-
         self._cleanup()
         pygame.quit()
         sys.exit()
@@ -101,14 +99,12 @@ class Engine:
 
     def _update(self) -> None:
         """更新游戏逻辑"""
-
         self.screen.fill((0, 0, 0))
         self.input_manager.update()
 
         # 更新场景
         if self.scene_manager and hasattr(self.scene_manager, "update"):
             self.scene_manager.update(self.delta_time)
-            # self.scene_manager.render()
 
         # 渲染管理器更新
         if self.render_manager and hasattr(self.render_manager, "update"):

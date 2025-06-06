@@ -30,7 +30,7 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"键盘按下: {e}")
                 case pygame.KEYUP:
                     e = EventMessage(
@@ -41,7 +41,7 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"键盘抬起: {e}")
                 case pygame.MOUSEBUTTONDOWN:
                     e = EventMessage(
@@ -53,7 +53,7 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"鼠标按下: {e}")
                 case pygame.MOUSEBUTTONUP:
                     e = EventMessage(
@@ -65,7 +65,7 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"鼠标抬起: {e}")
                 case pygame.MOUSEMOTION:
                     e = EventMessage(
@@ -78,7 +78,7 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"鼠标移动: {e}")
                 case pygame.MOUSEWHEEL:
 
@@ -92,12 +92,12 @@ class InputManager:
                         sender=type(self).__name__,
                         timestamp=pygame.time.get_ticks(),
                     )
-                    self._pulisher(e)
+                    self._publisher(e)
                     self.logger.debug(f"鼠标滚轮: {e}")
                 case _:
                     self.logger.debug(f"其他事件: {event}")
 
-    def _pulisher(self, event: EventMessage):
+    def _publisher(self, event: EventMessage):
         """发布输入事件"""
         self.event_manager.publish(event)
         pass
