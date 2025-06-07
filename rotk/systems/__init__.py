@@ -12,8 +12,10 @@ from .ai_system import AISystem
 from .input_system import InputHandlingSystem
 from .render_system import RenderSystem
 from .minimap_system import MiniMapSystem
+from .animation_system import AnimationSystem
 
 __all__ = [
+    "AnimationSystem",
     "MapSystem",
     "TurnSystem",
     "RealtimeSystem",

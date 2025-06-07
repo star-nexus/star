@@ -17,6 +17,7 @@ from ..components import (
     Tile,
     GameStats,
     GameState,
+    UnitStatus,
 )
 from ..prefabs.config import GameConfig, TerrainType
 from ..utils.hex_utils import HexMath
@@ -85,6 +86,12 @@ class CombatSystem(System):
         # 应用伤害
         target_health.current = max(0, target_health.current - damage)
         attacker_combat.has_attacked = True
+
+        # 创建伤害数字显示效果
+        self._create_damage_display(target_entity, damage)
+
+        # 更新单位状态
+        self._update_combat_status(attacker_entity, target_entity)
 
         # 记录战斗统计
         self._record_battle_stats(attacker_entity, target_entity, damage)
@@ -230,5 +237,50 @@ class CombatSystem(System):
         # 删除实体
         self.world.destroy_entity(entity)
 
-        # 发送单位死亡事件
-        EBS.publish(UnitDeathEvent(entity, unit.faction))
+    def _create_damage_display(self, target_entity: int, damage: int):
+        """创建伤害数字显示"""
+        # 获取目标位置
+        target_pos = self.world.get_component(target_entity, HexPosition)
+        if not target_pos:
+            return
+
+        # 获取动画系统
+        animation_system = self._get_animation_system()
+        if not animation_system:
+            return
+
+        # 转换为世界像素坐标
+        from ..utils.hex_utils import HexConverter
+
+        hex_converter = HexConverter(GameConfig.HEX_SIZE)
+        world_x, world_y = hex_converter.hex_to_pixel(target_pos.col, target_pos.row)
+
+        # 在单位上方显示伤害数字
+        world_y -= 30  # 向上偏移
+
+        animation_system.create_damage_number(damage, (world_x, world_y))
+
+    def _update_combat_status(self, attacker_entity: int, target_entity: int):
+        """更新战斗状态"""
+        # 更新攻击者状态
+        attacker_status = self.world.get_component(attacker_entity, UnitStatus)
+        if not attacker_status:
+            attacker_status = UnitStatus()
+            self.world.add_component(attacker_entity, attacker_status)
+        attacker_status.current_status = "combat"
+        attacker_status.status_duration = 0.0
+
+        # 更新目标状态
+        target_status = self.world.get_component(target_entity, UnitStatus)
+        if not target_status:
+            target_status = UnitStatus()
+            self.world.add_component(target_entity, target_status)
+        target_status.current_status = "combat"
+        target_status.status_duration = 0.0
+
+    def _get_animation_system(self):
+        """获取动画系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "AnimationSystem":
+                return system
+        return None

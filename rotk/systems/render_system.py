@@ -18,8 +18,10 @@ from ..components import (
     GameStats,
     Movement,
     Combat,
-    Tile,
+    Player,
+    TurnOrder,
     Camera,
+    UnitStatus,
 )
 from ..prefabs.config import GameConfig, UnitType, Faction
 from ..utils.hex_utils import HexConverter, HexMath, PathFinding
@@ -74,6 +76,11 @@ class RenderSystem(System):
 
         # 渲染UI
         self._render_ui()
+
+        # 渲染伤害数字和其他动画效果
+        animation_system = self._get_animation_system()
+        if animation_system:
+            animation_system.render_damage_numbers()
 
     def _render_map(self, camera_offset: List[float]):
         """渲染地图"""
@@ -231,6 +238,9 @@ class RenderSystem(System):
 
     def _render_units(self, camera_offset: List[float]):
         """渲染单位"""
+        # 获取动画系统以获取正确的渲染位置
+        animation_system = self._get_animation_system()
+
         for entity in self.world.query().with_all(HexPosition, Unit, Health).entities():
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
@@ -243,10 +253,20 @@ class RenderSystem(System):
             if not self._is_unit_visible(entity):
                 continue
 
-            # 计算屏幕位置
-            world_x, world_y = self.hex_converter.hex_to_pixel(
-                position.col, position.row
-            )
+            # 获取渲染位置（考虑动画）
+            if animation_system:
+                render_pos = animation_system.get_unit_render_position(entity)
+                if render_pos:
+                    world_x, world_y = render_pos
+                else:
+                    world_x, world_y = self.hex_converter.hex_to_pixel(
+                        position.col, position.row
+                    )
+            else:
+                world_x, world_y = self.hex_converter.hex_to_pixel(
+                    position.col, position.row
+                )
+
             screen_x = world_x + camera_offset[0]
             screen_y = world_y + camera_offset[1]
 
@@ -272,6 +292,9 @@ class RenderSystem(System):
 
             # 绘制单位类型图标
             self._render_unit_icon(screen_x, screen_y, unit)
+
+            # 绘制单位状态指示器
+            self._render_unit_status(entity, screen_x, screen_y, unit_radius)
 
     def _render_health_bar(self, x: float, y: float, health: Health, radius: int):
         """渲染生命值条"""
@@ -638,4 +661,38 @@ class RenderSystem(System):
             ):
                 return entity
 
+        return None
+
+    def _render_unit_status(
+        self, entity: int, screen_x: float, screen_y: float, unit_radius: int
+    ):
+        """渲染单位状态指示器"""
+        status = self.world.get_component(entity, UnitStatus)
+        if not status:
+            return
+
+        # 状态颜色映射
+        status_colors = {
+            "idle": (128, 128, 128),  # 灰色 - 待机
+            "moving": (0, 255, 255),  # 青色 - 移动
+            "combat": (255, 0, 0),  # 红色 - 战斗
+            "hidden": (128, 0, 128),  # 紫色 - 隐蔽
+            "resting": (0, 255, 0),  # 绿色 - 休整
+        }
+
+        color = status_colors.get(status.current_status, (255, 255, 255))
+
+        # 在单位右上角绘制状态指示器
+        indicator_size = 4
+        indicator_x = screen_x + unit_radius * 0.7
+        indicator_y = screen_y - unit_radius * 0.7
+
+        RMS.circle(color, (int(indicator_x), int(indicator_y)), indicator_size)
+        RMS.circle((0, 0, 0), (int(indicator_x), int(indicator_y)), indicator_size, 1)
+
+    def _get_animation_system(self):
+        """获取动画系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "AnimationSystem":
+                return system
         return None

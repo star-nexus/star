@@ -7,6 +7,7 @@ from typing import Dict
 from framework_v2.engine.scenes import Scene, SMS
 from framework_v2 import World
 from ..systems import (
+    AnimationSystem,
     MapSystem,
     TurnSystem,
     RealtimeSystem,
@@ -34,6 +35,8 @@ from ..components import (
     HexPosition,
     MiniMap,
     GameModeComponent,
+    UnitStatus,
+    MovementAnimation,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 
@@ -98,6 +101,7 @@ class GameScene(Scene):
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # AI系统
+            AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
             MiniMapSystem(),  # 小地图系统 (优先级5)
             RenderSystem(),  # 渲染系统 (优先级1)
@@ -194,6 +198,7 @@ class GameScene(Scene):
             ),
         )
         self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
+        self.world.add_component(unit_entity, UnitStatus(current_status="idle"))
 
         return unit_entity
 

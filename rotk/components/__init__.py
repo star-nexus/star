@@ -11,6 +11,7 @@ from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
 from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
+from .animation import MovementAnimation, UnitStatus, DamageNumber
 
 __all__ = [
     # 基础组件
@@ -43,4 +44,8 @@ __all__ = [
     "Camera",
     "MiniMap",
     "GameModeComponent",
+    # 动画组件
+    "MovementAnimation",
+    "UnitStatus",
+    "DamageNumber",
 ]

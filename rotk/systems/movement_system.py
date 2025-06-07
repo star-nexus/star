@@ -4,7 +4,16 @@
 
 from typing import Set, Tuple
 from framework_v2 import System, World
-from ..components import HexPosition, Movement, Unit, MapData, Terrain, Tile
+from ..components import (
+    HexPosition,
+    Movement,
+    Unit,
+    MapData,
+    Terrain,
+    Tile,
+    MovementAnimation,
+    UnitStatus,
+)
 from ..prefabs.config import TerrainType
 from ..utils.hex_utils import HexMath, PathFinding
 
@@ -27,17 +36,17 @@ class MovementSystem(System):
         pass
 
     def move_unit(self, entity: int, target_pos: Tuple[int, int]) -> bool:
-        """移动单位到目标位置"""
+        """移动单位到目标位置（现在支持连续移动动画）"""
         position = self.world.get_component(entity, HexPosition)
         movement = self.world.get_component(entity, Movement)
 
         if not position or not movement:
             return False
 
-        # 检查是否有足够的移动力
-        distance = HexMath.hex_distance((position.col, position.row), target_pos)
-        if distance > movement.current_movement:
-            return False
+        # 检查是否正在移动
+        anim = self.world.get_component(entity, MovementAnimation)
+        if anim and anim.is_moving:
+            return False  # 单位正在移动中，不能开始新的移动
 
         # 检查路径是否可行
         obstacles = self._get_obstacles()
@@ -51,12 +60,24 @@ class MovementSystem(System):
         if not path or len(path) < 2:
             return False
 
-        # 执行移动
-        position.col, position.row = target_pos
-        movement.current_movement -= distance
+        # 检查是否有足够的移动力
+        path_cost = len(path) - 1  # 路径长度减1（不包括起始点）
+        if path_cost > movement.current_movement:
+            return False
+
+        # 消耗移动力
+        movement.current_movement -= path_cost
         movement.has_moved = True
 
-        # 更新地块占用信息
+        # 启动移动动画
+        animation_system = self._get_animation_system()
+        if animation_system:
+            animation_system.start_unit_movement(entity, path)
+        else:
+            # 如果没有动画系统，直接移动到目标位置
+            position.col, position.row = target_pos
+
+        # 更新地块占用信息（暂时更新到最终位置）
         self._update_tile_occupation(entity, target_pos)
 
         return True
@@ -80,6 +101,13 @@ class MovementSystem(System):
                     obstacles.add((q, r))
 
         return obstacles
+
+    def _get_animation_system(self):
+        """获取动画系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "AnimationSystem":
+                return system
+        return None
 
     def _update_tile_occupation(self, entity: int, position: Tuple[int, int]):
         """更新地块占用信息"""
