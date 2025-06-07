@@ -10,9 +10,15 @@ from .combat_system import CombatSystem
 from .vision_system import VisionSystem
 from .ai_system import AISystem
 from .input_system import InputHandlingSystem
-from .render_system import RenderSystem
 from .minimap_system import MiniMapSystem
 from .animation_system import AnimationSystem
+
+# 渲染系统拆分为多个独立系统
+from .map_render_system import MapRenderSystem
+from .unit_render_system import UnitRenderSystem
+from .ui_render_system import UIRenderSystem
+from .effect_render_system import EffectRenderSystem
+from .panel_render_system import PanelRenderSystem
 
 __all__ = [
     "AnimationSystem",
@@ -24,6 +30,11 @@ __all__ = [
     "VisionSystem",
     "AISystem",
     "InputHandlingSystem",
-    "RenderSystem",
     "MiniMapSystem",
+    # 新的渲染系统
+    "MapRenderSystem",
+    "UnitRenderSystem",
+    "UIRenderSystem",
+    "EffectRenderSystem",
+    "PanelRenderSystem",
 ]

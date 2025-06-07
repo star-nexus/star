@@ -205,8 +205,8 @@ class InputHandlingSystem(System):
         camera_offset = camera.get_offset()
 
         # 应用摄像机偏移 - 确保精确的浮点运算
-        world_x = float(x) - float(camera_offset[0])
-        world_y = float(y) - float(camera_offset[1])
+        world_x = (float(x) - float(camera_offset[0])) / camera.zoom
+        world_y = (float(y) - float(camera_offset[1])) / camera.zoom
 
         # 使用高精度转换
         hex_pos = self.hex_converter.pixel_to_hex(world_x, world_y)

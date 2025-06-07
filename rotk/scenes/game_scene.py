@@ -16,9 +16,13 @@ from ..systems import (
     VisionSystem,
     AISystem,
     InputHandlingSystem,
-    RenderSystem,
     MiniMapSystem,
 )
+from ..systems.map_render_system import MapRenderSystem
+from ..systems.unit_render_system import UnitRenderSystem
+from ..systems.ui_render_system import UIRenderSystem
+from ..systems.effect_render_system import EffectRenderSystem
+from ..systems.panel_render_system import PanelRenderSystem
 from ..components import (
     GameState,
     UIState,
@@ -96,17 +100,24 @@ class GameScene(Scene):
         # 按优先级顺序添加系统
         systems = [
             MapSystem(),  # 地图系统 (优先级100)
-            TurnSystem(),  # 回合系统 (优先级90)
-            RealtimeSystem(),  # 实时系统 (优先级85)
             VisionSystem(),  # 视野系统
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # AI系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
+            # 渲染系统拆分为多个独立系统（从底层到顶层）
+            MapRenderSystem(),  # 地图渲染系统 (最底层)
+            UnitRenderSystem(),  # 单位渲染系统 (在地图之上)
+            EffectRenderSystem(),  # 效果渲染系统 (在单位之上)
+            PanelRenderSystem(),  # 面板渲染系统 (在效果之上)
+            UIRenderSystem(),  # UI渲染系统 (最顶层)
             MiniMapSystem(),  # 小地图系统 (优先级5)
-            RenderSystem(),  # 渲染系统 (优先级1)
         ]
+        if self.game_mode == "real_time":
+            systems.append(RealtimeSystem())
+        else:
+            systems.append(TurnSystem())
 
         for system in systems:
             self.world.add_system(system)

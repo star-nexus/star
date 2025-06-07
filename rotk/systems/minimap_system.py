@@ -95,7 +95,9 @@ class MiniMapSystem(System):
     def _get_screen_rect(self, minimap: MiniMap) -> Tuple[int, int, int, int]:
         """获取小地图在屏幕上的矩形区域"""
         x, y = minimap.position
-        return (x, y, minimap.width, minimap.height)
+        # 移动小地图在屏幕右上角
+        rect_x = GameConfig.WINDOW_WIDTH - minimap.width - x
+        return (rect_x, y, minimap.width, minimap.height)
 
     def _render_terrain(
         self,
