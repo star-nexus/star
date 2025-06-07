@@ -30,7 +30,7 @@ class MiniMapSystem(System):
 
     def subscribe_events(self):
         """订阅事件"""
-        pass
+        EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
 
     def update(self, delta_time: float) -> None:
         """更新小地图"""
@@ -303,3 +303,91 @@ class MiniMapSystem(System):
         camera_y = GameConfig.WINDOW_HEIGHT // 2 - world_y
 
         camera.set_offset(camera_x, camera_y)
+
+    def _handle_mouse_click(self, event: MouseButtonDownEvent):
+        """处理小地图点击事件"""
+        minimap = self.world.get_singleton_component(MiniMap)
+        if not minimap or not minimap.visible:
+            return
+
+        # 只处理左键点击
+        if event.button != 1:
+            return
+
+        # 检查点击是否在小地图区域内
+        rect_x, rect_y, rect_w, rect_h = self._get_screen_rect(minimap)
+
+        mouse_x, mouse_y = event.pos
+        if not (
+            rect_x <= mouse_x <= rect_x + rect_w
+            and rect_y <= mouse_y <= rect_y + rect_h
+        ):
+            return
+
+        # 将屏幕坐标转换为小地图内的相对坐标
+        relative_x = mouse_x - rect_x
+        relative_y = mouse_y - rect_y
+
+        # 将相对坐标转换为地图坐标
+        hex_pos = self._screen_to_hex(relative_x, relative_y, minimap)
+        if hex_pos:
+            # 移动摄像机到点击位置
+            self._move_camera_to_position(hex_pos)
+
+        # 只处理左键点击
+        if event.button != 1:
+            return
+
+        # 检查点击是否在小地图区域内
+        rect_x, rect_y, rect_w, rect_h = self._get_screen_rect(minimap)
+
+        mouse_x, mouse_y = event.pos
+        if not (
+            rect_x <= mouse_x <= rect_x + rect_w
+            and rect_y <= mouse_y <= rect_y + rect_h
+        ):
+            return
+
+        # 将屏幕坐标转换为小地图内的相对坐标
+        relative_x = mouse_x - rect_x
+        relative_y = mouse_y - rect_y
+
+        # 将相对坐标转换为地图坐标
+        hex_pos = self._screen_to_hex(relative_x, relative_y, minimap)
+        if hex_pos:
+            # 移动摄像机到点击位置
+            self._move_camera_to_position(hex_pos)
+
+    def _screen_to_hex(
+        self, screen_x: int, screen_y: int, minimap: MiniMap
+    ) -> Optional[Tuple[int, int]]:
+        """将小地图屏幕坐标转换为六边形地图坐标"""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return None
+
+        # 计算地图边界
+        min_q = min(coord[0] for coord in map_data.tiles.keys())
+        max_q = max(coord[0] for coord in map_data.tiles.keys())
+        min_r = min(coord[1] for coord in map_data.tiles.keys())
+        max_r = max(coord[1] for coord in map_data.tiles.keys())
+
+        map_width = max_q - min_q + 1
+        map_height = max_r - min_r + 1
+
+        # 获取小地图矩形
+        rect_x, rect_y, rect_w, rect_h = self._get_screen_rect(minimap)
+
+        # 计算在地图上的相对位置（0到1）
+        norm_x = screen_x / rect_w
+        norm_y = screen_y / rect_h
+
+        # 转换为六边形坐标
+        hex_q = int(min_q + norm_x * map_width)
+        hex_r = int(min_r + norm_y * map_height)
+
+        # 确保坐标在有效范围内
+        if (hex_q, hex_r) in map_data.tiles:
+            return (hex_q, hex_r)
+
+        return None

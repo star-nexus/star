@@ -124,8 +124,8 @@ def main():
         # 创建游戏引擎
         engine = GameEngine(
             title="三国策略游戏 - Romance of the Three Kingdoms",
-            width=1024,
-            height=768,
+            width=1200,
+            height=800,
             fps=60,
         )
 

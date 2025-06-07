@@ -13,7 +13,15 @@ from framework_v2 import (
     MouseMotionEvent,
 )
 from framework_v2.engine.events import EBS
-from ..components import InputState, UIState, HexPosition, Unit, GameState, Camera
+from ..components import (
+    InputState,
+    UIState,
+    HexPosition,
+    Unit,
+    GameState,
+    Camera,
+    BattleLog,
+)
 from ..prefabs.config import GameConfig
 from ..utils.hex_utils import HexConverter
 from ..events import TileClickedEvent, UnitSelectedEvent
@@ -123,6 +131,8 @@ class InputHandlingSystem(System):
     def _handle_key_down(self, event: KeyDownEvent):
         """处理按键按下"""
         ui_state = self.world.get_singleton_component(UIState)
+        battle_log = self.world.get_singleton_component(BattleLog)
+
         if event.key == pygame.K_SPACE:
             # 空格键结束回合
             print("结束当前回合")
@@ -142,6 +152,21 @@ class InputHandlingSystem(System):
             # ESC键取消选择
             print("取消选择")
             ui_state.selected_unit = None
+
+        elif event.key == pygame.K_PAGEUP:
+            # Page Up键向上滚动战况记录
+            if battle_log:
+                battle_log.scroll_up()
+
+        elif event.key == pygame.K_PAGEDOWN:
+            # Page Down键向下滚动战况记录
+            if battle_log:
+                battle_log.scroll_down()
+
+        elif event.key == pygame.K_END:
+            # End键滚动到战况记录底部
+            if battle_log:
+                battle_log.scroll_to_bottom()
 
     def _handle_keyboard(
         self,
@@ -163,6 +188,12 @@ class InputHandlingSystem(System):
             camera.move(camera.speed * delta_time, 0)
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             camera.move(-camera.speed * delta_time, 0)
+
+        # 摄像机缩放
+        if keys[pygame.K_PLUS] or keys[pygame.K_EQUALS]:  # + 键放大
+            camera.zoom = min(camera.zoom + 2.0 * delta_time, 3.0)  # 最大3倍缩放
+        if keys[pygame.K_MINUS]:  # - 键缩小
+            camera.zoom = max(camera.zoom - 2.0 * delta_time, 0.5)  # 最小0.5倍缩放
 
     def _screen_to_hex(self, screen_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """屏幕坐标转六边形坐标 - 高精度版本"""

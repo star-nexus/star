@@ -12,6 +12,7 @@ from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
 from .animation import MovementAnimation, UnitStatus, DamageNumber
+from .battle_log import BattleLog, BattleLogEntry
 
 __all__ = [
     # 基础组件
@@ -48,4 +49,7 @@ __all__ = [
     "MovementAnimation",
     "UnitStatus",
     "DamageNumber",
+    # 战斗日志组件
+    "BattleLog",
+    "BattleLogEntry",
 ]

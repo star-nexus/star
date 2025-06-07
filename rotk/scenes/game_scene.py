@@ -37,6 +37,7 @@ from ..components import (
     GameModeComponent,
     UnitStatus,
     MovementAnimation,
+    BattleLog,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 
@@ -252,6 +253,12 @@ class GameScene(Scene):
         self.world.add_singleton_component(UIState())
         self.world.add_singleton_component(InputState())
         self.world.add_singleton_component(FogOfWar())
+
+        # 初始化战况记录系统
+        battle_log = BattleLog()
+        battle_log.add_entry("游戏开始", "turn", "", (0, 255, 0))
+        battle_log.add_entry("魏国回合开始", "turn", "wei", (255, 100, 100))
+        self.world.add_singleton_component(battle_log)
 
     def update(self, delta_time: float) -> None:
         """更新场景"""

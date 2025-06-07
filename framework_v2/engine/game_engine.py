@@ -22,7 +22,7 @@ class GameEngine:
         return cls._instance
 
     def __init__(
-        self, title: str = "Game", width: int = 800, height: int = 600, fps: int = 60
+        self, title: str = "Game", width: int = 1200, height: int = 800, fps: int = 60
     ):
         """初始化游戏引擎"""
         if hasattr(self, "_initialized"):
