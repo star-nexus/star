@@ -9,12 +9,14 @@ from framework_v2 import World
 from ..systems import (
     MapSystem,
     TurnSystem,
+    RealtimeSystem,
     MovementSystem,
     CombatSystem,
     VisionSystem,
     AISystem,
     InputHandlingSystem,
     RenderSystem,
+    MiniMapSystem,
 )
 from ..components import (
     GameState,
@@ -30,8 +32,10 @@ from ..components import (
     Combat,
     Vision,
     HexPosition,
+    MiniMap,
+    GameModeComponent,
 )
-from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType
+from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 
 
 class GameScene(Scene):
@@ -65,6 +69,9 @@ class GameScene(Scene):
 
     def _initialize_game(self):
         """初始化游戏"""
+        # 首先初始化游戏模式组件
+        self._initialize_game_mode()
+
         # 初始化系统
         self._initialize_systems()
 
@@ -77,22 +84,35 @@ class GameScene(Scene):
         # 初始化游戏统计
         self._initialize_stats()
 
+        # 初始化小地图
+        self._initialize_minimap()
+
     def _initialize_systems(self):
         """初始化所有游戏系统"""
         # 按优先级顺序添加系统
         systems = [
             MapSystem(),  # 地图系统 (优先级100)
             TurnSystem(),  # 回合系统 (优先级90)
+            RealtimeSystem(),  # 实时系统 (优先级85)
             VisionSystem(),  # 视野系统
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # AI系统
             InputHandlingSystem(),  # 输入系统 (优先级10)
+            MiniMapSystem(),  # 小地图系统 (优先级5)
             RenderSystem(),  # 渲染系统 (优先级1)
         ]
 
         for system in systems:
             self.world.add_system(system)
+
+    def _initialize_game_mode(self):
+        """初始化游戏模式组件"""
+        game_mode = (
+            GameMode.REAL_TIME if self.game_mode == "real_time" else GameMode.TURN_BASED
+        )
+        game_mode_component = GameModeComponent(mode=game_mode)
+        self.world.add_singleton_component(game_mode_component)
 
     def _initialize_players(self):
         """初始化玩家"""
@@ -245,3 +265,20 @@ class GameScene(Scene):
             if game_state and game_state.game_over:
                 # 切换到胜利场景
                 SMS.switch_to("victory", winner=game_state.winner)
+
+    def _initialize_minimap(self):
+        """初始化小地图"""
+        minimap = MiniMap(
+            visible=True,
+            width=200,
+            height=150,
+            position=(10, 10),
+            scale=0.1,
+            center_on_camera=True,
+            show_units=True,
+            show_terrain=True,
+            show_fog_of_war=False,  # 小地图不显示迷雾，可以看到全局
+            show_camera_viewport=True,
+            clickable=True,
+        )
+        self.world.add_singleton_component(minimap)

@@ -4,13 +4,13 @@
 
 from framework_v2 import System, World
 from framework_v2.engine.events import EBS
-from ..components import Player, GameState, Movement, Combat, Unit
+from ..components import Player, GameState, Movement, Combat, Unit, GameModeComponent
 from ..prefabs.config import GameConfig, GameMode, Faction
 from ..events import TurnStartEvent
 
 
 class TurnSystem(System):
-    """回合系统 - 管理回合制游戏的回合逻辑"""
+    """回合系统 - 专注于回合制游戏的回合逻辑"""
 
     def __init__(self):
         super().__init__(required_components={Player}, priority=90)
@@ -19,15 +19,18 @@ class TurnSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
-        # 初始化游戏状态
-        game_state = GameState(
-            current_player=Faction.WEI,
-            turn_number=1,
-            game_mode=GameMode.TURN_BASED,
-            game_over=False,
-            max_turns=GameConfig.MAX_TURNS,
-        )
-        self.world.add_singleton_component(game_state)
+
+        # 检查是否已经有游戏状态组件
+        game_state = self.world.get_singleton_component(GameState)
+        if not game_state:
+            # 如果没有，创建一个默认的游戏状态
+            game_state = GameState(
+                current_player=Faction.WEI,
+                turn_number=1,
+                game_over=False,
+                max_turns=GameConfig.MAX_TURNS,
+            )
+            self.world.add_singleton_component(game_state)
 
         # 设置第一个玩家
         self._start_next_turn()
@@ -36,12 +39,17 @@ class TurnSystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
+        game_mode = self.world.get_singleton_component(GameModeComponent)
         game_state = self.world.get_singleton_component(GameState)
+
+        # 只在回合制模式下工作
+        if not game_mode or not game_mode.is_turn_based():
+            return
+
         if not game_state or game_state.game_over:
             return
 
-        if game_state.game_mode == GameMode.TURN_BASED:
-            self._update_turn_based(delta_time)
+        self._update_turn_based(delta_time)
 
     def _update_turn_based(self, delta_time: float) -> None:
         """更新回合制模式"""

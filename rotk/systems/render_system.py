@@ -462,6 +462,8 @@ class RenderSystem(System):
             if ui_state.show_help:
                 self._render_help_panel()
 
+        # 渲染小地图
+
     def _render_game_info(self):
         """渲染游戏信息"""
         game_state = self.world.get_singleton_component(GameState)
@@ -504,11 +506,12 @@ class RenderSystem(System):
         stats = self.world.get_singleton_component(GameStats)
         if not stats:
             return
+
         # 创建半透明背景
         panel_width = 300
         panel_height = 400
-        panel_x = (GameConfig.WINDOW_WIDTH - panel_width) - 400
-        panel_y = panel_height / 3
+        panel_x = GameConfig.WINDOW_WIDTH - panel_width - 10
+        panel_y = 10
 
         panel_surface = pygame.Surface((panel_width, panel_height))
         panel_surface.set_alpha(200)

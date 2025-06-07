@@ -7,7 +7,10 @@ from .base import HexPosition, Health, Renderable, AnimationState, PathFinding
 from .unit import Unit, Movement, Combat, Vision, Selected, AIControlled
 from .terrain import Terrain, TerrainModifier, Tile
 from .player import Player, TurnOrder
-from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats, Camera
+from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
+from .minimap import MiniMap
+from .gamemode import GameModeComponent
+from .camera import Camera
 
 __all__ = [
     # 基础组件
@@ -38,4 +41,6 @@ __all__ = [
     "FogOfWar",
     "GameStats",
     "Camera",
+    "MiniMap",
+    "GameModeComponent",
 ]

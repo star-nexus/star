@@ -74,6 +74,12 @@ class InputHandlingSystem(System):
     def _handle_mouse_click(self, event: MouseButtonDownEvent):
         """处理鼠标点击"""
         ui_state = self.world.get_singleton_component(UIState)
+
+        # 首先检查是否点击了小地图，通过MiniMapSystem处理
+        minimap_system = self._get_minimap_system()
+        if minimap_system and minimap_system.handle_click(event.pos):
+            return
+
         if event.button == 1:  # 左键
             hex_pos = self._screen_to_hex(event.pos)
 
@@ -223,6 +229,13 @@ class InputHandlingSystem(System):
         turn_system = self._get_turn_system()
         if turn_system:
             turn_system.end_turn()
+
+    def _get_minimap_system(self):
+        """获取小地图系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "MiniMapSystem":
+                return system
+        return None
 
     def _get_combat_system(self):
         """获取战斗系统"""
