@@ -16,6 +16,7 @@ from ..components import (
     GameState,
     MapData,
     Terrain,
+    GameModeComponent,
 )
 from ..prefabs.config import GameConfig, TerrainType
 from ..utils.hex_utils import HexMath, PathFinding
@@ -28,6 +29,8 @@ class AISystem(System):
         super().__init__(required_components={Player, AIControlled})
         self.decision_timer = 0.0
         self.decision_interval = 1.0  # AI决策间隔（秒）
+        self.debug_timer = 0.0  # 用于调试输出
+        self.debug_interval = 5.0  # 每5秒输出一次调试信息
 
     def initialize(self, world: World) -> None:
         """初始化AI系统"""
@@ -39,24 +42,42 @@ class AISystem(System):
     def update(self, delta_time: float) -> None:
         """更新AI系统"""
         game_state = self.world.get_singleton_component(GameState)
+        game_mode = self.world.get_singleton_component(GameModeComponent)
+
         if not game_state or game_state.game_over or game_state.paused:
             return
 
+        # 检查游戏模式
+        is_realtime = game_mode and game_mode.is_real_time()
+
         self.decision_timer += delta_time
+        self.debug_timer += delta_time
 
-        # 检查是否轮到AI玩家
-        current_player = self._get_current_player()
-        if not current_player:
-            return
+        # 在实时模式下，AI更频繁地做决策
+        decision_interval = (
+            0.3 if is_realtime else self.decision_interval
+        )  # 更频繁的决策
 
-        ai_controlled = self.world.get_component(current_player, AIControlled)
-        if not ai_controlled:
-            return
+        if self.decision_timer >= decision_interval:
+            if is_realtime:
+                # 实时模式：所有AI玩家同时行动
+                self._make_realtime_ai_decisions()
+            else:
+                # 回合制模式：只有当前玩家行动
+                current_player = self._get_current_player()
+                if current_player:
+                    ai_controlled = self.world.get_component(
+                        current_player, AIControlled
+                    )
+                    if ai_controlled:
+                        self._make_ai_decisions(current_player)
 
-        # AI决策
-        if self.decision_timer >= self.decision_interval:
-            self._make_ai_decisions(current_player)
             self.decision_timer = 0.0
+
+        # 调试输出
+        if is_realtime and self.debug_timer >= self.debug_interval:
+            self._debug_ai_status()
+            self.debug_timer = 0.0
 
     def _get_current_player(self) -> Optional[int]:
         """获取当前玩家实体"""
@@ -102,10 +123,27 @@ class AISystem(System):
         """执行单位策略"""
         movement = self.world.get_component(unit_entity, Movement)
         combat = self.world.get_component(unit_entity, Combat)
+        health = self.world.get_component(unit_entity, Health)
+        game_mode = self.world.get_singleton_component(GameModeComponent)
 
-        # 检查单位是否还能行动
-        if (movement and movement.has_moved) and (combat and combat.has_attacked):
+        # 检查单位是否存活
+        if not health or health.current <= 0:
             return False
+
+        # 在实时模式下，检查单位是否有足够的行动力
+        is_realtime = game_mode and game_mode.is_real_time()
+
+        if is_realtime:
+            # 实时模式：检查移动力和攻击力是否足够（降低阈值以更积极行动）
+            can_move = movement and movement.current_movement > 0.1
+            can_attack = combat and not combat.has_attacked
+
+            if not can_move and not can_attack:
+                return False
+        else:
+            # 回合制模式：检查是否已经行动过
+            if (movement and movement.has_moved) and (combat and combat.has_attacked):
+                return False
 
         # 寻找敌人
         enemy_target = self._find_nearest_enemy(unit_entity)
@@ -116,7 +154,11 @@ class AISystem(System):
                     return True
 
             # 尝试移动接近敌人
-            if movement and not movement.has_moved:
+            if movement and (
+                is_realtime
+                and movement.current_movement > 0.1
+                or not movement.has_moved
+            ):
                 if self._move_towards_enemy(unit_entity, enemy_target):
                     return True
 
@@ -316,3 +358,44 @@ class AISystem(System):
             if system.__class__.__name__ == "TurnSystem":
                 return system
         return None
+
+    def _make_realtime_ai_decisions(self):
+        """实时模式AI决策逻辑"""
+        # 获取所有AI玩家
+        ai_players = []
+        for entity in self.world.query().with_all(Player, AIControlled).entities():
+            ai_players.append(entity)
+
+        # 为每个AI玩家执行决策
+        for player_entity in ai_players:
+            self._make_ai_decisions(player_entity)
+
+    def _debug_ai_status(self):
+        """调试AI状态"""
+        print("=== AI Status Debug ===")
+
+        # 统计AI单位状态
+        ai_unit_count = 0
+        active_ai_units = 0
+
+        for entity in self.world.query().with_all(Unit, AIControlled).entities():
+            ai_unit_count += 1
+            unit = self.world.get_component(entity, Unit)
+            movement = self.world.get_component(entity, Movement)
+            combat = self.world.get_component(entity, Combat)
+            health = self.world.get_component(entity, Health)
+
+            if health and health.current > 0:
+                can_move = movement and movement.current_movement > 0.1
+                can_attack = combat and not combat.has_attacked
+
+                if can_move or can_attack:
+                    active_ai_units += 1
+                    print(
+                        f"AI Unit {entity}: Faction={unit.faction}, Health={health.current}, "
+                        f"Movement={movement.current_movement:.1f}/{movement.max_movement}, "
+                        f"CanAttack={can_attack}"
+                    )
+
+        print(f"Total AI units: {ai_unit_count}, Active AI units: {active_ai_units}")
+        print("======================")

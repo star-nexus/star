@@ -26,7 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent / "framework_v2"))
 
 from framework_v2.engine.game_engine import GameEngine
 
-from rotk.scenes import GameScene
+from rotk.scenes import GameScene, GameOverScene
 from rotk.prefabs.config import Faction, PlayerType
 
 
@@ -134,6 +134,7 @@ def main():
 
         # 注册游戏场景
         engine.scene_manager.register_scene("game", GameScene)
+        engine.scene_manager.register_scene("game_over", GameOverScene)
 
         # 设置初始场景，传递参数
         engine.scene_manager.switch_to(

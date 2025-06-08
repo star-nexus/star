@@ -39,7 +39,7 @@ class SingletonComponent(Component):
 
 class System(ABC):
     def __init__(
-        self, required_components: Set[Type[Component]] = None, priority: int = 0
+        self, required_components: Set[Type[Component]] = None, priority: int = 100
     ):
         self.required_components = required_components or set()
         self.priority = priority

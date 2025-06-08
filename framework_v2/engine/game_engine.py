@@ -62,7 +62,8 @@ class GameEngine:
         """初始化管理器"""
         # 获取单例管理器
         self.event_manager = EventBus()
-        self.scene_manager = SceneManager(self)
+        self.scene_manager = SceneManager()
+        self.scene_manager.set_engine(self)
         self.render_manager = RenderEngine()
         self.render_manager.screen = self.screen  # 设置渲染屏幕
         self.input_manager = InputSystem()

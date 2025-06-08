@@ -12,6 +12,7 @@ from .ai_system import AISystem
 from .input_system import InputHandlingSystem
 from .minimap_system import MiniMapSystem
 from .animation_system import AnimationSystem
+from .game_over_render_system import GameOverRenderSystem
 
 # 渲染系统拆分为多个独立系统
 from .map_render_system import MapRenderSystem
@@ -37,4 +38,5 @@ __all__ = [
     "UIRenderSystem",
     "EffectRenderSystem",
     "PanelRenderSystem",
+    "GameOverRenderSystem",
 ]

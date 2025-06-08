@@ -3,9 +3,10 @@
 """
 
 import pygame
-from typing import Dict
+from typing import Dict, Any
 from framework_v2.engine.scenes import Scene, SMS
 from framework_v2 import World
+from ..prefabs.config import Faction
 from ..systems import (
     AnimationSystem,
     MapSystem,
@@ -286,8 +287,67 @@ class GameScene(Scene):
             # 检查游戏结束
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                # 切换到胜利场景
-                SMS.switch_to("victory", winner=game_state.winner)
+                # 收集统计数据
+                statistics = self._collect_game_statistics()
+
+                # 切换到游戏结束场景，传递统计数据
+                SMS.switch_to(
+                    "game_over", winner=game_state.winner, statistics=statistics
+                )
+
+    def _collect_game_statistics(self) -> Dict[str, Any]:
+        """收集游戏统计数据"""
+        from ..components import Unit, Health, GameStats
+
+        total_units = 0
+        surviving_units = 0
+        faction_stats = {}
+
+        # 统计所有单位
+        for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
+            faction_total = 0
+            faction_surviving = 0
+
+            for entity in self.world.query().with_component(Unit).entities():
+                unit = self.world.get_component(entity, Unit)
+                health = self.world.get_component(entity, Health)
+
+                if unit.faction == faction:
+                    faction_total += 1
+                    total_units += 1
+
+                    if health and health.current > 0:
+                        faction_surviving += 1
+                        surviving_units += 1
+
+            if faction_total > 0:  # 只记录有单位的阵营
+                faction_stats[faction] = {
+                    "total_units": faction_total,
+                    "surviving_units": faction_surviving,
+                }
+
+        # 获取游戏状态信息
+        total_turns = 0
+        game_duration = 0.0
+
+        try:
+            game_state = self.world.get_singleton_component(GameState)
+            if game_state:
+                total_turns = game_state.turn_number
+
+            # 计算游戏时长（简单使用回合数估算）
+            game_duration = total_turns * 1.0  # 假设每回合1秒
+
+        except Exception as e:
+            print(f"获取游戏状态时出错: {e}")
+
+        return {
+            "total_turns": total_turns,
+            "game_duration": game_duration,
+            "total_units": total_units,
+            "surviving_units": surviving_units,
+            "faction_stats": faction_stats,
+        }
 
     def _initialize_minimap(self):
         """初始化小地图"""
