@@ -8,11 +8,12 @@ import sys
 import os
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from framework_v2.engine.game_engine import GameEngine
 from framework_v2.engine.scenes import SceneManager, SMS
 from rotk.scenes.game_over_scene import GameOverScene
+from rotk.scenes.start_scene import StartScene
 from rotk.prefabs.config import Faction
 
 
@@ -29,6 +30,7 @@ def test_game_over_scene():
     SMS.set_engine(engine)
 
     # 创建并注册游戏结束场景
+    engine.scene_manager.register_scene("start", StartScene)
     engine.scene_manager.register_scene("game_over", GameOverScene)
 
     # 准备测试数据

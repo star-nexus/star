@@ -141,7 +141,7 @@ class GameOverScene(Scene):
 
     def _restart_game(self) -> None:
         """重新开始游戏"""
-        SMS.switch_to("game")
+        SMS.switch_to("start")
 
     def _quit_game(self) -> None:
         """退出游戏"""
@@ -150,4 +150,6 @@ class GameOverScene(Scene):
     def cleanup(self) -> None:
         """清理场景"""
         if self.world:
-            self.world.cleanup()
+            self.world.reset()
+        EBS.unsubscribe(MouseButtonDownEvent, self.handle_event)
+        EBS.unsubscribe(MouseMotionEvent, self.handle_event)

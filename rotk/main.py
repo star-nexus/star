@@ -26,7 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent / "framework_v2"))
 
 from framework_v2.engine.game_engine import GameEngine
 
-from rotk.scenes import GameScene, GameOverScene
+from rotk.scenes import GameScene, GameOverScene, StartScene
 from rotk.prefabs.config import Faction, PlayerType
 
 
@@ -52,6 +52,13 @@ def parse_arguments():
 获胜条件:
   消灭所有敌方单位，或在回合结束时获得最高积分
         """,
+    )
+
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="跳过开始场景，直接进入游戏,自动结束，适用于自动化测试或服务器环境",
     )
 
     parser.add_argument(
@@ -129,22 +136,33 @@ def main():
             fps=60,
         )
 
-        # 获取玩家配置
-        players_config = create_game_from_args(args)
-
         # 注册游戏场景
+        engine.scene_manager.register_scene("start", StartScene)
         engine.scene_manager.register_scene("game", GameScene)
         engine.scene_manager.register_scene("game_over", GameOverScene)
 
-        # 设置初始场景，传递参数
-        engine.scene_manager.switch_to(
-            "game", players=players_config, game_mode=args.mode
-        )
+        # 根据命令行参数决定初始场景
+        if args.headless:
+            # 如果跳过开始场景，直接进入游戏场景
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-        print(f"游戏模式: {args.mode}")
-        print(f"玩家配置: {args.players}")
-        print(f"游戏场景: {args.scenario}")
-        print("游戏已启动! 按F1查看帮助信息。")
+            # 获取玩家配置
+            players_config = create_game_from_args(args)
+
+            # 设置初始场景，传递参数
+            engine.scene_manager.switch_to(
+                "game", players=players_config, game_mode=args.mode, headless=True
+            )
+
+            print(f"游戏模式: {args.mode}")
+            print(f"玩家配置: {args.players}")
+            print(f"游戏场景: {args.scenario}")
+        else:
+            # 默认进入开始场景
+            engine.scene_manager.switch_to("start")
+            print("进入游戏配置界面...")
+
+        print("游戏已启动! 在开始界面配置游戏，然后点击开始游戏。")
 
         # 启动游戏
         engine.start()

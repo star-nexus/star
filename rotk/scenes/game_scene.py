@@ -57,7 +57,7 @@ class GameScene(Scene):
 
         # 默认配置，将在enter中被覆盖
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
-        self.game_mode = "turn_based"
+        self.game_mode = GameMode.TURN_BASED  # 默认游戏模式
 
         # 初始化标志
         self.initialized = False
@@ -70,7 +70,15 @@ class GameScene(Scene):
         self.players = kwargs.get(
             "players", {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         )
-        self.game_mode = kwargs.get("game_mode", "turn_based")
+
+        mode = kwargs.get("mode", GameMode.TURN_BASED)
+        self.game_mode = mode
+
+        headless = kwargs.get("headless", False)
+        self.headless = headless
+
+        # 获取场景参数（可选）
+        self.scenario = kwargs.get("scenario", "default")
 
         if not self.initialized:
             self._initialize_game()
@@ -115,7 +123,7 @@ class GameScene(Scene):
             UIRenderSystem(),  # UI渲染系统 (最顶层)
             MiniMapSystem(),  # 小地图系统 (优先级5)
         ]
-        if self.game_mode == "real_time":
+        if self.game_mode == GameMode.REAL_TIME:
             systems.append(RealtimeSystem())
         else:
             systems.append(TurnSystem())
@@ -125,11 +133,8 @@ class GameScene(Scene):
 
     def _initialize_game_mode(self):
         """初始化游戏模式组件"""
-        game_mode = (
-            GameMode.REAL_TIME if self.game_mode == "real_time" else GameMode.TURN_BASED
-        )
-        game_mode_component = GameModeComponent(mode=game_mode)
-        self.world.add_singleton_component(game_mode_component)
+        game_mode = GameModeComponent(mode=self.game_mode)
+        self.world.add_singleton_component(game_mode)
 
     def _initialize_players(self):
         """初始化玩家"""
@@ -291,9 +296,15 @@ class GameScene(Scene):
                 statistics = self._collect_game_statistics()
 
                 # 切换到游戏结束场景，传递统计数据
-                SMS.switch_to(
-                    "game_over", winner=game_state.winner, statistics=statistics
-                )
+                if self.headless:
+                    # 在无头模式下打印统计数据
+                    print(
+                        f"游戏结束，胜利者：{game_state.winner}，\n统计数据：{statistics}"
+                    )
+                else:
+                    SMS.switch_to(
+                        "game_over", winner=game_state.winner, statistics=statistics
+                    )
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """收集游戏统计数据"""
@@ -365,3 +376,10 @@ class GameScene(Scene):
             clickable=True,
         )
         self.world.add_singleton_component(minimap)
+
+    def exit(self):
+        """退出场景时调用"""
+        super().exit()
+
+        # 清理世界
+        self.world.reset()
