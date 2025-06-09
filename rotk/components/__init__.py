@@ -13,6 +13,12 @@ from .gamemode import GameModeComponent
 from .camera import Camera
 from .animation import MovementAnimation, UnitStatus, DamageNumber
 from .battle_log import BattleLog, BattleLogEntry
+from .unit_observation import (
+    UnitObservation,
+    UnitStatistics,
+    VisibilityTracker,
+    GameModeStatistics,
+)
 from .game_over import Winner, GameStatistics, GameOverButtons
 
 __all__ = [
@@ -53,6 +59,10 @@ __all__ = [
     # 战斗日志组件
     "BattleLog",
     "BattleLogEntry",
+    "UnitObservation",
+    "UnitStatistics",
+    "VisibilityTracker",
+    "GameModeStatistics",
     # 游戏结束组件
     "Winner",
     "GameStatistics",

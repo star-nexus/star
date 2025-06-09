@@ -96,6 +96,22 @@ class CombatSystem(System):
         # 记录战斗统计
         self._record_battle_stats(attacker_entity, target_entity, damage)
 
+        # 调用统计系统记录战斗行动
+        statistics_system = self._get_statistics_system()
+        if statistics_system:
+            result = "kill" if target_health.current <= 0 else "damage"
+            statistics_system.record_combat_action(
+                attacker_entity, target_entity, damage, result
+            )
+
+        # 调用统计系统记录战斗行动
+        statistics_system = self._get_statistics_system()
+        if statistics_system:
+            result = "kill" if target_health.current <= 0 else "damage"
+            statistics_system.record_combat_action(
+                attacker_entity, target_entity, damage, result
+            )
+
         # 发送战斗事件
         EBS.publish(BattleEvent(attacker_entity, target_entity, damage))
 
@@ -236,6 +252,13 @@ class CombatSystem(System):
 
         # 删除实体
         self.world.destroy_entity(entity)
+
+    def _get_statistics_system(self):
+        """获取统计系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "StatisticsSystem":
+                return system
+        return None
 
     def _create_damage_display(self, target_entity: int, damage: int):
         """创建伤害数字显示"""

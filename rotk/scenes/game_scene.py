@@ -3,6 +3,7 @@
 """
 
 import pygame
+import time
 from typing import Dict, Any
 from framework_v2.engine.scenes import Scene, SMS
 from framework_v2 import World
@@ -24,6 +25,7 @@ from ..systems.unit_render_system import UnitRenderSystem
 from ..systems.ui_render_system import UIRenderSystem
 from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.panel_render_system import PanelRenderSystem
+from ..systems.statistics_system import StatisticsSystem
 from ..components import (
     GameState,
     UIState,
@@ -43,6 +45,10 @@ from ..components import (
     UnitStatus,
     MovementAnimation,
     BattleLog,
+    UnitObservation,
+    UnitStatistics,
+    VisibilityTracker,
+    GameModeStatistics,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 
@@ -113,6 +119,7 @@ class GameScene(Scene):
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # AI系统
+            StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
             # 渲染系统拆分为多个独立系统（从底层到顶层）
@@ -230,27 +237,24 @@ class GameScene(Scene):
         return None
 
     def _initialize_stats(self):
-        """初始化游戏统计"""
+        """初始化游戏统计组件 - 纯数据初始化"""
 
+        # 初始化游戏统计组件
         stats = GameStats()
-
-        # 为每个阵营初始化统计数据
-        for faction in self.players.keys():
-            stats.faction_stats[faction] = {
-                "kills": 0,
-                "losses": 0,
-                "damage_dealt": 0,
-                "damage_taken": 0,
-                "units_remaining": len(
-                    [
-                        e
-                        for e in self.world.query().with_component(Unit).entities()
-                        if self.world.get_component(e, Unit).faction == faction
-                    ]
-                ),
-            }
-
+        stats.game_start_time = time.time()
         self.world.add_singleton_component(stats)
+
+        # 初始化战斗日志
+        battle_log = BattleLog()
+        self.world.add_singleton_component(battle_log)
+
+        # 初始化可见性追踪器
+        visibility_tracker = VisibilityTracker()
+        self.world.add_singleton_component(visibility_tracker)
+
+        # 初始化游戏模式统计
+        game_mode_stats = GameModeStatistics(current_mode=self.game_mode.value)
+        self.world.add_singleton_component(game_mode_stats)
 
         # 初始化游戏状态
         from ..prefabs.config import GameMode

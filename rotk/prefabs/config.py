@@ -89,7 +89,7 @@ class GameConfig:
     # 地图配置
     MAP_WIDTH = 50
     MAP_HEIGHT = 50
-    HEX_SIZE = 20
+    HEX_SIZE = 30
 
     # 游戏配置
     MAX_TURNS = 100  # 最大回合数

@@ -65,8 +65,25 @@ class FogOfWar(SingletonComponent):
 
 @dataclass
 class GameStats(SingletonComponent):
-    """游戏统计单例组件"""
+    """游戏统计单例组件 - 纯数据存储"""
 
+    # 阵营统计
     faction_stats: Dict[Faction, Dict[str, int]] = field(default_factory=dict)
+
+    # 战斗历史
     battle_history: List[Dict] = field(default_factory=list)
+
+    # 回合历史
     turn_history: List[Dict] = field(default_factory=list)
+
+    # 单位观测数据历史
+    unit_observation_history: List[Dict] = field(default_factory=list)
+
+    # 游戏模式特定统计
+    game_mode_stats: Dict[str, any] = field(default_factory=dict)
+
+    # 游戏开始时间
+    game_start_time: float = 0.0
+
+    # 当前游戏时间（实时模式用）
+    total_game_time: float = 0.0

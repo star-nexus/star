@@ -69,6 +69,12 @@ class MovementSystem(System):
         movement.current_movement -= path_cost
         movement.has_moved = True
 
+        # 记录移动行动到统计系统
+        statistics_system = self._get_statistics_system()
+        if statistics_system:
+            from_pos = (position.col, position.row)
+            statistics_system.record_movement_action(entity, from_pos, target_pos)
+
         # 启动移动动画
         animation_system = self._get_animation_system()
         if animation_system:
@@ -101,6 +107,13 @@ class MovementSystem(System):
                     obstacles.add((q, r))
 
         return obstacles
+
+    def _get_statistics_system(self):
+        """获取统计系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "StatisticsSystem":
+                return system
+        return None
 
     def _get_animation_system(self):
         """获取动画系统"""

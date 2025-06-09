@@ -70,11 +70,18 @@ class RealtimeSystem(System):
                     faction_unit_counts.get(unit.faction, 0) + 1
                 )
 
-        # 只有在少于2个阵营有单位时才结束游戏
+        # 检查是否只有在少于2个阵营有单位时才结束游戏
         if len(factions_with_units) < 2:
             game_state.game_over = True
             if factions_with_units:
                 game_state.winner = list(factions_with_units)[0]
+
+            # 记录游戏结束统计
+            statistics_system = self._get_statistics_system()
+            if statistics_system:
+                # 可以在这里记录游戏结束的统计信息
+                pass
+
             return True
 
         # 检查是否达到最大回合数
@@ -86,6 +93,13 @@ class RealtimeSystem(System):
             return True
 
         return False
+
+    def _get_statistics_system(self):
+        """获取统计系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "StatisticsSystem":
+                return system
+        return None
 
     def _regenerate_action_points(self, delta_time: float) -> None:
         """实时恢复单位行动点数"""

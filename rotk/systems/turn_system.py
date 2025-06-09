@@ -112,7 +112,15 @@ class TurnSystem(System):
         next_player = self.world.get_component(next_player_entity, Player)
 
         if next_player:
+            previous_faction = game_state.current_player
             game_state.current_player = next_player.faction
+
+            # 记录回合变化到统计系统
+            statistics_system = self._get_statistics_system()
+            if statistics_system:
+                statistics_system.record_turn_change(
+                    previous_faction, next_player.faction
+                )
 
             # 如果回到第一个玩家，增加回合数
             if current_index == 0:
@@ -123,6 +131,13 @@ class TurnSystem(System):
 
             # 发送回合开始事件
             EBS.publish(TurnStartEvent(game_state.current_player))
+
+    def _get_statistics_system(self):
+        """获取统计系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "StatisticsSystem":
+                return system
+        return None
 
     def _check_game_over(self) -> bool:
         """检查游戏是否结束"""
