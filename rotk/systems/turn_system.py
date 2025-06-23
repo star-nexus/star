@@ -155,7 +155,7 @@ class TurnSystem(System):
             if unit:
                 factions_with_units.add(unit.faction)
 
-        if len(factions_with_units) <= 1:
+        if len(factions_with_units) <= 0:
             game_state.game_over = True
             if factions_with_units:
                 game_state.winner = list(factions_with_units)[0]

@@ -26,6 +26,7 @@ from ..systems.ui_render_system import UIRenderSystem
 from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.statistics_system import StatisticsSystem
+from ..systems.llm_system import LLMSystem
 from ..components import (
     GameState,
     UIState,
@@ -118,7 +119,8 @@ class GameScene(Scene):
             VisionSystem(),  # 视野系统
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
-            AISystem(),  # AI系统
+            # AISystem(),  # AI系统
+            LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)

@@ -37,6 +37,7 @@ class MovementSystem(System):
 
     def move_unit(self, entity: int, target_pos: Tuple[int, int]) -> bool:
         """移动单位到目标位置（现在支持连续移动动画）"""
+        print(f"尝试移动单位 {entity} 到目标位置 {target_pos}")
         position = self.world.get_component(entity, HexPosition)
         movement = self.world.get_component(entity, Movement)
 

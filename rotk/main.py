@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 # 添加framework_v2到路径
 sys.path.append(str(Path(__file__).parent.parent / "framework_v2"))
+sys.path.append(str(Path(__file__).parent.parent / "llm"))
 
 from framework_v2.engine.game_engine import GameEngine
 
