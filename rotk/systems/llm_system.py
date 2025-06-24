@@ -988,6 +988,9 @@ class LLMSystem(System):
             self.client.response_to_agent(agent_id, action_id, res, "str")
         else:
             print(f"未知动作: {action}")
+            self.client.response_to_agent(
+                agent_id, action_id, f"未知动作: {action}", "str"
+            )
 
     def handle_observation(self, data: Dict) -> Dict[str, Any]:
         """异步处理观测请求"""
