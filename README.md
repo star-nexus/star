@@ -17,10 +17,24 @@ cd Romance-of-the-Three-Kingdoms
 uv sync
 ```
 
-3. Run the game
+3. Run the game server (must run first, tmux better)
 
 ```bash
-uv run game/game.py
+git clone https://github.com/Lounger-Habitat/GameServer.git
+cd GameServer
+make dev
+```
+
+4. Run the game env
+
+```bash
+uv run rotk_env/main.py
+```
+
+5. Run the demo agent
+
+```bash
+uv run rotk_agent/demo_agent.py
 ```
 
 ## 项目概述
