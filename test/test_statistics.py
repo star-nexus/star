@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pygame
 from framework_v2.engine.game_engine import GameEngine
-from rotk.scenes.game_scene import GameScene
-from rotk.prefabs.config import Faction, PlayerType, GameMode
+from rotk_env.scenes.game_scene import GameScene
+from rotk_env.prefabs.config import Faction, PlayerType, GameMode
 
 
 def test_game_statistics():
@@ -72,7 +72,7 @@ def test_game_statistics():
         wei_units = []
         shu_units = []
 
-        from rotk.components import Unit, Health, HexPosition
+        from rotk_env.components import Unit, Health, HexPosition
 
         for entity in (
             game_scene.world.query().with_all(Unit, Health, HexPosition).entities()

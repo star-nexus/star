@@ -10,7 +10,7 @@ import os
 # 添加项目路径
 sys.path.append(os.path.dirname(__file__))
 
-from rotk.systems.llm_system import LLMSystem
+from rotk_env.systems.llm_system import LLMSystem
 from framework_v2 import World
 
 

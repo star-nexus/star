@@ -40,16 +40,21 @@ class AgentClient(AsyncWebSocketClient):
         if parameters is None:
             parameters = {}
 
-        return await self.send_message(
+        request_id = gen_id()
+        success = await self.send_message(
             MessageInstruction.MESSAGE.value,
             {
                 "type": "action",
-                "id": gen_id(),
+                "id": request_id,
                 "action": action,
                 "parameters": parameters,
             },
             target={"role_type": "env", "env_id": self.client_info.env_id},
         )
+        if success:
+            return request_id
+        else:
+            raise Exception("Failed to send action")
 
     async def observe_environment(self) -> bool:
         """观察环境"""

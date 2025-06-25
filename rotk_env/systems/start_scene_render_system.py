@@ -20,7 +20,7 @@ class StartSceneRenderSystem(System):
 
         # 字体
         pygame.font.init()
-        file_path = Path("rotk/assets/fonts/sh.otf")
+        file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font_title = pygame.font.Font(file_path, 64)
         self.font_large = pygame.font.Font(file_path, 48)
         self.font_medium = pygame.font.Font(file_path, 32)

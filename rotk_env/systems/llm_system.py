@@ -772,24 +772,11 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from rich import print_json
 from framework_v2 import System, World
-from ..components import (
-    Unit,
-    Health,
-    HexPosition,
-    Movement,
-    Combat,
-    Vision,
-    GameState,
-    FogOfWar,
-    Player,
-    AIControlled,
-    GameStats,
-    BattleLog,
-    UnitObservation,
-)
 from ..prefabs.config import Faction, PlayerType, GameMode
 
-from llm.star_client import SyncWebSocketClient, ClientInfo
+from protocol.star_client import SyncWebSocketClient, ClientInfo
+from .llm_action_handler import LLMActionHandler
+from .llm_observation_system import LLMObservationSystem, ObservationLevel
 
 # from menglong import Model, ChatAgent, ChatMode, tool
 
@@ -838,6 +825,10 @@ class LLMSystem(System):
     def initialize(self, world):
         self.world = world
 
+        # 初始化动作处理器和观测系统
+        self.action_handler = LLMActionHandler(world)
+        self.observation_system = LLMObservationSystem(world)
+
         # 使用同步客户端
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
@@ -858,9 +849,37 @@ class LLMSystem(System):
         self.client.add_event_listener("error", self.on_error)
 
     def add_env_actions(self):
-        # self.actions["move"] = self.move
-        self.actions["observation"] = self.handle_observation
+        # 动作处理
         self.actions["move"] = self.handle_move
+        self.actions["attack"] = self.handle_attack
+        self.actions["defend"] = self.handle_defend
+        self.actions["scout"] = self.handle_scout
+        self.actions["retreat"] = self.handle_retreat
+        self.actions["fortify"] = self.handle_fortify
+        self.actions["patrol"] = self.handle_patrol
+        self.actions["end_turn"] = self.handle_end_turn
+        self.actions["select_unit"] = self.handle_select_unit
+        self.actions["formation"] = self.handle_formation
+
+        # 观测请求
+        self.actions["observation"] = self.handle_observation
+        self.actions["unit_observation"] = self.handle_unit_observation
+        self.actions["faction_observation"] = self.handle_faction_observation
+        self.actions["godview_observation"] = self.handle_godview_observation
+        self.actions["limited_observation"] = self.handle_limited_observation
+        self.actions["tactical_observation"] = self.handle_tactical_observation
+
+        # 状态查询指令
+        self.actions["get_unit_list"] = self.handle_get_unit_list
+        self.actions["get_unit_info"] = self.handle_get_unit_info
+        self.actions["get_faction_units"] = self.handle_get_faction_units
+        self.actions["get_game_state"] = self.handle_get_game_state
+        self.actions["get_map_info"] = self.handle_get_map_info
+        self.actions["get_battle_status"] = self.handle_get_battle_status
+        self.actions["get_action_list"] = self.handle_get_available_actions
+        self.actions["get_unit_capabilities"] = self.handle_get_unit_capabilities
+        self.actions["get_visibility_info"] = self.handle_get_visibility_info
+        self.actions["get_strategic_summary"] = self.handle_get_strategic_summary
 
     # === WebSocket 事件处理方法 ===
 
@@ -977,104 +996,196 @@ class LLMSystem(System):
         data = message.get("data", {})
         action_id = data.get("id")
         action = data.get("action")
-        params = data.get("parameters")
-        if action == "observation":
-            res = self.handle_observation(params)
-            print(f"Observation response: {res}")
-            self.client.response_to_agent(agent_id, action_id, res, "str")
-        elif action == "move":
-            res = self.handle_move(params)
-            print(f"Move response: {res}")
-            self.client.response_to_agent(agent_id, action_id, res, "str")
-        else:
-            print(f"未知动作: {action}")
-            self.client.response_to_agent(
-                agent_id, action_id, f"未知动作: {action}", "str"
-            )
+        params = data.get("parameters", {})
 
-    def handle_observation(self, data: Dict) -> Dict[str, Any]:
-        """异步处理观测请求"""
-        faction = data.get("faction", "WEI")
-        observation_type = data.get("observation_type", "full")
+        try:
+            if action in self.actions:
+                res = self.actions[action](params)
+                print(f"{action} response: {res}")
+                self.client.response_to_agent(agent_id, action_id, res, "str")
+            else:
+                print(f"未知动作: {action}")
+                error_msg = {
+                    "success": False,
+                    "error": f"未知动作: {action}",
+                    "supported_actions": list(self.actions.keys()),
+                }
+                self.client.response_to_agent(agent_id, action_id, error_msg, "str")
+        except Exception as e:
+            print(f"执行动作 {action} 时出错: {e}")
+            error_msg = {
+                "success": False,
+                "error": f"动作执行失败: {str(e)}",
+                "action": action,
+            }
+            self.client.response_to_agent(agent_id, action_id, error_msg, "str")
 
-        # # TODO: 根据请求类型生成观测数据
-        # if observation_type == "full":  # 完整观测
-        #     observation_data = self._generate_full_observation(faction)
-        # elif observation_type == "partial":  # 部分观测
-        #     observation_data = self._generate_partial_observation(
-        #         faction, data.get("focus_area")  # 关注区域
-        #     )
-        # elif observation_type == "tactical":
-        #     observation_data = self._generate_tactical_observation(
-        #         faction, data.get("target_units")
-        #     )
-        # else:
-        observation_data = self._generate_basic_observation(faction)
+    # === 动作处理方法 ===
 
-        return observation_data
+    def handle_move(self, params: Dict) -> Dict[str, Any]:
+        """处理移动动作"""
+        return self.action_handler.execute_action("move", params)
 
-    def _generate_basic_observation(self, faction: Faction) -> Dict[str, Any]:
-        """生成基本观测数据"""
-        # TODO: 实现基本观测
-        return {
-            "game_state": self._collect_game_state(),
-            "faction": faction,
-            "timestamp": time.time(),
-        }
+    def handle_attack(self, params: Dict) -> Dict[str, Any]:
+        """处理攻击动作"""
+        return self.action_handler.execute_action("attack", params)
 
-    def _collect_game_state(self) -> Dict[str, Any]:
-        """收集游戏状态信息"""
-        game_state = self.world.get_singleton_component(GameState)
+    def handle_defend(self, params: Dict) -> Dict[str, Any]:
+        """处理防御动作"""
+        return self.action_handler.execute_action("defend", params)
 
-        if not game_state:
-            return {"error": "Game state not available"}
+    def handle_scout(self, params: Dict) -> Dict[str, Any]:
+        """处理侦察动作"""
+        return self.action_handler.execute_action("scout", params)
 
-        return {
-            "current_player": (
-                game_state.current_player.value
-                if hasattr(game_state.current_player, "value")
-                else str(game_state.current_player)
-            ),
-            "game_mode": (
-                game_state.game_mode.value
-                if hasattr(game_state.game_mode, "value")
-                else str(game_state.game_mode)
-            ),
-            "turn_number": getattr(game_state, "turn_number", 1),
-            "phase": getattr(game_state, "phase", "action"),
-            "time_limit": getattr(game_state, "time_limit", None),
-            "victory_condition": getattr(
-                game_state, "victory_condition", "elimination"
-            ),
-        }
+    def handle_retreat(self, params: Dict) -> Dict[str, Any]:
+        """处理撤退动作"""
+        return self.action_handler.execute_action("retreat", params)
 
-    def handle_move(self, data: Dict) -> Dict[str, Any]:
-        """处理移动指令"""
-        agent_id = data.get("msg_from", {}).get("agent_id")
-        action_type = data.get("action_type")
-        action_params = data.get("parameters", {})
+    def handle_fortify(self, params: Dict) -> Dict[str, Any]:
+        """处理驻防动作"""
+        return self.action_handler.execute_action("fortify", params)
 
-        # TODO: 验证动作合法性
-        # if not self._validate_action(action_type, action_params, agent_id):
-        #     return {"success": False, "error": "Invalid action"}
+    def handle_patrol(self, params: Dict) -> Dict[str, Any]:
+        """处理巡逻动作"""
+        return self.action_handler.execute_action("patrol", params)
 
-        # 添加到待执行队列
-        # action = {
-        #     "type": action_type,
-        #     "params": action_params,
-        #     "agent_id": agent_id,
-        #     "timestamp": time.time(),
-        # }
-        # self.pending_actions.append(action)
+    def handle_end_turn(self, params: Dict) -> Dict[str, Any]:
+        """处理结束回合动作"""
+        return self.action_handler.execute_action("end_turn", params)
 
-        # # 立即执行 (或返回待执行状态)
-        # result = self._execute_action(action)
-        # return result
+    def handle_select_unit(self, params: Dict) -> Dict[str, Any]:
+        """处理选择单位动作"""
+        return self.action_handler.execute_action("select_unit", params)
 
-        return {
-            "success": True,
-            "message": f"Agent {agent_id} moved with action {action_type}",
-        }
+    def handle_formation(self, params: Dict) -> Dict[str, Any]:
+        """处理阵型动作"""
+        return self.action_handler.execute_action("formation", params)
+
+    # === 观测处理方法 ===
+
+    def handle_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理通用观测请求"""
+        observation_level = params.get("observation_level", ObservationLevel.FACTION)
+        faction = params.get("faction")
+        unit_id = params.get("unit_id")
+        include_hidden = params.get("include_hidden", False)
+
+        # 转换字符串到Faction枚举（如果需要）
+        if faction and isinstance(faction, str):
+            try:
+                from ..prefabs.config import Faction
+
+                faction = Faction(faction.upper())
+            except ValueError:
+                return {"error": f"Invalid faction: {faction}"}
+
+        return self.observation_system.get_observation(
+            observation_level, faction, unit_id, include_hidden
+        )
+
+    def handle_unit_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理单位观测请求"""
+        unit_id = params.get("unit_id")
+        if not unit_id:
+            return {"error": "Missing unit_id parameter"}
+
+        return self.observation_system.get_observation(
+            ObservationLevel.UNIT, unit_id=unit_id
+        )
+
+    def handle_faction_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理阵营观测请求"""
+        faction = params.get("faction")
+        include_hidden = params.get("include_hidden", False)
+
+        if not faction:
+            return {"error": "Missing faction parameter"}
+
+        # 转换字符串到Faction枚举
+        if isinstance(faction, str):
+            try:
+                from ..prefabs.config import Faction
+
+                faction = Faction(faction.upper())
+            except ValueError:
+                return {"error": f"Invalid faction: {faction}"}
+
+        return self.observation_system.get_observation(
+            ObservationLevel.FACTION, faction=faction, include_hidden=include_hidden
+        )
+
+    def handle_godview_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理上帝视角观测请求"""
+        return self.observation_system.get_observation(ObservationLevel.GODVIEW)
+
+    def handle_limited_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理受限观测请求"""
+        faction = params.get("faction")
+
+        if not faction:
+            return {"success": False, "error": "Missing faction parameter"}
+
+        # 转换字符串到Faction枚举
+        if isinstance(faction, str):
+            try:
+                from ..prefabs.config import Faction
+
+                faction = Faction(faction.upper())
+            except ValueError:
+                return {"success": False, "error": f"Invalid faction: {faction}"}
+
+        return self.observation_system.get_observation(
+            ObservationLevel.LIMITED, faction=faction
+        )
+
+    def handle_tactical_observation(self, params: Dict) -> Dict[str, Any]:
+        """处理战术观测请求"""
+        return self.action_handler.execute_action("tactical_observation", params)
+
+    # =============================================
+    # 状态查询指令处理方法
+    # =============================================
+
+    def handle_get_unit_list(self, params: Dict) -> Dict[str, Any]:
+        """获取单位列表"""
+        return self.action_handler.execute_action("get_unit_list", params)
+
+    def handle_get_unit_info(self, params: Dict) -> Dict[str, Any]:
+        """获取指定单位的详细信息"""
+        return self.action_handler.execute_action("get_unit_info", params)
+
+    def handle_get_faction_units(self, params: Dict) -> Dict[str, Any]:
+        """获取指定阵营的所有单位"""
+        return self.action_handler.execute_action("get_faction_units", params)
+
+    def handle_get_game_state(self, params: Dict) -> Dict[str, Any]:
+        """获取游戏状态信息"""
+        return self.action_handler.execute_action("get_game_state", params)
+
+    def handle_get_map_info(self, params: Dict) -> Dict[str, Any]:
+        """获取地图信息"""
+        return self.action_handler.execute_action("get_map_info", params)
+
+    def handle_get_battle_status(self, params: Dict) -> Dict[str, Any]:
+        """获取战斗状态信息"""
+        return self.action_handler.execute_action("get_battle_status", params)
+
+    def handle_get_available_actions(self, params: Dict) -> Dict[str, Any]:
+        """获取可用动作列表"""
+        return self.action_handler.execute_action("get_available_actions", params)
+
+    def handle_get_unit_capabilities(self, params: Dict) -> Dict[str, Any]:
+        """获取单位能力信息"""
+        return self.action_handler.execute_action("get_unit_capabilities", params)
+
+    def handle_get_visibility_info(self, params: Dict) -> Dict[str, Any]:
+        """获取视野信息"""
+        return self.action_handler.execute_action("get_visibility_info", params)
+
+    def handle_get_strategic_summary(self, params: Dict) -> Dict[str, Any]:
+        """获取战略摘要"""
+        return self.action_handler.execute_action("get_strategic_summary", params)
 
     def cleanup(self):
         """清理资源"""

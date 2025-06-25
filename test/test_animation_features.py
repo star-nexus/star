@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.abspath("."))
 sys.path.append("framework_v2")
 
 from framework_v2 import World
-from rotk.components import *
-from rotk.systems import *
-from rotk.prefabs.config import UnitType, Faction
+from rotk_env.components import *
+from rotk_env.systems import *
+from rotk_env.prefabs.config import UnitType, Faction
 
 
 def test_animation_components():

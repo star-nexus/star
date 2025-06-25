@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 sys.path.append(str(Path(__file__).parent.parent / "framework_v2"))
 
 from framework_v2.engine.game_engine import GameEngine
-from rotk.scenes import StartScene, GameScene, GameOverScene
+from rotk_env.scenes import StartScene, GameScene, GameOverScene
 
 
 def test_game_flow():

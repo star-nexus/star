@@ -30,7 +30,7 @@ class UnitRenderSystem(System):
 
         # 初始化字体
         pygame.font.init()
-        file_path = Path("rotk/assets/fonts/sh.otf")
+        file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font = pygame.font.Font(file_path, 24)
         self.small_font = pygame.font.Font(file_path, 16)
 
@@ -165,7 +165,7 @@ class UnitRenderSystem(System):
 
         # 根据缩放调整字体大小
         font_size = max(8, int(16 * zoom))
-        font = pygame.font.Font(Path("rotk/assets/fonts/sh.otf"), font_size)
+        font = pygame.font.Font(Path("rotk_env/assets/fonts/sh.otf"), font_size)
 
         text_surface = font.render(icon_text, True, (255, 255, 255))
         text_rect = text_surface.get_rect(center=(int(x), int(y)))
@@ -231,7 +231,7 @@ class UnitRenderSystem(System):
             status_text = status_text_map.get(status.current_status, "")
             if status_text:
                 font_size = max(10, int(12 * zoom))
-                font = pygame.font.Font(Path("rotk/assets/fonts/sh.otf"), font_size)
+                font = pygame.font.Font(Path("rotk_env/assets/fonts/sh.otf"), font_size)
 
                 text_surface = font.render(status_text, True, (255, 255, 255))
                 # text_rect = text_surface.get_rect(center=(int(status_x), int(status_y)))

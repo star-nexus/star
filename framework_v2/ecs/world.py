@@ -143,6 +143,10 @@ class World:
 
         return entity_id
 
+    def has_entity(self, entity: Entity) -> bool:
+        """检查实体是否存在"""
+        return entity in self.entities
+
     def destroy_entity(self, entity: Entity) -> None:
         """销毁实体及其所有组件"""
         if entity not in self.entities:

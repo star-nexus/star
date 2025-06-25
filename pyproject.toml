@@ -3,12 +3,13 @@
         "noise>=1.2.2",
         "numpy>=2.2.5",
         "pillow>=11.2.1",
+        "prompt-toolkit>=3.0.51",
         "pygame>=2.6.1",
         "pyyaml>=6.0.2",
         "requests>=2.32.3",
         "rich>=14.0.0",
         "websockets>=15.0.1",
-]
+    ]
     description="Add your description here"
     name="rotk"
     readme="README.md"

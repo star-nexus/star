@@ -27,7 +27,7 @@ class UIRenderSystem(System):
 
         # 初始化字体
         pygame.font.init()
-        file_path = Path("rotk/assets/fonts/sh.otf")
+        file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font = pygame.font.Font(file_path, 24)
         self.small_font = pygame.font.Font(file_path, 16)
 

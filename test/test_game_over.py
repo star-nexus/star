@@ -12,9 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from framework_v2.engine.game_engine import GameEngine
 from framework_v2.engine.scenes import SceneManager, SMS
-from rotk.scenes.game_over_scene import GameOverScene
-from rotk.scenes.start_scene import StartScene
-from rotk.prefabs.config import Faction
+from rotk_env.scenes.game_over_scene import GameOverScene
+from rotk_env.scenes.start_scene import StartScene
+from rotk_env.prefabs.config import Faction
 
 
 def test_game_over_scene():

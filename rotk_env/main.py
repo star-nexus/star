@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 三国策略游戏主启动文件
 Romance of the Three Kingdoms Strategy Game
@@ -27,8 +26,8 @@ sys.path.append(str(Path(__file__).parent.parent / "llm"))
 
 from framework_v2.engine.game_engine import GameEngine
 
-from rotk.scenes import GameScene, GameOverScene, StartScene
-from rotk.prefabs.config import Faction, PlayerType
+from rotk_env.scenes import GameScene, GameOverScene, StartScene
+from rotk_env.prefabs.config import Faction, PlayerType
 
 
 def parse_arguments():

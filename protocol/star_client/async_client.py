@@ -34,8 +34,6 @@ class AsyncWebSocketClient(BaseWebSocketClient):
             self._message_task = asyncio.create_task(self._message_loop())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-            await self._send_connection_message()
-
             return True
 
         except Exception as e:
@@ -61,7 +59,7 @@ class AsyncWebSocketClient(BaseWebSocketClient):
         instruction: str,
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
-    ) -> tuple[bool, Any]:
+    ) -> bool:  # tuple[bool, Any]:
         """发送消息"""
         if not self.connected or not self.websocket:
             raise ConnectionError("未连接到服务器")
@@ -70,13 +68,10 @@ class AsyncWebSocketClient(BaseWebSocketClient):
 
         try:
             await self.websocket.send(json.dumps(envelope))
-            return (True, data)
+            # return (True, data)
+            return True
         except Exception as e:
             raise MessageError(f"发送消息失败: {e}")
-
-    async def _send_connection_message(self):
-        """发送连接消息 - 子类可以重写"""
-        await self.send_message("connect", {"client_info": self.client_info.to_dict()})
 
     async def _message_loop(self):
         """消息监听循环"""

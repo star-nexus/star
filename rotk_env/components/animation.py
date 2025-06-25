@@ -46,6 +46,21 @@ class UnitStatus(Component):
     # 状态变化时间戳
     status_change_time: float = 0.0
 
+    # 防御状态
+    is_defending: bool = False
+
+    # 驻防状态
+    is_fortified: bool = False
+
+    # 移动状态
+    is_moving: bool = False
+
+    # 巡逻状态
+    is_patrolling: bool = False
+
+    # 侦察状态
+    is_scouting: bool = False
+
 
 @dataclass
 class DamageNumber(Component):

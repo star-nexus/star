@@ -10,8 +10,8 @@ import time
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from framework_v2 import World
-from rotk.systems.llm_system_old import LLMSystem
-from rotk.components import (
+from rotk_env.systems.llm_system import LLMSystem
+from rotk_env.components import (
     GameState,
     Unit,
     Health,
@@ -26,7 +26,7 @@ from rotk.components import (
     BattleLog,
     UnitObservation,
 )
-from rotk.prefabs.config import Faction, PlayerType, GameMode, UnitType
+from rotk_env.prefabs.config import Faction, PlayerType, GameMode, UnitType
 
 
 def create_test_world():
