@@ -1,0 +1,309 @@
+"""
+战斗系统 - 处理单位战斗
+"""
+
+import random
+from typing import Tuple
+from framework import System, World
+from framework.engine.events import EBS
+from ..components import (
+    HexPosition,
+    Combat,
+    Health,
+    Unit,
+    Player,
+    MapData,
+    Terrain,
+    Tile,
+    GameStats,
+    GameState,
+    UnitStatus,
+)
+from ..prefabs.config import GameConfig, TerrainType, HexOrientation
+from ..utils.hex_utils import HexMath
+from ..utils.env_events import BattleEvent, UnitDeathEvent
+
+
+class CombatSystem(System):
+    """战斗系统 - 处理单位战斗"""
+
+    def __init__(self):
+        super().__init__(required_components={HexPosition, Combat, Health, Unit})
+
+    def initialize(self, world: World) -> None:
+        self.world = world
+
+    def subscribe_events(self):
+        """订阅事件"""
+        # 目前没有需要订阅的事件
+        pass
+
+    def update(self, delta_time: float) -> None:
+        """更新战斗系统"""
+        # 目前没有需要在每帧更新的逻辑
+        pass
+
+    def attack(self, attacker_entity: int, target_entity: int) -> bool:
+        """执行攻击"""
+        attacker_pos = self.world.get_component(attacker_entity, HexPosition)
+        attacker_combat = self.world.get_component(attacker_entity, Combat)
+        attacker_unit = self.world.get_component(attacker_entity, Unit)
+
+        target_pos = self.world.get_component(target_entity, HexPosition)
+        target_health = self.world.get_component(target_entity, Health)
+        target_unit = self.world.get_component(target_entity, Unit)
+
+        if not all(
+            [
+                attacker_pos,
+                attacker_combat,
+                attacker_unit,
+                target_pos,
+                target_health,
+                target_unit,
+            ]
+        ):
+            return False
+
+        # 检查是否已经攻击过
+        if attacker_combat.has_attacked:
+            return False
+
+        # 检查攻击范围
+        distance = HexMath.hex_distance(
+            (attacker_pos.col, attacker_pos.row), (target_pos.col, target_pos.row)
+        )
+        if distance > attacker_combat.attack_range:
+            return False
+
+        # 检查是否是敌方单位
+        if attacker_unit.faction == target_unit.faction:
+            return False
+
+        # 计算伤害
+        damage = self._calculate_damage(attacker_entity, target_entity)
+
+        # 应用伤害
+        target_health.current = max(0, target_health.current - damage)
+        attacker_combat.has_attacked = True
+
+        # 创建伤害数字显示效果
+        self._create_damage_display(target_entity, damage)
+
+        # 更新单位状态
+        self._update_combat_status(attacker_entity, target_entity)
+
+        # 记录战斗统计
+        self._record_battle_stats(attacker_entity, target_entity, damage)
+
+        # 调用统计系统记录战斗行动
+        statistics_system = self._get_statistics_system()
+        if statistics_system:
+            result = "kill" if target_health.current <= 0 else "damage"
+            statistics_system.record_combat_action(
+                attacker_entity, target_entity, damage, result
+            )
+
+        # 调用统计系统记录战斗行动
+        statistics_system = self._get_statistics_system()
+        if statistics_system:
+            result = "kill" if target_health.current <= 0 else "damage"
+            statistics_system.record_combat_action(
+                attacker_entity, target_entity, damage, result
+            )
+
+        # 发送战斗事件
+        EBS.publish(BattleEvent(attacker_entity, target_entity, damage))
+
+        # 检查单位是否死亡
+        if target_health.current <= 0:
+            self._handle_unit_death(target_entity)
+
+        return True
+
+    def _calculate_damage(self, attacker_entity: int, target_entity: int) -> int:
+        """计算伤害值"""
+        attacker_combat = self.world.get_component(attacker_entity, Combat)
+        attacker_pos = self.world.get_component(attacker_entity, HexPosition)
+        target_pos = self.world.get_component(target_entity, HexPosition)
+
+        base_attack = attacker_combat.attack
+
+        # 获取攻击者地形加成
+        attacker_terrain_bonus = self._get_terrain_bonus(
+            (attacker_pos.col, attacker_pos.row), "attack"
+        )
+
+        # 获取防御者地形加成
+        target_terrain_bonus = self._get_terrain_bonus(
+            (target_pos.col, target_pos.row), "defense"
+        )
+
+        # 计算最终伤害
+        attack_value = base_attack * (1 + attacker_terrain_bonus)
+        defense_value = self.world.get_component(target_entity, Combat).defense * (
+            1 + target_terrain_bonus
+        )
+
+        damage = max(1, int(attack_value - defense_value * 0.5))
+
+        # 添加随机性
+        damage = int(damage * random.uniform(0.8, 1.2))
+
+        return damage
+
+    def _get_terrain_bonus(self, position: Tuple[int, int], bonus_type: str) -> float:
+        """获取地形加成"""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return 0.0
+
+        tile_entity = map_data.tiles.get(position)
+        if not tile_entity:
+            return 0.0
+
+        terrain = self.world.get_component(tile_entity, Terrain)
+        if not terrain:
+            return 0.0
+
+        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain.terrain_type)
+        if not terrain_effect:
+            return 0.0
+
+        if bonus_type == "attack":
+            return terrain_effect.attack_bonus
+        elif bonus_type == "defense":
+            return terrain_effect.defense_bonus
+
+        return 0.0
+
+    def _record_battle_stats(
+        self, attacker_entity: int, target_entity: int, damage: int
+    ):
+        """记录战斗统计"""
+        stats = self.world.get_singleton_component(GameStats)
+        if not stats:
+            return
+
+        attacker_unit = self.world.get_component(attacker_entity, Unit)
+        target_unit = self.world.get_component(target_entity, Unit)
+
+        if not attacker_unit or not target_unit:
+            return
+
+        # 初始化统计数据
+        if attacker_unit.faction not in stats.faction_stats:
+            stats.faction_stats[attacker_unit.faction] = {
+                "kills": 0,
+                "losses": 0,
+                "damage_dealt": 0,
+                "damage_taken": 0,
+            }
+
+        if target_unit.faction not in stats.faction_stats:
+            stats.faction_stats[target_unit.faction] = {
+                "kills": 0,
+                "losses": 0,
+                "damage_dealt": 0,
+                "damage_taken": 0,
+            }
+
+        # 记录伤害
+        stats.faction_stats[attacker_unit.faction]["damage_dealt"] += damage
+        stats.faction_stats[target_unit.faction]["damage_taken"] += damage
+
+        # 记录战斗历史
+        battle_record = {
+            "turn": self.world.get_singleton_component(GameState).turn_number,
+            "attacker": attacker_unit.faction.value,
+            "target": target_unit.faction.value,
+            "damage": damage,
+        }
+        stats.battle_history.append(battle_record)
+
+    def _handle_unit_death(self, entity: int):
+        """处理单位死亡"""
+        unit = self.world.get_component(entity, Unit)
+        if not unit:
+            return
+
+        # 更新统计
+        stats = self.world.get_singleton_component(GameStats)
+        if stats and unit.faction in stats.faction_stats:
+            stats.faction_stats[unit.faction]["losses"] += 1
+
+        # 从玩家的单位列表中移除
+        for player_entity in self.world.query().with_component(Player).entities():
+            player = self.world.get_component(player_entity, Player)
+            if player and player.faction == unit.faction:
+                player.units.discard(entity)
+                break
+
+        # 清除地块占用
+        position = self.world.get_component(entity, HexPosition)
+        if position:
+            map_data = self.world.get_singleton_component(MapData)
+            if map_data:
+                tile_entity = map_data.tiles.get((position.col, position.row))
+                if tile_entity:
+                    tile = self.world.get_component(tile_entity, Tile)
+                    if tile and tile.occupied_by == entity:
+                        tile.occupied_by = None
+
+        # 删除实体
+        self.world.destroy_entity(entity)
+
+    def _get_statistics_system(self):
+        """获取统计系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "StatisticsSystem":
+                return system
+        return None
+
+    def _create_damage_display(self, target_entity: int, damage: int):
+        """创建伤害数字显示"""
+        # 获取目标位置
+        target_pos = self.world.get_component(target_entity, HexPosition)
+        if not target_pos:
+            return
+
+        # 获取动画系统
+        animation_system = self._get_animation_system()
+        if not animation_system:
+            return
+
+        # 转换为世界像素坐标
+        from ..utils.hex_utils import HexConverter
+
+        hex_converter = HexConverter(GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION)
+        world_x, world_y = hex_converter.hex_to_pixel(target_pos.col, target_pos.row)
+
+        # 在单位上方显示伤害数字
+        world_y -= 30  # 向上偏移
+
+        animation_system.create_damage_number(damage, (world_x, world_y))
+
+    def _update_combat_status(self, attacker_entity: int, target_entity: int):
+        """更新战斗状态"""
+        # 更新攻击者状态
+        attacker_status = self.world.get_component(attacker_entity, UnitStatus)
+        if not attacker_status:
+            attacker_status = UnitStatus()
+            self.world.add_component(attacker_entity, attacker_status)
+        attacker_status.current_status = "combat"
+        attacker_status.status_duration = 0.0
+
+        # 更新目标状态
+        target_status = self.world.get_component(target_entity, UnitStatus)
+        if not target_status:
+            target_status = UnitStatus()
+            self.world.add_component(target_entity, target_status)
+        target_status.current_status = "combat"
+        target_status.status_duration = 0.0
+
+    def _get_animation_system(self):
+        """获取动画系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "AnimationSystem":
+                return system
+        return None

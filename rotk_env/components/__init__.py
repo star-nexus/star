@@ -1,0 +1,76 @@
+"""
+游戏组件模块
+定义游戏中所有的ECS组件
+"""
+
+from .base import HexPosition, Health, Renderable, AnimationState, PathFinding
+from .unit import Unit, Movement, Combat, Vision, Selected, AIControlled
+from .terrain import Terrain, TerrainModifier, Tile
+from .player import Player, TurnOrder, TurnManager
+from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
+from .minimap import MiniMap
+from .gamemode import GameModeComponent
+from .camera import Camera
+from .animation import MovementAnimation, UnitStatus, DamageNumber
+from .battle_log import BattleLog, BattleLogEntry
+from .unit_observation import (
+    UnitObservation,
+    UnitStatistics,
+    VisibilityTracker,
+    GameModeStatistics,
+)
+from .game_over import Winner, GameStatistics, GameOverButtons
+from .ui_button import UIButton, UIButtonCollection, UIPanel
+
+__all__ = [
+    # 基础组件
+    "HexPosition",
+    "Health",
+    "Renderable",
+    "AnimationState",
+    "PathFinding",
+    # 单位组件
+    "Unit",
+    "Movement",
+    "Combat",
+    "Vision",
+    "Selected",
+    "AIControlled",
+    # 地形组件
+    "Terrain",
+    "TerrainModifier",
+    "Tile",
+    # 玩家组件
+    "Player",
+    "TurnOrder",
+    "TurnManager",
+    # 状态组件
+    "GameState",
+    "MapData",
+    "UIState",
+    "InputState",
+    "FogOfWar",
+    "GameStats",
+    "Camera",
+    "MiniMap",
+    "GameModeComponent",
+    # 动画组件
+    "MovementAnimation",
+    "UnitStatus",
+    "DamageNumber",
+    # 战斗日志组件
+    "BattleLog",
+    "BattleLogEntry",
+    "UnitObservation",
+    "UnitStatistics",
+    "VisibilityTracker",
+    "GameModeStatistics",
+    # 游戏结束组件
+    "Winner",
+    "GameStatistics",
+    "GameOverButtons",
+    # UI按钮组件
+    "UIButton",
+    "UIButtonCollection",
+    "UIPanel",
+]
