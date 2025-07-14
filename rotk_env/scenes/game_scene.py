@@ -108,7 +108,7 @@ class GameScene(Scene):
         self._initialize_players()
 
         # 初始化单位
-        self._initialize_units()
+        self._initialize_units(10, 10)  # 默认每个阵营10个单位
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -179,30 +179,142 @@ class GameScene(Scene):
             # 将玩家添加到回合管理器
             turn_manager.add_player(player_entity)
 
-    def _initialize_units(self):
-        """初始化单位"""
+    def _initialize_units(self, wei: int = 3, shu: int = 3, wu: int = None):
+        """初始化单位 - 根据数量自动生成单位和位置"""
+        import math
+        import random
 
-        # 为每个玩家创建初始单位
-        positions = {
-            Faction.WEI: [(2, 2), (3, 2), (2, 3)],
-            Faction.SHU: [(-2, -2), (-3, -2), (-2, -3)],
+        # 定义每个阵营的起始区域中心
+        faction_centers = {
+            Faction.WEI: (3, 3),  # 右上区域
+            Faction.SHU: (-3, -3),  # 左下区域
+            Faction.WU: (3, -3),  # 右下区域
         }
 
-        for faction, pos_list in positions.items():
+        # 定义单位数量（只处理参与游戏的阵营）
+        unit_counts = {}
+        for faction in self.players.keys():
+            if faction == Faction.WEI:
+                unit_counts[faction] = wei
+            elif faction == Faction.SHU:
+                unit_counts[faction] = shu
+            elif faction == Faction.WU and wu is not None:
+                unit_counts[faction] = wu
+
+        for faction, count in unit_counts.items():
+            if count <= 0:
+                continue
+
             player_entity = self._get_player_entity(faction)
             if not player_entity:
                 continue
 
             player = self.world.get_component(player_entity, Player)
+            center_q, center_r = faction_centers[faction]
 
-            for i, (q, r) in enumerate(pos_list):
+            # 生成该阵营的所有单位位置
+            positions = self._generate_unit_positions(center_q, center_r, count)
+
+            # 生成多样化的单位类型
+            unit_types = self._generate_unit_types(count)
+
+            for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
                 unit_entity = self._create_unit(
                     faction=faction,
-                    unit_type=UnitType.INFANTRY,
+                    unit_type=unit_type,
                     position=(q, r),
-                    name=f"{faction.value}_{i+1}",
+                    name=f"{faction.value}_{unit_type.value}_{i+1}",
                 )
                 player.units.add(unit_entity)
+
+    def _generate_unit_positions(
+        self, center_q: int, center_r: int, count: int
+    ) -> list:
+        """生成单位位置 - 以中心点为基础，螺旋式分布"""
+        positions = []
+
+        if count == 1:
+            return [(center_q, center_r)]
+
+        # 第一个单位放在中心
+        positions.append((center_q, center_r))
+        remaining = count - 1
+
+        # 六边形的六个方向偏移量 (flat-top orientation)
+        hex_directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+
+        radius = 1
+        while remaining > 0 and radius <= 5:  # 限制最大半径
+            # 当前环的位置数量
+            positions_in_ring = min(remaining, 6 * radius)
+
+            # 在当前环上均匀分布位置
+            for i in range(positions_in_ring):
+                if i < 6:  # 第一层（6个方向各一个）
+                    dq, dr = hex_directions[i]
+                    q = center_q + dq * radius
+                    r = center_r + dr * radius
+                else:  # 填充边
+                    # 在六边形的边上添加额外位置
+                    side = (i - 6) // radius
+                    pos_on_side = (i - 6) % radius
+
+                    if side < 6:
+                        dq1, dr1 = hex_directions[side]
+                        dq2, dr2 = hex_directions[(side + 1) % 6]
+
+                        # 在边上插值
+                        t = (pos_on_side + 1) / (radius + 1)
+                        q = center_q + int(dq1 * radius * (1 - t) + dq2 * radius * t)
+                        r = center_r + int(dr1 * radius * (1 - t) + dr2 * radius * t)
+                    else:
+                        break
+
+                positions.append((q, r))
+                remaining -= 1
+
+                if remaining <= 0:
+                    break
+
+            radius += 1
+
+        return positions[:count]
+
+    def _generate_unit_types(self, count: int) -> list:
+        """生成多样化的单位类型组合"""
+        import random
+
+        unit_types = []
+
+        # 基础配比：步兵40%，骑兵30%，弓兵25%，攻城5%
+        base_ratios = {
+            UnitType.INFANTRY: 0.40,
+            UnitType.CAVALRY: 0.30,
+            UnitType.ARCHER: 0.25,
+            UnitType.SIEGE: 0.05,
+        }
+
+        # 根据数量计算各类型单位数
+        for unit_type, ratio in base_ratios.items():
+            type_count = max(1, int(count * ratio)) if count >= 4 else 1
+            unit_types.extend([unit_type] * type_count)
+
+        # 如果总数不够，用步兵补充
+        while len(unit_types) < count:
+            unit_types.append(UnitType.INFANTRY)
+
+        # 如果超了，移除多余的（优先移除攻城器械）
+        while len(unit_types) > count:
+            for remove_type in [UnitType.SIEGE, UnitType.ARCHER, UnitType.CAVALRY]:
+                if remove_type in unit_types:
+                    unit_types.remove(remove_type)
+                    break
+            else:
+                unit_types.pop()
+
+        # 打乱顺序
+        random.shuffle(unit_types)
+        return unit_types
 
     def _create_unit(
         self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
