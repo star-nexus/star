@@ -11,17 +11,74 @@ git clone https://github.com/yourusername/Romance-of-the-Three-Kingdoms.git
 cd Romance-of-the-Three-Kingdoms
 ```
 
+在项目根目录下，创建配置 configs.toml 文件
+
+```toml
+[default]
+model_id = "model_id" # 模型ID，例如：us.anthropic.claude-sonnet-4-20250514-v1:0
+embed_id = "embed_id" # 嵌入模型ID，例如：text-embedding-3-small
+
+# 模型接口库全局配置
+# 文件路径：.configs.toml
+# AWS 配置段
+[aws]
+# 区域
+region_name = "region" # 例如：us-west-2
+# 访问密钥 ID
+aws_access_key_id = "access_key"
+# 访问密钥
+aws_secret_access_key = "secret-key"
+
+# OpenAI 配置段
+[openai]
+api_key = "api-key"
+
+# DeepSeek 配置段
+[deepseek]
+api_key = "api-key"
+
+# Poe 配置段
+[poe]
+api_key = "api-key"
+
+# Infinigence 配置段
+[infinigence]
+api_key = "api-key"
+```
+
 2. Install the required packages
 
 ```bash
 uv sync
 ```
 
-3. Run the game
+3. Run the game hub (must run first, tmux better)
 
 ```bash
-uv run game/game.py
+git clone https://github.com/Lounger-Habitat/GameServer.git
+cd GameServer
+make dev
 ```
+
+4. Run the game
+
+```bash
+uv run rotk_env/main.py
+```
+
+5. Run the agent
+
+```bash
+uv run rotk_agent/simple_agent.py
+```
+
+当出现请输入命令时，您可以输入以下命令之一来与游戏进行交互：
+```bash
+chat <prompt> # 对agent进行指令，prompt 为您想要说的话，例如：chat "请帮我分析当前战局" ， # 需要安装menglong框架
+message <message> # 发送消息，message 消息为可用的动作
+list # 测试列出可用动作
+```
+
 
 ## 项目概述
 

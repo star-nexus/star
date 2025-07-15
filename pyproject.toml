@@ -18,4 +18,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-menglong = { path = "../MengLong" }
+menglong = { git = "https://github.com/GCYYfun/MengLong" }

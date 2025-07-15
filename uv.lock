@@ -334,7 +334,7 @@ wheels = [
 [[package]]
 name = "menglong"
 version = "0.1.0"
-source = { directory = "../MengLong" }
+source = { git = "https://github.com/GCYYfun/MengLong#6eb9a77c766fa8bf8d13f56da5f63b840a8824b7" }
 dependencies = [
     { name = "boto3" },
     { name = "duckduckgo-search" },
@@ -346,20 +346,6 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
     { name = "trio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.38.0" },
-    { name = "duckduckgo-search", specifier = ">=8.0.3" },
-    { name = "fastapi-poe", specifier = ">=0.0.60" },
-    { name = "httpx", extras = ["socks"], specifier = ">=0.28.1" },
-    { name = "openai", specifier = ">=1.75.0" },
-    { name = "pydantic", specifier = ">=2.11.3" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "requests", specifier = ">=2.32.3" },
-    { name = "rich", specifier = ">=13.7.0" },
-    { name = "trio", specifier = ">=0.30.0" },
 ]
 
 [[package]]
@@ -697,7 +683,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "menglong", directory = "../MengLong" },
+    { name = "menglong", git = "https://github.com/GCYYfun/MengLong" },
     { name = "noise", specifier = ">=1.2.2" },
     { name = "numpy", specifier = ">=2.2.5" },
     { name = "pillow", specifier = ">=11.2.1" },
