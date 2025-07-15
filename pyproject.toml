@@ -5,12 +5,17 @@ description = "A benchmark for evaluating the performance of LLMs strategic game
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "menglong",
     "noise>=1.2.2",
     "numpy>=2.2.5",
     "pillow>=11.2.1",
+    "prompt-toolkit>=3.0.51",
     "pygame>=2.6.1",
     "pyyaml>=6.0.2",
     "requests>=2.32.3",
     "rich>=14.0.0",
     "websockets>=15.0.1",
 ]
+
+[tool.uv.sources]
+menglong = { path = "../MengLong" }

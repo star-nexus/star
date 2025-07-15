@@ -27,6 +27,7 @@ class SyncWebSocketClient(BaseWebSocketClient):
         self._loop_thread = None
         self._executor = None
         self._stop_event = None
+        self.connected = False
 
     def connect(self) -> bool:
         """连接到 WebSocket 服务器 - 同步接口"""
@@ -132,15 +133,13 @@ class SyncWebSocketClient(BaseWebSocketClient):
     async def _async_connect(self) -> bool:
         """异步连接方法"""
         try:
-            url = self._build_connection_url()
+            url = self.url()
             self.websocket = await websockets.connect(url)
             self.connected = True
 
             # 启动消息监听和心跳任务
             asyncio.create_task(self._message_loop())
             asyncio.create_task(self._heartbeat_loop())
-
-            await self._send_connection_message()
 
             return True
 
@@ -166,7 +165,7 @@ class SyncWebSocketClient(BaseWebSocketClient):
         if not self.connected or not self.websocket:
             raise ConnectionError("未连接到服务器")
 
-        envelope = self._prepare_message_envelope(instruction, data, target)
+        envelope = self.build_message_envelope(instruction, data, target)
 
         try:
             await self.websocket.send(json.dumps(envelope))
@@ -174,18 +173,12 @@ class SyncWebSocketClient(BaseWebSocketClient):
         except Exception as e:
             raise MessageError(f"发送消息失败: {e}")
 
-    async def _send_connection_message(self):
-        """发送连接消息 - 子类可以重写"""
-        await self._async_send_message(
-            "connect", {"client_info": self.client_info.to_dict()}
-        )
-
     async def _message_loop(self):
         """消息监听循环"""
         try:
             while self.connected and self.websocket:
                 message = await self.websocket.recv()
-                message_data = self._process_received_message(message)
+                message_data = self._check_message_format(message)
 
                 if message_data is None:
                     continue
@@ -194,21 +187,20 @@ class SyncWebSocketClient(BaseWebSocketClient):
                     await self._trigger_event("error", message_data)
                     continue
 
-                instruction = self._get_message_instruction(message_data)
+                instruction = message_data.get("type")
 
-                if instruction == MessageType.HEARTBEAT.value:
-                    await self._trigger_event("heartbeat", message_data)
-                elif instruction == MessageType.CONNECT.value:
-                    await self._trigger_event("connect", message_data)
-                elif instruction == MessageType.DISCONNECT.value:
-                    await self._trigger_event("disconnect", message_data)
-                elif instruction == MessageType.MESSAGE.value:
-                    await self._trigger_event("message", message_data)
-                elif instruction == MessageType.ERROR.value:
-                    await self._trigger_event("error", message_data)
-                else:
-                    # 处理其他消息类型
-                    await self._trigger_event("other", message_data)
+                match instruction:
+                    case MessageType.CONNECT.value:
+                        await self._trigger_event("connect", message_data)
+                    case MessageType.DISCONNECT.value:
+                        await self._trigger_event("disconnect", message_data)
+                    case MessageType.MESSAGE.value:
+                        await self._trigger_event("message", message_data)
+                    case MessageType.ERROR.value:
+                        await self._trigger_event("error", message_data)
+                    case _:
+                        # 处理其他消息类型
+                        await self._trigger_event("other", message_data)
 
         except websockets.exceptions.ConnectionClosed:
             self.connected = False
@@ -233,8 +225,8 @@ class SyncWebSocketClient(BaseWebSocketClient):
 
     async def _trigger_event(self, event_type: str, data: Any):
         """触发事件处理器"""
-        if event_type in self._server_event_handlers:
-            for handler in self._server_event_handlers[event_type]:
+        if event_type in self.hub_event_handlers:
+            for handler in self.hub_event_handlers[event_type]:
                 try:
                     # 同步客户端的事件处理器都是同步的
                     if asyncio.iscoroutinefunction(handler):

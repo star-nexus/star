@@ -68,7 +68,7 @@ class LLMSystem(System):
         # 使用同步客户端
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
-            env_id="1",  # 字符串类型的env_id
+            env_id="env_1",  # 字符串类型的env_id
         )
         self.add_listener()
         self.actions = {}
@@ -129,12 +129,20 @@ class LLMSystem(System):
             payload = envelope.get("payload", {})
             message_type = envelope.get("type", "")
 
-            # 提取 agent 信息
-            agent_id = sender.get("id") if sender.get("type") == "agent" else None
-            if agent_id:
-                self.client.connected_agents[agent_id] = sender
+            if payload.get("type") == "action":
+                # 处理动作消息
 
-            self.exec_action(envelope)
+                print(f"处理动作消息: {payload}")
+
+                # 提取 agent 信息
+                agent_id = sender.get("id") if sender.get("type") == "agent" else None
+                if agent_id:
+                    self.client.connected_agents[agent_id] = sender
+                self.exec_action(envelope)
+                return
+            else:
+                # 处理其他消息类型
+                print(f"处理其他消息类型: {payload}")
 
         except Exception as e:
             print(f"消息处理错误: {e}")
@@ -244,6 +252,7 @@ class LLMSystem(System):
         action_id = payload.get("id")
         action = payload.get("action")
         params = payload.get("parameters", {})
+        params = params if isinstance(params, dict) else json.loads(params)
 
         try:
             if action in self.actions:

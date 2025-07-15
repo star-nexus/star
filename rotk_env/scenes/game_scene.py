@@ -126,7 +126,7 @@ class GameScene(Scene):
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # 仅当有AI玩家时添加AI系统
-            # LLMSystem(),  # LLM系统 (优先级5)
+            LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
