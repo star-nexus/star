@@ -11,34 +11,34 @@ from rich import print_json
 from framework import System, World
 from ..prefabs.config import Faction, PlayerType, GameMode
 
-from protocol.star_client import SyncWebSocketClient, ClientInfo
+from protocol.star_client_v2 import (
+    SyncWebSocketClient,
+    ClientInfo,
+    ClientType,
+    MessageType,
+)
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
-
-# from menglong import Model, ChatAgent, ChatMode, tool
-
-# from prompt_toolkit import PromptSession
-# from prompt_toolkit.patch_stdout import patch_stdout
 
 
 class SyncEnvClient(SyncWebSocketClient):
     """同步环境客户端"""
 
-    def __init__(self, server_url: str, env_id: int):
-        client_info = ClientInfo(role_type="env", env_id=env_id)
+    def __init__(self, server_url: str, env_id: str):
+        client_info = ClientInfo(type=ClientType.ENVIRONMENT, id=env_id)
         super().__init__(server_url, client_info)
-
         self.connected_agents = {}
 
-    def _build_connection_url(self) -> str:
+    def url(self) -> str:
         """构建环境连接 URL"""
-        return f"{self.server_url}/env/{self.client_info.env_id}"
+        return f"{self.server_url}/env/{self.client_info.id}"
 
-    def response_to_agent(self, agent_id, action_id, outcome: str, outcome_type="str"):
-        """执行动作 - 同步接口"""
-
+    def response_to_agent(
+        self, agent_id: str, action_id: int, outcome: str, outcome_type: str = "str"
+    ):
+        """向Agent发送响应 - 同步接口"""
         return self.send_message(
-            "message",
+            MessageType.MESSAGE.value,
             {
                 "type": "outcome",
                 "id": action_id,
@@ -46,9 +46,8 @@ class SyncEnvClient(SyncWebSocketClient):
                 "outcome_type": outcome_type,
             },
             target={
-                "role_type": "agent",
-                "env_id": self.client_info.env_id,
-                "agent_id": agent_id,
+                "type": "agent",
+                "id": agent_id,
             },
         )
 
@@ -69,7 +68,7 @@ class LLMSystem(System):
         # 使用同步客户端
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
-            env_id=1,
+            env_id="1",  # 字符串类型的env_id
         )
         self.add_listener()
         self.actions = {}
@@ -80,10 +79,10 @@ class LLMSystem(System):
 
     def add_listener(self):
         # 添加事件监听器
-        self.client.add_event_listener("message", self.on_message)
-        self.client.add_event_listener("connect", self.on_connect)
-        self.client.add_event_listener("disconnect", self.on_disconnect)
-        self.client.add_event_listener("error", self.on_error)
+        self.client.add_hub_listener("message", self.on_message)
+        self.client.add_hub_listener("connect", self.on_connect)
+        self.client.add_hub_listener("disconnect", self.on_disconnect)
+        self.client.add_hub_listener("error", self.on_error)
 
     def add_env_actions(self):
         # 动作处理
@@ -124,29 +123,23 @@ class LLMSystem(System):
         """处理接收到的消息"""
         print(f"LLMSystem received message")
         try:
-            msg_from = envelope.get("msg_from", {})
-            msg_data = envelope.get("data", {})
-            # instruction = envelope.get("instruction", "")
+            # 解析新的Envelope结构
+            sender = envelope.get("sender", {})
+            recipient = envelope.get("recipient", {})
+            payload = envelope.get("payload", {})
+            message_type = envelope.get("type", "")
 
             # 提取 agent 信息
-            agent_id = msg_from.get("agent_id")
+            agent_id = sender.get("id") if sender.get("type") == "agent" else None
             if agent_id:
-                self.client.connected_agents[agent_id] = msg_from
+                self.client.connected_agents[agent_id] = sender
 
             self.exec_action(envelope)
 
-            # if msg_type == "observation":
-            #     self.handle_observation(msg_from, msg_data)
-            # elif msg_type == "action":
-            #     self.handle_action(msg_from, msg_data)
-            # else:
-            #     # 未知消息类型
-            #     self.send_error_response(msg_from, f"Unknown message type: {msg_type}")
-
         except Exception as e:
             print(f"消息处理错误: {e}")
-            if "msg_from" in locals():
-                self.send_error_response(msg_from, f"Message processing error: {e}")
+            if "sender" in locals():
+                self.send_error_response(sender, f"Message processing error: {e}")
 
     def on_connect(self, message):
         print("LLMSystem connected", message)
@@ -167,13 +160,28 @@ class LLMSystem(System):
         """断开连接 - 同步方法"""
         return self.client.disconnect()
 
-    def send_message(self, message, instruction=None, target_id=None):
+    def send_message(self, message, instruction=None, target=None):
         """发送消息 - 同步方法"""
-        return self.client.send_message(instruction or "message", message, target_id)
+        return self.client.send_message(
+            instruction or MessageType.MESSAGE.value, message, target
+        )
 
-    def response_to_agent(self, agent_id, action_id, outcome: str, outcome_type="str"):
+    def response_to_agent(
+        self, agent_id: str, action_id: int, outcome: str, outcome_type: str = "str"
+    ):
         """执行动作 - 同步接口"""
         return self.client.response_to_agent(agent_id, action_id, outcome, outcome_type)
+
+    def send_error_response(self, sender: Dict[str, Any], error_message: str):
+        """发送错误响应"""
+        agent_id = sender.get("id") if sender.get("type") == "agent" else None
+        if agent_id:
+            error_response = {
+                "success": False,
+                "error": error_message,
+                "timestamp": time.time(),
+            }
+            self.send_message(error_response, target={"type": "agent", "id": agent_id})
 
     def subscribe_events(self):
         return super().subscribe_events()
@@ -229,11 +237,13 @@ class LLMSystem(System):
     # === ENV 方法 ===
     def exec_action(self, message):
         """执行动作 - 同步方法"""
-        agent_id = message.get("msg_from").get("agent_id")
-        data = message.get("data", {})
-        action_id = data.get("id")
-        action = data.get("action")
-        params = data.get("parameters", {})
+        sender = message.get("sender", {})
+        payload = message.get("payload", {})
+
+        agent_id = sender.get("id") if sender.get("type") == "agent" else None
+        action_id = payload.get("id")
+        action = payload.get("action")
+        params = payload.get("parameters", {})
 
         try:
             if action in self.actions:

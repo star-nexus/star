@@ -181,5 +181,6 @@ env_status.txt
 
 # editor config
 .vscode
+.github
 
 screenshots/
