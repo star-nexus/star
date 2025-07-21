@@ -134,8 +134,10 @@ class LLMObservationSystem:
         if health:
             unit_info["health"] = {
                 "current": health.current,
-                "max": health.max,
-                "percentage": health.current / health.max if health.max > 0 else 0,
+                "max": health.maximum,
+                "percentage": (
+                    health.current / health.maximum if health.maximum > 0 else 0
+                ),
             }
 
         if movement:
@@ -379,8 +381,10 @@ class LLMObservationSystem:
         if health:
             unit_info["health"] = {
                 "current": health.current,
-                "max": health.max,
-                "percentage": health.current / health.max if health.max > 0 else 0,
+                "max": health.maximum,
+                "percentage": (
+                    health.current / health.maximum if health.maximum > 0 else 0
+                ),
             }
 
         # 只有在包含隐藏信息或者是己方单位时才显示详细状态

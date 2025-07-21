@@ -1196,7 +1196,7 @@ class LLMActionHandler:
 
         if faction and isinstance(faction, str):
             try:
-                faction = Faction(faction.upper())
+                faction = Faction(faction.lower())
             except ValueError:
                 return {"success": False, "error": f"Invalid faction: {faction}"}
 
