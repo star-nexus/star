@@ -16,23 +16,6 @@ class HexPosition(Component):
 
 
 @dataclass
-class Health(Component):
-    """生命值组件"""
-
-    current: int
-    maximum: int
-
-    @property
-    def percentage(self) -> float:
-        """生命值百分比"""
-        return self.current / self.maximum if self.maximum > 0 else 0.0
-
-    def is_alive(self) -> bool:
-        """是否存活"""
-        return self.current > 0
-
-
-@dataclass
 class Renderable(Component):
     """可渲染组件"""
 

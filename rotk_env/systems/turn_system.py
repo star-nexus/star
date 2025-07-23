@@ -1,10 +1,19 @@
 """
-回合系统 - 管理回合制游戏的回合逻辑
+回合系统 - 管理回合制游戏的回合逻辑（按规则手册v1.2）
 """
 
 from framework import System, World
 from framework.engine.events import EBS
-from ..components import Player, GameState, Movement, Combat, Unit, GameModeComponent
+from ..components import (
+    Player,
+    GameState,
+    Movement,
+    Combat,
+    Unit,
+    GameModeComponent,
+    ActionPoints,
+    UnitCount,
+)
 from ..prefabs.config import GameConfig, GameMode, Faction
 from ..utils.env_events import TurnStartEvent
 
@@ -53,17 +62,9 @@ class TurnSystem(System):
 
     def _update_turn_based(self, delta_time: float) -> None:
         """更新回合制模式"""
-        # 在回合制模式下，主要检查回合结束条件
-        # 具体的回合切换由事件触发
-
         # 检查游戏结束条件
         if self._check_game_over():
             return
-
-        # 可以添加自动回合切换逻辑
-        # self.turn_timer += delta_time
-        # if self.turn_timer > self.auto_turn_duration:
-        #     self.end_turn()
 
     def end_turn(self):
         """结束当前回合"""
@@ -79,11 +80,32 @@ class TurnSystem(System):
 
     def _reset_unit_actions(self):
         """重置所有单位的行动状态"""
+        # 获取行动系统来重置回合行动
+        action_system = self._get_action_system()
+        if action_system:
+            action_system.reset_turn_actions()
+        else:
+            # 备用方案：直接重置
+            self._manual_reset_actions()
+
+    def _manual_reset_actions(self):
+        """手动重置行动状态"""
         for entity in self.world.query().with_component(Movement).entities():
             movement = self.world.get_component(entity, Movement)
+            unit_count = self.world.get_component(entity, UnitCount)
+            action_points = self.world.get_component(entity, ActionPoints)
+
             if movement:
-                movement.current_movement = movement.max_movement
+                if unit_count:
+                    movement.current_movement = movement.get_effective_movement(
+                        unit_count
+                    )
+                else:
+                    movement.current_movement = movement.base_movement
                 movement.has_moved = False
+
+            if action_points:
+                action_points.reset()
 
         for entity in self.world.query().with_component(Combat).entities():
             combat = self.world.get_component(entity, Combat)
@@ -139,6 +161,13 @@ class TurnSystem(System):
                 return system
         return None
 
+    def _get_action_system(self):
+        """获取行动系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "ActionSystem":
+                return system
+        return None
+
     def _check_game_over(self) -> bool:
         """检查游戏是否结束"""
         game_state = self.world.get_singleton_component(GameState)
@@ -152,10 +181,13 @@ class TurnSystem(System):
         factions_with_units = set()
         for entity in self.world.query().with_component(Unit).entities():
             unit = self.world.get_component(entity, Unit)
-            if unit:
+            unit_count = self.world.get_component(entity, UnitCount)
+
+            # 只计算还有人数的单位
+            if unit and unit_count and unit_count.current_count > 0:
                 factions_with_units.add(unit.faction)
 
-        if len(factions_with_units) <= 0:
+        if len(factions_with_units) <= 1:
             game_state.game_over = True
             if factions_with_units:
                 game_state.winner = list(factions_with_units)[0]

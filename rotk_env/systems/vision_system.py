@@ -120,4 +120,5 @@ class VisionSystem(System):
             return 0
 
         terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain.terrain_type)
-        return terrain_effect.vision_bonus if terrain_effect else 0
+        # 目前地形不提供视野加成，始终返回0
+        return 0

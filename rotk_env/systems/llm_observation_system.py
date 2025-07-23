@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from framework import World
 from ..components import (
     Unit,
-    Health,
+    UnitCount,
     HexPosition,
     Movement,
     Combat,
@@ -105,7 +105,7 @@ class LLMObservationSystem:
 
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
-        health = self.world.get_component(unit_id, Health)
+        unit_count = self.world.get_component(unit_id, UnitCount)
         movement = self.world.get_component(unit_id, Movement)
         combat = self.world.get_component(unit_id, Combat)
         vision = self.world.get_component(unit_id, Vision)
@@ -131,31 +131,30 @@ class LLMObservationSystem:
         }
 
         # 添加属性信息
-        if health:
-            unit_info["health"] = {
-                "current": health.current,
-                "max": health.maximum,
+        if unit_count:
+            unit_info["unit_count"] = {
+                "current": unit_count.current_count,
+                "max": unit_count.max_count,
                 "percentage": (
-                    health.current / health.maximum if health.maximum > 0 else 0
+                    unit_count.current_count / unit_count.max_count
+                    if unit_count.max_count > 0
+                    else 0
                 ),
             }
 
         if movement:
             unit_info["movement"] = {
                 "current": movement.current_movement,
-                "max": movement.max_movement,
+                "max": movement.base_movement,
                 "has_moved": movement.has_moved,
             }
 
-        if combat:
-            unit_info["combat"] = {
-                "attack": combat.attack,
-                "defense": combat.defense,
-                "range": combat.attack_range,
-                "has_attacked": combat.has_attacked,
-            }
-
-        # 单位视野内的信息
+            if combat:
+                unit_info["combat"] = {
+                    "attack": combat.base_attack,
+                    "defense": combat.base_defense,
+                    "range": combat.attack_range,
+                }  # 单位视野内的信息
         visible_area = self._get_visible_area(unit_id)
         visible_units = self._get_visible_units(unit_id, visible_area)
         visible_terrain = self._get_visible_terrain(visible_area)
@@ -355,7 +354,7 @@ class LLMObservationSystem:
         """获取单位摘要信息"""
         unit = self.world.get_component(entity, Unit)
         position = self.world.get_component(entity, HexPosition)
-        health = self.world.get_component(entity, Health)
+        unit_count = self.world.get_component(entity, UnitCount)
         movement = self.world.get_component(entity, Movement)
         combat = self.world.get_component(entity, Combat)
         status = self.world.get_component(entity, UnitStatus)
@@ -378,12 +377,14 @@ class LLMObservationSystem:
         if position:
             unit_info["position"] = {"col": position.col, "row": position.row}
 
-        if health:
-            unit_info["health"] = {
-                "current": health.current,
-                "max": health.maximum,
+        if unit_count:
+            unit_info["unit_count"] = {
+                "current": unit_count.current_count,
+                "max": unit_count.max_count,
                 "percentage": (
-                    health.current / health.maximum if health.maximum > 0 else 0
+                    unit_count.current_count / unit_count.max_count
+                    if unit_count.max_count > 0
+                    else 0
                 ),
             }
 
@@ -392,7 +393,7 @@ class LLMObservationSystem:
             if movement:
                 unit_info["movement"] = {
                     "current": movement.current_movement,
-                    "max": movement.max_movement,
+                    "max": movement.base_movement,
                     "has_moved": movement.has_moved,
                 }
 
@@ -453,11 +454,11 @@ class LLMObservationSystem:
             "wounded_units": len(
                 [
                     e
-                    for e in self.world.query().with_all(Unit, Health).entities()
+                    for e in self.world.query().with_all(Unit, UnitCount).entities()
                     if (
                         self.world.get_component(e, Unit).faction == faction
-                        and self.world.get_component(e, Health).current
-                        < self.world.get_component(e, Health).max
+                        and self.world.get_component(e, UnitCount).current_count
+                        < self.world.get_component(e, UnitCount).max_count
                     )
                 ]
             ),

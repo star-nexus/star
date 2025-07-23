@@ -9,7 +9,7 @@ from framework import System, RMS
 from ..components import (
     HexPosition,
     Unit,
-    Health,
+    UnitCount,
     UnitStatus,
     Camera,
     GameState,
@@ -65,12 +65,14 @@ class UnitRenderSystem(System):
         # 获取动画系统以获取正确的渲染位置
         animation_system = self._get_animation_system()
 
-        for entity in self.world.query().with_all(HexPosition, Unit, Health).entities():
+        for entity in (
+            self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+        ):
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
 
-            if not position or not unit or not health:
+            if not position or not unit or not unit_count:
                 continue
 
             # 检查单位是否可见
@@ -113,8 +115,10 @@ class UnitRenderSystem(System):
             RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
             RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
 
-            # 绘制生命值条
-            self._render_health_bar(screen_x, screen_y, health, unit_radius, zoom)
+            # 绘制人数条
+            self._render_unit_count_bar(
+                screen_x, screen_y, unit_count, unit_radius, zoom
+            )
 
             # 绘制单位类型图标
             self._render_unit_icon(screen_x, screen_y, unit, zoom)
@@ -124,12 +128,17 @@ class UnitRenderSystem(System):
             if status:
                 self._render_unit_status(screen_x, screen_y, status, unit_radius, zoom)
 
-    def _render_health_bar(
-        self, x: float, y: float, health: Health, radius: int, zoom: float = 1.0
+    def _render_unit_count_bar(
+        self, x: float, y: float, unit_count: UnitCount, radius: int, zoom: float = 1.0
     ):
-        """渲染生命值条"""
-        if health.percentage >= 1.0:
-            return  # 满血不显示
+        """渲染人数条"""
+        percentage = (
+            unit_count.current_count / unit_count.max_count
+            if unit_count.max_count > 0
+            else 0
+        )
+        if percentage >= 1.0:
+            return  # 满员不显示
 
         bar_width = int(radius * 2 * zoom)
         bar_height = int(4 * zoom)
@@ -139,14 +148,14 @@ class UnitRenderSystem(System):
         # 背景
         RMS.rect((128, 128, 128), (bar_x, bar_y, bar_width, bar_height))
 
-        # 生命值
-        health_width = int(bar_width * health.percentage)
-        health_color = (
+        # 人数条
+        count_width = int(bar_width * percentage)
+        count_color = (
             (255, 0, 0)
-            if health.percentage < 0.3
-            else (255, 255, 0) if health.percentage < 0.7 else (0, 255, 0)
+            if percentage < 0.3
+            else (255, 255, 0) if percentage < 0.7 else (0, 255, 0)
         )
-        RMS.rect(health_color, (bar_x, bar_y, health_width, bar_height))
+        RMS.rect(count_color, (bar_x, bar_y, count_width, bar_height))
 
     def _render_unit_icon(self, x: float, y: float, unit: Unit, zoom: float = 1.0):
         """渲染单位类型图标"""
@@ -154,7 +163,6 @@ class UnitRenderSystem(System):
             "infantry": "兵",
             "cavalry": "骑",
             "archer": "弓",
-            "siege": "攻",
         }
 
         # 将UnitType枚举转换为字符串

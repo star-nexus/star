@@ -11,7 +11,7 @@ from framework import System, RMS
 from ..components import (
     UIState,
     Unit,
-    Health,
+    UnitCount,
     Movement,
     Combat,
     HexPosition,
@@ -63,7 +63,7 @@ class PanelRenderSystem(System):
 
         unit_entity = ui_state.selected_unit
         unit = self.world.get_component(unit_entity, Unit)
-        health = self.world.get_component(unit_entity, Health)
+        unit_count = self.world.get_component(unit_entity, UnitCount)
         movement = self.world.get_component(unit_entity, Movement)
         combat = self.world.get_component(unit_entity, Combat)
         position = self.world.get_component(unit_entity, HexPosition)
@@ -103,23 +103,23 @@ class PanelRenderSystem(System):
         RMS.draw(faction_surface, (panel_x + 10, y_offset))
         y_offset += line_height
 
-        # 生命值
-        if health:
-            health_text = f"生命值: {health.current}/{health.maximum}"
-            health_color = (
+        # 人数
+        if unit_count:
+            count_text = f"人数: {unit_count.current_count}/{unit_count.max_count}"
+            count_percentage = unit_count.percentage / 100
+            count_color = (
                 (255, 0, 0)
-                if health.percentage < 0.3
-                else (255, 255, 0) if health.percentage < 0.7 else (0, 255, 0)
+                if count_percentage < 0.3
+                else (255, 255, 0) if count_percentage < 0.7 else (0, 255, 0)
             )
-            health_surface = self.small_font.render(health_text, True, health_color)
-            RMS.draw(health_surface, (panel_x + 10, y_offset))
+            count_surface = self.small_font.render(count_text, True, count_color)
+            RMS.draw(count_surface, (panel_x + 10, y_offset))
             y_offset += line_height
 
         # 移动力
-        if movement:
-            movement_text = (
-                f"移动力: {movement.current_movement}/{movement.max_movement}"
-            )
+        if movement and unit_count:
+            effective_max = movement.get_effective_movement(unit_count)
+            movement_text = f"移动力: {movement.current_movement:.1f}/{effective_max}"
             movement_surface = self.small_font.render(
                 movement_text, True, (0, 255, 255)
             )
@@ -128,7 +128,7 @@ class PanelRenderSystem(System):
 
         # 攻击力
         if combat:
-            attack_text = f"攻击力: {combat.attack}"
+            attack_text = f"攻击力: {combat.base_attack}"
             attack_surface = self.small_font.render(attack_text, True, (255, 200, 0))
             RMS.draw(attack_surface, (panel_x + 10, y_offset))
             y_offset += line_height

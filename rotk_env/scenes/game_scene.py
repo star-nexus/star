@@ -37,7 +37,7 @@ from ..components import (
     Player,
     AIControlled,
     Unit,
-    Health,
+    UnitCount,
     Movement,
     Combat,
     Vision,
@@ -126,7 +126,7 @@ class GameScene(Scene):
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             AISystem(),  # 仅当有AI玩家时添加AI系统
-            LLMSystem(),  # LLM系统 (优先级5)
+            # LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
@@ -288,10 +288,9 @@ class GameScene(Scene):
 
         # 基础配比：步兵40%，骑兵30%，弓兵25%，攻城5%
         base_ratios = {
-            UnitType.INFANTRY: 0.40,
+            UnitType.INFANTRY: 0.50,
             UnitType.CAVALRY: 0.30,
-            UnitType.ARCHER: 0.25,
-            UnitType.SIEGE: 0.05,
+            UnitType.ARCHER: 0.20,
         }
 
         # 根据数量计算各类型单位数
@@ -303,9 +302,9 @@ class GameScene(Scene):
         while len(unit_types) < count:
             unit_types.append(UnitType.INFANTRY)
 
-        # 如果超了，移除多余的（优先移除攻城器械）
+        # 如果超了，移除多余的（优先移除弓兵）
         while len(unit_types) > count:
-            for remove_type in [UnitType.SIEGE, UnitType.ARCHER, UnitType.CAVALRY]:
+            for remove_type in [UnitType.ARCHER, UnitType.CAVALRY]:
                 if remove_type in unit_types:
                     unit_types.remove(remove_type)
                     break
@@ -333,25 +332,35 @@ class GameScene(Scene):
         self.world.add_component(unit_entity, HexPosition(position[0], position[1]))
         self.world.add_component(
             unit_entity,
-            Health(current=unit_stats.max_hp, maximum=unit_stats.max_hp),
+            UnitCount(
+                current_count=unit_stats.max_count, max_count=unit_stats.max_count
+            ),
         )
         self.world.add_component(
             unit_entity,
             Movement(
-                max_movement=unit_stats.movement,
+                base_movement=unit_stats.movement,
                 current_movement=unit_stats.movement,
             ),
         )
         self.world.add_component(
             unit_entity,
             Combat(
-                attack=unit_stats.attack,
-                defense=unit_stats.defense,
+                base_attack=unit_stats.base_attack,
+                base_defense=unit_stats.base_defense,
                 attack_range=unit_stats.attack_range,
             ),
         )
         self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
-        self.world.add_component(unit_entity, UnitStatus(current_status="idle"))
+        self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
+
+        # 添加行动力组件
+        from ..components import ActionPoints, UnitSkills
+
+        self.world.add_component(unit_entity, ActionPoints(current_ap=2, max_ap=2))
+
+        # 添加技能组件
+        self.world.add_component(unit_entity, UnitSkills())
 
         return unit_entity
 
@@ -374,6 +383,8 @@ class GameScene(Scene):
 
         # 初始化战斗日志
         battle_log = BattleLog()
+        battle_log.add_entry("游戏开始", "turn", "", (0, 255, 0))
+        battle_log.add_entry("魏国回合开始", "turn", "wei", (255, 100, 100))
         self.world.add_singleton_component(battle_log)
 
         # 初始化可见性追踪器
@@ -403,11 +414,8 @@ class GameScene(Scene):
         self.world.add_singleton_component(InputState())
         self.world.add_singleton_component(FogOfWar())
 
-        # 初始化战况记录系统
-        battle_log = BattleLog()
-        battle_log.add_entry("游戏开始", "turn", "", (0, 255, 0))
-        battle_log.add_entry("魏国回合开始", "turn", "wei", (255, 100, 100))
-        self.world.add_singleton_component(battle_log)
+        # 初始化战争迷雾
+        self.world.add_singleton_component(FogOfWar())
 
     def update(self, delta_time: float) -> None:
         """更新场景"""
@@ -440,7 +448,7 @@ class GameScene(Scene):
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """收集游戏统计数据"""
-        from ..components import Unit, Health, GameStats
+        from ..components import Unit, UnitCount, GameStats
 
         total_units = 0
         surviving_units = 0
@@ -453,13 +461,13 @@ class GameScene(Scene):
 
             for entity in self.world.query().with_component(Unit).entities():
                 unit = self.world.get_component(entity, Unit)
-                health = self.world.get_component(entity, Health)
+                unit_count = self.world.get_component(entity, UnitCount)
 
                 if unit.faction == faction:
                     faction_total += 1
                     total_units += 1
 
-                    if health and health.current > 0:
+                    if unit_count and unit_count.current_count > 0:
                         faction_surviving += 1
                         surviving_units += 1
 

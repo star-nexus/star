@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from framework import World
 from ..components import (
     Unit,
-    Health,
+    UnitCount,
     HexPosition,
     Movement,
     Combat,
@@ -464,15 +464,15 @@ class LLMActionHandler:
         success = combat_system.attack(attacker_id, target_id)
 
         if success:
-            # 获取目标单位当前血量
-            target_health = self.world.get_component(target_id, Health)
+            # 获取目标单位当前人数
+            target_unit_count = self.world.get_component(target_id, UnitCount)
             return {
                 "success": True,
                 "message": f"Unit {attacker_id} attacked unit {target_id}",
                 "attacker_id": attacker_id,
                 "target_id": target_id,
-                "target_remaining_health": (
-                    target_health.current if target_health else 0
+                "target_remaining_count": (
+                    target_unit_count.current_count if target_unit_count else 0
                 ),
             }
         else:
@@ -819,7 +819,7 @@ class LLMActionHandler:
         for entity in self.world.query().with_all(Unit).entities():
             unit = self.world.get_component(entity, Unit)
             position = self.world.get_component(entity, HexPosition)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
 
             if not unit:
                 continue
@@ -830,12 +830,16 @@ class LLMActionHandler:
             if unit_type_filter and unit.unit_type != unit_type_filter:
                 continue
             if status_filter:
-                if status_filter == "alive" and health and health.current <= 0:
+                if (
+                    status_filter == "alive"
+                    and unit_count
+                    and unit_count.current_count <= 0
+                ):
                     continue
                 elif (
                     status_filter == "wounded"
                     and health
-                    and health.current >= health.maximum
+                    and unit_count.current_count >= unit_count.max_count
                 ):
                     continue
                 elif status_filter == "ready":
@@ -863,9 +867,11 @@ class LLMActionHandler:
 
             if position:
                 unit_info["position"] = {"col": position.col, "row": position.row}
-            if health:
-                unit_info["health_percentage"] = (
-                    health.current / health.maximum if health.maximum > 0 else 0
+            if unit_count:
+                unit_info["unit_count_percentage"] = (
+                    unit_count.current_count / unit_count.max_count
+                    if unit_count.max_count > 0
+                    else 0
                 )
 
             unit_list.append(unit_info)
@@ -1069,21 +1075,21 @@ class LLMActionHandler:
 
             for entity in self.world.query().with_all(Unit).entities():
                 unit = self.world.get_component(entity, Unit)
-                health = self.world.get_component(entity, Health)
+                unit_count = self.world.get_component(entity, UnitCount)
 
                 if unit and unit.faction == faction:
                     total_units += 1
-                    if health:
-                        if health.current <= 0:
+                    if unit_count:
+                        if unit_count.current_count <= 0:
                             dead_units += 1
-                        elif health.current < health.maximum:
+                        elif unit_count.current_count < unit_count.max_count:
                             wounded_units += 1
 
             battle_status["casualties"] = {
                 "total_units": total_units,
                 "wounded_units": wounded_units,
                 "dead_units": dead_units,
-                "healthy_units": total_units - wounded_units - dead_units,
+                "full_strength_units": total_units - wounded_units - dead_units,
             }
 
         return {"success": True, "battle_status": battle_status}
@@ -1218,7 +1224,7 @@ class LLMActionHandler:
         """获取基本单位信息（无观测系统时的后备方案）"""
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
-        health = self.world.get_component(unit_id, Health)
+        unit_count = self.world.get_component(unit_id, UnitCount)
 
         if not unit:
             return {"error": "Unit component not found"}
@@ -1240,12 +1246,14 @@ class LLMActionHandler:
 
         if position:
             basic_info["position"] = {"col": position.col, "row": position.row}
-        if health:
+        if unit_count:
             basic_info["health"] = {
-                "current": health.current,
-                "max": health.maximum,
+                "current": unit_count.current_count,
+                "max": unit_count.max_count,
                 "percentage": (
-                    health.current / health.maximum if health.maximum > 0 else 0
+                    unit_count.current_count / unit_count.max_count
+                    if unit_count.max_count > 0
+                    else 0
                 ),
             }
 
@@ -1310,7 +1318,7 @@ class LLMActionHandler:
         """获取详细单位信息"""
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
-        health = self.world.get_component(unit_id, Health)
+        unit_count = self.world.get_component(unit_id, UnitCount)
         movement = self.world.get_component(unit_id, Movement)
         combat = self.world.get_component(unit_id, Combat)
         vision = self.world.get_component(unit_id, Vision)
@@ -1334,27 +1342,29 @@ class LLMActionHandler:
         if position:
             detailed_info["position"] = {"col": position.col, "row": position.row}
 
-        if health:
+        if unit_count:
             detailed_info["health"] = {
-                "current": health.current,
-                "max": health.maximum,
+                "current": unit_count.current_count,
+                "max": unit_count.max_count,
                 "percentage": (
-                    health.current / health.maximum if health.maximum > 0 else 0
+                    unit_count.current_count / unit_count.max_count
+                    if unit_count.max_count > 0
+                    else 0
                 ),
             }
 
         if movement:
             detailed_info["movement"] = {
                 "current": movement.current_movement,
-                "max": movement.max_movement,
+                "max": movement.base_movement,
                 "has_moved": movement.has_moved,
                 "remaining_movement": movement.current_movement,
             }
 
         if combat:
             detailed_info["combat"] = {
-                "attack": combat.attack,
-                "defense": combat.defense,
+                "attack": combat.base_attack,
+                "defense": combat.base_defense,
                 "range": combat.attack_range,
                 "has_attacked": combat.has_attacked,
             }
@@ -1380,10 +1390,10 @@ class LLMActionHandler:
 
         movement = self.world.get_component(unit_id, Movement)
         combat = self.world.get_component(unit_id, Combat)
-        health = self.world.get_component(unit_id, Health)
+        unit_count = self.world.get_component(unit_id, UnitCount)
 
         # 检查生存状态
-        if health and health.current <= 0:
+        if health and unit_count.current_count <= 0:
             return ["dead"]  # 已死亡单位无法执行动作
 
         # 移动相关动作
@@ -1413,11 +1423,11 @@ class LLMActionHandler:
         }
 
         if movement:
-            capabilities["movement_range"] = movement.max_movement
+            capabilities["movement_range"] = movement.base_movement
         if combat:
             capabilities["attack_range"] = combat.attack_range
-            capabilities["attack_power"] = combat.attack
-            capabilities["defense_power"] = combat.defense
+            capabilities["attack_power"] = combat.base_attack
+            capabilities["defense_power"] = combat.base_defense
         if vision:
             capabilities["sight_range"] = vision.sight_range
 
@@ -1553,7 +1563,7 @@ class LLMActionHandler:
         faction_stats = {}
         for entity in all_units:
             unit = self.world.get_component(entity, Unit)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
             movement = self.world.get_component(entity, Movement)
             combat = self.world.get_component(entity, Combat)
 
@@ -1566,7 +1576,7 @@ class LLMActionHandler:
             if faction_name not in faction_stats:
                 faction_stats[faction_name] = {
                     "total_units": 0,
-                    "healthy_units": 0,
+                    "full_strength_units": 0,
                     "wounded_units": 0,
                     "dead_units": 0,
                     "ready_to_move": 0,
@@ -1578,13 +1588,13 @@ class LLMActionHandler:
             stats = faction_stats[faction_name]
             stats["total_units"] += 1
 
-            if health:
-                if health.current <= 0:
+            if unit_count:
+                if unit_count.current_count <= 0:
                     stats["dead_units"] += 1
-                elif health.current < health.maximum:
+                elif unit_count.current_count < unit_count.max_count:
                     stats["wounded_units"] += 1
                 else:
-                    stats["healthy_units"] += 1
+                    stats["full_strength_units"] += 1
 
             if movement and movement.current_movement > 0 and not movement.has_moved:
                 stats["ready_to_move"] += 1
@@ -1592,8 +1602,8 @@ class LLMActionHandler:
             if combat:
                 if not combat.has_attacked:
                     stats["ready_to_attack"] += 1
-                stats["total_attack_power"] += combat.attack
-                stats["total_defense_power"] += combat.defense
+                stats["total_attack_power"] += combat.base_attack
+                stats["total_defense_power"] += combat.base_defense
 
         summary["faction_stats"] = faction_stats
 

@@ -158,8 +158,19 @@ class AnimationSystem(System):
             color = (*damage_num.color, alpha)
 
             # 渲染文字
-            text = f"-{damage_num.damage}"
-            text_surface = self.damage_font.render(text, True, damage_num.color)
+            text = damage_num.text
+
+            # 根据字体大小创建字体（如果需要）
+            font_to_use = self.damage_font
+            if hasattr(damage_num, "font_size") and damage_num.font_size != 24:
+                try:
+                    import pygame
+
+                    font_to_use = pygame.font.Font(None, damage_num.font_size)
+                except:
+                    font_to_use = self.damage_font
+
+            text_surface = font_to_use.render(text, True, damage_num.color)
 
             # 应用透明度
             if alpha < 255:
@@ -226,11 +237,80 @@ class AnimationSystem(System):
         entity = self.world.create_entity()
 
         damage_num = DamageNumber(
-            damage=damage,
+            text=str(damage),
             position=world_pos,
             lifetime=2.0,
             velocity=(0, -50),  # 向上移动
             color=(255, 0, 0) if damage > 0 else (0, 255, 0),  # 红色伤害，绿色治疗
+            font_size=24,
         )
 
         self.world.add_component(entity, damage_num)
+
+    def create_miss_indicator(self, world_pos: Tuple[float, float]):
+        """创建未命中指示"""
+        entity = self.world.create_entity()
+
+        miss_indicator = DamageNumber(
+            text="MISS",
+            position=world_pos,
+            lifetime=1.5,
+            velocity=(0, -30),  # 稍慢的向上移动
+            color=(128, 128, 128),  # 灰色
+            font_size=20,
+        )
+
+        self.world.add_component(entity, miss_indicator)
+
+    def create_crit_indicator(self, world_pos: Tuple[float, float]):
+        """创建暴击指示"""
+        entity = self.world.create_entity()
+
+        crit_indicator = DamageNumber(
+            text="CRIT!",
+            position=world_pos,
+            lifetime=2.5,
+            velocity=(0, -60),  # 更快的向上移动
+            color=(255, 255, 0),  # 黄色
+            font_size=28,
+        )
+
+        self.world.add_component(entity, crit_indicator)
+
+    def create_healing_number(self, healing: int, world_pos: Tuple[float, float]):
+        """创建治疗数字显示"""
+        entity = self.world.create_entity()
+
+        healing_num = DamageNumber(
+            text=f"+{healing}",
+            position=world_pos,
+            lifetime=2.0,
+            velocity=(0, -40),  # 向上移动
+            color=(0, 255, 0),  # 绿色治疗
+            font_size=24,
+        )
+
+        self.world.add_component(entity, healing_num)
+
+    def create_text_indicator(
+        self,
+        text: str,
+        world_pos: Tuple[float, float],
+        color: Tuple[int, int, int] = (255, 255, 255),
+        font_size: int = 24,
+        lifetime: float = 2.0,
+        velocity: Tuple[float, float] = (0, -50),
+    ):
+        """创建通用文本指示器"""
+        entity = self.world.create_entity()
+
+        text_indicator = DamageNumber(
+            text=text,
+            position=world_pos,
+            lifetime=lifetime,
+            velocity=velocity,
+            color=color,
+            font_size=font_size,
+        )
+
+        self.world.add_component(entity, text_indicator)

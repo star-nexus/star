@@ -66,8 +66,8 @@ class UnitStatus(Component):
 class DamageNumber(Component):
     """伤害数字显示组件"""
 
-    # 伤害值
-    damage: int = 0
+    # 显示文本（可以是数字或特殊文本）
+    text: str = "0"
 
     # 显示位置（屏幕坐标）
     position: Tuple[float, float] = (0, 0)
@@ -83,6 +83,9 @@ class DamageNumber(Component):
 
     # 颜色
     color: Tuple[int, int, int] = (255, 0, 0)  # 红色
+
+    # 字体大小
+    font_size: int = 24
 
     # 字体大小
     font_size: int = 20

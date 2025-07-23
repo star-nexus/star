@@ -1,5 +1,5 @@
 """
-AI系统 - 处理AI玩家的决策
+AI系统 - 处理AI玩家的决策（按规则手册v1.2）
 """
 
 import random
@@ -12,13 +12,15 @@ from ..components import (
     HexPosition,
     Movement,
     Combat,
-    Health,
+    UnitCount,
+    UnitStatus,
     GameState,
     MapData,
     Terrain,
     GameModeComponent,
+    ActionPoints,
 )
-from ..prefabs.config import GameConfig, TerrainType
+from ..prefabs.config import GameConfig, TerrainType, ActionType
 from ..utils.hex_utils import HexMath, PathFinding
 
 
@@ -54,9 +56,7 @@ class AISystem(System):
         self.debug_timer += delta_time
 
         # 在实时模式下，AI更频繁地做决策
-        decision_interval = (
-            0.3 if is_realtime else self.decision_interval
-        )  # 更频繁的决策
+        decision_interval = 0.3 if is_realtime else self.decision_interval
 
         if self.decision_timer >= decision_interval:
             if is_realtime:
@@ -102,10 +102,13 @@ class AISystem(System):
         ai_units = []
         for unit_entity in player.units:
             if self.world.has_component(unit_entity, Unit):
-                ai_units.append(unit_entity)
+                unit_count = self.world.get_component(unit_entity, UnitCount)
+                # 只考虑还有人数的单位
+                if unit_count and unit_count.current_count > 0:
+                    ai_units.append(unit_entity)
 
         if not ai_units:
-            # 没有单位了，结束回合
+            # 没有有效单位了，结束回合
             self._end_ai_turn()
             return
 
@@ -121,23 +124,29 @@ class AISystem(System):
 
     def _execute_unit_strategy(self, unit_entity: int) -> bool:
         """执行单位策略"""
+        action_points = self.world.get_component(unit_entity, ActionPoints)
         movement = self.world.get_component(unit_entity, Movement)
         combat = self.world.get_component(unit_entity, Combat)
-        health = self.world.get_component(unit_entity, Health)
+        unit_count = self.world.get_component(unit_entity, UnitCount)
         game_mode = self.world.get_singleton_component(GameModeComponent)
 
-        # 检查单位是否存活
-        if not health or health.current <= 0:
+        # 检查单位是否存活且有足够人数
+        if not unit_count or unit_count.current_count <= 0:
             return False
 
-        # 在实时模式下，检查单位是否有足够的行动力
+        # 检查是否被残破（人数<=10%）
+        if unit_count.is_decimated():
+            return False
+
+        # 检查是否有行动力
+        if not action_points or action_points.current_ap <= 0:
+            return False
+
+        # 在实时模式下的检查
         is_realtime = game_mode and game_mode.is_real_time()
-
         if is_realtime:
-            # 实时模式：检查移动力和攻击力是否足够（降低阈值以更积极行动）
-            can_move = movement and movement.current_movement > 0.1
+            can_move = movement and movement.current_movement > 0
             can_attack = combat and not combat.has_attacked
-
             if not can_move and not can_attack:
                 return False
         else:
@@ -149,15 +158,23 @@ class AISystem(System):
         enemy_target = self._find_nearest_enemy(unit_entity)
         if enemy_target:
             # 尝试攻击
-            if combat and not combat.has_attacked:
+            if (
+                combat
+                and not combat.has_attacked
+                and action_points.can_perform_action(ActionType.ATTACK)
+            ):
                 if self._try_attack(unit_entity, enemy_target):
                     return True
 
             # 尝试移动接近敌人
-            if movement and (
-                is_realtime
-                and movement.current_movement > 0.1
-                or not movement.has_moved
+            if (
+                movement
+                and action_points.can_perform_action(ActionType.MOVE)
+                and (
+                    is_realtime
+                    and movement.current_movement > 0
+                    or not movement.has_moved
+                )
             ):
                 if self._move_towards_enemy(unit_entity, enemy_target):
                     return True
@@ -176,11 +193,21 @@ class AISystem(System):
         nearest_enemy = None
         min_distance = float("inf")
 
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
+        for entity in (
+            self.world.query().with_all(Unit, HexPosition, UnitCount).entities()
+        ):
             enemy_unit = self.world.get_component(entity, Unit)
             enemy_pos = self.world.get_component(entity, HexPosition)
+            enemy_count = self.world.get_component(entity, UnitCount)
 
-            if enemy_unit and enemy_pos and enemy_unit.faction != unit.faction:
+            if (
+                enemy_unit
+                and enemy_pos
+                and enemy_count
+                and enemy_unit.faction != unit.faction
+                and enemy_count.current_count > 0
+            ):
+
                 distance = HexMath.hex_distance(
                     (position.col, position.row), (enemy_pos.col, enemy_pos.row)
                 )
@@ -206,7 +233,7 @@ class AISystem(System):
         )
 
         if distance <= combat.attack_range:
-            # 执行攻击（这里需要调用战斗系统）
+            # 执行攻击（调用战斗系统）
             combat_system = self._get_combat_system()
             if combat_system:
                 return combat_system.attack(attacker_entity, target_entity)
@@ -218,27 +245,33 @@ class AISystem(System):
         position = self.world.get_component(unit_entity, HexPosition)
         enemy_pos = self.world.get_component(enemy_entity, HexPosition)
         movement = self.world.get_component(unit_entity, Movement)
+        unit_count = self.world.get_component(unit_entity, UnitCount)
 
-        if not position or not enemy_pos or not movement:
+        if not all([position, enemy_pos, movement, unit_count]):
             return False
 
-        # 计算移动路径
-        obstacles = self._get_obstacles_for_ai()
+        # 计算有效移动力
+        effective_movement = movement.get_effective_movement(unit_count)
+        current_pos = (position.col, position.row)
+        enemy_target_pos = (enemy_pos.col, enemy_pos.row)
 
-        # 寻找最佳移动位置
+        # 获取考虑地形消耗的可到达位置
+        reachable_positions = self._get_reachable_positions_with_terrain_cost(
+            current_pos, effective_movement
+        )
+
+        if not reachable_positions:
+            return False
+
+        # 寻找最佳移动位置（最接近敌人的位置）
         best_pos = None
         best_distance = float("inf")
 
-        # 获取移动范围内的所有位置
-        movement_range = PathFinding.get_movement_range(
-            (position.col, position.row), movement.current_movement, obstacles
-        )
-
-        for pos in movement_range:
-            if pos == (position.col, position.row):
+        for pos, cost in reachable_positions.items():
+            if pos == current_pos:
                 continue
 
-            distance = HexMath.hex_distance(pos, (enemy_pos.col, enemy_pos.row))
+            distance = HexMath.hex_distance(pos, enemy_target_pos)
             if distance < best_distance:
                 best_distance = distance
                 best_pos = pos
@@ -255,16 +288,30 @@ class AISystem(System):
         """执行防御策略"""
         position = self.world.get_component(unit_entity, HexPosition)
         movement = self.world.get_component(unit_entity, Movement)
+        action_points = self.world.get_component(unit_entity, ActionPoints)
 
-        if not position or not movement or movement.has_moved:
+        if not all([position, movement, action_points]):
             return False
 
-        # 寻找有利地形
-        best_terrain_pos = self._find_best_defensive_terrain(unit_entity)
-        if best_terrain_pos and best_terrain_pos != (position.col, position.row):
-            movement_system = self._get_movement_system()
-            if movement_system:
-                return movement_system.move_unit(unit_entity, best_terrain_pos)
+        # 尝试驻扎（如果在合适地形）
+        if action_points.can_perform_action(ActionType.GARRISON):
+            action_system = self._get_action_system()
+            if action_system and action_system.perform_garrison(unit_entity):
+                return True
+
+        # 尝试移动到防御地形
+        if not movement.has_moved and action_points.can_perform_action(ActionType.MOVE):
+            best_terrain_pos = self._find_best_defensive_terrain(unit_entity)
+            if best_terrain_pos and best_terrain_pos != (position.col, position.row):
+                movement_system = self._get_movement_system()
+                if movement_system:
+                    return movement_system.move_unit(unit_entity, best_terrain_pos)
+
+        # 最后选择待命
+        if action_points.can_perform_action(ActionType.WAIT):
+            action_system = self._get_action_system()
+            if action_system and action_system.perform_wait(unit_entity):
+                return True
 
         return False
 
@@ -274,13 +321,17 @@ class AISystem(System):
         """寻找最佳防御地形"""
         position = self.world.get_component(unit_entity, HexPosition)
         movement = self.world.get_component(unit_entity, Movement)
+        unit_count = self.world.get_component(unit_entity, UnitCount)
 
-        if not position or not movement:
+        if not all([position, movement, unit_count]):
             return None
 
-        obstacles = self._get_obstacles_for_ai()
-        movement_range = PathFinding.get_movement_range(
-            (position.col, position.row), movement.current_movement, obstacles
+        effective_movement = movement.get_effective_movement(unit_count)
+        current_pos = (position.col, position.row)
+
+        # 获取考虑地形消耗的可到达位置
+        reachable_positions = self._get_reachable_positions_with_terrain_cost(
+            current_pos, effective_movement
         )
 
         best_pos = None
@@ -290,12 +341,14 @@ class AISystem(System):
         if not map_data:
             return None
 
-        for pos in movement_range:
+        for pos, cost in reachable_positions.items():
             tile_entity = map_data.tiles.get(pos)
             if tile_entity:
                 terrain = self.world.get_component(tile_entity, Terrain)
                 if terrain:
                     # 计算地形防御价值
+                    from ..prefabs.config import GameConfig
+
                     terrain_effect = GameConfig.TERRAIN_EFFECTS.get(
                         terrain.terrain_type
                     )
@@ -322,12 +375,9 @@ class AISystem(System):
     def _all_units_exhausted(self, units: List[int]) -> bool:
         """检查所有单位是否都无法行动"""
         for unit_entity in units:
-            movement = self.world.get_component(unit_entity, Movement)
-            combat = self.world.get_component(unit_entity, Combat)
+            action_points = self.world.get_component(unit_entity, ActionPoints)
 
-            if (movement and not movement.has_moved) or (
-                combat and not combat.has_attacked
-            ):
+            if action_points and action_points.current_ap > 0:
                 return False
 
         return True
@@ -345,17 +395,90 @@ class AISystem(System):
                 return system
         return None
 
-    def _get_movement_system(self):
-        """获取移动系统"""
-        for system in self.world.systems:
-            if system.__class__.__name__ == "MovementSystem":
-                return system
-        return None
+    def _get_reachable_positions_with_terrain_cost(
+        self, start_pos: Tuple[int, int], max_movement: int
+    ) -> dict:
+        """获取考虑地形消耗的可到达位置
+        返回：{position: total_cost}
+        """
+        reachable = {}
+        visited = set()
+        queue = [(start_pos, 0)]  # (position, total_cost)
+
+        while queue:
+            current_pos, current_cost = queue.pop(0)
+
+            if current_pos in visited:
+                continue
+
+            visited.add(current_pos)
+            reachable[current_pos] = current_cost
+
+            # 探索邻居
+            for neighbor in HexMath.hex_neighbors(*current_pos):
+                if neighbor in visited:
+                    continue
+
+                # 检查是否有障碍物
+                if self._is_position_blocked(neighbor):
+                    continue
+
+                # 计算移动到该格的地形消耗
+                terrain_cost = self._get_terrain_movement_cost(neighbor)
+                new_cost = current_cost + terrain_cost
+
+                # 如果移动消耗超过限制，跳过
+                if new_cost > max_movement:
+                    continue
+
+                queue.append((neighbor, new_cost))
+
+        return reachable
+
+    def _get_terrain_movement_cost(self, pos: Tuple[int, int]) -> int:
+        """获取指定位置的地形移动消耗"""
+        from ..prefabs.config import GameConfig
+
+        # 获取地形组件
+        for entity in self.world.get_entities_with_component(Terrain):
+            terrain = self.world.get_component(entity, Terrain)
+            terrain_pos = self.world.get_component(entity, HexPosition)
+
+            if terrain_pos and (terrain_pos.col, terrain_pos.row) == pos:
+                terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain.terrain_type)
+                if terrain_effect:
+                    return terrain_effect.movement_cost
+                break
+
+        # 默认平原消耗
+        return 1
+
+    def _is_position_blocked(self, pos: Tuple[int, int]) -> bool:
+        """检查位置是否被阻挡"""
+        # 检查是否有其他单位
+        for entity in self.world.get_entities_with_component(Unit):
+            unit_pos = self.world.get_component(entity, HexPosition)
+            if unit_pos and (unit_pos.col, unit_pos.row) == pos:
+                return True
+
+        # 检查是否是水域（movement_cost=999表示不可通过）
+        terrain_cost = self._get_terrain_movement_cost(pos)
+        if terrain_cost >= 999:
+            return True
+
+        return False
 
     def _get_turn_system(self):
         """获取回合系统"""
         for system in self.world.systems:
             if system.__class__.__name__ == "TurnSystem":
+                return system
+        return None
+
+    def _get_action_system(self):
+        """获取行动系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 
@@ -383,19 +506,29 @@ class AISystem(System):
             unit = self.world.get_component(entity, Unit)
             movement = self.world.get_component(entity, Movement)
             combat = self.world.get_component(entity, Combat)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
+            action_points = self.world.get_component(entity, ActionPoints)
 
-            if health and health.current > 0:
-                can_move = movement and movement.current_movement > 0.1
+            if unit_count and unit_count.current_count > 0:
+                can_move = movement and movement.current_movement > 0
                 can_attack = combat and not combat.has_attacked
+                has_ap = action_points and action_points.current_ap > 0
 
-                if can_move or can_attack:
+                if (can_move or can_attack) and has_ap:
                     active_ai_units += 1
                     print(
-                        f"AI Unit {entity}: Faction={unit.faction}, Health={health.current}, "
-                        f"Movement={movement.current_movement:.1f}/{movement.max_movement}, "
+                        f"AI Unit {entity}: Faction={unit.faction}, Count={unit_count.current_count}, "
+                        f"Movement={movement.current_movement}/{movement.base_movement}, "
+                        f"AP={action_points.current_ap}/{action_points.max_ap}, "
                         f"CanAttack={can_attack}"
                     )
 
         print(f"Total AI units: {ai_unit_count}, Active AI units: {active_ai_units}")
         print("======================")
+
+    def _get_movement_system(self):
+        """获取移动系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "MovementSystem":
+                return system
+        return None

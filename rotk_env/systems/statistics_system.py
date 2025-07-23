@@ -8,7 +8,7 @@ from typing import Dict, Set, Tuple, Optional, List, Any
 from framework import System, World
 from ..components import (
     Unit,
-    Health,
+    UnitCount,
     HexPosition,
     Movement,
     Combat,
@@ -98,14 +98,16 @@ class StatisticsSystem(System):
         current_time = time.time()
 
         # 为每个单位记录观测数据
-        for entity in self.world.query().with_all(Unit, Health, HexPosition).entities():
+        for entity in (
+            self.world.query().with_all(Unit, UnitCount, HexPosition).entities()
+        ):
             unit = self.world.get_component(entity, Unit)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
             position = self.world.get_component(entity, HexPosition)
             movement = self.world.get_component(entity, Movement)
             combat = self.world.get_component(entity, Combat)
 
-            if not all([unit, health, position]):
+            if not all([unit, unit_count, position]):
                 continue
 
             # 获取或创建观测组件
@@ -117,7 +119,9 @@ class StatisticsSystem(System):
             # 更新观测数据
             observation.previous_position = observation.current_position
             observation.current_position = (position.col, position.row)
-            observation.health_percentage = (health.current / health.maximum) * 100
+            observation.health_percentage = (
+                unit_count.current_count / unit_count.max_count
+            ) * 100
 
             if movement:
                 observation.movement_remaining = movement.current_movement
@@ -261,11 +265,13 @@ class StatisticsSystem(System):
         faction_territories = {}
 
         # 统计每个阵营控制的单位和位置
-        for entity in self.world.query().with_all(Unit, HexPosition, Health).entities():
+        for entity in (
+            self.world.query().with_all(Unit, HexPosition, UnitCount).entities()
+        ):
             unit = self.world.get_component(entity, Unit)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
 
-            if not unit or not health or health.current <= 0:
+            if not unit or not unit_count or unit_count.current_count <= 0:
                 continue
 
             faction = unit.faction
@@ -401,6 +407,34 @@ class StatisticsSystem(System):
 
         battle_log.add_entry(message, log_type, attacker_unit.faction.value, color)
 
+    def _add_movement_log_entry(
+        self,
+        battle_log: BattleLog,
+        unit: Unit,
+        from_pos: Tuple[int, int],
+        to_pos: Tuple[int, int],
+    ) -> None:
+        """添加移动日志条目"""
+        message = f"{unit.faction.value}的{unit.unit_type.value}从({from_pos[0]},{from_pos[1]})移动到({to_pos[0]},{to_pos[1]})"
+        log_type = "movement"
+        color = (100, 200, 255)  # 蓝色
+        battle_log.add_entry(message, log_type, unit.faction.value, color)
+
+    def _add_turn_change_log_entry(
+        self,
+        battle_log: BattleLog,
+        previous_faction: Optional[Faction],
+        new_faction: Faction,
+    ) -> None:
+        """添加回合变化日志条目"""
+        if previous_faction:
+            message = f"{previous_faction.value}回合结束，{new_faction.value}回合开始"
+        else:
+            message = f"{new_faction.value}回合开始"
+        log_type = "turn"
+        color = (255, 255, 100)  # 黄色
+        battle_log.add_entry(message, log_type, new_faction.value, color)
+
     def record_movement_action(
         self, entity: int, from_pos: Tuple[int, int], to_pos: Tuple[int, int]
     ) -> None:
@@ -428,6 +462,11 @@ class StatisticsSystem(System):
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
         if mode_stats:
             self._record_mode_action(mode_stats, unit.faction, "movement")
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            self._add_movement_log_entry(battle_log, unit, from_pos, to_pos)
 
     def record_turn_change(
         self, previous_faction: Optional[Faction], new_faction: Faction
@@ -460,6 +499,14 @@ class StatisticsSystem(System):
         # 更新阵营回合统计
         if stats:
             self._initialize_faction_stats(new_faction, stats)
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            self._add_turn_change_log_entry(battle_log, previous_faction, new_faction)
+
+        # 更新回合统计
+        if stats:
             stats.faction_stats[new_faction]["turns_played"] += 1
 
     def _record_mode_action(
@@ -538,6 +585,102 @@ class StatisticsSystem(System):
 
             if new_faction not in mode_stats.turn_based_stats["faction_turn_times"]:
                 mode_stats.turn_based_stats["faction_turn_times"][new_faction] = []
+
+    # === 新增事件记录方法 ===
+
+    def record_defense_action(self, entity: int, attacker_entity: int) -> None:
+        """记录防御行动"""
+        unit = self.world.get_component(entity, Unit)
+        attacker_unit = self.world.get_component(attacker_entity, Unit)
+        if not unit or not attacker_unit:
+            return
+
+        # 更新单位统计
+        unit_stats = self.world.get_component(entity, UnitStatistics)
+        if not unit_stats:
+            unit_stats = UnitStatistics()
+            self.world.add_component(entity, unit_stats)
+
+        unit_stats.defenses_made += 1
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            message = f"{unit.faction.value}的{unit.unit_type.value}防御来自{attacker_unit.faction.value}的攻击"
+            battle_log.add_entry(message, "defense", unit.faction.value, (0, 255, 255))
+
+    def record_skill_action(self, entity: int, skill_name: str) -> None:
+        """记录技能使用"""
+        unit = self.world.get_component(entity, Unit)
+        if not unit:
+            return
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            message = (
+                f"{unit.faction.value}的{unit.unit_type.value}使用了技能: {skill_name}"
+            )
+            battle_log.add_entry(message, "skill", unit.faction.value, (255, 165, 0))
+
+    def record_garrison_action(self, entity: int) -> None:
+        """记录驻扎行动"""
+        unit = self.world.get_component(entity, Unit)
+        if not unit:
+            return
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            message = f"{unit.faction.value}的{unit.unit_type.value}进入驻扎状态"
+            battle_log.add_entry(
+                message, "garrison", unit.faction.value, (128, 255, 128)
+            )
+
+    def record_wait_action(self, entity: int) -> None:
+        """记录待命行动"""
+        unit = self.world.get_component(entity, Unit)
+        if not unit:
+            return
+
+        # 记录到战况日志
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            message = f"{unit.faction.value}的{unit.unit_type.value}选择了待命"
+            battle_log.add_entry(message, "wait", unit.faction.value, (192, 192, 192))
+
+    def record_death_action(
+        self, entity: int, killer_entity: Optional[int] = None
+    ) -> None:
+        """记录单位死亡"""
+        unit = self.world.get_component(entity, Unit)
+        if not unit:
+            return
+
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            if killer_entity:
+                killer_unit = self.world.get_component(killer_entity, Unit)
+                if killer_unit:
+                    message = f"{unit.faction.value}的{unit.unit_type.value}被{killer_unit.faction.value}击败"
+                else:
+                    message = f"{unit.faction.value}的{unit.unit_type.value}阵亡"
+            else:
+                message = f"{unit.faction.value}的{unit.unit_type.value}阵亡"
+
+            battle_log.add_entry(message, "death", unit.faction.value, (255, 0, 0))
+
+    def record_game_event(
+        self,
+        event_type: str,
+        message: str,
+        faction: str = "",
+        color: tuple = (255, 255, 255),
+    ) -> None:
+        """记录通用游戏事件"""
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            battle_log.add_entry(message, event_type, faction, color)
 
     # === 数据查询方法 ===
 

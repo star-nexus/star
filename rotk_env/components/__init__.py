@@ -3,15 +3,26 @@
 定义游戏中所有的ECS组件
 """
 
-from .base import HexPosition, Health, Renderable, AnimationState, PathFinding
-from .unit import Unit, Movement, Combat, Vision, Selected, AIControlled
+from .base import HexPosition, Renderable, AnimationState, PathFinding
+from .unit import (
+    Unit,
+    Movement,
+    Combat,
+    Vision,
+    Selected,
+    AIControlled,
+    UnitCount,
+    UnitStatus,
+    UnitSkills,
+    ActionPoints,
+)
 from .terrain import Terrain, TerrainModifier, Tile
 from .player import Player, TurnOrder, TurnManager
 from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
 from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
-from .animation import MovementAnimation, UnitStatus, DamageNumber
+from .animation import MovementAnimation, DamageNumber
 from .battle_log import BattleLog, BattleLogEntry
 from .unit_observation import (
     UnitObservation,
@@ -21,11 +32,17 @@ from .unit_observation import (
 )
 from .game_over import Winner, GameStatistics, GameOverButtons
 from .ui_button import UIButton, UIButtonCollection, UIPanel
+from .random_events import (
+    DiceRoll,
+    TerrainEvent,
+    UnitSkillEvent,
+    RandomEventQueue,
+    CombatRoll,
+)
 
 __all__ = [
     # 基础组件
     "HexPosition",
-    "Health",
     "Renderable",
     "AnimationState",
     "PathFinding",
@@ -36,6 +53,10 @@ __all__ = [
     "Vision",
     "Selected",
     "AIControlled",
+    "UnitCount",
+    "UnitStatus",
+    "UnitSkills",
+    "ActionPoints",
     # 地形组件
     "Terrain",
     "TerrainModifier",
@@ -56,7 +77,6 @@ __all__ = [
     "GameModeComponent",
     # 动画组件
     "MovementAnimation",
-    "UnitStatus",
     "DamageNumber",
     # 战斗日志组件
     "BattleLog",
@@ -73,4 +93,10 @@ __all__ = [
     "UIButton",
     "UIButtonCollection",
     "UIPanel",
+    # 随机事件组件
+    "DiceRoll",
+    "TerrainEvent",
+    "UnitSkillEvent",
+    "RandomEventQueue",
+    "CombatRoll",
 ]

@@ -4,13 +4,14 @@
 
 from framework import System, World
 from ..components import (
-    Player,
-    GameState,
+    Unit,
+    UnitCount,
     Movement,
     Combat,
-    Unit,
+    Player,
+    GameState,
     GameModeComponent,
-    Health,
+    GameStats,
 )
 from ..prefabs.config import GameConfig, GameMode, Faction
 
@@ -59,18 +60,18 @@ class RealtimeSystem(System):
         factions_with_units = set()
         faction_unit_counts = {}
 
-        for entity in self.world.query().with_all(Unit, Health).entities():
+        for entity in self.world.query().with_all(Unit, UnitCount).entities():
             unit = self.world.get_component(entity, Unit)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
 
-            # 只计算活着的单位
-            if unit and health and health.current > 0:
+            # 只计算还有人数的单位
+            if unit and unit_count and unit_count.current_count > 0:
                 factions_with_units.add(unit.faction)
                 faction_unit_counts[unit.faction] = (
                     faction_unit_counts.get(unit.faction, 0) + 1
                 )
 
-        # 检查是否只有在少于2个阵营有单位时才结束游戏
+        # 检查是否只有少于2个阵营有单位时才结束游戏
         if len(factions_with_units) < 2:
             game_state.game_over = True
             if factions_with_units:
@@ -103,33 +104,50 @@ class RealtimeSystem(System):
 
     def _regenerate_action_points(self, delta_time: float) -> None:
         """实时恢复单位行动点数"""
-        regen_rate = 0.4  # 每秒恢复的行动点数比例（增加恢复速度）
+        from ..components import ActionPoints
+
+        regen_rate = 0.4  # 每秒恢复的行动点数比例
 
         # 恢复移动力
         for entity in self.world.query().with_component(Movement).entities():
             movement = self.world.get_component(entity, Movement)
-            if movement and movement.current_movement < movement.max_movement:
-                movement.current_movement = min(
-                    movement.max_movement,
-                    movement.current_movement
-                    + movement.max_movement * regen_rate * delta_time,
-                )
-                # 如果移动力恢复到足够，重置已移动标志
-                if movement.current_movement >= movement.max_movement * 0.7:  # 降低阈值
-                    movement.has_moved = False
+            unit_count = self.world.get_component(entity, UnitCount)
 
-        # 恢复攻击能力
+            if movement and unit_count:
+                max_movement = movement.get_effective_movement(unit_count)
+                if movement.current_movement < max_movement:
+                    movement.current_movement = min(
+                        max_movement,
+                        movement.current_movement
+                        + max_movement * regen_rate * delta_time,
+                    )
+                    # 如果移动力恢复到足够，重置已移动标志
+                    if movement.current_movement >= max_movement * 0.7:
+                        movement.has_moved = False
+
+        # 恢复攻击能力和行动力
         for entity in self.world.query().with_component(Combat).entities():
             combat = self.world.get_component(entity, Combat)
+            action_points = self.world.get_component(entity, ActionPoints)
+
+            # 恢复攻击能力
             if combat and combat.has_attacked:
                 # 添加攻击冷却时间
                 if not hasattr(combat, "attack_cooldown"):
-                    combat.attack_cooldown = 2.0  # 2秒攻击冷却（减少冷却时间）
+                    combat.attack_cooldown = 2.0  # 2秒攻击冷却
                 else:
                     combat.attack_cooldown -= delta_time
                     if combat.attack_cooldown <= 0:
                         combat.has_attacked = False
                         combat.attack_cooldown = 0.0
+
+            # 恢复行动力
+            if action_points and action_points.current_ap < action_points.max_ap:
+                action_points.current_ap = min(
+                    action_points.max_ap,
+                    action_points.current_ap
+                    + action_points.max_ap * regen_rate * delta_time,
+                )
 
     def _update_ai_decisions(self, delta_time: float) -> None:
         """实时模式下的AI决策更新"""
@@ -139,8 +157,6 @@ class RealtimeSystem(System):
             self.ai_decision_timer = 0.0
 
             # 触发AI系统进行决策
-            # 这里可以发送事件或直接调用AI系统
-            # 现在简单地让AI单位有更多机会行动
             self._boost_ai_units()
 
     def _boost_ai_units(self):
@@ -150,18 +166,19 @@ class RealtimeSystem(System):
         for entity in self.world.query().with_all(Unit, AIControlled).entities():
             movement = self.world.get_component(entity, Movement)
             combat = self.world.get_component(entity, Combat)
-            health = self.world.get_component(entity, Health)
+            unit_count = self.world.get_component(entity, UnitCount)
 
-            # 只增强活着的单位
-            if not health or health.current <= 0:
+            # 只增强还有人数的单位
+            if not unit_count or unit_count.current_count <= 0:
                 continue
 
             # 给AI单位少量额外的行动力
-            if movement and movement.current_movement < movement.max_movement:
-                movement.current_movement = min(
-                    movement.max_movement,
-                    movement.current_movement + 0.2,  # 增加额外行动力
-                )
+            if movement and unit_count:
+                max_movement = movement.get_effective_movement(unit_count)
+                if movement.current_movement < max_movement:
+                    movement.current_movement = min(
+                        max_movement, movement.current_movement + 0.2  # 增加额外行动力
+                    )
 
             # 减少AI单位的攻击冷却时间
             if combat and hasattr(combat, "attack_cooldown"):
