@@ -22,6 +22,7 @@ from ..components import (
     Camera,
     FogOfWar,
     GameState,
+    GameModeComponent,
 )
 from ..prefabs.config import GameConfig
 from ..utils.hex_utils import HexConverter
@@ -193,12 +194,12 @@ class PanelRenderSystem(System):
             if y_offset + line_height > panel_y + panel_height - 5:
                 break
 
-            # 渲染时间戳（简化）
-            elapsed = time.time() - entry.timestamp
-            if elapsed < 60:
-                time_str = f"{int(elapsed)}s"
+            # 使用游戏时间显示
+            if entry.game_time_display:
+                time_str = entry.game_time_display
             else:
-                time_str = f"{int(elapsed/60)}m"
+                # 兼容性：如果没有游戏时间显示，使用默认格式
+                time_str = "00:00"
 
             # 渲染消息
             message_text = f"[{time_str}] {entry.message}"

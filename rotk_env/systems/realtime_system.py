@@ -22,7 +22,7 @@ class RealtimeSystem(System):
     def __init__(self):
         super().__init__(required_components={Player}, priority=85)
         self.ai_decision_timer = 0.0
-        self.ai_decision_interval = 2.0  # AI每2秒做一次决策
+        self.ai_decision_interval = 1.0  # AI每1秒做一次资源恢复决策
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -134,7 +134,7 @@ class RealtimeSystem(System):
             if combat and combat.has_attacked:
                 # 添加攻击冷却时间
                 if not hasattr(combat, "attack_cooldown"):
-                    combat.attack_cooldown = 2.0  # 2秒攻击冷却
+                    combat.attack_cooldown = 0.5  # 0.5秒攻击冷却，提高攻击频率
                 else:
                     combat.attack_cooldown -= delta_time
                     if combat.attack_cooldown <= 0:

@@ -23,6 +23,8 @@ from ..components import (
     FogOfWar,
     Terrain,
     Tile,
+    GameModeComponent,
+    GameTime,
 )
 from ..prefabs.config import Faction, TerrainType
 
@@ -387,6 +389,26 @@ class StatisticsSystem(System):
             target_stats.deaths += 1
             target_stats.battles_lost += 1
 
+    def _get_current_time_info(self) -> tuple[str, Optional[int]]:
+        """获取当前时间信息（游戏时间显示和回合数）"""
+        game_time = self.world.get_singleton_component(GameTime)
+        if game_time:
+            return game_time.get_current_time_display(), game_time.get_turn_number()
+
+        # 兼容性：如果没有游戏时间系统，使用旧逻辑
+        game_mode = self.world.get_singleton_component(GameModeComponent)
+        if game_mode and game_mode.is_turn_based():
+            game_state = self.world.get_singleton_component(GameState)
+            turn_num = game_state.turn_number if game_state else 1
+            return f"T{turn_num}", turn_num
+        else:
+            return "00:00", None
+
+    def _get_current_turn_number(self) -> Optional[int]:
+        """获取当前回合数（仅在回合制模式下）"""
+        _, turn_number = self._get_current_time_info()
+        return turn_number
+
     def _add_battle_log_entry(
         self,
         battle_log: BattleLog,
@@ -405,7 +427,15 @@ class StatisticsSystem(System):
             log_type = "combat"
             color = (255, 200, 100)
 
-        battle_log.add_entry(message, log_type, attacker_unit.faction.value, color)
+        time_display, turn_number = self._get_current_time_info()
+        battle_log.add_entry(
+            message,
+            log_type,
+            attacker_unit.faction.value,
+            color,
+            time_display,
+            turn_number,
+        )
 
     def _add_movement_log_entry(
         self,
@@ -418,7 +448,10 @@ class StatisticsSystem(System):
         message = f"{unit.faction.value}的{unit.unit_type.value}从({from_pos[0]},{from_pos[1]})移动到({to_pos[0]},{to_pos[1]})"
         log_type = "movement"
         color = (100, 200, 255)  # 蓝色
-        battle_log.add_entry(message, log_type, unit.faction.value, color)
+        time_display, turn_number = self._get_current_time_info()
+        battle_log.add_entry(
+            message, log_type, unit.faction.value, color, time_display, turn_number
+        )
 
     def _add_turn_change_log_entry(
         self,
@@ -433,7 +466,10 @@ class StatisticsSystem(System):
             message = f"{new_faction.value}回合开始"
         log_type = "turn"
         color = (255, 255, 100)  # 黄色
-        battle_log.add_entry(message, log_type, new_faction.value, color)
+        time_display, turn_number = self._get_current_time_info()
+        battle_log.add_entry(
+            message, log_type, new_faction.value, color, time_display, turn_number
+        )
 
     def record_movement_action(
         self, entity: int, from_pos: Tuple[int, int], to_pos: Tuple[int, int]
@@ -607,7 +643,15 @@ class StatisticsSystem(System):
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             message = f"{unit.faction.value}的{unit.unit_type.value}防御来自{attacker_unit.faction.value}的攻击"
-            battle_log.add_entry(message, "defense", unit.faction.value, (0, 255, 255))
+            time_display, turn_number = self._get_current_time_info()
+            battle_log.add_entry(
+                message,
+                "defense",
+                unit.faction.value,
+                (0, 255, 255),
+                time_display,
+                turn_number,
+            )
 
     def record_skill_action(self, entity: int, skill_name: str) -> None:
         """记录技能使用"""
@@ -621,7 +665,10 @@ class StatisticsSystem(System):
             message = (
                 f"{unit.faction.value}的{unit.unit_type.value}使用了技能: {skill_name}"
             )
-            battle_log.add_entry(message, "skill", unit.faction.value, (255, 165, 0))
+            time_display, turn_number = self._get_current_time_info()
+            battle_log.add_entry(
+                message, "skill", unit.faction.value, (255, 165, 0), turn_number
+            )
 
     def record_garrison_action(self, entity: int) -> None:
         """记录驻扎行动"""
@@ -633,8 +680,9 @@ class StatisticsSystem(System):
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             message = f"{unit.faction.value}的{unit.unit_type.value}进入驻扎状态"
+            time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
-                message, "garrison", unit.faction.value, (128, 255, 128)
+                message, "garrison", unit.faction.value, (128, 255, 128), turn_number
             )
 
     def record_wait_action(self, entity: int) -> None:
@@ -647,7 +695,10 @@ class StatisticsSystem(System):
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             message = f"{unit.faction.value}的{unit.unit_type.value}选择了待命"
-            battle_log.add_entry(message, "wait", unit.faction.value, (192, 192, 192))
+            time_display, turn_number = self._get_current_time_info()
+            battle_log.add_entry(
+                message, "wait", unit.faction.value, (192, 192, 192), turn_number
+            )
 
     def record_death_action(
         self, entity: int, killer_entity: Optional[int] = None
@@ -668,7 +719,13 @@ class StatisticsSystem(System):
             else:
                 message = f"{unit.faction.value}的{unit.unit_type.value}阵亡"
 
-            battle_log.add_entry(message, "death", unit.faction.value, (255, 0, 0))
+            battle_log.add_entry(
+                message,
+                "death",
+                unit.faction.value,
+                (255, 0, 0),
+                self._get_current_turn_number(),
+            )
 
     def record_game_event(
         self,
@@ -680,7 +737,10 @@ class StatisticsSystem(System):
         """记录通用游戏事件"""
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            battle_log.add_entry(message, event_type, faction, color)
+            time_display, turn_number = self._get_current_time_info()
+            battle_log.add_entry(
+                message, event_type, faction, color, time_display, turn_number
+            )
 
     # === 数据查询方法 ===
 

@@ -3,8 +3,7 @@
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
-import time
+from typing import List, Dict, Any, Optional
 from framework import SingletonComponent
 
 
@@ -12,7 +11,8 @@ from framework import SingletonComponent
 class BattleLogEntry:
     """战况记录条目"""
 
-    timestamp: float = field(default_factory=time.time)
+    game_time_display: str = ""  # 游戏时间显示（如"T1"或"02:30"）
+    turn_number: Optional[int] = None  # 回合制模式下的回合数
     message: str = ""
     log_type: str = "info"  # "info", "combat", "movement", "death", "turn"
     faction: str = ""
@@ -35,10 +35,17 @@ class BattleLog(SingletonComponent):
         log_type: str = "info",
         faction: str = "",
         color: tuple = (255, 255, 255),
+        game_time_display: str = "",
+        turn_number: Optional[int] = None,
     ):
         """添加战况记录"""
         entry = BattleLogEntry(
-            message=message, log_type=log_type, faction=faction, color=color
+            message=message,
+            log_type=log_type,
+            faction=faction,
+            color=color,
+            game_time_display=game_time_display,
+            turn_number=turn_number,
         )
 
         self.entries.append(entry)

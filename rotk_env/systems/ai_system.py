@@ -171,9 +171,8 @@ class AISystem(System):
                 movement
                 and action_points.can_perform_action(ActionType.MOVE)
                 and (
-                    is_realtime
-                    and movement.current_movement > 0
-                    or not movement.has_moved
+                    (is_realtime and movement.current_movement > 0)
+                    or (not is_realtime and not movement.has_moved)
                 )
             ):
                 if self._move_towards_enemy(unit_entity, enemy_target):

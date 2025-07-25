@@ -37,6 +37,8 @@ class LLMActionHandler:
             "move": self.handle_move_action,
             "attack": self.handle_attack_action,
             "defend": self.handle_defend_action,
+            "garrison": self.handle_garrison_action,
+            "wait": self.handle_wait_action,
             "scout": self.handle_scout_action,
             "retreat": self.handle_retreat_action,
             "fortify": self.handle_fortify_action,
@@ -126,6 +128,28 @@ class LLMActionHandler:
                 "inputs": {
                     "unit_id": {
                         "param_desc": "要设置防御的单位ID",
+                        "param_type": "int",
+                        "required": True,
+                    }
+                },
+            },
+            "garrison": {
+                "function_name": "garrison",
+                "function_desc": "单位进入驻守状态，获得防御加成",
+                "inputs": {
+                    "unit_id": {
+                        "param_desc": "要驻守的单位ID",
+                        "param_type": "int",
+                        "required": True,
+                    }
+                },
+            },
+            "wait": {
+                "function_name": "wait",
+                "function_desc": "单位等待，跳过本回合",
+                "inputs": {
+                    "unit_id": {
+                        "param_desc": "要等待的单位ID",
                         "param_type": "int",
                         "required": True,
                     }
@@ -407,104 +431,431 @@ class LLMActionHandler:
 
     def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理移动动作"""
-        unit_id = params.get("unit_id")
-        target_pos = params.get("target_position")  # (col, row)
-        unit_id = int(unit_id)
-        target_pos = ast.literal_eval(target_pos)
-        if not unit_id or not target_pos:
-            return {"success": False, "error": "Missing unit_id or target_position"}
+        try:
+            # 参数类型验证和转换
+            unit_id = params.get("unit_id")
+            target_position = params.get("target_position")
 
-        # 验证单位存在
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+            # 类型验证
+            if unit_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: unit_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "move",
+                }
 
-        # 获取移动系统
-        movement_system = self._get_movement_system()
-        if not movement_system:
-            return {"success": False, "error": "Movement system not available"}
+            if target_position is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: target_position",
+                    "error_code": "MISSING_PARAM",
+                    "action": "move",
+                }
 
-        # 执行移动
-        success = movement_system.move_unit(unit_id, tuple(target_pos))
+            # 转换参数类型
+            try:
+                unit_id = int(unit_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
+                    "error_code": "INVALID_TYPE",
+                    "action": "move",
+                }
 
-        if success:
-            return {
-                "success": True,
-                "message": f"Unit {unit_id} moved to {target_pos}",
-                "unit_id": unit_id,
-                "new_position": target_pos,
-            }
-        else:
+            # 处理target_position - 支持多种输入格式
+            if isinstance(target_position, str):
+                try:
+                    target_position = ast.literal_eval(target_position)
+                except (ValueError, SyntaxError):
+                    return {
+                        "success": False,
+                        "error": f"Invalid target_position format: {target_position}",
+                        "error_code": "INVALID_FORMAT",
+                        "action": "move",
+                    }
+
+            if (
+                not isinstance(target_position, (list, tuple))
+                or len(target_position) != 2
+            ):
+                return {
+                    "success": False,
+                    "error": "target_position must be [col, row] or (col, row)",
+                    "error_code": "INVALID_FORMAT",
+                    "action": "move",
+                }
+
+            try:
+                target_pos = (int(target_position[0]), int(target_position[1]))
+            except (ValueError, TypeError, IndexError):
+                return {
+                    "success": False,
+                    "error": f"Invalid target_position coordinates: {target_position}",
+                    "error_code": "INVALID_COORDINATES",
+                    "action": "move",
+                }
+
+            # 验证单位存在
+            if not self.world.has_entity(unit_id):
+                return {
+                    "success": False,
+                    "error": f"Unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                    "action": "move",
+                    "unit_id": unit_id,
+                }
+
+            # 获取移动系统
+            movement_system = self._get_movement_system()
+            if not movement_system:
+                return {
+                    "success": False,
+                    "error": "Movement system not available",
+                    "error_code": "SYSTEM_UNAVAILABLE",
+                    "action": "move",
+                }
+
+            # 执行移动 - 使用正确的参数类型 (entity: int, target_pos: Tuple[int, int])
+            success = movement_system.move_unit(unit_id, target_pos)
+
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Unit {unit_id} successfully moved to {target_pos}",
+                    "action": "move",
+                    "unit_id": unit_id,
+                    "new_position": {"col": target_pos[0], "row": target_pos[1]},
+                    "target_position": list(target_pos),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Movement failed - check path, movement points, or obstacles",
+                    "error_code": "MOVEMENT_FAILED",
+                    "action": "move",
+                    "unit_id": unit_id,
+                    "target_position": list(target_pos),
+                }
+
+        except Exception as e:
             return {
                 "success": False,
-                "error": "Movement failed - check path, movement points, or obstacles",
-                "unit_id": unit_id,
-                "target_position": target_pos,
+                "error": f"Unexpected error in move action: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "action": "move",
+                "params": params,
             }
 
     def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理攻击动作"""
-        attacker_id = params.get("attacker_id")
-        target_id = params.get("target_id")
+        try:
+            # 参数类型验证和转换
+            unit_id = params.get("unit_id")  # 现在使用unit_id而不是attacker_id
+            target_id = params.get("target_id")
 
-        if not attacker_id or not target_id:
-            return {"success": False, "error": "Missing attacker_id or target_id"}
+            # 验证必需参数存在
+            if unit_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: unit_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "attack",
+                }
 
-        # 验证单位存在
-        if not self.world.has_entity(attacker_id) or not self.world.has_entity(
-            target_id
-        ):
-            return {"success": False, "error": "One or both units do not exist"}
+            if target_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: target_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "attack",
+                }
 
-        # 获取战斗系统
-        combat_system = self._get_combat_system()
-        if not combat_system:
-            return {"success": False, "error": "Combat system not available"}
+            # 类型转换
+            try:
+                unit_id = int(unit_id)
+                target_id = int(target_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": f"Invalid parameter types: unit_id and target_id must be integers",
+                    "error_code": "INVALID_TYPE",
+                    "action": "attack",
+                }
 
-        # 执行攻击
-        success = combat_system.attack(attacker_id, target_id)
+            # 验证单位存在
+            if not self.world.has_entity(unit_id):
+                return {
+                    "success": False,
+                    "error": f"Attacker unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                    "action": "attack",
+                    "unit_id": unit_id,
+                }
 
-        if success:
-            # 获取目标单位当前人数
-            target_unit_count = self.world.get_component(target_id, UnitCount)
-            return {
-                "success": True,
-                "message": f"Unit {attacker_id} attacked unit {target_id}",
-                "attacker_id": attacker_id,
-                "target_id": target_id,
-                "target_remaining_count": (
-                    target_unit_count.current_count if target_unit_count else 0
-                ),
-            }
-        else:
+            if not self.world.has_entity(target_id):
+                return {
+                    "success": False,
+                    "error": f"Target unit {target_id} does not exist",
+                    "error_code": "TARGET_NOT_FOUND",
+                    "action": "attack",
+                    "target_id": target_id,
+                }
+
+            # 获取战斗系统
+            combat_system = self._get_combat_system()
+            if not combat_system:
+                return {
+                    "success": False,
+                    "error": "Combat system not available",
+                    "error_code": "SYSTEM_UNAVAILABLE",
+                    "action": "attack",
+                }
+
+            # 执行攻击 - 使用正确的参数类型 (attacker_entity: int, target_entity: int)
+            success = combat_system.attack(unit_id, target_id)
+
+            if success:
+                # 获取目标单位当前人数
+                target_unit_count = self.world.get_component(target_id, UnitCount)
+                return {
+                    "success": True,
+                    "message": f"Unit {unit_id} successfully attacked unit {target_id}",
+                    "action": "attack",
+                    "attacker_id": unit_id,
+                    "target_id": target_id,
+                    "target_remaining_count": (
+                        target_unit_count.current_count if target_unit_count else 0
+                    ),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Attack failed - check range, action points, or target validity",
+                    "error_code": "ATTACK_FAILED",
+                    "action": "attack",
+                    "attacker_id": unit_id,
+                    "target_id": target_id,
+                }
+
+        except Exception as e:
             return {
                 "success": False,
-                "error": "Attack failed - check range, action points, or target validity",
-                "attacker_id": attacker_id,
-                "target_id": target_id,
+                "error": f"Unexpected error in attack action: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "action": "attack",
+                "params": params,
             }
 
     def handle_defend_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理防御动作"""
-        unit_id = params.get("unit_id")
+        try:
+            # 参数验证
+            unit_id = params.get("unit_id")
 
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
+            if unit_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: unit_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "defend",
+                }
 
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+            # 类型转换
+            try:
+                unit_id = int(unit_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
+                    "error_code": "INVALID_TYPE",
+                    "action": "defend",
+                }
 
-        # 设置防御状态
-        unit_status = self.world.get_component(unit_id, UnitStatus)
-        if unit_status:
-            unit_status.is_defending = True
+            # 验证单位存在
+            if not self.world.has_entity(unit_id):
+                return {
+                    "success": False,
+                    "error": f"Unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                    "action": "defend",
+                    "unit_id": unit_id,
+                }
+
+            # 设置防御状态
+            unit_status = self.world.get_component(unit_id, UnitStatus)
+            if unit_status:
+                unit_status.is_defending = True
+                return {
+                    "success": True,
+                    "message": f"Unit {unit_id} is now defending with bonus",
+                    "action": "defend",
+                    "unit_id": unit_id,
+                    "defense_bonus": 0.5,  # 50% 防御加成
+                    "status": "defending",
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Unit {unit_id} does not have UnitStatus component",
+                    "error_code": "COMPONENT_MISSING",
+                    "action": "defend",
+                    "unit_id": unit_id,
+                }
+
+        except Exception as e:
             return {
-                "success": True,
-                "message": f"Unit {unit_id} is now defending",
-                "unit_id": unit_id,
-                "defense_bonus": 0.5,  # 50% 防御加成
+                "success": False,
+                "error": f"Unexpected error in defend action: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "action": "defend",
+                "params": params,
             }
 
-        return {"success": False, "error": "Unable to set defend status"}
+    def handle_garrison_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理驻守动作"""
+        try:
+            # 参数验证
+            unit_id = params.get("unit_id")
+
+            if unit_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: unit_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "garrison",
+                }
+
+            # 类型转换
+            try:
+                unit_id = int(unit_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
+                    "error_code": "INVALID_TYPE",
+                    "action": "garrison",
+                }
+
+            # 验证单位存在
+            if not self.world.has_entity(unit_id):
+                return {
+                    "success": False,
+                    "error": f"Unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                    "action": "garrison",
+                    "unit_id": unit_id,
+                }
+
+            # 获取动作系统并执行驻守
+            action_system = self._get_action_system()
+            if not action_system:
+                return {
+                    "success": False,
+                    "error": "Action system not available",
+                    "error_code": "SYSTEM_UNAVAILABLE",
+                    "action": "garrison",
+                }
+
+            success = action_system.perform_garrison(unit_id)
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Unit {unit_id} is now garrisoned with defensive bonuses",
+                    "action": "garrison",
+                    "unit_id": unit_id,
+                    "status": "garrisoned",
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Garrison action failed - check unit status and action points",
+                    "error_code": "ACTION_FAILED",
+                    "action": "garrison",
+                    "unit_id": unit_id,
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error in garrison action: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "action": "garrison",
+                "params": params,
+            }
+
+    def handle_wait_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理等待动作"""
+        try:
+            # 参数验证
+            unit_id = params.get("unit_id")
+
+            if unit_id is None:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: unit_id",
+                    "error_code": "MISSING_PARAM",
+                    "action": "wait",
+                }
+
+            # 类型转换
+            try:
+                unit_id = int(unit_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
+                    "error_code": "INVALID_TYPE",
+                    "action": "wait",
+                }
+
+            # 验证单位存在
+            if not self.world.has_entity(unit_id):
+                return {
+                    "success": False,
+                    "error": f"Unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                    "action": "wait",
+                    "unit_id": unit_id,
+                }
+
+            # 获取动作系统并执行等待
+            action_system = self._get_action_system()
+            if not action_system:
+                return {
+                    "success": False,
+                    "error": "Action system not available",
+                    "error_code": "SYSTEM_UNAVAILABLE",
+                    "action": "wait",
+                }
+
+            success = action_system.perform_wait(unit_id)
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Unit {unit_id} is waiting this turn",
+                    "action": "wait",
+                    "unit_id": unit_id,
+                    "status": "waiting",
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Wait action failed - check unit status",
+                    "error_code": "ACTION_FAILED",
+                    "action": "wait",
+                    "unit_id": unit_id,
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error in wait action: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "action": "wait",
+                "params": params,
+            }
 
     def handle_scout_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理侦察动作"""
@@ -697,6 +1048,13 @@ class LLMActionHandler:
                 return system
         return None
 
+    def _get_action_system(self):
+        """获取动作系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "ActionSystem":
+                return system
+        return None
+
     def _calculate_retreat_position(
         self, current_pos: Tuple[int, int], direction: str
     ) -> Tuple[int, int]:
@@ -838,8 +1196,8 @@ class LLMActionHandler:
                     continue
                 elif (
                     status_filter == "wounded"
-                    and health
-                    and unit_count.current_count >= unit_count.max_count
+                    and unit_count
+                    and unit_count.current_count < unit_count.max_count
                 ):
                     continue
                 elif status_filter == "ready":
@@ -1393,7 +1751,7 @@ class LLMActionHandler:
         unit_count = self.world.get_component(unit_id, UnitCount)
 
         # 检查生存状态
-        if health and unit_count.current_count <= 0:
+        if unit_count and unit_count.current_count <= 0:
             return ["dead"]  # 已死亡单位无法执行动作
 
         # 移动相关动作

@@ -22,6 +22,7 @@ from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
 from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
+from .game_time import GameTime
 from .animation import MovementAnimation, DamageNumber
 from .battle_log import BattleLog, BattleLogEntry
 from .unit_observation import (
@@ -75,6 +76,8 @@ __all__ = [
     "Camera",
     "MiniMap",
     "GameModeComponent",
+    # 游戏时间组件
+    "GameTime",
     # 动画组件
     "MovementAnimation",
     "DamageNumber",

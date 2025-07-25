@@ -75,6 +75,11 @@ class CombatSystem(System):
 
         # 1. 命中判定
         if not self._roll_hit(combat_roll, attacker_pos, target_pos):
+            # 添加未命中的控制台输出
+            attacker_faction = attacker_unit.faction.value
+            target_faction = target_unit.faction.value
+            print(f"❌ {attacker_faction}军攻击{target_faction}军未命中!")
+
             self._create_miss_display(target_entity)
             # 记录未命中到BattleLog
             self._record_miss_to_systems(attacker_entity, target_entity)
@@ -92,12 +97,28 @@ class CombatSystem(System):
         )
 
         # 3. 暴击判定
+        is_crit = False
         if self._roll_crit(combat_roll):
             damage = int(damage * 1.5)
+            is_crit = True
             self._create_crit_display(target_entity)
 
         # 4. 应用伤害
+        old_count = target_count.current_count
         self._apply_damage(target_entity, damage)
+        new_count = target_count.current_count
+
+        # 添加控制台输出
+        attacker_faction = attacker_unit.faction.value
+        target_faction = target_unit.faction.value
+        if is_crit:
+            print(
+                f"💥 {attacker_faction}军暴击{target_faction}军! 伤害:{damage}, 人数:{old_count}->{new_count}"
+            )
+        else:
+            print(
+                f"⚔️ {attacker_faction}军攻击{target_faction}军! 伤害:{damage}, 人数:{old_count}->{new_count}"
+            )
 
         # 5. 消耗行动力
         action_points.consume_ap(ActionType.ATTACK)
@@ -330,6 +351,16 @@ class CombatSystem(System):
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
+
+        # 添加死亡控制台输出
+        pos = self.world.get_component(entity, HexPosition)
+        pos_str = f"@({pos.col},{pos.row})" if pos else ""
+        if killer_entity:
+            killer_unit = self.world.get_component(killer_entity, Unit)
+            killer_faction = killer_unit.faction.value if killer_unit else "未知"
+            print(f"💀 {unit.faction.value}军单位{pos_str}被{killer_faction}军击杀!")
+        else:
+            print(f"💀 {unit.faction.value}军单位{pos_str}死亡!")
 
         # 记录死亡到统计系统
         statistics_system = self._get_statistics_system()

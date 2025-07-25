@@ -27,6 +27,7 @@ from ..systems.ui_render_system import UIRenderSystem
 from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.statistics_system import StatisticsSystem
+from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
 from ..components import (
     GameState,
@@ -108,7 +109,7 @@ class GameScene(Scene):
         self._initialize_players()
 
         # 初始化单位
-        self._initialize_units(10, 10)  # 默认每个阵营10个单位
+        self._initialize_units(3, 3)  # 默认每个阵营10个单位
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -121,6 +122,7 @@ class GameScene(Scene):
         # 按优先级顺序添加系统
 
         systems = [
+            GameTimeSystem(),  # 游戏时间系统 (优先级10) - 最早执行
             MapSystem(),  # 地图系统 (优先级100)
             VisionSystem(),  # 视野系统
             MovementSystem(),  # 移动系统

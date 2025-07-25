@@ -57,168 +57,306 @@ class LLMObservationSystem:
             faction: 阵营（faction级别时必需）
             unit_id: 单位ID（unit级别时必需）
             include_hidden: 是否包含隐藏信息（仅godview支持）
+
+        Returns:
+            Dict with 'success' field and either 'data' or 'error' information
         """
+        try:
+            import time
 
-        import time
+            current_time = time.time()
 
-        current_time = time.time()
+            # 参数验证
+            if not observation_level:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: observation_level",
+                    "error_code": "MISSING_PARAM",
+                    "operation": "get_observation",
+                }
 
-        # 检查缓存
-        cache_key = f"{observation_level}_{faction}_{unit_id}_{include_hidden}"
-        if (
-            cache_key in self.cache
-            and current_time - self.cache_timestamp < self.cache_duration
-        ):
-            return self.cache[cache_key]
+            if observation_level not in [
+                ObservationLevel.UNIT,
+                ObservationLevel.FACTION,
+                ObservationLevel.GODVIEW,
+                ObservationLevel.LIMITED,
+            ]:
+                return {
+                    "success": False,
+                    "error": f"Invalid observation_level: {observation_level}",
+                    "error_code": "INVALID_PARAM",
+                    "operation": "get_observation",
+                    "valid_levels": [
+                        ObservationLevel.UNIT,
+                        ObservationLevel.FACTION,
+                        ObservationLevel.GODVIEW,
+                        ObservationLevel.LIMITED,
+                    ],
+                }
 
-        # 生成新的观测数据
-        if observation_level == ObservationLevel.UNIT:
-            observation = self._get_unit_observation(unit_id)
-        elif observation_level == ObservationLevel.FACTION:
-            observation = self._get_faction_observation(faction, include_hidden)
-        elif observation_level == ObservationLevel.GODVIEW:
-            observation = self._get_godview_observation()
-        elif observation_level == ObservationLevel.LIMITED:
-            observation = self._get_limited_observation(faction)
-        else:
-            observation = {"error": f"Unknown observation level: {observation_level}"}
+            # 特定级别的参数验证
+            if observation_level == ObservationLevel.UNIT:
+                if unit_id is None:
+                    return {
+                        "success": False,
+                        "error": "unit_id is required for UNIT observation level",
+                        "error_code": "MISSING_REQUIRED_PARAM",
+                        "operation": "get_observation",
+                        "observation_level": observation_level,
+                    }
+                try:
+                    unit_id = int(unit_id)
+                except (ValueError, TypeError):
+                    return {
+                        "success": False,
+                        "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
+                        "error_code": "INVALID_TYPE",
+                        "operation": "get_observation",
+                    }
 
-        # 添加通用信息
-        observation.update(
-            {
-                "timestamp": current_time,
-                "observation_level": observation_level,
-                "game_state": self._get_game_state_info(),
+            elif observation_level in [
+                ObservationLevel.FACTION,
+                ObservationLevel.LIMITED,
+            ]:
+                if faction is None:
+                    return {
+                        "success": False,
+                        "error": f"faction is required for {observation_level} observation level",
+                        "error_code": "MISSING_REQUIRED_PARAM",
+                        "operation": "get_observation",
+                        "observation_level": observation_level,
+                    }
+
+            # 检查缓存
+            cache_key = f"{observation_level}_{faction}_{unit_id}_{include_hidden}"
+            if (
+                cache_key in self.cache
+                and current_time - self.cache_timestamp < self.cache_duration
+            ):
+                cached_result = self.cache[cache_key]
+                cached_result["from_cache"] = True
+                return cached_result
+
+            # 生成新的观测数据
+            observation_data = None
+            if observation_level == ObservationLevel.UNIT:
+                observation_data = self._get_unit_observation(unit_id)
+            elif observation_level == ObservationLevel.FACTION:
+                observation_data = self._get_faction_observation(
+                    faction, include_hidden
+                )
+            elif observation_level == ObservationLevel.GODVIEW:
+                observation_data = self._get_godview_observation()
+            elif observation_level == ObservationLevel.LIMITED:
+                observation_data = self._get_limited_observation(faction)
+
+            # 检查观测数据是否有错误
+            if observation_data and "error" in observation_data:
+                result = {
+                    "success": False,
+                    "error": observation_data["error"],
+                    "error_code": observation_data.get(
+                        "error_code", "OBSERVATION_ERROR"
+                    ),
+                    "operation": "get_observation",
+                    "observation_level": observation_level,
+                }
+            else:
+                # 成功获取观测数据
+                result = {
+                    "success": True,
+                    "data": observation_data,
+                    "metadata": {
+                        "timestamp": current_time,
+                        "observation_level": observation_level,
+                        "faction": (
+                            faction.value
+                            if faction and hasattr(faction, "value")
+                            else str(faction) if faction else None
+                        ),
+                        "unit_id": unit_id,
+                        "include_hidden": include_hidden,
+                        "game_state": self._get_game_state_info(),
+                    },
+                    "operation": "get_observation",
+                }
+
+            # 更新缓存
+            self.cache[cache_key] = result
+            self.cache_timestamp = current_time
+
+            return result
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error in get_observation: {str(e)}",
+                "error_code": "INTERNAL_ERROR",
+                "operation": "get_observation",
+                "params": {
+                    "observation_level": observation_level,
+                    "faction": faction,
+                    "unit_id": unit_id,
+                    "include_hidden": include_hidden,
+                },
             }
-        )
-
-        # 更新缓存
-        self.cache[cache_key] = observation
-        self.cache_timestamp = current_time
-
-        return observation
 
     def _get_unit_observation(self, unit_id: int) -> Dict[str, Any]:
         """获取单个单位的观测信息"""
-        if not unit_id or not self.world.has_entity(unit_id):
-            return {"error": f"Unit {unit_id} does not exist"}
+        try:
+            if unit_id is None or not self.world.has_entity(unit_id):
+                return {
+                    "error": f"Unit {unit_id} does not exist",
+                    "error_code": "UNIT_NOT_FOUND",
+                }
 
-        unit = self.world.get_component(unit_id, Unit)
-        position = self.world.get_component(unit_id, HexPosition)
-        unit_count = self.world.get_component(unit_id, UnitCount)
-        movement = self.world.get_component(unit_id, Movement)
-        combat = self.world.get_component(unit_id, Combat)
-        vision = self.world.get_component(unit_id, Vision)
+            unit = self.world.get_component(unit_id, Unit)
+            position = self.world.get_component(unit_id, HexPosition)
+            unit_count = self.world.get_component(unit_id, UnitCount)
+            movement = self.world.get_component(unit_id, Movement)
+            combat = self.world.get_component(unit_id, Combat)
+            vision = self.world.get_component(unit_id, Vision)
 
-        if not unit or not position:
-            return {"error": f"Unit {unit_id} missing essential components"}
+            if not unit or not position:
+                return {
+                    "error": f"Unit {unit_id} missing essential components (Unit or HexPosition)",
+                    "error_code": "COMPONENT_MISSING",
+                }
 
-        # 单位自身信息
-        unit_info = {
-            "id": unit_id,
-            "name": unit.name,
-            "faction": (
-                unit.faction.value
-                if hasattr(unit.faction, "value")
-                else str(unit.faction)
-            ),
-            "type": (
-                unit.unit_type.value
-                if hasattr(unit.unit_type, "value")
-                else str(unit.unit_type)
-            ),
-            "position": {"col": position.col, "row": position.row},
-        }
-
-        # 添加属性信息
-        if unit_count:
-            unit_info["unit_count"] = {
-                "current": unit_count.current_count,
-                "max": unit_count.max_count,
-                "percentage": (
-                    unit_count.current_count / unit_count.max_count
-                    if unit_count.max_count > 0
-                    else 0
+            # 单位自身信息
+            unit_info = {
+                "id": unit_id,
+                "name": unit.name,
+                "faction": (
+                    unit.faction.value
+                    if hasattr(unit.faction, "value")
+                    else str(unit.faction)
                 ),
+                "type": (
+                    unit.unit_type.value
+                    if hasattr(unit.unit_type, "value")
+                    else str(unit.unit_type)
+                ),
+                "position": {"col": position.col, "row": position.row},
             }
 
-        if movement:
-            unit_info["movement"] = {
-                "current": movement.current_movement,
-                "max": movement.base_movement,
-                "has_moved": movement.has_moved,
-            }
+            # 添加属性信息
+            if unit_count:
+                unit_info["unit_count"] = {
+                    "current": unit_count.current_count,
+                    "max": unit_count.max_count,
+                    "percentage": (
+                        unit_count.current_count / unit_count.max_count
+                        if unit_count.max_count > 0
+                        else 0
+                    ),
+                    "is_alive": unit_count.current_count > 0,
+                }
+
+            if movement:
+                unit_info["movement"] = {
+                    "current": movement.current_movement,
+                    "max": movement.base_movement,
+                    "has_moved": movement.has_moved,
+                    "can_move": movement.current_movement > 0
+                    and not movement.has_moved,
+                }
 
             if combat:
                 unit_info["combat"] = {
                     "attack": combat.base_attack,
                     "defense": combat.base_defense,
                     "range": combat.attack_range,
-                }  # 单位视野内的信息
-        visible_area = self._get_visible_area(unit_id)
-        visible_units = self._get_visible_units(unit_id, visible_area)
-        visible_terrain = self._get_visible_terrain(visible_area)
+                    "has_attacked": (
+                        combat.has_attacked
+                        if hasattr(combat, "has_attacked")
+                        else False
+                    ),
+                }
 
-        return {
-            "unit": unit_info,
-            "visible_area": visible_area,
-            "visible_units": visible_units,
-            "visible_terrain": visible_terrain,
-            "action_options": self._get_unit_action_options(unit_id),
-        }
+            # 单位视野内的信息
+            visible_area = self._get_visible_area(unit_id)
+            visible_units = self._get_visible_units(unit_id, visible_area)
+            visible_terrain = self._get_visible_terrain(visible_area)
+
+            return {
+                "unit": unit_info,
+                "visible_area": visible_area,
+                "visible_units": visible_units,
+                "visible_terrain": visible_terrain,
+                "action_options": self._get_unit_action_options(unit_id),
+            }
+
+        except Exception as e:
+            return {
+                "error": f"Error getting unit observation: {str(e)}",
+                "error_code": "OBSERVATION_ERROR",
+            }
 
     def _get_faction_observation(
         self, faction: Faction, include_hidden: bool = False
     ) -> Dict[str, Any]:
         """获取阵营观测信息"""
-        if not faction:
-            return {"error": "Faction not specified"}
+        try:
+            if not faction:
+                return {
+                    "error": "Faction not specified",
+                    "error_code": "MISSING_FACTION",
+                }
 
-        # 获取阵营所有单位
-        faction_units = []
-        for entity in self.world.query().with_all(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                unit_obs = self._get_unit_summary(entity, include_hidden)
-                faction_units.append(unit_obs)
+            # 获取阵营所有单位
+            faction_units = []
+            for entity in self.world.query().with_all(Unit).entities():
+                unit = self.world.get_component(entity, Unit)
+                if unit and unit.faction == faction:
+                    unit_obs = self._get_unit_summary(entity, include_hidden)
+                    faction_units.append(unit_obs)
 
-        # 获取已知敌方单位
-        enemy_units = []
-        visible_positions = set()
+            # 获取已知敌方单位
+            enemy_units = []
+            visible_positions = set()
 
-        # 收集所有友方单位的视野
-        for entity in self.world.query().with_all(Unit, Vision, HexPosition).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                visible_area = self._get_visible_area(entity)
-                visible_positions.update(visible_area)
-
-        # 获取视野内的敌方单位
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            unit = self.world.get_component(entity, Unit)
-            position = self.world.get_component(entity, HexPosition)
-            if (
-                unit
-                and position
-                and unit.faction != faction
-                and (position.col, position.row) in visible_positions
+            # 收集所有友方单位的视野
+            for entity in (
+                self.world.query().with_all(Unit, Vision, HexPosition).entities()
             ):
-                enemy_info = self._get_unit_summary(
-                    entity, False
-                )  # 敌方单位不显示隐藏信息
-                enemy_units.append(enemy_info)
+                unit = self.world.get_component(entity, Unit)
+                if unit and unit.faction == faction:
+                    visible_area = self._get_visible_area(entity)
+                    visible_positions.update(visible_area)
 
-        # 战略信息
-        strategic_info = self._get_strategic_info(faction)
+            # 获取视野内的敌方单位
+            for entity in self.world.query().with_all(Unit, HexPosition).entities():
+                unit = self.world.get_component(entity, Unit)
+                position = self.world.get_component(entity, HexPosition)
+                if (
+                    unit
+                    and position
+                    and unit.faction != faction
+                    and (position.col, position.row) in visible_positions
+                ):
+                    enemy_info = self._get_unit_summary(
+                        entity, False
+                    )  # 敌方单位不显示隐藏信息
+                    enemy_units.append(enemy_info)
 
-        return {
-            "faction": faction.value if hasattr(faction, "value") else str(faction),
-            "own_units": faction_units,
-            "known_enemy_units": enemy_units,
-            "strategic_info": strategic_info,
-            "territory_control": self._get_territory_control(faction),
-            "resources": self._get_faction_resources(faction),
-        }
+            # 战略信息
+            strategic_info = self._get_strategic_info(faction)
+
+            return {
+                "faction": faction.value if hasattr(faction, "value") else str(faction),
+                "own_units": faction_units,
+                "known_enemy_units": enemy_units,
+                "strategic_info": strategic_info,
+                "territory_control": self._get_territory_control(faction),
+                "resources": self._get_faction_resources(faction),
+            }
+
+        except Exception as e:
+            return {
+                "error": f"Error getting faction observation: {str(e)}",
+                "error_code": "OBSERVATION_ERROR",
+            }
 
     def _get_godview_observation(self) -> Dict[str, Any]:
         """获取上帝视角观测信息（全知视角）"""
