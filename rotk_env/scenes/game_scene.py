@@ -109,7 +109,7 @@ class GameScene(Scene):
         self._initialize_players()
 
         # 初始化单位
-        self._initialize_units(3, 3)  # 默认每个阵营10个单位
+        self._initialize_units(10, 10)  # 默认每个阵营10个单位
 
         # 初始化游戏统计
         self._initialize_stats()

@@ -15,6 +15,7 @@ from ..components import (
     HexPosition,
     Unit,
     Camera,
+    UIState,
 )
 from ..prefabs.config import GameConfig, TerrainType, HexOrientation
 from ..utils.hex_utils import HexConverter
@@ -281,14 +282,25 @@ class MapRenderSystem(System):
         """渲染战争迷雾 - 三种状态：未探索(黑色)、已探索但非视野(半透明黑色)、当前视野(绿色轮廓)"""
         game_state = self.world.get_singleton_component(GameState)
         fog_of_war = self.world.get_singleton_component(FogOfWar)
+        ui_state = self.world.get_singleton_component(UIState)
 
-        if not game_state or not fog_of_war or not game_state.current_player:
+        if not game_state or not fog_of_war or not ui_state:
             return
 
-        # 获取当前玩家的视野
-        current_faction = game_state.current_player
-        visible_tiles = fog_of_war.faction_vision.get(current_faction, set())
-        explored_tiles = fog_of_war.explored_tiles.get(current_faction, set())
+        # 上帝视角模式：不渲染战争迷雾
+        if ui_state.god_mode:
+            return
+
+        # 确定当前查看的阵营
+        view_faction = (
+            ui_state.view_faction
+            if ui_state.view_faction
+            else game_state.current_player
+        )
+
+        # 获取查看阵营的视野
+        visible_tiles = fog_of_war.faction_vision.get(view_faction, set())
+        explored_tiles = fog_of_war.explored_tiles.get(view_faction, set())
 
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:

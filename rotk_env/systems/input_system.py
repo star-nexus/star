@@ -21,8 +21,9 @@ from ..components import (
     GameState,
     Camera,
     BattleLog,
+    Player,
 )
-from ..prefabs.config import GameConfig, HexOrientation
+from ..prefabs.config import GameConfig, HexOrientation, Faction
 from ..utils.hex_utils import HexConverter
 from ..utils.env_events import TileClickedEvent, UnitSelectedEvent
 
@@ -175,6 +176,27 @@ class InputHandlingSystem(System):
             print("切换六边形方向")
             self._toggle_hex_orientation()
 
+        # 视角切换按键
+        elif event.key == pygame.K_1:
+            # 1键：上帝视角
+            print("切换到上帝视角")
+            self._set_god_mode(ui_state, True)
+
+        elif event.key == pygame.K_2:
+            # 2键：魏国视角
+            print("切换到魏国视角")
+            self._set_faction_view(ui_state, Faction.WEI)
+
+        elif event.key == pygame.K_3:
+            # 3键：蜀国视角
+            print("切换到蜀国视角")
+            self._set_faction_view(ui_state, Faction.SHU)
+
+        elif event.key == pygame.K_4:
+            # 4键：吴国视角
+            print("切换到吴国视角")
+            self._set_faction_view(ui_state, Faction.WU)
+
     def _handle_keyboard(
         self,
         keys: pygame.key.ScancodeWrapper,
@@ -315,3 +337,31 @@ class InputHandlingSystem(System):
             if system.__class__.__name__ == "MapRenderSystem":
                 return system
         return None
+
+    def _set_god_mode(self, ui_state: UIState, enable: bool):
+        """设置上帝视角模式"""
+        ui_state.god_mode = enable
+        ui_state.view_faction = None
+        if enable:
+            print("🔥 上帝视角已开启 - 可以看到所有单位")
+        else:
+            print("👁️ 上帝视角已关闭")
+
+    def _set_faction_view(self, ui_state: UIState, faction: Faction):
+        """设置阵营视角"""
+        # 检查该阵营是否存在于游戏中
+        if not self._faction_exists(faction):
+            print(f"❌ {faction.value}阵营不存在于当前游戏中")
+            return
+
+        ui_state.god_mode = False
+        ui_state.view_faction = faction
+        print(f"👁️ 切换到{faction.value}视角 - 只能看到该阵营的视野范围")
+
+    def _faction_exists(self, faction: Faction) -> bool:
+        """检查指定阵营是否存在于游戏中"""
+        for entity in self.world.query().with_component(Player).entities():
+            player = self.world.get_component(entity, Player)
+            if player and player.faction == faction:
+                return True
+        return False

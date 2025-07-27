@@ -73,6 +73,19 @@ class CombatSystem(System):
         combat_roll = CombatRoll()
         self.world.add_component(attacker_entity, combat_roll)
 
+        # 根据攻击类型确定动画类型
+        attacker_unit = self.world.get_component(attacker_entity, Unit)
+        attack_type = (
+            "ranged" if attacker_unit.unit_type == UnitType.ARCHER else "melee"
+        )
+
+        # 触发攻击动画
+        animation_system = self._get_animation_system()
+        if animation_system:
+            animation_system.start_attack_animation(
+                attacker_entity, target_entity, attack_type
+            )
+
         # 1. 命中判定
         if not self._roll_hit(combat_roll, attacker_pos, target_pos):
             # 添加未命中的控制台输出
@@ -107,6 +120,27 @@ class CombatSystem(System):
         old_count = target_count.current_count
         self._apply_damage(target_entity, damage)
         new_count = target_count.current_count
+
+        # 创建攻击特效
+        if animation_system:
+            from ..utils.hex_utils import HexConverter
+
+            hex_converter = HexConverter(
+                GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
+            )
+            world_x, world_y = hex_converter.hex_to_pixel(
+                target_pos.col, target_pos.row
+            )
+
+            # 根据攻击类型和暴击选择特效
+            if is_crit:
+                effect_type = "explosion"
+            elif attack_type == "ranged":
+                effect_type = "impact"
+            else:
+                effect_type = "slash"
+
+            animation_system.create_attack_effect((world_x, world_y), effect_type)
 
         # 添加控制台输出
         attacker_faction = attacker_unit.faction.value

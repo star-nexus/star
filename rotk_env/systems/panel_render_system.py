@@ -54,6 +54,7 @@ class PanelRenderSystem(System):
         """更新面板渲染"""
         self._render_selected_unit_info()
         self._render_battle_log()
+        self._render_view_mode_info()  # 新增：渲染视角模式信息
         # self._render_minimap()
 
     def _render_selected_unit_info(self):
@@ -314,3 +315,63 @@ class PanelRenderSystem(System):
         # 检查是否在当前玩家的视野内
         current_vision = fog_of_war.faction_vision.get(game_state.current_player, set())
         return (position.col, position.row) in current_vision
+
+    def _render_view_mode_info(self):
+        """渲染当前视角模式信息（右上角）"""
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+
+        # 确定当前视角模式
+        if ui_state.god_mode:
+            mode_text = "🔥 上帝视角"
+            mode_color = (255, 215, 0)  # 金色
+        elif ui_state.view_faction:
+            faction_name = ui_state.view_faction.value
+            mode_text = f"👁️ {faction_name}视角"
+            # 使用阵营颜色
+            faction_colors = {
+                "魏": (100, 149, 237),  # 蓝色
+                "蜀": (255, 69, 0),  # 红色
+                "吴": (34, 139, 34),  # 绿色
+            }
+            mode_color = faction_colors.get(faction_name, (255, 255, 255))
+        else:
+            # 默认视角（当前玩家）
+            game_state = self.world.get_singleton_component(GameState)
+            if game_state and game_state.current_player:
+                faction_name = game_state.current_player.value
+                mode_text = f"👁️ {faction_name}视角"
+                faction_colors = {
+                    "魏": (100, 149, 237),
+                    "蜀": (255, 69, 0),
+                    "吴": (34, 139, 34),
+                }
+                mode_color = faction_colors.get(faction_name, (255, 255, 255))
+            else:
+                mode_text = "👁️ 普通视角"
+                mode_color = (255, 255, 255)
+
+        # 渲染背景
+        panel_width = 150
+        panel_height = 30
+        panel_x = GameConfig.WINDOW_WIDTH - panel_width - 10
+        panel_y = 10
+
+        panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+        panel_surface.fill((0, 0, 0, 180))  # 半透明黑色背景
+        RMS.draw(panel_surface, (panel_x, panel_y))
+
+        # 渲染文字
+        text_surface = self.small_font.render(mode_text, True, mode_color)
+        text_rect = text_surface.get_rect()
+        text_rect.center = (panel_x + panel_width // 2, panel_y + panel_height // 2)
+        RMS.draw(text_surface, text_rect)
+
+        # 渲染按键提示（下方）
+        hint_text = "1:上帝 2:魏 3:蜀 4:吴"
+        hint_surface = self.small_font.render(hint_text, True, (200, 200, 200))
+        hint_rect = hint_surface.get_rect()
+        hint_rect.centerx = panel_x + panel_width // 2
+        hint_rect.top = panel_y + panel_height + 5
+        RMS.draw(hint_surface, hint_rect)

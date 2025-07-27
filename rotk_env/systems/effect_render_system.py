@@ -15,6 +15,9 @@ from ..components import (
     Camera,
     FogOfWar,
     GameState,
+    EffectAnimation,
+    AttackAnimation,
+    ProjectileAnimation,
 )
 from ..prefabs.config import GameConfig, HexOrientation
 from ..utils.hex_utils import HexConverter, HexMath, PathFinding
@@ -49,6 +52,9 @@ class EffectRenderSystem(System):
 
         # 渲染各种效果
         self._render_selection_effects(camera_offset, zoom)
+        self._render_attack_effects(camera_offset, zoom)
+        self._render_attack_indicators(camera_offset, zoom)
+        self._render_projectiles(camera_offset, zoom)
         self._render_tile_hover(camera_offset, zoom)
 
     def _render_selection_effects(self, camera_offset: List[float], zoom: float = 1.0):
@@ -384,3 +390,476 @@ class EffectRenderSystem(System):
                 return entity
 
         return None
+
+    def _render_attack_effects(self, camera_offset: List[float], zoom: float = 1.0):
+        """渲染攻击特效"""
+        for entity in self.world.query().with_all(EffectAnimation).entities():
+            effect = self.world.get_component(entity, EffectAnimation)
+            if not effect or not effect.is_playing:
+                continue
+
+            # 转换为屏幕坐标
+            world_x, world_y = effect.effect_position
+            screen_x = world_x * zoom + camera_offset[0]
+            screen_y = world_y * zoom + camera_offset[1]
+
+            # 检查是否在屏幕范围内
+            if not (
+                -100 <= screen_x <= GameConfig.WINDOW_WIDTH + 100
+                and -100 <= screen_y <= GameConfig.WINDOW_HEIGHT + 100
+            ):
+                continue
+
+            # 根据特效类型渲染不同效果
+            self._render_single_effect(effect, screen_x, screen_y, zoom)
+
+    def _render_single_effect(
+        self, effect: EffectAnimation, screen_x: float, screen_y: float, zoom: float
+    ):
+        """渲染单个特效"""
+        # 计算透明度（随时间淡出）
+        alpha_ratio = 1.0 - effect.progress
+        alpha = max(0, min(255, int(255 * alpha_ratio)))
+
+        if alpha <= 0:
+            return
+
+        # 计算大小（可能随时间变化）
+        size_multiplier = effect.effect_size * zoom
+
+        if effect.effect_type == "slash":
+            self._render_slash_effect(
+                screen_x, screen_y, size_multiplier, alpha, effect
+            )
+        elif effect.effect_type == "impact":
+            self._render_impact_effect(
+                screen_x, screen_y, size_multiplier, alpha, effect
+            )
+        elif effect.effect_type == "explosion":
+            self._render_explosion_effect(
+                screen_x, screen_y, size_multiplier, alpha, effect
+            )
+        else:
+            # 默认圆形特效
+            self._render_default_effect(
+                screen_x, screen_y, size_multiplier, alpha, effect
+            )
+
+    def _render_slash_effect(
+        self,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+        alpha: int,
+        effect: EffectAnimation,
+    ):
+        """渲染斩击特效"""
+        import math
+
+        # 创建带透明度的表面
+        effect_surface = pygame.Surface(
+            (int(size * 60), int(size * 20)), pygame.SRCALPHA
+        )
+
+        # 绘制斩击线条
+        color = (*effect.effect_color, alpha)
+        thickness = max(1, int(3 * size))
+
+        # 绘制多条斜线模拟斩击
+        for i in range(3):
+            start_x = i * 15 * size
+            start_y = 5 * size
+            end_x = start_x + 30 * size
+            end_y = start_y + 10 * size
+
+            pygame.draw.line(
+                effect_surface, color, (start_x, start_y), (end_x, end_y), thickness
+            )
+
+        # 渲染到屏幕
+        rect = effect_surface.get_rect(center=(int(screen_x), int(screen_y)))
+        RMS.draw(effect_surface, rect)
+
+    def _render_impact_effect(
+        self,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+        alpha: int,
+        effect: EffectAnimation,
+    ):
+        """渲染冲击特效"""
+        # 创建冲击波效果
+        radius = int(20 * size * (1 + effect.progress))
+        color = (*effect.effect_color, alpha)
+
+        # 绘制多个同心圆
+        for i in range(3):
+            ring_radius = radius - i * 5
+            if ring_radius > 0:
+                ring_alpha = max(0, alpha - i * 50)
+                if ring_alpha > 0:
+                    RMS.circle(
+                        (*effect.effect_color, ring_alpha),
+                        (int(screen_x), int(screen_y)),
+                        ring_radius,
+                        2,
+                    )
+
+    def _render_explosion_effect(
+        self,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+        alpha: int,
+        effect: EffectAnimation,
+    ):
+        """渲染爆炸特效"""
+        import math
+        import random
+
+        # 爆炸半径随时间增长
+        explosion_radius = int(30 * size * effect.progress)
+
+        # 绘制爆炸粒子
+        num_particles = 8
+        for i in range(num_particles):
+            angle = (2 * math.pi * i) / num_particles
+            particle_distance = explosion_radius * (0.5 + 0.5 * effect.progress)
+
+            particle_x = screen_x + math.cos(angle) * particle_distance
+            particle_y = screen_y + math.sin(angle) * particle_distance
+
+            particle_size = max(1, int(3 * size * (1 - effect.progress)))
+
+            # 随机颜色（红黄橙）
+            colors = [(255, 0, 0), (255, 255, 0), (255, 165, 0)]
+            color = random.choice(colors)
+
+            RMS.circle(
+                (*color, alpha), (int(particle_x), int(particle_y)), particle_size
+            )
+
+        # 中心闪光
+        center_radius = int(15 * size * (1 - effect.progress))
+        if center_radius > 0:
+            RMS.circle(
+                (255, 255, 255, alpha), (int(screen_x), int(screen_y)), center_radius
+            )
+
+    def _render_default_effect(
+        self,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+        alpha: int,
+        effect: EffectAnimation,
+    ):
+        """渲染默认特效"""
+        radius = int(25 * size)
+        color = (*effect.effect_color, alpha)
+        RMS.circle(color, (int(screen_x), int(screen_y)), radius)
+
+    def _render_attack_indicators(self, camera_offset: List[float], zoom: float = 1.0):
+        """渲染攻击指示线"""
+        for entity in (
+            self.world.query().with_all(HexPosition, AttackAnimation).entities()
+        ):
+            attack_anim = self.world.get_component(entity, AttackAnimation)
+            if (
+                not attack_anim
+                or not attack_anim.is_attacking
+                or not attack_anim.show_aim_line
+            ):
+                continue
+
+            if not attack_anim.start_pixel_pos or not attack_anim.target_pixel_pos:
+                continue
+
+            # 转换为屏幕坐标
+            start_x, start_y = attack_anim.start_pixel_pos
+            target_x, target_y = attack_anim.target_pixel_pos
+
+            screen_start_x = start_x * zoom + camera_offset[0]
+            screen_start_y = start_y * zoom + camera_offset[1]
+            screen_target_x = target_x * zoom + camera_offset[0]
+            screen_target_y = target_y * zoom + camera_offset[1]
+
+            # 计算透明度
+            alpha = int(255 * attack_anim.aim_line_alpha)
+            if alpha <= 0:
+                continue
+
+            # 根据攻击类型绘制不同的指示线
+            if attack_anim.attack_type == "ranged":
+                self._render_ranged_aim_line(
+                    screen_start_x,
+                    screen_start_y,
+                    screen_target_x,
+                    screen_target_y,
+                    attack_anim.aim_line_color,
+                    alpha,
+                    zoom,
+                )
+            else:
+                self._render_melee_aim_line(
+                    screen_start_x,
+                    screen_start_y,
+                    screen_target_x,
+                    screen_target_y,
+                    attack_anim.aim_line_color,
+                    alpha,
+                    zoom,
+                )
+
+    def _render_ranged_aim_line(
+        self,
+        start_x: float,
+        start_y: float,
+        target_x: float,
+        target_y: float,
+        color: Tuple[int, int, int],
+        alpha: int,
+        zoom: float,
+    ):
+        """渲染远程攻击的弧形瞄准线"""
+        import math
+
+        # 创建带透明度的表面
+        line_surface = pygame.Surface(
+            (abs(target_x - start_x) + 100, abs(target_y - start_y) + 100),
+            pygame.SRCALPHA,
+        )
+
+        # 计算控制点来创建弧线
+        mid_x = (start_x + target_x) / 2
+        mid_y = (start_y + target_y) / 2
+
+        # 添加弧度偏移
+        distance = ((target_x - start_x) ** 2 + (target_y - start_y) ** 2) ** 0.5
+        arc_height = min(50 * zoom, distance * 0.2)
+
+        # 计算垂直于连线的偏移方向
+        dx = target_x - start_x
+        dy = target_y - start_y
+        length = (dx**2 + dy**2) ** 0.5
+        if length > 0:
+            offset_x = -dy / length * arc_height
+            offset_y = dx / length * arc_height
+        else:
+            offset_x = offset_y = 0
+
+        control_x = mid_x + offset_x
+        control_y = mid_y + offset_y
+
+        # 绘制虚线弧线（简化为多段直线）
+        num_segments = 20
+        points = []
+        for i in range(num_segments + 1):
+            t = i / num_segments
+            # 二次贝塞尔曲线
+            x = (1 - t) ** 2 * start_x + 2 * (1 - t) * t * control_x + t**2 * target_x
+            y = (1 - t) ** 2 * start_y + 2 * (1 - t) * t * control_y + t**2 * target_y
+            points.append((x, y))
+
+        # 绘制虚线
+        line_color = (*color, alpha)
+        for i in range(0, len(points) - 1, 2):  # 虚线效果
+            if i + 1 < len(points):
+                RMS.line(
+                    line_color,
+                    points[i],
+                    points[i + 1],
+                    max(1, int(2 * zoom)),
+                )
+
+    def _render_melee_aim_line(
+        self,
+        start_x: float,
+        start_y: float,
+        target_x: float,
+        target_y: float,
+        color: Tuple[int, int, int],
+        alpha: int,
+        zoom: float,
+    ):
+        """渲染近战攻击的直线冲刺指示"""
+        import math
+
+        # 绘制闪烁的直线
+        line_color = (*color, alpha)
+        thickness = max(1, int(3 * zoom))
+
+        # 添加闪烁效果
+        import time
+
+        flash = (math.sin(time.time() * 10) + 1) / 2  # 0-1之间闪烁
+        if flash > 0.3:  # 只在闪烁的高峰时显示
+            RMS.line(
+                line_color,
+                (start_x, start_y),
+                (target_x, target_y),
+                thickness,
+            )
+
+            # 在目标位置绘制冲击标记
+            target_radius = int(15 * zoom)
+            RMS.circle(
+                line_color, (int(target_x), int(target_y)), target_radius, thickness
+            )
+
+    def _render_projectiles(self, camera_offset: List[float], zoom: float = 1.0):
+        """渲染投射物"""
+        for entity in self.world.query().with_all(ProjectileAnimation).entities():
+            projectile = self.world.get_component(entity, ProjectileAnimation)
+            if not projectile or not projectile.is_flying:
+                continue
+
+            # 转换为屏幕坐标
+            world_x, world_y = projectile.current_pos
+            screen_x = world_x * zoom + camera_offset[0]
+            screen_y = world_y * zoom + camera_offset[1]
+
+            # 检查是否在屏幕范围内
+            if not (
+                -50 <= screen_x <= GameConfig.WINDOW_WIDTH + 50
+                and -50 <= screen_y <= GameConfig.WINDOW_HEIGHT + 50
+            ):
+                continue
+
+            # 根据投射物类型渲染
+            self._render_single_projectile(projectile, screen_x, screen_y, zoom)
+
+    def _render_single_projectile(
+        self,
+        projectile: ProjectileAnimation,
+        screen_x: float,
+        screen_y: float,
+        zoom: float,
+    ):
+        """渲染单个投射物"""
+        import math
+
+        size = projectile.size * zoom
+
+        if projectile.projectile_type == "arrow":
+            self._render_arrow(projectile, screen_x, screen_y, size)
+        elif projectile.projectile_type == "bolt":
+            self._render_bolt(projectile, screen_x, screen_y, size)
+        elif projectile.projectile_type == "stone":
+            self._render_stone(projectile, screen_x, screen_y, size)
+        else:
+            # 默认圆形投射物
+            radius = int(3 * size)
+            RMS.circle(projectile.color, (int(screen_x), int(screen_y)), radius)
+
+    def _render_arrow(
+        self,
+        projectile: ProjectileAnimation,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+    ):
+        """渲染箭矢"""
+        import math
+
+        # 箭矢长度和宽度
+        length = int(20 * size)
+        width = int(3 * size)
+
+        # 计算箭头和箭尾的位置
+        cos_rot = math.cos(projectile.rotation)
+        sin_rot = math.sin(projectile.rotation)
+
+        # 箭头点
+        head_x = screen_x + cos_rot * length / 2
+        head_y = screen_y + sin_rot * length / 2
+
+        # 箭尾点
+        tail_x = screen_x - cos_rot * length / 2
+        tail_y = screen_y - sin_rot * length / 2
+
+        # 绘制箭身
+        RMS.line(projectile.color, (tail_x, tail_y), (head_x, head_y), max(1, width))
+
+        # 绘制箭头
+        arrow_size = int(8 * size)
+        arrow_angle = math.pi / 6  # 30度
+
+        # 箭头的两个翼
+        wing1_x = (
+            head_x
+            - cos_rot * arrow_size
+            + math.cos(projectile.rotation + arrow_angle) * arrow_size
+        )
+        wing1_y = (
+            head_y
+            - sin_rot * arrow_size
+            + math.sin(projectile.rotation + arrow_angle) * arrow_size
+        )
+
+        wing2_x = (
+            head_x
+            - cos_rot * arrow_size
+            + math.cos(projectile.rotation - arrow_angle) * arrow_size
+        )
+        wing2_y = (
+            head_y
+            - sin_rot * arrow_size
+            + math.sin(projectile.rotation - arrow_angle) * arrow_size
+        )
+
+        # 绘制箭头翼
+        RMS.line(
+            projectile.color,
+            (head_x, head_y),
+            (wing1_x, wing1_y),
+            max(1, width),
+        )
+        RMS.line(
+            projectile.color,
+            (head_x, head_y),
+            (wing2_x, wing2_y),
+            max(1, width),
+        )
+
+    def _render_bolt(
+        self,
+        projectile: ProjectileAnimation,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+    ):
+        """渲染弩箭"""
+        # 弩箭比箭矢短而粗
+        import math
+
+        length = int(15 * size)
+        width = int(4 * size)
+
+        cos_rot = math.cos(projectile.rotation)
+        sin_rot = math.sin(projectile.rotation)
+
+        head_x = screen_x + cos_rot * length / 2
+        head_y = screen_y + sin_rot * length / 2
+        tail_x = screen_x - cos_rot * length / 2
+        tail_y = screen_y - sin_rot * length / 2
+
+        RMS.line(
+            projectile.color,
+            (tail_x, tail_y),
+            (head_x, head_y),
+            max(1, width),
+        )
+
+    def _render_stone(
+        self,
+        projectile: ProjectileAnimation,
+        screen_x: float,
+        screen_y: float,
+        size: float,
+    ):
+        """渲染投石"""
+        radius = int(5 * size)
+        RMS.circle((128, 128, 128), (int(screen_x), int(screen_y)), radius)
+        RMS.circle((64, 64, 64), (int(screen_x), int(screen_y)), radius, 1)

@@ -43,6 +43,9 @@ class UIState(SingletonComponent):
     show_help: bool = False
     camera_position: Tuple[float, float] = (0.0, 0.0)
     zoom_level: float = 1.0
+    # 视角相关
+    god_mode: bool = False  # 上帝视角（无战争迷雾）
+    view_faction: Optional[Faction] = None  # 当前查看的阵营视角
 
 
 @dataclass

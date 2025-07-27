@@ -23,7 +23,13 @@ from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
 from .game_time import GameTime
-from .animation import MovementAnimation, DamageNumber
+from .animation import (
+    MovementAnimation,
+    DamageNumber,
+    AttackAnimation,
+    EffectAnimation,
+    ProjectileAnimation,
+)
 from .battle_log import BattleLog, BattleLogEntry
 from .unit_observation import (
     UnitObservation,
@@ -81,6 +87,9 @@ __all__ = [
     # 动画组件
     "MovementAnimation",
     "DamageNumber",
+    "AttackAnimation",
+    "EffectAnimation",
+    "ProjectileAnimation",
     # 战斗日志组件
     "BattleLog",
     "BattleLogEntry",

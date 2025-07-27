@@ -129,7 +129,7 @@ class GameConfig:
 
     # 战争迷雾颜色配置
     FOG_UNEXPLORED_COLOR = (0, 0, 0, 255)  # 未探索区域：黑色
-    FOG_EXPLORED_COLOR = (0, 0, 0, 128)  # 已探索但非视野：半透明黑色
+    FOG_EXPLORED_COLOR = (0, 0, 0, 200)  # 已探索但非视野：深色半透明黑色 (从128改为200)
     CURRENT_VISION_OUTLINE_COLOR = (0, 255, 0)  # 当前视野轮廓：绿色
     VISION_OUTLINE_WIDTH = 2  # 视野轮廓线宽度
 
