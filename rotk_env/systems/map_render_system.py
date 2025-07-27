@@ -5,11 +5,12 @@
 import pygame
 import os
 import random
-from typing import Tuple, Set, List, Dict, Optional
+from typing import Tuple, Set, List, Dict, Optional, Optional
 from framework import System, RMS
 from ..components import (
     MapData,
     Terrain,
+    TerritoryControl,
     GameState,
     FogOfWar,
     HexPosition,
@@ -17,7 +18,7 @@ from ..components import (
     Camera,
     UIState,
 )
-from ..prefabs.config import GameConfig, TerrainType, HexOrientation
+from ..prefabs.config import GameConfig, TerrainType, HexOrientation, Faction
 from ..utils.hex_utils import HexConverter
 
 
@@ -197,6 +198,7 @@ class MapRenderSystem(System):
 
         # 渲染地图和战争迷雾
         self._render_map(camera_offset, zoom)
+        self._render_territory_boundaries(camera_offset, zoom)
         self._render_fog_of_war(camera_offset, zoom)
 
     def _render_map(self, camera_offset: List[float], zoom: float = 1.0):
@@ -232,6 +234,11 @@ class MapRenderSystem(System):
             if texture and self.texture_loaded:
                 # 使用贴图渲染
                 self._render_hex_with_texture(texture, screen_x, screen_y, zoom)
+
+                # 如果是城市地形，添加特殊标记
+                terrain = self.world.get_component(tile_entity, Terrain)
+                if terrain and terrain.terrain_type == TerrainType.CITY:
+                    self._render_city_marker(q, r, camera_offset, zoom)
             else:
                 # 使用颜色渲染（后备方案）
                 self._render_hex_with_color(
@@ -277,6 +284,10 @@ class MapRenderSystem(System):
 
         RMS.polygon(terrain_color, screen_corners)
         RMS.polygon((0, 0, 0), screen_corners, 1)
+
+        # 如果是城市地形，添加特殊标记
+        if terrain_type == TerrainType.CITY:
+            self._render_city_marker(q, r, camera_offset, zoom)
 
     def _render_fog_of_war(self, camera_offset: List[float], zoom: float = 1.0):
         """渲染战争迷雾 - 三种状态：未探索(黑色)、已探索但非视野(半透明黑色)、当前视野(绿色轮廓)"""
@@ -414,3 +425,148 @@ class MapRenderSystem(System):
                 circle_radius,
                 2,
             )
+
+    def _render_territory_boundaries(
+        self, camera_offset: List[float], zoom: float = 1.0
+    ):
+        """渲染领土边界和阵营归属"""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return
+
+        # 遍历所有地图块，渲染领土控制信息
+        for (q, r), tile_entity in map_data.tiles.items():
+            territory_control = self.world.get_component(tile_entity, TerritoryControl)
+            if not territory_control or not territory_control.controlling_faction:
+                continue
+
+            # 计算屏幕位置（应用缩放）
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            screen_x = (world_x * zoom) + camera_offset[0]
+            screen_y = (world_y * zoom) + camera_offset[1]
+
+            # 检查是否在屏幕范围内（考虑缩放）
+            hex_size_scaled = GameConfig.HEX_SIZE * zoom
+            if (
+                screen_x < -hex_size_scaled
+                or screen_x > GameConfig.WINDOW_WIDTH + hex_size_scaled
+                or screen_y < -hex_size_scaled
+                or screen_y > GameConfig.WINDOW_HEIGHT + hex_size_scaled
+            ):
+                continue
+
+            # 获取阵营颜色
+            faction_color = self._get_faction_color(
+                territory_control.controlling_faction
+            )
+            if not faction_color:
+                continue
+
+            # 渲染六边形边界
+            corners = self.hex_converter.get_hex_corners(q, r)
+            screen_corners = [
+                ((x * zoom) + camera_offset[0], (y * zoom) + camera_offset[1])
+                for x, y in corners
+            ]
+
+            # 根据控制强度和工事等级调整边界样式
+            border_width = self._get_border_width(territory_control)
+            border_color = self._get_border_color(territory_control, faction_color)
+
+            # 绘制领土边界
+            RMS.polygon(border_color, screen_corners, border_width)
+
+            # 如果有工事，添加特殊标记
+            if territory_control.fortification_level > 0:
+                self._render_fortification_marker(
+                    screen_x, screen_y, territory_control, zoom
+                )
+
+    def _get_faction_color(self, faction: Faction) -> Optional[Tuple[int, int, int]]:
+        """获取阵营颜色"""
+        faction_colors = {
+            Faction.WEI: (0, 100, 255),  # 蓝色
+            Faction.SHU: (255, 50, 50),  # 红色
+            Faction.WU: (50, 255, 50),  # 绿色
+        }
+        return faction_colors.get(faction)
+
+    def _get_border_width(self, territory_control: TerritoryControl) -> int:
+        """根据控制强度和工事等级确定边界宽度"""
+        base_width = 2
+
+        # 基于占领进度调整（类似控制强度）
+        if territory_control.capture_progress >= 0.8:
+            base_width += 1
+        elif territory_control.capture_progress <= 0.3:
+            base_width = max(1, base_width - 1)
+
+        # 工事等级影响
+        base_width += territory_control.fortification_level
+
+        return min(base_width, 5)  # 最大宽度限制
+
+    def _get_border_color(
+        self, territory_control: TerritoryControl, faction_color: Tuple[int, int, int]
+    ) -> Tuple[int, int, int]:
+        """根据控制状态调整边界颜色"""
+        r, g, b = faction_color
+
+        # 根据占领进度调整亮度（类似控制强度）
+        intensity = max(0.5, territory_control.capture_progress)  # 至少50%亮度
+
+        # 调整颜色亮度
+        r = int(r * (0.5 + 0.5 * intensity))
+        g = int(g * (0.5 + 0.5 * intensity))
+        b = int(b * (0.5 + 0.5 * intensity))
+
+        return (min(255, r), min(255, g), min(255, b))
+
+    def _render_fortification_marker(
+        self,
+        center_x: float,
+        center_y: float,
+        territory_control: TerritoryControl,
+        zoom: float,
+    ):
+        """渲染工事标记"""
+        if territory_control.fortification_level <= 0:
+            return
+
+        # 根据工事等级选择标记样式
+        marker_size = int(8 * zoom * territory_control.fortification_level)
+        marker_color = (139, 69, 19)  # 棕色，表示工事
+
+        # 绘制工事标记（小方块）
+        marker_rect = pygame.Rect(
+            center_x - marker_size // 2,
+            center_y - marker_size // 2,
+            marker_size,
+            marker_size,
+        )
+
+        RMS.rect(marker_color, marker_rect)
+        RMS.rect((0, 0, 0), marker_rect, 1)  # 黑色边框
+
+    def _render_city_marker(
+        self, q: int, r: int, camera_offset: List[float], zoom: float
+    ):
+        """渲染城市标记"""
+        # 计算城市中心位置
+        world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+        center_x = (world_x * zoom) + camera_offset[0]
+        center_y = (world_y * zoom) + camera_offset[1]
+
+        # 城市标记大小
+        marker_size = int(12 * zoom)
+        city_color = (211, 211, 211)  # 浅灰色，表示城市建筑
+
+        # 绘制城市标记（圆形）
+        RMS.circle(
+            city_color,
+            (int(center_x), int(center_y)),
+            marker_size,
+        )
+        RMS.circle(
+            (0, 0, 0), (int(center_x), int(center_y)), marker_size, 2  # 黑色边框
+        )

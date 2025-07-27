@@ -34,6 +34,7 @@ class TerrainType(Enum):
     MOUNTAIN = "mountain"  # 山地
     WATER = "water"  # 水域/湖泊
     URBAN = "urban"  # 城池
+    CITY = "city"  # 大城市
     HILL = "hill"  # 丘陵
 
 
@@ -67,6 +68,8 @@ class ActionType(Enum):
     GARRISON = "garrison"  # 驻扎
     WAIT = "wait"  # 待命
     SKILL = "skill"  # 技能
+    CAPTURE = "capture"  # 占领
+    FORTIFY = "fortify"  # 建设工事
 
 
 @dataclass
@@ -204,6 +207,7 @@ class GameConfig:
         TerrainType.PLAIN: TerrainCoefficient(infantry=1.0, cavalry=1.0, archer=1.0),
         TerrainType.MOUNTAIN: TerrainCoefficient(infantry=1.1, cavalry=0.8, archer=0.9),
         TerrainType.URBAN: TerrainCoefficient(infantry=1.2, cavalry=1.2, archer=1.2),
+        TerrainType.CITY: TerrainCoefficient(infantry=1.3, cavalry=1.3, archer=1.3),
         TerrainType.FOREST: TerrainCoefficient(
             infantry=1.05, cavalry=0.75, archer=0.85
         ),
@@ -230,6 +234,7 @@ class GameConfig:
         TerrainType.HILL: (160, 82, 45),  # 浅褐色
         TerrainType.WATER: (135, 206, 250),  # 浅蓝色
         TerrainType.URBAN: (169, 169, 169),  # 灰色
+        TerrainType.CITY: (105, 105, 105),  # 深灰色
     }
 
     @classmethod

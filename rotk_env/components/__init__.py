@@ -16,7 +16,7 @@ from .unit import (
     UnitSkills,
     ActionPoints,
 )
-from .terrain import Terrain, TerrainModifier, Tile
+from .terrain import Terrain, TerrainModifier, Tile, TerritoryControl, CaptureAction
 from .player import Player, TurnOrder, TurnManager
 from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
 from .minimap import MiniMap
@@ -68,6 +68,8 @@ __all__ = [
     "Terrain",
     "TerrainModifier",
     "Tile",
+    "TerritoryControl",
+    "CaptureAction",
     # 玩家组件
     "Player",
     "TurnOrder",

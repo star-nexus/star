@@ -12,6 +12,7 @@ from .ai_system import AISystem
 from .input_system import InputHandlingSystem
 from .minimap_system import MiniMapSystem
 from .animation_system import AnimationSystem
+from .territory_system import TerritorySystem
 from .game_over_render_system import GameOverRenderSystem
 from .llm_system import LLMSystem
 from .llm_action_handler import LLMActionHandler
@@ -36,6 +37,7 @@ __all__ = [
     "AISystem",
     "InputHandlingSystem",
     "MiniMapSystem",
+    "TerritorySystem",
     "LLMSystem",
     "LLMActionHandler",
     "LLMObservationSystem",

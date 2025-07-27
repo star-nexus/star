@@ -20,6 +20,7 @@ from ..systems import (
     InputHandlingSystem,
     MiniMapSystem,
     UIButtonSystem,
+    TerritorySystem,
 )
 from ..systems.map_render_system import MapRenderSystem
 from ..systems.unit_render_system import UnitRenderSystem
@@ -127,6 +128,7 @@ class GameScene(Scene):
             VisionSystem(),  # 视野系统
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
+            TerritorySystem(),  # 领土系统 (处理占领和工事)
             AISystem(),  # 仅当有AI玩家时添加AI系统
             # LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统

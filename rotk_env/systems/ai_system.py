@@ -292,13 +292,23 @@ class AISystem(System):
         if not all([position, movement, action_points]):
             return False
 
-        # 尝试驻扎（如果在合适地形）
+        # 优先级1：尝试占领重要地块（城市或未占领的地块）
+        if action_points.can_perform_action(ActionType.CAPTURE):
+            if self._try_capture_territory(unit_entity):
+                return True
+
+        # 优先级2：尝试建设工事（如果已占领且未建设工事）
+        if action_points.can_perform_action(ActionType.FORTIFY):
+            if self._try_build_fortification(unit_entity):
+                return True
+
+        # 优先级3：尝试驻扎（如果在合适地形）
         if action_points.can_perform_action(ActionType.GARRISON):
             action_system = self._get_action_system()
             if action_system and action_system.perform_garrison(unit_entity):
                 return True
 
-        # 尝试移动到防御地形
+        # 优先级4：尝试移动到防御地形
         if not movement.has_moved and action_points.can_perform_action(ActionType.MOVE):
             best_terrain_pos = self._find_best_defensive_terrain(unit_entity)
             if best_terrain_pos and best_terrain_pos != (position.col, position.row):
@@ -321,8 +331,9 @@ class AISystem(System):
         position = self.world.get_component(unit_entity, HexPosition)
         movement = self.world.get_component(unit_entity, Movement)
         unit_count = self.world.get_component(unit_entity, UnitCount)
+        unit = self.world.get_component(unit_entity, Unit)
 
-        if not all([position, movement, unit_count]):
+        if not all([position, movement, unit_count, unit]):
             return None
 
         effective_movement = movement.get_effective_movement(unit_count)
@@ -344,20 +355,187 @@ class AISystem(System):
             tile_entity = map_data.tiles.get(pos)
             if tile_entity:
                 terrain = self.world.get_component(tile_entity, Terrain)
+
+                # 导入TerritoryControl组件
+                from ..components import TerritoryControl
+
+                territory_control = self.world.get_component(
+                    tile_entity, TerritoryControl
+                )
+
                 if terrain:
                     # 计算地形防御价值
                     from ..prefabs.config import GameConfig
 
+                    score = 0
                     terrain_effect = GameConfig.TERRAIN_EFFECTS.get(
                         terrain.terrain_type
                     )
                     if terrain_effect:
-                        score = terrain_effect.defense_bonus
-                        if score > best_score:
-                            best_score = score
-                            best_pos = pos
+                        score += terrain_effect.defense_bonus
+
+                    # 城市地形额外加分
+                    if terrain.terrain_type == TerrainType.CITY:
+                        score += 10  # 城市有很高的战略价值
+
+                    # 己方控制的地块加分
+                    if (
+                        territory_control
+                        and territory_control.controlling_faction == unit.faction
+                    ):
+                        score += 5
+                        # 有工事的地块额外加分
+                        score += territory_control.fortification_level * 3
+
+                    # 未被占领的重要地形加分
+                    elif not territory_control and terrain.terrain_type in [
+                        TerrainType.CITY,
+                        TerrainType.HILL,
+                    ]:
+                        score += 8  # 未占领的重要地形优先占领
+
+                    if score > best_score:
+                        best_score = score
+                        best_pos = pos
 
         return best_pos
+
+    def _try_capture_territory(self, unit_entity: int) -> bool:
+        """尝试占领当前位置的地块"""
+        position = self.world.get_component(unit_entity, HexPosition)
+        unit = self.world.get_component(unit_entity, Unit)
+
+        if not position or not unit:
+            return False
+
+        current_pos = (position.col, position.row)
+
+        # 获取当前地块
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data or current_pos not in map_data.tiles:
+            return False
+
+        tile_entity = map_data.tiles[current_pos]
+        terrain = self.world.get_component(tile_entity, Terrain)
+
+        # 检查是否需要占领
+        should_capture = False
+
+        # 导入TerritoryControl组件
+        from ..components import TerritoryControl
+
+        territory_control = self.world.get_component(tile_entity, TerritoryControl)
+
+        if not territory_control:
+            # 未被占领的地块，优先占领
+            should_capture = True
+        elif territory_control.controlling_faction != unit.faction:
+            # 敌方占领的地块，需要夺取
+            should_capture = True
+        elif (
+            terrain
+            and terrain.terrain_type == TerrainType.CITY
+            and territory_control.controlling_faction != unit.faction
+        ):
+            # 敌方城市，高优先级目标
+            should_capture = True
+
+        if should_capture:
+            # 执行占领行动
+            territory_system = self._get_territory_system()
+            if territory_system:
+                return territory_system.start_capture(unit_entity, current_pos)
+
+        return False
+
+    def _try_build_fortification(self, unit_entity: int) -> bool:
+        """尝试在当前位置建设工事"""
+        position = self.world.get_component(unit_entity, HexPosition)
+        unit = self.world.get_component(unit_entity, Unit)
+
+        if not position or not unit:
+            return False
+
+        current_pos = (position.col, position.row)
+
+        # 获取当前地块
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data or current_pos not in map_data.tiles:
+            return False
+
+        tile_entity = map_data.tiles[current_pos]
+
+        # 导入TerritoryControl组件
+        from ..components import TerritoryControl
+
+        territory_control = self.world.get_component(tile_entity, TerritoryControl)
+
+        # 只有在己方控制的地块上才能建设工事
+        if (
+            not territory_control
+            or territory_control.controlling_faction != unit.faction
+        ):
+            return False
+
+        # 检查是否已经有最大等级的工事
+        max_fortification_level = 3  # 最大工事等级
+        if territory_control.fortification_level >= max_fortification_level:
+            return False
+
+        # 检查是否值得建设工事（基于战略价值）
+        if self._should_build_fortification(tile_entity, territory_control):
+            # 执行工事建设
+            territory_system = self._get_territory_system()
+            if territory_system:
+                return territory_system.build_fortification(unit_entity, current_pos)
+
+        return False
+
+    def _should_build_fortification(self, tile_entity: int, territory_control) -> bool:
+        """判断是否应该建设工事"""
+        terrain = self.world.get_component(tile_entity, Terrain)
+
+        # 城市地块优先建设工事
+        if terrain and terrain.terrain_type == TerrainType.CITY:
+            return True
+
+        # 已完全占领的地块值得建设工事
+        if territory_control.capture_progress >= 1.0:
+            return True
+
+        # 边境地块（有敌人附近）值得建设工事
+        position = self.world.get_component(tile_entity, HexPosition)
+        if position and self._is_border_position(
+            (position.col, position.row), territory_control.controlling_faction
+        ):
+            return True
+
+        return False
+
+    def _is_border_position(self, pos: Tuple[int, int], current_faction) -> bool:
+        """检查位置是否是边境（附近有敌方单位或敌方控制的地块）"""
+        # 检查周围是否有敌方单位
+        for neighbor_pos in HexMath.hex_neighbors(*pos):
+            # 检查是否有敌方单位
+            for entity in self.world.query().with_all(Unit, HexPosition).entities():
+                unit_pos = self.world.get_component(entity, HexPosition)
+                unit = self.world.get_component(entity, Unit)
+                if (
+                    unit_pos
+                    and unit
+                    and (unit_pos.col, unit_pos.row) == neighbor_pos
+                    and unit.faction != current_faction
+                ):
+                    return True
+
+        return False
+
+    def _get_territory_system(self):
+        """获取领土系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "TerritorySystem":
+                return system
+        return None
 
     def _get_obstacles_for_ai(self) -> Set[Tuple[int, int]]:
         """获取AI寻路的障碍物"""
