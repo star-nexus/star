@@ -33,6 +33,7 @@ class AISystem(System):
         self.decision_interval = 1.0  # AI决策间隔（秒）
         self.debug_timer = 0.0  # 用于调试输出
         self.debug_interval = 5.0  # 每5秒输出一次调试信息
+        self.unit_last_action = {}  # 记录每个单位的最后行动时间
 
     def initialize(self, world: World) -> None:
         """初始化AI系统"""
@@ -124,6 +125,8 @@ class AISystem(System):
 
     def _execute_unit_strategy(self, unit_entity: int) -> bool:
         """执行单位策略"""
+        import time
+        
         action_points = self.world.get_component(unit_entity, ActionPoints)
         movement = self.world.get_component(unit_entity, Movement)
         combat = self.world.get_component(unit_entity, Combat)
@@ -142,9 +145,16 @@ class AISystem(System):
         if not action_points or action_points.current_ap <= 0:
             return False
 
-        # 在实时模式下的检查
+        # 在实时模式下添加单位行动冷却
         is_realtime = game_mode and game_mode.is_real_time()
         if is_realtime:
+            current_time = time.time()
+            last_action_time = self.unit_last_action.get(unit_entity, 0)
+            
+            # 每个单位至少间隔1秒才能执行下一个行动
+            if current_time - last_action_time < 1.0:
+                return False
+            
             can_move = movement and movement.current_movement > 0
             can_attack = combat and not combat.has_attacked
             if not can_move and not can_attack:
@@ -154,29 +164,50 @@ class AISystem(System):
             if (movement and movement.has_moved) and (combat and combat.has_attacked):
                 return False
 
+        # 记录行动时间
+        if is_realtime:
+            self.unit_last_action[unit_entity] = time.time()
+
         # 寻找敌人
         enemy_target = self._find_nearest_enemy(unit_entity)
         if enemy_target:
-            # 尝试攻击
-            if (
-                combat
-                and not combat.has_attacked
-                and action_points.can_perform_action(ActionType.ATTACK)
-            ):
-                if self._try_attack(unit_entity, enemy_target):
-                    return True
-
-            # 尝试移动接近敌人
-            if (
-                movement
-                and action_points.can_perform_action(ActionType.MOVE)
-                and (
-                    (is_realtime and movement.current_movement > 0)
-                    or (not is_realtime and not movement.has_moved)
+            # 计算与敌人的距离
+            attacker_pos = self.world.get_component(unit_entity, HexPosition)
+            target_pos = self.world.get_component(enemy_target, HexPosition)
+            
+            if attacker_pos and target_pos:
+                distance = HexMath.hex_distance(
+                    (attacker_pos.col, attacker_pos.row), 
+                    (target_pos.col, target_pos.row)
                 )
-            ):
-                if self._move_towards_enemy(unit_entity, enemy_target):
-                    return True
+                
+                # 优先级1：如果在攻击范围内，尝试攻击
+                if (
+                    combat
+                    and not combat.has_attacked
+                    and action_points.can_perform_action(ActionType.ATTACK)
+                    and distance <= combat.attack_range
+                ):
+                    if self._try_attack(unit_entity, enemy_target):
+                        return True
+
+                # 优先级2：如果距离适中(2-3格)，优先执行防御策略(占领、工事等)
+                if 2 <= distance <= 3:
+                    if self._execute_defensive_strategy(unit_entity):
+                        return True
+
+                # 优先级3：如果距离太远，移动接近敌人
+                if (
+                    movement
+                    and action_points.can_perform_action(ActionType.MOVE)
+                    and distance > 1
+                    and (
+                        (is_realtime and movement.current_movement > 0)
+                        or (not is_realtime and not movement.has_moved)
+                    )
+                ):
+                    if self._move_towards_enemy(unit_entity, enemy_target):
+                        return True
 
         # 没有找到敌人，执行防御策略
         return self._execute_defensive_strategy(unit_entity)
@@ -288,9 +319,12 @@ class AISystem(System):
         position = self.world.get_component(unit_entity, HexPosition)
         movement = self.world.get_component(unit_entity, Movement)
         action_points = self.world.get_component(unit_entity, ActionPoints)
+        game_mode = self.world.get_singleton_component(GameModeComponent)
 
         if not all([position, movement, action_points]):
             return False
+
+        is_realtime = game_mode and game_mode.is_real_time()
 
         # 优先级1：尝试占领重要地块（城市或未占领的地块）
         if action_points.can_perform_action(ActionType.CAPTURE):
@@ -308,8 +342,17 @@ class AISystem(System):
             if action_system and action_system.perform_garrison(unit_entity):
                 return True
 
-        # 优先级4：尝试移动到防御地形
-        if not movement.has_moved and action_points.can_perform_action(ActionType.MOVE):
+        # 优先级4：移动到更好的位置（但在实时模式下降低移动频率）
+        should_move = False
+        if is_realtime:
+            # 实时模式：只有当移动力足够多时才移动，避免频繁移动
+            should_move = (movement.current_movement >= movement.base_movement * 0.8 
+                          and not movement.has_moved)
+        else:
+            # 回合制模式：按原逻辑
+            should_move = not movement.has_moved
+
+        if should_move and action_points.can_perform_action(ActionType.MOVE):
             best_terrain_pos = self._find_best_defensive_terrain(unit_entity)
             if best_terrain_pos and best_terrain_pos != (position.col, position.row):
                 movement_system = self._get_movement_system()

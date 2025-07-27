@@ -124,7 +124,7 @@ class TerritorySystem(System):
             else:
                 # 实时模式：需要占领时间
                 game_time = self.world.get_singleton_component(GameTime)
-                current_time = game_time.total_time if game_time else time.time()
+                current_time = game_time.game_elapsed_time if game_time else time.time()
 
                 if capture_action.start_time == 0.0:
                     capture_action.start_time = current_time
