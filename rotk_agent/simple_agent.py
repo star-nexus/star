@@ -161,8 +161,10 @@ class AgentDemo:
         console.print("\n🎮 进入交互模式", style="bold cyan")
         console.print("=" * 20)
         console.print("可用命令:")
-        console.print("  task <prompt>")
+        console.print("  chat <prompt>")
         console.print("  message <action> <params> - 自定义动作")
+        console.print("  list - 列出可用动作")
+        console.print("  run - 执行预定义动作")
         console.print("  quit - 退出交互模式")
         console.print()
 
@@ -325,16 +327,17 @@ async def perform_action(action: str, params: Any):
 async def available_actions() -> list[Dict[str, Any]]:
     """获取当前可用的动作"""
 
-    result = await perform_action("get_action_list", {})
+    result = await perform_action("action_list", {})
 
     return result
 
 
-ACTION = {
-    "chat": chat,
-    "message": message,
-    "list": list_action,
-}
+async def run_action(parts):
+    """执行指定动作"""
+    await chat(["chat", "控制wei阵营,消灭敌人,获得胜利。"])
+
+
+ACTION = {"chat": chat, "message": message, "list": list_action, "run": run_action}
 
 
 async def main():
