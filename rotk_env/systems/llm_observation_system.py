@@ -9,7 +9,7 @@ from ..components import (
     Unit,
     UnitCount,
     HexPosition,
-    Movement,
+    MovementPoints,
     Combat,
     Vision,
     Player,
@@ -213,7 +213,7 @@ class LLMObservationSystem:
             unit = self.world.get_component(unit_id, Unit)
             position = self.world.get_component(unit_id, HexPosition)
             unit_count = self.world.get_component(unit_id, UnitCount)
-            movement = self.world.get_component(unit_id, Movement)
+            movement = self.world.get_component(unit_id, MovementPoints)
             combat = self.world.get_component(unit_id, Combat)
             vision = self.world.get_component(unit_id, Vision)
 
@@ -255,11 +255,10 @@ class LLMObservationSystem:
 
             if movement:
                 unit_info["movement"] = {
-                    "current": movement.current_movement,
-                    "max": movement.base_movement,
+                    "current": movement.current_mp,
+                    "max": movement.max_mp,
                     "has_moved": movement.has_moved,
-                    "can_move": movement.current_movement > 0
-                    and not movement.has_moved,
+                    "can_move": movement.current_mp > 0 and not movement.has_moved,
                 }
 
             if combat:
@@ -493,7 +492,7 @@ class LLMObservationSystem:
         unit = self.world.get_component(entity, Unit)
         position = self.world.get_component(entity, HexPosition)
         unit_count = self.world.get_component(entity, UnitCount)
-        movement = self.world.get_component(entity, Movement)
+        movement = self.world.get_component(entity, MovementPoints)
         combat = self.world.get_component(entity, Combat)
         status = self.world.get_component(entity, UnitStatus)
 
@@ -530,8 +529,8 @@ class LLMObservationSystem:
         if include_hidden:
             if movement:
                 unit_info["movement"] = {
-                    "current": movement.current_movement,
-                    "max": movement.base_movement,
+                    "current": movement.current_mp,
+                    "max": movement.max_mp,
                     "has_moved": movement.has_moved,
                 }
 
@@ -554,12 +553,12 @@ class LLMObservationSystem:
 
     def _get_unit_action_options(self, unit_id: int) -> List[str]:
         """获取单位可执行的动作选项"""
-        movement = self.world.get_component(unit_id, Movement)
+        movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
 
         actions = []
 
-        if movement and movement.current_movement > 0 and not movement.has_moved:
+        if movement and movement.current_mp > 0 and not movement.has_moved:
             actions.append("move")
 
         if combat and not combat.has_attacked:
@@ -582,10 +581,13 @@ class LLMObservationSystem:
             "units_ready_to_act": len(
                 [
                     e
-                    for e in self.world.query().with_all(Unit, Movement).entities()
+                    for e in self.world.query()
+                    .with_all(Unit, MovementPoints)
+                    .entities()
                     if (
                         self.world.get_component(e, Unit).faction == faction
-                        and self.world.get_component(e, Movement).current_movement > 0
+                        and self.world.get_component(e, MovementPoints).current_movement
+                        > 0
                     )
                 ]
             ),

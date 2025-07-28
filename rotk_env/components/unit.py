@@ -161,13 +161,15 @@ class ActionPoints(Component):
         return False
 
     def _get_action_cost(self, action_type: ActionType) -> int:
-        """获取动作消耗的行动力"""
+        """获取动作消耗的行动点（决策层级）"""
         action_costs = {
-            ActionType.MOVE: 1,  # 移动消耗见地形
-            ActionType.ATTACK: 2,
-            ActionType.GARRISON: 2,
-            ActionType.WAIT: 0,
-            ActionType.SKILL: 2,
+            ActionType.MOVE: 1,  # 移动决策：固定1点
+            ActionType.ATTACK: 1,  # 攻击决策：固定1点
+            ActionType.GARRISON: 1,  # 驻扎决策：固定1点
+            ActionType.WAIT: 0,  # 待命：无消耗
+            ActionType.SKILL: 1,  # 技能决策：固定1点
+            ActionType.CAPTURE: 1,  # 占领决策：固定1点
+            ActionType.FORTIFY: 1,  # 建造决策：固定1点
         }
         return action_costs.get(action_type, 1)
 

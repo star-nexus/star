@@ -7,10 +7,13 @@ from ..components import (
     Unit,
     UnitCount,
     UnitStatus,
-    Movement,
+    MovementPoints,
+    ActionPoints,
+    AttackPoints,
+    ConstructionPoints,
+    SkillPoints,
     Combat,
     Vision,
-    ActionPoints,
     UnitSkills,
     HexPosition,
     Renderable,
@@ -71,12 +74,21 @@ class UnitFactory:
         # 添加移动组件
         world.add_component(
             entity,
-            Movement(
-                base_movement=base_stats.movement,
-                current_movement=base_stats.movement,
+            MovementPoints(
+                base_mp=base_stats.movement,
+                current_mp=base_stats.movement,
+                max_mp=base_stats.movement,
                 has_moved=False,
             ),
         )
+
+        # 添加多层次资源组件
+        world.add_component(entity, ActionPoints(current_ap=2, max_ap=2))
+        world.add_component(
+            entity, AttackPoints(normal_attacks=1, max_normal_attacks=1)
+        )
+        world.add_component(entity, ConstructionPoints(current_cp=1, max_cp=1))
+        world.add_component(entity, SkillPoints(current_sp=1, max_sp=1))
 
         # 添加战斗组件
         world.add_component(
@@ -91,9 +103,6 @@ class UnitFactory:
 
         # 添加视野组件
         world.add_component(entity, Vision(range=base_stats.vision_range))
-
-        # 添加行动力组件
-        world.add_component(entity, ActionPoints(current_ap=2, max_ap=2))
 
         # 添加技能组件
         skills = UnitFactory._get_unit_skills(unit_type)

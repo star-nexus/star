@@ -10,7 +10,7 @@ from ..components import (
     Unit,
     UnitCount,
     HexPosition,
-    Movement,
+    MovementPoints,
     Combat,
     Vision,
     GameStats,
@@ -106,7 +106,7 @@ class StatisticsSystem(System):
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
             position = self.world.get_component(entity, HexPosition)
-            movement = self.world.get_component(entity, Movement)
+            movement = self.world.get_component(entity, MovementPoints)
             combat = self.world.get_component(entity, Combat)
 
             if not all([unit, unit_count, position]):
@@ -126,7 +126,7 @@ class StatisticsSystem(System):
             ) * 100
 
             if movement:
-                observation.movement_remaining = movement.current_movement
+                observation.movement_remaining = movement.current_mp
                 observation.has_acted_this_turn = movement.has_moved
 
                 # 计算移动距离

@@ -10,7 +10,7 @@ from ..components import (
     AIControlled,
     Unit,
     HexPosition,
-    Movement,
+    MovementPoints,
     Combat,
     UnitCount,
     UnitStatus,
@@ -126,9 +126,9 @@ class AISystem(System):
     def _execute_unit_strategy(self, unit_entity: int) -> bool:
         """执行单位策略"""
         import time
-        
+
         action_points = self.world.get_component(unit_entity, ActionPoints)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         combat = self.world.get_component(unit_entity, Combat)
         unit_count = self.world.get_component(unit_entity, UnitCount)
         game_mode = self.world.get_singleton_component(GameModeComponent)
@@ -150,12 +150,12 @@ class AISystem(System):
         if is_realtime:
             current_time = time.time()
             last_action_time = self.unit_last_action.get(unit_entity, 0)
-            
+
             # 每个单位至少间隔1秒才能执行下一个行动
             if current_time - last_action_time < 1.0:
                 return False
-            
-            can_move = movement and movement.current_movement > 0
+
+            can_move = movement and movement.current_mp > 0
             can_attack = combat and not combat.has_attacked
             if not can_move and not can_attack:
                 return False
@@ -174,13 +174,13 @@ class AISystem(System):
             # 计算与敌人的距离
             attacker_pos = self.world.get_component(unit_entity, HexPosition)
             target_pos = self.world.get_component(enemy_target, HexPosition)
-            
+
             if attacker_pos and target_pos:
                 distance = HexMath.hex_distance(
-                    (attacker_pos.col, attacker_pos.row), 
-                    (target_pos.col, target_pos.row)
+                    (attacker_pos.col, attacker_pos.row),
+                    (target_pos.col, target_pos.row),
                 )
-                
+
                 # 优先级1：如果在攻击范围内，尝试攻击
                 if (
                     combat
@@ -202,7 +202,7 @@ class AISystem(System):
                     and action_points.can_perform_action(ActionType.MOVE)
                     and distance > 1
                     and (
-                        (is_realtime and movement.current_movement > 0)
+                        (is_realtime and movement.current_mp > 0)
                         or (not is_realtime and not movement.has_moved)
                     )
                 ):
@@ -274,7 +274,7 @@ class AISystem(System):
         """移动接近敌人"""
         position = self.world.get_component(unit_entity, HexPosition)
         enemy_pos = self.world.get_component(enemy_entity, HexPosition)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         unit_count = self.world.get_component(unit_entity, UnitCount)
 
         if not all([position, enemy_pos, movement, unit_count]):
@@ -317,7 +317,7 @@ class AISystem(System):
     def _execute_defensive_strategy(self, unit_entity: int) -> bool:
         """执行防御策略"""
         position = self.world.get_component(unit_entity, HexPosition)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         action_points = self.world.get_component(unit_entity, ActionPoints)
         game_mode = self.world.get_singleton_component(GameModeComponent)
 
@@ -346,8 +346,9 @@ class AISystem(System):
         should_move = False
         if is_realtime:
             # 实时模式：只有当移动力足够多时才移动，避免频繁移动
-            should_move = (movement.current_movement >= movement.base_movement * 0.8 
-                          and not movement.has_moved)
+            should_move = (
+                movement.current_mp >= movement.max_mp * 0.8 and not movement.has_moved
+            )
         else:
             # 回合制模式：按原逻辑
             should_move = not movement.has_moved
@@ -372,7 +373,7 @@ class AISystem(System):
     ) -> Optional[Tuple[int, int]]:
         """寻找最佳防御地形"""
         position = self.world.get_component(unit_entity, HexPosition)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         unit_count = self.world.get_component(unit_entity, UnitCount)
         unit = self.world.get_component(unit_entity, Unit)
 
@@ -724,13 +725,13 @@ class AISystem(System):
         for entity in self.world.query().with_all(Unit, AIControlled).entities():
             ai_unit_count += 1
             unit = self.world.get_component(entity, Unit)
-            movement = self.world.get_component(entity, Movement)
+            movement = self.world.get_component(entity, MovementPoints)
             combat = self.world.get_component(entity, Combat)
             unit_count = self.world.get_component(entity, UnitCount)
             action_points = self.world.get_component(entity, ActionPoints)
 
             if unit_count and unit_count.current_count > 0:
-                can_move = movement and movement.current_movement > 0
+                can_move = movement and movement.current_mp > 0
                 can_attack = combat and not combat.has_attacked
                 has_ap = action_points and action_points.current_ap > 0
 
@@ -738,7 +739,7 @@ class AISystem(System):
                     active_ai_units += 1
                     print(
                         f"AI Unit {entity}: Faction={unit.faction}, Count={unit_count.current_count}, "
-                        f"Movement={movement.current_movement}/{movement.base_movement}, "
+                        f"Movement={movement.current_mp}/{movement.max_mp}, "
                         f"AP={action_points.current_ap}/{action_points.max_ap}, "
                         f"CanAttack={can_attack}"
                     )

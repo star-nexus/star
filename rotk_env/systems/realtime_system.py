@@ -6,7 +6,7 @@ from framework import System, World
 from ..components import (
     Unit,
     UnitCount,
-    Movement,
+    MovementPoints,
     Combat,
     Player,
     GameState,
@@ -109,20 +109,19 @@ class RealtimeSystem(System):
         regen_rate = 0.4  # 每秒恢复的行动点数比例
 
         # 恢复移动力
-        for entity in self.world.query().with_component(Movement).entities():
-            movement = self.world.get_component(entity, Movement)
+        for entity in self.world.query().with_component(MovementPoints).entities():
+            movement = self.world.get_component(entity, MovementPoints)
             unit_count = self.world.get_component(entity, UnitCount)
 
             if movement and unit_count:
                 max_movement = movement.get_effective_movement(unit_count)
-                if movement.current_movement < max_movement:
-                    movement.current_movement = min(
+                if movement.current_mp < max_movement:
+                    movement.current_mp = min(
                         max_movement,
-                        movement.current_movement
-                        + max_movement * regen_rate * delta_time,
+                        movement.current_mp + max_movement * regen_rate * delta_time,
                     )
                     # 如果移动力恢复到足够，重置已移动标志
-                    if movement.current_movement >= max_movement * 0.7:
+                    if movement.current_mp >= max_movement * 0.7:
                         movement.has_moved = False
 
         # 恢复攻击能力和行动力
@@ -164,7 +163,7 @@ class RealtimeSystem(System):
         from ..components import AIControlled
 
         for entity in self.world.query().with_all(Unit, AIControlled).entities():
-            movement = self.world.get_component(entity, Movement)
+            movement = self.world.get_component(entity, MovementPoints)
             combat = self.world.get_component(entity, Combat)
             unit_count = self.world.get_component(entity, UnitCount)
 
@@ -175,9 +174,9 @@ class RealtimeSystem(System):
             # 给AI单位少量额外的行动力
             if movement and unit_count:
                 max_movement = movement.get_effective_movement(unit_count)
-                if movement.current_movement < max_movement:
-                    movement.current_movement = min(
-                        max_movement, movement.current_movement + 0.2  # 增加额外行动力
+                if movement.current_mp < max_movement:
+                    movement.current_mp = min(
+                        max_movement, movement.current_mp + 0.2  # 增加额外行动力
                     )
 
             # 减少AI单位的攻击冷却时间

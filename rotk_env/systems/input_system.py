@@ -86,6 +86,11 @@ class InputHandlingSystem(System):
         """处理鼠标点击"""
         ui_state = self.world.get_singleton_component(UIState)
 
+        # 首先检查是否点击了单位动作按钮面板
+        action_button_system = self._get_action_button_system()
+        if action_button_system and action_button_system.handle_panel_click(event.pos):
+            return
+
         # 首先检查是否点击了小地图，通过MiniMapSystem处理
         minimap_system = self._get_minimap_system()
         if minimap_system and minimap_system.handle_click(event.pos):
@@ -294,6 +299,13 @@ class InputHandlingSystem(System):
         """获取小地图系统"""
         for system in self.world.systems:
             if system.__class__.__name__ == "MiniMapSystem":
+                return system
+        return None
+
+    def _get_action_button_system(self):
+        """获取单位动作按钮系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "UnitActionButtonSystem":
                 return system
         return None
 

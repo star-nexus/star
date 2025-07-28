@@ -12,7 +12,7 @@ from ..components import (
     UIState,
     Unit,
     UnitCount,
-    Movement,
+    MovementPoints,
     Combat,
     HexPosition,
     UnitStatus,
@@ -66,7 +66,7 @@ class PanelRenderSystem(System):
         unit_entity = ui_state.selected_unit
         unit = self.world.get_component(unit_entity, Unit)
         unit_count = self.world.get_component(unit_entity, UnitCount)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         combat = self.world.get_component(unit_entity, Combat)
         position = self.world.get_component(unit_entity, HexPosition)
         status = self.world.get_component(unit_entity, UnitStatus)
@@ -121,7 +121,7 @@ class PanelRenderSystem(System):
         # 移动力
         if movement and unit_count:
             effective_max = movement.get_effective_movement(unit_count)
-            movement_text = f"移动力: {movement.current_movement:.1f}/{effective_max}"
+            movement_text = f"移动力: {movement.current_mp:.1f}/{effective_max}"
             movement_surface = self.small_font.render(
                 movement_text, True, (0, 255, 255)
             )

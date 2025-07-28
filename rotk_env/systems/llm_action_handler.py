@@ -12,7 +12,7 @@ from ..components import (
     Unit,
     UnitCount,
     HexPosition,
-    Movement,
+    MovementPoints,
     Combat,
     Vision,
     Player,
@@ -1201,7 +1201,7 @@ class LLMActionHandler:
                 ):
                     continue
                 elif status_filter == "ready":
-                    movement = self.world.get_component(entity, Movement)
+                    movement = self.world.get_component(entity, MovementPoints)
                     combat = self.world.get_component(entity, Combat)
                     if (movement and movement.has_moved) or (
                         combat and combat.has_attacked
@@ -1677,7 +1677,7 @@ class LLMActionHandler:
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
         unit_count = self.world.get_component(unit_id, UnitCount)
-        movement = self.world.get_component(unit_id, Movement)
+        movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
         vision = self.world.get_component(unit_id, Vision)
         status = self.world.get_component(unit_id, UnitStatus)
@@ -1713,10 +1713,10 @@ class LLMActionHandler:
 
         if movement:
             detailed_info["movement"] = {
-                "current": movement.current_movement,
-                "max": movement.base_movement,
+                "current": movement.current_mp,
+                "max": movement.max_mp,
                 "has_moved": movement.has_moved,
-                "remaining_movement": movement.current_movement,
+                "remaining_movement": movement.current_mp,
             }
 
         if combat:
@@ -1746,7 +1746,7 @@ class LLMActionHandler:
         """获取单位可用动作"""
         available_actions = []
 
-        movement = self.world.get_component(unit_id, Movement)
+        movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
         unit_count = self.world.get_component(unit_id, UnitCount)
 
@@ -1755,7 +1755,7 @@ class LLMActionHandler:
             return ["dead"]  # 已死亡单位无法执行动作
 
         # 移动相关动作
-        if movement and movement.current_movement > 0 and not movement.has_moved:
+        if movement and movement.current_mp > 0 and not movement.has_moved:
             available_actions.extend(["move", "retreat", "scout", "patrol"])
 
         # 战斗相关动作
@@ -1770,7 +1770,7 @@ class LLMActionHandler:
     def _get_unit_capabilities(self, unit_id: int) -> Dict[str, Any]:
         """获取单位能力信息"""
         unit = self.world.get_component(unit_id, Unit)
-        movement = self.world.get_component(unit_id, Movement)
+        movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
         vision = self.world.get_component(unit_id, Vision)
 
@@ -1781,7 +1781,7 @@ class LLMActionHandler:
         }
 
         if movement:
-            capabilities["movement_range"] = movement.base_movement
+            capabilities["movement_range"] = movement.current_mp
         if combat:
             capabilities["attack_range"] = combat.attack_range
             capabilities["attack_power"] = combat.base_attack
@@ -1922,7 +1922,7 @@ class LLMActionHandler:
         for entity in all_units:
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
-            movement = self.world.get_component(entity, Movement)
+            movement = self.world.get_component(entity, MovementPoints)
             combat = self.world.get_component(entity, Combat)
 
             faction_name = (
@@ -1954,7 +1954,7 @@ class LLMActionHandler:
                 else:
                     stats["full_strength_units"] += 1
 
-            if movement and movement.current_movement > 0 and not movement.has_moved:
+            if movement and movement.current_mp > 0 and not movement.has_moved:
                 stats["ready_to_move"] += 1
 
             if combat:

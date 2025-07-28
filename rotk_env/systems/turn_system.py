@@ -7,7 +7,7 @@ from framework.engine.events import EBS
 from ..components import (
     Player,
     GameState,
-    Movement,
+    MovementPoints,
     Combat,
     Unit,
     GameModeComponent,
@@ -90,18 +90,16 @@ class TurnSystem(System):
 
     def _manual_reset_actions(self):
         """手动重置行动状态"""
-        for entity in self.world.query().with_component(Movement).entities():
-            movement = self.world.get_component(entity, Movement)
+        for entity in self.world.query().with_component(MovementPoints).entities():
+            movement = self.world.get_component(entity, MovementPoints)
             unit_count = self.world.get_component(entity, UnitCount)
             action_points = self.world.get_component(entity, ActionPoints)
 
             if movement:
                 if unit_count:
-                    movement.current_movement = movement.get_effective_movement(
-                        unit_count
-                    )
+                    movement.current_mp = movement.get_effective_movement(unit_count)
                 else:
-                    movement.current_movement = movement.base_movement
+                    movement.current_mp = movement.base_mp
                 movement.has_moved = False
 
             if action_points:

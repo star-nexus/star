@@ -10,7 +10,7 @@ from ..components import (
     InputState,
     HexPosition,
     Unit,
-    Movement,
+    MovementPoints,
     Combat,
     Camera,
     FogOfWar,
@@ -68,7 +68,7 @@ class EffectRenderSystem(System):
             self._render_unit_selection(ui_state.selected_unit, camera_offset, zoom)
 
             # 获取选中单位的组件
-            movement = self.world.get_component(ui_state.selected_unit, Movement)
+            movement = self.world.get_component(ui_state.selected_unit, MovementPoints)
             combat = self.world.get_component(ui_state.selected_unit, Combat)
 
             # 显示移动范围（如果单位还没有移动）
@@ -116,7 +116,7 @@ class EffectRenderSystem(System):
     ):
         """渲染移动范围"""
         position = self.world.get_component(unit_entity, HexPosition)
-        movement = self.world.get_component(unit_entity, Movement)
+        movement = self.world.get_component(unit_entity, MovementPoints)
         unit = self.world.get_component(unit_entity, Unit)
 
         if not position or not movement or not unit:
@@ -126,7 +126,7 @@ class EffectRenderSystem(System):
         obstacles = self._get_obstacles()
         # 计算可移动范围
         movement_range = PathFinding().get_movement_range(
-            (position.col, position.row), movement.current_movement, obstacles
+            (position.col, position.row), movement.current_mp, obstacles
         )
 
         # # 获取在移动范围内的所有瓦片

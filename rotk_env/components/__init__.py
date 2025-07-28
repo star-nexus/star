@@ -6,7 +6,6 @@
 from .base import HexPosition, Renderable, AnimationState, PathFinding
 from .unit import (
     Unit,
-    Movement,
     Combat,
     Vision,
     Selected,
@@ -14,11 +13,35 @@ from .unit import (
     UnitCount,
     UnitStatus,
     UnitSkills,
+)
+
+# 导入原有Movement组件用于向后兼容
+from .unit import Movement as LegacyMovement, ActionPoints as LegacyActionPoints
+
+# 导入新的多层次资源组件
+from .multilayer_resources import (
     ActionPoints,
+    MovementPoints,
+    AttackPoints,
+    ConstructionPoints,
+    SkillPoints,
+    # Movement,  # 新的Movement别名指向MovementPoints
 )
 from .terrain import Terrain, TerrainModifier, Tile, TerritoryControl, CaptureAction
 from .player import Player, TurnOrder, TurnManager
 from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
+from .unit_action_panel import (
+    UnitActionPanel as OldUnitActionPanel,
+    UnitActionButton as OldUnitActionButton,
+    ActionConfirmDialog as OldActionConfirmDialog,
+    ActionType as OldActionType,
+)
+from .unit_action_buttons import (
+    UnitActionPanel,
+    UnitActionButton,
+    ActionConfirmDialog,
+    ActionType,
+)
 from .minimap import MiniMap
 from .gamemode import GameModeComponent
 from .camera import Camera
@@ -55,7 +78,7 @@ __all__ = [
     "PathFinding",
     # 单位组件
     "Unit",
-    "Movement",
+    # "Movement",  # 新的多层次Movement组件
     "Combat",
     "Vision",
     "Selected",
@@ -63,7 +86,15 @@ __all__ = [
     "UnitCount",
     "UnitStatus",
     "UnitSkills",
-    "ActionPoints",
+    "ActionPoints",  # 新的多层次ActionPoints组件
+    # 多层次资源组件
+    "MovementPoints",
+    "AttackPoints",
+    "ConstructionPoints",
+    "SkillPoints",
+    # 向后兼容组件
+    "LegacyMovement",
+    "LegacyActionPoints",
     # 地形组件
     "Terrain",
     "TerrainModifier",
@@ -107,6 +138,11 @@ __all__ = [
     "UIButton",
     "UIButtonCollection",
     "UIPanel",
+    # 单位行动面板组件
+    "UnitActionPanel",
+    "UnitActionButton",
+    "ActionConfirmDialog",
+    "ActionType",
     # 随机事件组件
     "DiceRoll",
     "TerrainEvent",

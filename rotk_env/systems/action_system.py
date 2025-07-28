@@ -5,7 +5,7 @@
 from framework import System, World
 from ..components import (
     HexPosition,
-    Movement,
+    MovementPoints,
     UnitCount,
     UnitStatus,
     Unit,
@@ -36,7 +36,7 @@ class ActionSystem(System):
     def perform_move(self, entity: int, target_pos: tuple) -> bool:
         """执行移动动作"""
         action_points = self.world.get_component(entity, ActionPoints)
-        movement = self.world.get_component(entity, Movement)
+        movement = self.world.get_component(entity, MovementPoints)
         position = self.world.get_component(entity, HexPosition)
         unit_count = self.world.get_component(entity, UnitCount)
 
@@ -173,7 +173,7 @@ class ActionSystem(System):
 
     def reset_turn_actions(self, faction=None):
         """重置回合行动（回合开始时调用）"""
-        query = self.world.query().with_all(ActionPoints, Movement, UnitStatus)
+        query = self.world.query().with_all(ActionPoints, MovementPoints, UnitStatus)
 
         for entity in query.entities():
             # 如果指定了阵营，只重置该阵营的单位
@@ -183,7 +183,7 @@ class ActionSystem(System):
                     continue
 
             action_points = self.world.get_component(entity, ActionPoints)
-            movement = self.world.get_component(entity, Movement)
+            movement = self.world.get_component(entity, MovementPoints)
             unit_status = self.world.get_component(entity, UnitStatus)
             unit_count = self.world.get_component(entity, UnitCount)
 

@@ -6,7 +6,7 @@ from typing import Set, Tuple
 from framework import System, World
 from ..components import (
     HexPosition,
-    Movement,
+    MovementPoints,  # 使用新的多层次资源组件
     Unit,
     UnitCount,
     ActionPoints,
@@ -24,7 +24,7 @@ class MovementSystem(System):
     """移动系统 - 处理单位移动"""
 
     def __init__(self):
-        super().__init__(required_components={HexPosition, Movement, Unit})
+        super().__init__(required_components={HexPosition, MovementPoints, Unit})
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -39,11 +39,11 @@ class MovementSystem(System):
     def move_unit(self, entity: int, target_pos: Tuple[int, int]) -> bool:
         """移动单位到目标位置"""
         position = self.world.get_component(entity, HexPosition)
-        movement = self.world.get_component(entity, Movement)
+        movement_points = self.world.get_component(entity, MovementPoints)
         unit_count = self.world.get_component(entity, UnitCount)
         action_points = self.world.get_component(entity, ActionPoints)
 
-        if not all([position, movement, unit_count, action_points]):
+        if not all([position, movement_points, unit_count, action_points]):
             return False
 
         # 检查是否正在移动
@@ -52,7 +52,7 @@ class MovementSystem(System):
             return False
 
         # 获取有效移动力（考虑人数影响）
-        effective_movement = movement.get_effective_movement(unit_count)
+        effective_movement = movement_points.get_effective_movement(unit_count)
 
         # 检查路径是否可行
         obstacles = self._get_obstacles()
@@ -78,13 +78,14 @@ class MovementSystem(System):
 
         print(f"✓ 单位 {entity} 移动到 {target_pos}")
 
-        # 消耗移动力和行动力
-        movement.current_movement -= total_cost
-        movement.has_moved = True
+        # === 消耗资源按多层次系统 ===
+        # 1. 消耗行动点（决策层级）：固定1点启动移动决策
+        action_points.current_ap -= 1
 
-        # 移动的行动力消耗等于地形移动消耗
-        terrain_cost = self._get_terrain_movement_cost(target_pos)
-        action_points.current_ap -= terrain_cost
+        # 2. 消耗移动力（执行层级）：根据路径和地形消耗
+        # 消耗移动点数和行动点数
+        movement_points.current_mp -= total_cost
+        movement_points.has_moved = True
 
         # 记录移动行动到统计系统
         statistics_system = self._get_statistics_system()

@@ -21,6 +21,7 @@ from ..systems import (
     MiniMapSystem,
     UIButtonSystem,
     TerritorySystem,
+    UnitActionButtonSystem,
 )
 from ..systems.map_render_system import MapRenderSystem
 from ..systems.unit_render_system import UnitRenderSystem
@@ -30,6 +31,7 @@ from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.statistics_system import StatisticsSystem
 from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
+from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..components import (
     GameState,
     UIState,
@@ -40,13 +42,19 @@ from ..components import (
     AIControlled,
     Unit,
     UnitCount,
-    Movement,
+    MovementPoints,
+    MovementPoints,
+    ActionPoints,
+    AttackPoints,
+    ConstructionPoints,
+    SkillPoints,
     Combat,
     Vision,
     HexPosition,
     MiniMap,
     GameModeComponent,
     UnitStatus,
+    UnitSkills,
     MovementAnimation,
     BattleLog,
     UnitObservation,
@@ -129,12 +137,15 @@ class GameScene(Scene):
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             TerritorySystem(),  # 领土系统 (处理占领和工事)
-            AISystem(),  # 仅当有AI玩家时添加AI系统
+            AISystem(),  # AI系统
+            ResourceRecoverySystem(),  # 资源恢复系统
+            # AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
             # LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
             UIButtonSystem(),  # UI按钮系统 (优先级2)
+            UnitActionButtonSystem(),  # 单位动作按钮系统 (优先级4)
             # 渲染系统拆分为多个独立系统（从底层到顶层）
             MapRenderSystem(),  # 地图渲染系统 (最底层)
             UnitRenderSystem(),  # 单位渲染系统 (在地图之上)
@@ -342,9 +353,38 @@ class GameScene(Scene):
         )
         self.world.add_component(
             unit_entity,
-            Movement(
-                base_movement=unit_stats.movement,
-                current_movement=unit_stats.movement,
+            MovementPoints(
+                base_mp=unit_stats.movement,
+                current_mp=unit_stats.movement,
+                max_mp=unit_stats.movement,
+            ),
+        )
+        self.world.add_component(
+            unit_entity,
+            ActionPoints(
+                current_ap=2,  # 默认行动点
+                max_ap=2,
+            ),
+        )
+        self.world.add_component(
+            unit_entity,
+            AttackPoints(
+                normal_attacks=1,  # 默认攻击次数
+                max_normal_attacks=1,
+            ),
+        )
+        self.world.add_component(
+            unit_entity,
+            ConstructionPoints(
+                current_cp=1,  # 默认建造点
+                max_cp=1,
+            ),
+        )
+        self.world.add_component(
+            unit_entity,
+            SkillPoints(
+                current_sp=1,  # 默认技能点
+                max_sp=1,
             ),
         )
         self.world.add_component(
@@ -359,8 +399,6 @@ class GameScene(Scene):
         self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
 
         # 添加行动力组件
-        from ..components import ActionPoints, UnitSkills
-
         self.world.add_component(unit_entity, ActionPoints(current_ap=2, max_ap=2))
 
         # 添加技能组件
