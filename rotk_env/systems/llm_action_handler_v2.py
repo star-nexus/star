@@ -121,130 +121,478 @@ class LLMActionHandlerV2:
     # ==================== 单位控制动作 ====================
 
     def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理移动动作 - 按多层次资源系统设计"""
-        # 参数验证
+        """处理移动动作 - 按多层次资源系统设计，增强错误反馈"""
+        print(f"[MOVE_ACTION] 开始处理移动动作，参数: {params}")
+
+        # 详细参数验证与反馈
         unit_id = params.get("unit_id")
         target_position = params.get("target_position")
 
+        print(
+            f"[MOVE_ACTION] 解析参数: unit_id={unit_id}, target_position={target_position}"
+        )
+
         if not isinstance(unit_id, int):
-            return self._create_error_response(1010, "unit_id must be integer")
+            error_msg = (
+                f"Invalid unit_id type: expected int, got {type(unit_id).__name__}"
+            )
+            print(f"[MOVE_ACTION] 参数验证失败: {error_msg}")
+            return self._create_error_response(
+                1010,
+                error_msg,
+                {
+                    "received_unit_id": unit_id,
+                    "expected_type": "int",
+                    "actual_type": type(unit_id).__name__,
+                    "valid_example": {"unit_id": 123},
+                },
+            )
 
         if not target_position or not isinstance(target_position, dict):
+            error_msg = f"Invalid target_position: expected dict with col/row, got {type(target_position).__name__}"
+            print(f"[MOVE_ACTION] 参数验证失败: {error_msg}")
             return self._create_error_response(
-                1010, "target_position must be object with col/row"
+                1010,
+                error_msg,
+                {
+                    "received_target_position": target_position,
+                    "expected_format": {"col": "int", "row": "int"},
+                    "valid_example": {"target_position": {"col": 5, "row": 8}},
+                },
             )
 
         target_col = target_position.get("col")
         target_row = target_position.get("row")
 
         if not isinstance(target_col, int) or not isinstance(target_row, int):
+            error_msg = f"Invalid target_position coordinates: col={target_col} ({type(target_col).__name__}), row={target_row} ({type(target_row).__name__})"
+            print(f"[MOVE_ACTION] 坐标验证失败: {error_msg}")
             return self._create_error_response(
-                1010, "target_position col/row must be integers"
+                1010,
+                error_msg,
+                {
+                    "received_col": target_col,
+                    "received_row": target_row,
+                    "col_type": type(target_col).__name__,
+                    "row_type": type(target_row).__name__,
+                    "expected_types": {"col": "int", "row": "int"},
+                    "valid_example": {"col": 5, "row": 8},
+                },
             )
 
-        # 检查单位存在性
+        # 详细单位存在性检查
+        print(f"[MOVE_ACTION] 检查单位 {unit_id} 是否存在...")
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
-            return self._create_error_response(1001, f"Unit {unit_id} not found")
+            error_msg = f"Unit {unit_id} not found in world"
+            print(f"[MOVE_ACTION] 单位不存在: {error_msg}")
+            # 获取所有存在的单位ID作为参考
+            all_units = []
+            for entity_id in self.world.entities:
+                if self.world.get_component(entity_id, Unit):
+                    all_units.append(entity_id)
 
-        # 检查单位组件
+            return self._create_error_response(
+                1001,
+                error_msg,
+                {
+                    "requested_unit_id": unit_id,
+                    "available_unit_ids": all_units[:10],  # 限制显示前10个
+                    "total_units_in_world": len(all_units),
+                    "suggestion": "Use faction_state action to see all units for a faction",
+                },
+            )
+
+        print(
+            f"[MOVE_ACTION] 单位 {unit_id} 存在，类型: {unit.unit_type.value}, 阵营: {unit.faction.value}"
+        )
+
+        # 详细组件检查
+        print(f"[MOVE_ACTION] 检查单位 {unit_id} 的必需组件...")
         position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
         action_points = self.world.get_component(unit_id, ActionPoints)
         unit_status = self.world.get_component(unit_id, UnitStatus)
 
-        if not all([position, movement_points, unit_count, action_points]):
-            return self._create_error_response(1001, "Unit missing required components")
+        # 详细的组件缺失检查
+        missing_components = []
+        component_info = {}
 
-        # 检查单位状态是否允许移动
-        if unit_status and unit_status.current_status == UnitState.CONFUSION:
-            return self._create_error_response(1005, "Unit is confused and cannot move")
+        if not position:
+            missing_components.append("HexPosition")
+        else:
+            component_info["position"] = {"col": position.col, "row": position.row}
+            print(f"[MOVE_ACTION] 当前位置: ({position.col}, {position.row})")
+
+        if not movement_points:
+            missing_components.append("MovementPoints")
+        else:
+            component_info["movement_points"] = {
+                "current_mp": movement_points.current_mp,
+                "max_mp": movement_points.max_mp,
+                "recovery_rate": getattr(movement_points, "recovery_rate", "unknown"),
+            }
+            print(
+                f"[MOVE_ACTION] 移动力: {movement_points.current_mp}/{movement_points.max_mp}"
+            )
+
+        if not unit_count:
+            missing_components.append("UnitCount")
+        else:
+            component_info["unit_count"] = {
+                "current_count": unit_count.current_count,
+                "max_count": unit_count.max_count,
+                "health_percentage": unit_count.current_count
+                / unit_count.max_count
+                * 100,
+            }
+            print(
+                f"[MOVE_ACTION] 单位人数: {unit_count.current_count}/{unit_count.max_count}"
+            )
+
+        if not action_points:
+            missing_components.append("ActionPoints")
+        else:
+            component_info["action_points"] = {
+                "current_ap": action_points.current_ap,
+                "max_ap": action_points.max_ap,
+            }
+            print(
+                f"[MOVE_ACTION] 行动点: {action_points.current_ap}/{action_points.max_ap}"
+            )
+
+        if missing_components:
+            error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
+            print(f"[MOVE_ACTION] 组件缺失: {error_msg}")
+            return self._create_error_response(
+                1001,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "missing_components": missing_components,
+                    "existing_components": component_info,
+                    "required_components": [
+                        "HexPosition",
+                        "MovementPoints",
+                        "UnitCount",
+                        "ActionPoints",
+                    ],
+                    "suggestion": "This unit may not be properly initialized",
+                },
+            )
+
+        # 详细单位状态检查
+        if unit_status:
+            print(f"[MOVE_ACTION] 单位状态: {unit_status.current_status}")
+            if unit_status.current_status == UnitState.CONFUSION:
+                error_msg = f"Unit {unit_id} is confused and cannot move"
+                print(f"[MOVE_ACTION] 状态阻止移动: {error_msg}")
+                return self._create_error_response(
+                    1005,
+                    error_msg,
+                    {
+                        "unit_id": unit_id,
+                        "current_status": unit_status.current_status.value,
+                        "blocking_statuses": [UnitState.CONFUSION.value],
+                        "suggestion": "Wait for confusion to clear or use skill to remove it",
+                        "unit_info": component_info,
+                    },
+                )
+        else:
+            print(f"[MOVE_ACTION] 单位状态组件不存在，假设状态正常")
 
         # === 第一层检查：行动点（决策层级） ===
-        # 移动决策需要1点行动点启动
-        if action_points.current_ap < 1:
+        print(f"[MOVE_ACTION] 检查行动点需求...")
+        required_ap = 1
+        current_ap = action_points.current_ap
+
+        if current_ap < required_ap:
+            error_msg = f"Insufficient action points to initiate movement decision: need {required_ap}, have {current_ap}"
+            print(f"[MOVE_ACTION] 行动点不足: {error_msg}")
             return self._create_error_response(
                 1002,
-                f"Insufficient action points to initiate movement decision: need 1, have {action_points.current_ap}",
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "required_action_points": required_ap,
+                    "current_action_points": current_ap,
+                    "deficit": required_ap - current_ap,
+                    "action_point_info": component_info.get("action_points", {}),
+                    "suggestion": "Wait for action points to recover or use garrison action",
+                },
             )
+        print(f"[MOVE_ACTION] 行动点检查通过: {current_ap}/{action_points.max_ap}")
 
         # === 第二层检查：移动力点数（执行层级） ===
-        # 检查是否还有移动力剩余
-        if movement_points.current_mp <= 0:
+        print(f"[MOVE_ACTION] 检查移动力...")
+        current_mp = movement_points.current_mp
+
+        if current_mp <= 0:
+            error_msg = f"Unit has no movement points left: {current_mp}"
+            print(f"[MOVE_ACTION] 移动力不足: {error_msg}")
             return self._create_error_response(
                 1002,
-                f"Unit has no movement points left: {movement_points.current_mp}",
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "current_movement_points": current_mp,
+                    "max_movement_points": movement_points.max_mp,
+                    "movement_point_info": component_info.get("movement_points", {}),
+                    "suggestion": "Wait for movement points to recover",
+                },
             )
+        print(f"[MOVE_ACTION] 移动力检查通过: {current_mp}/{movement_points.max_mp}")
 
         # 计算有效移动力（考虑人数损失）
         effective_movement = movement_points.get_effective_movement(unit_count)
         current_pos = (position.col, position.row)
         target_pos = (target_col, target_row)
 
+        print(
+            f"[MOVE_ACTION] 有效移动力: {effective_movement} (基础: {current_mp}, 人数影响: {unit_count.current_count}/{unit_count.max_count})"
+        )
+        print(f"[MOVE_ACTION] 路径规划: 从 {current_pos} 到 {target_pos}")
+
         # 获取路径并检查可达性
-        obstacles = self._get_obstacles()
+        print(f"[MOVE_ACTION] 获取地图障碍...")
+        obstacles = self._get_obstacles_excluding_unit(unit_id)  # 排除移动单位自己
+        print(f"[MOVE_ACTION] 地图障碍数量: {len(obstacles) if obstacles else 0}")
+
+        # 检查目标位置是否被占用
+        if target_pos in obstacles:
+            # 查找占用目标位置的单位
+            occupying_unit_id = None
+            occupying_unit_info = None
+            for entity in self.world.query().with_all(HexPosition, Unit).entities():
+                if entity == unit_id:
+                    continue  # 跳过移动单位自己
+                pos = self.world.get_component(entity, HexPosition)
+                if pos and (pos.col, pos.row) == target_pos:
+                    occupying_unit_id = entity
+                    unit_comp = self.world.get_component(entity, Unit)
+                    if unit_comp:
+                        occupying_unit_info = {
+                            "unit_id": entity,
+                            "unit_type": unit_comp.unit_type.value,
+                            "faction": unit_comp.faction.value,
+                        }
+                    break
+
+            error_msg = (
+                f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
+            )
+            print(f"[MOVE_ACTION] 目标位置被占用: {error_msg}")
+            return self._create_error_response(
+                1004,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "target_position": target_pos,
+                    "occupying_unit_id": occupying_unit_id,
+                    "occupying_unit_info": occupying_unit_info,
+                    "current_position": current_pos,
+                    "suggestion": "Choose an unoccupied adjacent position",
+                    "adjacent_positions": self._get_adjacent_free_positions(
+                        current_pos, obstacles
+                    ),
+                },
+            )
+
         from ..utils.hex_utils import PathFinding
+
+        print(f"[MOVE_ACTION] 执行路径查找...")
+        print(f"[MOVE_ACTION] 起始位置: {current_pos}")
+        print(f"[MOVE_ACTION] 目标位置: {target_pos}")
+        print(f"[MOVE_ACTION] 有效移动力范围: {effective_movement}")
+        print(
+            f"[MOVE_ACTION] 障碍物列表: {list(obstacles)[:10]}..."
+        )  # 只显示前10个障碍
 
         path = PathFinding.find_path(
             current_pos, target_pos, obstacles, effective_movement
         )
 
+        print(f"[MOVE_ACTION] 路径查找结果: {path}")
+
         if not path or len(path) < 2:
-            return self._create_error_response(1004, "No valid path to target position")
+            # 尝试获取更多路径查找失败的信息
+            from ..utils.hex_utils import HexMath
 
-        # 计算路径总移动力消耗（每个地形格子有不同的移动力成本）
-        total_movement_cost = self._calculate_total_movement_cost(path)
+            hex_distance = HexMath.hex_distance(current_pos, target_pos)
 
-        # 检查当前移动力是否足够（使用实际剩余的移动力）
-        if total_movement_cost > movement_points.current_mp:
-            return self._create_error_response(
-                1003,
-                f"Target too far: need {total_movement_cost} movement points, have {movement_points.current_mp}",
+            # 检查是否是距离问题
+            distance_issue = hex_distance > effective_movement
+
+            # 检查是否是目标位置问题
+            target_blocked = target_pos in obstacles
+
+            # 检查相邻位置的可达性
+            adjacent_free_positions = self._get_adjacent_free_positions(
+                current_pos, obstacles
             )
 
-        # 执行移动
-        movement_system = self._get_movement_system()
-        if movement_system:
-            success = movement_system.move_unit(unit_id, target_pos)
-            if success:
-                # 移动成功后，需要重新获取组件状态（因为MovementSystem已经修改了它们）
-                updated_action_points = self.world.get_component(unit_id, ActionPoints)
-                updated_movement_points = self.world.get_component(
-                    unit_id, MovementPoints
-                )
+            error_msg = f"No valid path to target position {target_pos}"
+            print(f"[MOVE_ACTION] 路径查找失败: {error_msg}")
+            print(f"[MOVE_ACTION] 六边形距离: {hex_distance}")
+            print(f"[MOVE_ACTION] 有效移动力: {effective_movement}")
+            print(f"[MOVE_ACTION] 距离超出范围: {distance_issue}")
+            print(f"[MOVE_ACTION] 目标被阻挡: {target_blocked}")
+            print(f"[MOVE_ACTION] 相邻空位: {adjacent_free_positions}")
 
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} moved to {target_pos}",
-                    "resource_consumption": {
-                        "action_points_used": 1,  # 固定消耗1点行动点启动决策
-                        "movement_points_used": total_movement_cost,  # 实际移动力消耗
-                    },
-                    "remaining_resources": {
-                        "action_points": (
-                            updated_action_points.current_ap
-                            if updated_action_points
-                            else 0
+            return self._create_error_response(
+                1004,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "start_position": current_pos,
+                    "target_position": target_pos,
+                    "effective_movement": effective_movement,
+                    "hex_distance": hex_distance,
+                    "distance_exceeds_range": distance_issue,
+                    "target_blocked": target_blocked,
+                    "path_found": path is not None,
+                    "path_length": len(path) if path else 0,
+                    "obstacle_count": len(obstacles),
+                    "obstacles_sample": list(obstacles)[:10],  # 前10个障碍样本
+                    "adjacent_free_positions": adjacent_free_positions,
+                    "possible_causes": [
+                        (
+                            "Target position out of movement range"
+                            if distance_issue
+                            else None
                         ),
-                        "movement_points": (
-                            updated_movement_points.current_mp
-                            if updated_movement_points
-                            else 0
+                        (
+                            "Target position blocked by obstacles"
+                            if target_blocked
+                            else None
                         ),
-                    },
-                    "path_info": {
-                        "path": path,
-                        "path_length": len(path) - 1,  # 不包括起始位置
-                        "terrain_breakdown": self._get_path_terrain_breakdown(path),
-                    },
-                }
-            else:
-                return self._create_error_response(
-                    1009, "Movement system failed to execute move"
-                )
+                        "No valid route exists",
+                        "PathFinding algorithm limitation",
+                    ],
+                    "suggestion": (
+                        f"Try one of these nearby positions: {adjacent_free_positions[:3]}"
+                        if adjacent_free_positions
+                        else "No adjacent free positions available"
+                    ),
+                },
+            )
+
+        print(f"[MOVE_ACTION] 找到路径，长度: {len(path)}, 路径: {path}")
+
+        # 计算路径总移动力消耗（每个地形格子有不同的移动力成本）
+        print(f"[MOVE_ACTION] 计算路径移动力消耗...")
+        total_movement_cost = self._calculate_total_movement_cost(path)
+        print(f"[MOVE_ACTION] 路径总消耗: {total_movement_cost} 移动力")
+
+        # 检查当前移动力是否足够（使用实际剩余的移动力）
+        if total_movement_cost > current_mp:
+            error_msg = f"Target too far: need {total_movement_cost} movement points, have {current_mp}"
+            print(f"[MOVE_ACTION] 移动力不足以到达目标: {error_msg}")
+            return self._create_error_response(
+                1003,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "required_movement_points": total_movement_cost,
+                    "current_movement_points": current_mp,
+                    "deficit": total_movement_cost - current_mp,
+                    "path": path,
+                    "path_length": len(path) - 1,
+                    "effective_movement": effective_movement,
+                    "terrain_costs": self._get_path_terrain_breakdown(path),
+                    "suggestion": f"Try a closer target or wait for {total_movement_cost - current_mp} more movement points",
+                },
+            )
+
+        print(f"[MOVE_ACTION] 移动力足够，剩余: {current_mp - total_movement_cost}")
+
+        # 执行移动
+        print(f"[MOVE_ACTION] 获取移动系统...")
+        movement_system = self._get_movement_system()
+        if not movement_system:
+            error_msg = "Movement system not available"
+            print(f"[MOVE_ACTION] 系统错误: {error_msg}")
+            return self._create_error_response(
+                1009,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "system_error": "MovementSystem not found",
+                    "suggestion": "This is a game engine error - contact administrator",
+                },
+            )
+
+        print(f"[MOVE_ACTION] 执行移动操作...")
+        success = movement_system.move_unit(unit_id, target_pos)
+
+        if success:
+            print(f"[MOVE_ACTION] 移动成功！")
+            # 移动成功后，需要重新获取组件状态（因为MovementSystem已经修改了它们）
+            updated_action_points = self.world.get_component(unit_id, ActionPoints)
+            updated_movement_points = self.world.get_component(unit_id, MovementPoints)
+
+            result = {
+                "success": True,
+                "message": f"Unit {unit_id} moved successfully from {current_pos} to {target_pos}",
+                "movement_details": {
+                    "start_position": current_pos,
+                    "end_position": target_pos,
+                    "path": path,
+                    "path_length": len(path) - 1,
+                    "terrain_breakdown": self._get_path_terrain_breakdown(path),
+                },
+                "resource_consumption": {
+                    "action_points_used": 1,  # 固定消耗1点行动点启动决策
+                    "movement_points_used": total_movement_cost,  # 实际移动力消耗
+                },
+                "remaining_resources": {
+                    "action_points": (
+                        updated_action_points.current_ap if updated_action_points else 0
+                    ),
+                    "movement_points": (
+                        updated_movement_points.current_mp
+                        if updated_movement_points
+                        else 0
+                    ),
+                },
+                "unit_status_after_move": {
+                    "unit_id": unit_id,
+                    "position": target_pos,
+                    "can_move_further": (
+                        updated_movement_points.current_mp
+                        if updated_movement_points
+                        else 0
+                    )
+                    > 0,
+                    "can_take_more_actions": (
+                        updated_action_points.current_ap if updated_action_points else 0
+                    )
+                    > 0,
+                },
+            }
+            print(f"[MOVE_ACTION] 移动完成，返回结果: {result}")
+            return result
         else:
-            return self._create_error_response(1009, "Movement system not available")
+            error_msg = "Movement system failed to execute move"
+            print(f"[MOVE_ACTION] 移动执行失败: {error_msg}")
+            return self._create_error_response(
+                1009,
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "start_position": current_pos,
+                    "target_position": target_pos,
+                    "path": path,
+                    "system_error": "MovementSystem.move_unit returned false",
+                    "possible_causes": [
+                        "Target position became occupied during execution",
+                        "Unit state changed during execution",
+                        "Internal movement system error",
+                    ],
+                    "suggestion": "Try the move again or check target position",
+                },
+            )
 
     def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理攻击动作"""
@@ -532,14 +880,22 @@ class LLMActionHandlerV2:
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 检查动作点
+        # 检查动作点和建造点
         action_points = self.world.get_component(unit_id, ActionPoints)
+        construction_points = self.world.get_component(unit_id, ConstructionPoints)
+
         if not action_points or not action_points.can_perform_action(
             ActionType.FORTIFY
         ):
             return self._create_error_response(
                 1002,
                 f"Insufficient action points for fortify: need 2, have {action_points.current_ap if action_points else 0}",
+            )
+
+        if not construction_points or not construction_points.can_build(1):
+            return self._create_error_response(
+                1002,
+                f"Insufficient construction points for fortify: need 1, have {construction_points.current_cp if construction_points else 0}",
             )
 
         # 获取地形类型和工事等级限制
@@ -598,10 +954,15 @@ class LLMActionHandlerV2:
 
         # 检查技能组件
         unit_skills = self.world.get_component(unit_id, UnitSkills)
+        skill_points = self.world.get_component(unit_id, SkillPoints)
+
         if not unit_skills:
             return self._create_error_response(1005, "Unit has no skills")
 
-        # 检查技能是否可用
+        if not skill_points:
+            return self._create_error_response(1005, "Unit has no skill points")
+
+        # 检查技能是否可用（UnitSkills控制技能列表和冷却）
         if not unit_skills.can_use_skill(skill_name):
             if skill_name not in unit_skills.available_skills:
                 return self._create_error_response(
@@ -612,6 +973,13 @@ class LLMActionHandlerV2:
                 return self._create_error_response(
                     1006, f"Skill {skill_name} on cooldown: {cooldown} turns"
                 )
+
+        # 检查技能点是否足够（SkillPoints控制消耗）
+        if not skill_points.can_use_skill(skill_name, 1):
+            return self._create_error_response(
+                1006,
+                f"Insufficient skill points: need 1, have {skill_points.current_sp}",
+            )
 
         # 检查动作点
         action_points = self.world.get_component(unit_id, ActionPoints)
@@ -632,15 +1000,22 @@ class LLMActionHandlerV2:
             )
 
             if skill_result["success"]:
-                # 消耗技能
-                unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
+                # 消耗资源：多层次资源系统
+                # 1. 消耗行动点（决策层）
                 action_points.consume_ap(ActionType.SKILL)
+
+                # 2. 消耗技能点（执行层）
+                skill_points.use_skill(skill_name, 1, skill_result.get("cooldown", 0))
+
+                # 3. 设置冷却时间（通过UnitSkills）
+                unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
 
                 return {
                     "success": True,
                     "message": f"Unit {unit_id} used skill {skill_name}",
                     "skill_result": skill_result,
                     "remaining_action_points": action_points.current_ap,
+                    "remaining_skill_points": skill_points.current_sp,
                 }
             else:
                 return self._create_error_response(
@@ -1652,6 +2027,12 @@ class LLMActionHandlerV2:
         if not vision:
             return []
 
+        # 获取单位当前位置和移动组件（为移动模式做准备）
+        unit_position = self.world.get_component(unit_id, HexPosition)
+        movement_points = self.world.get_component(unit_id, MovementPoints)
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        current_pos = (unit_position.col, unit_position.row) if unit_position else None
+
         visible_tiles = []
         for pos in vision.visible_tiles:
             tile_info = {
@@ -1660,9 +2041,107 @@ class LLMActionHandlerV2:
                 "units": self._get_units_at_position(pos),
                 "fortifications": self._get_current_fortification_level(pos),
             }
+
+            # 如果observation_level为"move"，添加移动相关信息
+            # if current_pos and movement_points and unit_count:
+            move_info = self._calculate_movement_info(
+                unit_id, current_pos, pos, movement_points, unit_count
+            )
+            tile_info["movement_info"] = move_info
+
             visible_tiles.append(tile_info)
 
         return visible_tiles
+
+    def _calculate_movement_info(
+        self,
+        unit_id: int,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+        movement_points: MovementPoints,
+        unit_count: UnitCount,
+    ) -> Dict[str, Any]:
+        """计算从当前位置到目标位置的移动信息"""
+        # 如果是当前位置，返回特殊信息
+        if current_pos == target_pos:
+            return {
+                "reachable": True,
+                "is_current_position": True,
+                "movement_cost": 0,
+                "path_length": 0,
+                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
+                "effective_movement_range": movement_points.get_effective_movement(
+                    unit_count
+                ),
+                "current_movement_points": movement_points.current_mp,
+                "path": [current_pos],
+            }
+
+        # 计算有效移动力（考虑人数损失）
+        effective_movement = movement_points.get_effective_movement(unit_count)
+
+        # 获取障碍物和路径
+        obstacles = self._get_obstacles()
+        from ..utils.hex_utils import PathFinding
+
+        try:
+            # 尝试寻找路径
+            path = PathFinding.find_path(
+                current_pos, target_pos, obstacles, effective_movement
+            )
+
+            if path and len(path) > 1:
+                # 计算路径总消耗
+                total_movement_cost = self._calculate_total_movement_cost(path)
+
+                # 检查是否可达
+                reachable = total_movement_cost <= movement_points.current_mp
+
+                return {
+                    "reachable": reachable,
+                    "is_current_position": False,
+                    "movement_cost": total_movement_cost,
+                    "path_length": len(path) - 1,  # 不包括起始位置
+                    "terrain_movement_cost": self._get_terrain_movement_cost(
+                        target_pos
+                    ),
+                    "effective_movement_range": effective_movement,
+                    "current_movement_points": movement_points.current_mp,
+                    "path": path,
+                    "reachable_reason": (
+                        "sufficient_movement_points"
+                        if reachable
+                        else f"need_{total_movement_cost}_have_{movement_points.current_mp}"
+                    ),
+                }
+            else:
+                # 无法找到路径
+                return {
+                    "reachable": False,
+                    "is_current_position": False,
+                    "movement_cost": -1,
+                    "path_length": -1,
+                    "terrain_movement_cost": self._get_terrain_movement_cost(
+                        target_pos
+                    ),
+                    "effective_movement_range": effective_movement,
+                    "current_movement_points": movement_points.current_mp,
+                    "path": [],
+                    "reachable_reason": "no_valid_path",
+                }
+        except Exception as e:
+            # 路径计算出错
+            return {
+                "reachable": False,
+                "is_current_position": False,
+                "movement_cost": -1,
+                "path_length": -1,
+                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
+                "effective_movement_range": effective_movement,
+                "current_movement_points": movement_points.current_mp,
+                "path": [],
+                "reachable_reason": f"path_calculation_error: {str(e)}",
+            }
 
     def _get_tactical_info(self, unit_id: int) -> Dict[str, Any]:
         """获取战术信息"""
@@ -1743,14 +2222,50 @@ class LLMActionHandlerV2:
     # ==================== 游戏逻辑辅助方法 ====================
 
     def _get_obstacles(self) -> Set[Tuple[int, int]]:
-        """获取移动障碍"""
+        """获取移动障碍 - 只考虑单位作为障碍"""
         obstacles = set()
         # 获取所有单位位置作为障碍
-        for entity in self.world.query().with_component(HexPosition).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             if pos:
                 obstacles.add((pos.col, pos.row))
         return obstacles
+
+    def _get_obstacles_excluding_unit(
+        self, exclude_unit_id: int
+    ) -> Set[Tuple[int, int]]:
+        """获取移动障碍，排除指定单位 - 只考虑其他单位作为障碍"""
+        obstacles = set()
+        # 获取所有单位位置作为障碍，但排除指定单位
+        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            if entity == exclude_unit_id:
+                continue  # 跳过要移动的单位
+            pos = self.world.get_component(entity, HexPosition)
+            if pos:
+                obstacles.add((pos.col, pos.row))
+        print(
+            f"[DEBUG] 实际单位障碍数量: {len(obstacles)} (排除单位 {exclude_unit_id})"
+        )
+        return obstacles
+
+    def _get_adjacent_free_positions(
+        self, center_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]
+    ) -> List[Tuple[int, int]]:
+        """获取中心位置周围的空闲位置"""
+        from ..utils.hex_utils import HexMath
+
+        col, row = center_pos
+
+        # 六边形的6个相邻方向
+        adjacent_positions = []
+        directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+
+        for dx, dy in directions:
+            adj_pos = (col + dx, row + dy)
+            if adj_pos not in obstacles:
+                adjacent_positions.append(adj_pos)
+
+        return adjacent_positions
 
     def _calculate_total_movement_cost(self, path: List[Tuple[int, int]]) -> int:
         """计算路径总移动消耗"""

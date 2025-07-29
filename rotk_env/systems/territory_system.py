@@ -14,6 +14,7 @@ from ..components import (
     TerritoryControl,
     CaptureAction,
     ActionPoints,
+    ConstructionPoints,
     GameState,
     GameModeComponent,
     GameTime,
@@ -281,6 +282,7 @@ class TerritorySystem(System):
         """在控制的地块上建设工事"""
         unit = self.world.get_component(unit_entity, Unit)
         action_points = self.world.get_component(unit_entity, ActionPoints)
+        construction_points = self.world.get_component(unit_entity, ConstructionPoints)
 
         if not unit:
             return False
@@ -306,16 +308,24 @@ class TerritorySystem(System):
         if territory_control.fortified:
             return False
 
-        # 检查行动力
+        # 检查行动力和建造点
         game_mode_comp = self.world.get_singleton_component(GameModeComponent)
         game_mode = game_mode_comp.mode if game_mode_comp else GameMode.TURN_BASED
 
         if game_mode == GameMode.TURN_BASED:
+            # 检查行动力（决策层）
             if not action_points or not action_points.can_perform_action(
                 ActionType.FORTIFY
             ):
                 return False
+
+            # 检查建造点（执行层）
+            if not construction_points or not construction_points.can_build(1):
+                return False
+
+            # 消耗资源
             action_points.consume_ap(ActionType.FORTIFY)
+            construction_points.consume_construction(1)
 
         # 建设工事
         territory_control.fortified = True
