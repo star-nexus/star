@@ -66,9 +66,9 @@ class ActionType(Enum):
     MOVE = "move"  # 移动
     ATTACK = "attack"  # 攻击
     GARRISON = "garrison"  # 驻扎
-    WAIT = "wait"  # 待命
+    REST = "rest"  # 待命
     SKILL = "skill"  # 技能
-    CAPTURE = "capture"  # 占领
+    OCCUPY = "occupy"  # 占领
     FORTIFY = "fortify"  # 建设工事
 
 
@@ -78,6 +78,7 @@ class TerrainEffect:
 
     movement_cost: int = 1  # 通行消耗
     defense_bonus: int = 0  # 基础防御修正
+    attack_bonus: int = 0  # 基础攻击修正
     special_rules: str = ""  # 额外规则描述
 
 
@@ -139,26 +140,37 @@ class GameConfig:
     # 地形基础属性（按规则手册v1.2）
     TERRAIN_EFFECTS: Dict[TerrainType, TerrainEffect] = {
         TerrainType.PLAIN: TerrainEffect(
-            movement_cost=1, defense_bonus=0, special_rules="无"
+            movement_cost=1, defense_bonus=0, attack_bonus=0, special_rules="无"
         ),
         TerrainType.MOUNTAIN: TerrainEffect(
-            movement_cost=3, defense_bonus=2, special_rules="远程单位射程-1"
+            movement_cost=3,
+            defense_bonus=2,
+            attack_bonus=1,
+            special_rules="高地优势+1攻击，远程单位射程-1",
         ),
         TerrainType.URBAN: TerrainEffect(
             movement_cost=2,
             defense_bonus=4,
+            attack_bonus=0,
             special_rules="被围攻时每回合自动恢复5%耐久",
         ),
         TerrainType.WATER: TerrainEffect(
             movement_cost=999,
             defense_bonus=0,
+            attack_bonus=0,
             special_rules="仅「船只」或「飞行」单位可通过",
         ),
         TerrainType.FOREST: TerrainEffect(
-            movement_cost=2, defense_bonus=1, special_rules="远程命中率-20%"
+            movement_cost=2,
+            defense_bonus=1,
+            attack_bonus=0,
+            special_rules="隐蔽优势，远程命中率-20%",
         ),
         TerrainType.HILL: TerrainEffect(
-            movement_cost=2, defense_bonus=1, special_rules="近战先攻权+1"
+            movement_cost=2,
+            defense_bonus=1,
+            attack_bonus=1,
+            special_rules="高地优势+1攻击，近战先攻权+1",
         ),
     }
 

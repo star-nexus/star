@@ -34,10 +34,9 @@ class ActionPoints(Component):
         action_costs = {
             ActionType.MOVE: 1,  # 移动决策：固定1点
             ActionType.ATTACK: 1,  # 攻击决策：固定1点
-            ActionType.GARRISON: 1,  # 驻扎决策：固定1点
-            ActionType.WAIT: 0,  # 待命：无消耗
+            ActionType.REST: 1,  # 休整：固定1点
             ActionType.SKILL: 1,  # 技能决策：固定1点
-            ActionType.CAPTURE: 1,  # 占领决策：固定1点
+            ActionType.OCCUPY: 1,  # 占领决策：固定1点
             ActionType.FORTIFY: 1,  # 建造决策：固定1点
         }
         return action_costs.get(action_type, 1)

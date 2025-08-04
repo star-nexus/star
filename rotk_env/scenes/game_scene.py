@@ -118,7 +118,7 @@ class GameScene(Scene):
         self._initialize_players()
 
         # 初始化单位
-        self._initialize_units(10, 10)  # 默认每个阵营10个单位
+        self._initialize_units(2, 2)  # 默认每个阵营10个单位
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -138,7 +138,7 @@ class GameScene(Scene):
             CombatSystem(),  # 战斗系统
             TerritorySystem(),  # 领土系统 (处理占领和工事)
             ResourceRecoverySystem(),  # 资源恢复系统
-            AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
+            # AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
             LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)

@@ -36,7 +36,8 @@ from protocol.star_client_v2 import (
     MessageType,
 )
 
-from .llm_action_handler_v2 import LLMActionHandlerV2 as LLMActionHandler
+# from .llm_action_handler_v2 import LLMActionHandlerV2 as LLMActionHandler
+from .llm_action_handler_v3 import LLMActionHandlerV3 as LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
 
 
@@ -114,52 +115,7 @@ class LLMSystem(System):
 
     def _init_system_actions(self) -> Dict[str, callable]:
         """初始化系统级动作映射"""
-        return {
-            # 游戏生命周期控制
-            "start_game": self.handle_start_game,
-            "pause_game": self.handle_pause_game,
-            "resume_game": self.handle_resume_game,
-            "reset_game": self.handle_reset_game,
-            "save_game": self.handle_save_game,
-            "load_game": self.handle_load_game,
-            # 回合和时间管理
-            "end_turn": self.handle_end_turn,
-            "skip_turn": self.handle_skip_turn,
-            "force_next_turn": self.handle_force_next_turn,
-            "advance_time": self.handle_advance_time,
-            "set_turn_timer": self.handle_set_turn_timer,
-            # 游戏模式控制
-            "set_game_mode": self.handle_set_game_mode,
-            "set_time_scale": self.handle_set_time_scale,
-            "set_max_turns": self.handle_set_max_turns,
-            # 视角和UI控制
-            "set_view_faction": self.handle_set_view_faction,
-            "set_camera_position": self.handle_set_camera_position,
-            "toggle_god_mode": self.handle_toggle_god_mode,
-            "toggle_fog_of_war": self.handle_toggle_fog_of_war,
-            "show_ui_panel": self.handle_show_ui_panel,
-            "hide_ui_panel": self.handle_hide_ui_panel,
-            "toggle_grid_display": self.handle_toggle_grid_display,
-            # 选择和分组
-            "select_unit": self.handle_select_unit,
-            "select_multiple_units": self.handle_select_multiple_units,
-            "deselect_units": self.handle_deselect_units,
-            "group_units": self.handle_group_units,
-            # 系统信息和诊断
-            "get_system_status": self.handle_get_system_status,
-            "get_api_info": self.handle_get_api_info,
-            "get_system_capabilities": self.handle_get_system_capabilities,
-            "get_performance_info": self.handle_get_performance_info,
-            "validate_game_state": self.handle_validate_game_state,
-            # 统计和分析
-            "get_game_statistics": self.handle_get_game_statistics,
-            "get_battle_history": self.handle_get_battle_history,
-            "export_game_data": self.handle_export_game_data,
-            # 调试功能
-            "execute_debug_command": self.handle_execute_debug_command,
-            "toggle_debug_mode": self.handle_toggle_debug_mode,
-            "get_component_info": self.handle_get_component_info,
-        }
+        return {}
 
     def add_listener(self):
         # 添加事件监听器
@@ -303,7 +259,13 @@ class LLMSystem(System):
         action_id = payload.get("id")
         action = payload.get("action")
         params = payload.get("parameters", {})
-        params = params if isinstance(params, dict) else json.loads(params)
+        if isinstance(params, dict):
+            params = params
+        elif isinstance(params, str):
+            if params == "":
+                params = {}
+            else:
+                params = json.loads(params)
 
         start_time = time.time()
 
@@ -328,9 +290,10 @@ class LLMSystem(System):
 
             # 标准化响应格式
             execution_time = time.time() - start_time
-            standardized_result = self._standardize_response(
-                result, action, params, execution_time
-            )
+            # standardized_result = self._standardize_response(
+            #     result, action, params, execution_time
+            # )
+            standardized_result = result
 
             print(f"{action} response: {standardized_result}")
             self.client.response_to_agent(

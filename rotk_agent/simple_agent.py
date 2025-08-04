@@ -17,6 +17,7 @@ from rich import print_json
 from typing import Any, Dict
 from menglong import Model, ChatAgent
 from menglong.agents.component.tool_manager import tool
+from menglong.agents.chat.tool import plan_task
 
 
 console = Console()
@@ -285,6 +286,22 @@ async def chat(parts):
         print("❌ 请指定动作，如: chat dance")
 
 
+async def raw_llm(parts):
+
+    goal = """
+    GOAL TODO
+"""
+    try:
+        agent = ChatAgent()
+
+        res = await agent.chat(
+            task=goal, tools=[plan_task, available_actions, perform_action]
+        )
+        print(res)
+    except Exception as e:
+        print("执行任务时发生错误:", e)
+
+
 async def get_response(request_id):
     """获取动作执行的响应"""
 
@@ -334,10 +351,31 @@ async def available_actions() -> list[Dict[str, Any]]:
 
 async def run_action(parts):
     """执行指定动作"""
-    await chat(["chat", "控制wei阵营,消灭敌人,获得胜利。"])
+    rule = """游戏规则:
+# 阵营
+有两方阵营，wei 和 shu
+所有单位同时进行操作
+# 地图
+地图大小：通常为不超过50x50六边形格子,以(0,0)为地图中心
+# 单位
+每个阵营开始时拥有若干个单位
+初始单位包含步兵、骑兵、弓兵的组合
+# 阶段
+可以任意顺序操作所有己方单位
+每个单位可进行移动、攻击、建造、使用技能等动作
+可以多次在不同单位间切换操作
+如果无法行动则结束回合
+"""
+    await chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"])
 
 
-ACTION = {"chat": chat, "message": message, "list": list_action, "run": run_action}
+ACTION = {
+    "chat": chat,
+    "message": message,
+    "list": list_action,
+    "run": run_action,
+    "raw": raw_llm,
+}
 
 
 async def main():

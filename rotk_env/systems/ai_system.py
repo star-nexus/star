@@ -327,8 +327,8 @@ class AISystem(System):
         is_realtime = game_mode and game_mode.is_real_time()
 
         # 优先级1：尝试占领重要地块（城市或未占领的地块）
-        if action_points.can_perform_action(ActionType.CAPTURE):
-            if self._try_capture_territory(unit_entity):
+        if action_points.can_perform_action(ActionType.OCCUPY):
+            if self._try_occupy_territory(unit_entity):
                 return True
 
         # 优先级2：尝试建设工事（如果已占领且未建设工事）
@@ -361,7 +361,7 @@ class AISystem(System):
                     return movement_system.move_unit(unit_entity, best_terrain_pos)
 
         # 最后选择待命
-        if action_points.can_perform_action(ActionType.WAIT):
+        if action_points.can_perform_action(ActionType.REST):
             action_system = self._get_action_system()
             if action_system and action_system.perform_wait(unit_entity):
                 return True
@@ -444,7 +444,7 @@ class AISystem(System):
 
         return best_pos
 
-    def _try_capture_territory(self, unit_entity: int) -> bool:
+    def _try_occupy_territory(self, unit_entity: int) -> bool:
         """尝试占领当前位置的地块"""
         position = self.world.get_component(unit_entity, HexPosition)
         unit = self.world.get_component(unit_entity, Unit)

@@ -4,7 +4,7 @@
 
 import random
 import math
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 from framework import System, World
 from framework.engine.events import EBS
 from ..components import (
@@ -24,7 +24,14 @@ from ..components import (
     RandomEventQueue,
     BattleLog,
 )
-from ..prefabs.config import GameConfig, TerrainType, UnitType, UnitState, ActionType
+from ..prefabs.config import (
+    GameConfig,
+    TerrainType,
+    UnitType,
+    UnitState,
+    ActionType,
+    Faction,
+)
 from ..utils.hex_utils import HexMath
 from ..utils.env_events import BattleEvent, UnitDeathEvent
 
@@ -45,6 +52,203 @@ class CombatSystem(System):
     def update(self, delta_time: float) -> None:
         """更新战斗系统"""
         pass
+
+    def execute_attack(
+        self, attacker_entity: int, target_entity: int
+    ) -> Optional[Dict[str, Any]]:
+        """执行攻击并返回详细战斗结果 - 供LLM接口层调用"""
+        # 基础验证（由LLM接口层负责，这里只做最后的保护性检查）
+        if not self._validate_attack(attacker_entity, target_entity):
+            return None
+
+        # 检查行动力（由LLM接口层负责，这里只做最后的保护性检查）
+        action_points = self.world.get_component(attacker_entity, ActionPoints)
+        if not action_points or not action_points.can_perform_action(ActionType.ATTACK):
+            return None
+
+        # 获取战斗前状态
+        attacker_pos = self.world.get_component(attacker_entity, HexPosition)
+        target_pos = self.world.get_component(target_entity, HexPosition)
+        attacker_combat = self.world.get_component(attacker_entity, Combat)
+        attacker_count = self.world.get_component(attacker_entity, UnitCount)
+        attacker_status = self.world.get_component(attacker_entity, UnitStatus)
+        attacker_unit = self.world.get_component(attacker_entity, Unit)
+
+        target_count = self.world.get_component(target_entity, UnitCount)
+        target_status = self.world.get_component(target_entity, UnitStatus)
+        target_unit = self.world.get_component(target_entity, Unit)
+
+        # 记录战斗前状态
+        pre_battle_state = {
+            "attacker_count": attacker_count.current_count,
+            "target_count": target_count.current_count,
+            "attacker_ap": action_points.current_ap,
+        }
+
+        # 创建战斗投掷组件
+        combat_roll = CombatRoll()
+        self.world.add_component(attacker_entity, combat_roll)
+
+        # 根据攻击类型确定动画类型
+        attack_type = (
+            "ranged" if attacker_unit.unit_type == UnitType.ARCHER else "melee"
+        )
+
+        # 触发攻击动画
+        animation_system = self._get_animation_system()
+        if animation_system:
+            animation_system.start_attack_animation(
+                attacker_entity, target_entity, attack_type
+            )
+
+        # 计算地形加成
+        attacker_terrain_bonus = self._get_terrain_attack_bonus(
+            (attacker_pos.col, attacker_pos.row), attacker_unit.faction
+        )
+        target_terrain_defense = self._get_terrain_defense_bonus(
+            (target_pos.col, target_pos.row), target_unit.faction
+        )
+
+        # 1. 命中判定
+        hit_success = self._roll_hit(combat_roll, attacker_pos, target_pos)
+
+        battle_result = {
+            "battle_type": attack_type,
+            "hit_success": hit_success,
+            "is_critical": False,
+            "damage_dealt": 0,
+            "casualties_inflicted": 0,
+            "target_destroyed": False,
+            "attacker_casualties": 0,  # 简化版本，暂时不实现反击
+            "terrain_effects": {
+                "attacker_terrain_bonus": attacker_terrain_bonus,
+                "target_terrain_defense": target_terrain_defense,
+            },
+            "dice_rolls": {
+                "hit_roll": (
+                    combat_roll.hit_roll if hasattr(combat_roll, "hit_roll") else None
+                ),
+                "damage_roll": None,
+                "crit_roll": None,
+            },
+            "combat_log": [],
+        }
+
+        if not hit_success:
+            # 未命中处理
+            attacker_faction = attacker_unit.faction.value
+            target_faction = target_unit.faction.value
+            miss_message = f"{attacker_faction}军攻击{target_faction}军未命中!"
+            print(f"❌ {miss_message}")
+
+            battle_result["combat_log"].append(miss_message)
+            self._create_miss_display(target_entity)
+            self._record_miss_to_systems(attacker_entity, target_entity)
+            action_points.consume_ap(ActionType.ATTACK)
+
+            return battle_result
+
+        # 2. 计算基础伤害
+        damage = self._calculate_damage(
+            attacker_entity,
+            target_entity,
+            attacker_count,
+            target_count,
+            attacker_status,
+            target_status,
+        )
+
+        battle_result["dice_rolls"]["damage_roll"] = damage  # 简化，实际是计算结果
+
+        # 3. 暴击判定
+        is_crit = self._roll_crit(combat_roll)
+        battle_result["is_critical"] = is_crit
+
+        if is_crit:
+            damage = int(damage * 1.5)
+            battle_result["dice_rolls"]["crit_roll"] = True
+            self._create_crit_display(target_entity)
+            battle_result["combat_log"].append("暴击！伤害加倍！")
+
+        battle_result["damage_dealt"] = damage
+
+        # 4. 应用伤害
+        old_count = target_count.current_count
+        self._apply_damage(target_entity, damage)
+        new_count = target_count.current_count
+
+        casualties = old_count - new_count
+        battle_result["casualties_inflicted"] = casualties
+        battle_result["target_destroyed"] = new_count <= 0
+
+        # 创建攻击特效
+        if animation_system:
+            from ..utils.hex_utils import HexConverter
+
+            hex_converter = HexConverter(
+                GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
+            )
+            world_x, world_y = hex_converter.hex_to_pixel(
+                target_pos.col, target_pos.row
+            )
+
+            # 根据攻击类型和暴击选择特效
+            if is_crit:
+                effect_type = "explosion"
+            elif attack_type == "ranged":
+                effect_type = "impact"
+            else:
+                effect_type = "slash"
+
+            animation_system.create_attack_effect((world_x, world_y), effect_type)
+
+        # 添加控制台输出和战斗日志
+        attacker_faction = attacker_unit.faction.value
+        target_faction = target_unit.faction.value
+
+        if is_crit:
+            combat_message = f"{attacker_faction}军暴击{target_faction}军! 伤害:{damage}, 人数:{old_count}->{new_count}"
+            print(f"💥 {combat_message}")
+        else:
+            combat_message = f"{attacker_faction}军攻击{target_faction}军! 伤害:{damage}, 人数:{old_count}->{new_count}"
+            print(f"⚔️ {combat_message}")
+
+        battle_result["combat_log"].append(combat_message)
+
+        # 5. 消耗行动力
+        action_points.consume_ap(ActionType.ATTACK)
+        attacker_combat.has_attacked = True
+
+        # 6. 处理特殊效果
+        self._handle_combat_effects(attacker_entity, target_entity)
+
+        # 7. 记录统计和事件
+        result = "kill" if target_count.current_count <= 0 else "damage"
+        self._record_combat_to_systems(attacker_entity, target_entity, damage, result)
+
+        # 发送战斗事件
+        EBS.publish(BattleEvent(attacker_entity, target_entity, damage))
+
+        # 8. 检查单位死亡
+        if target_count.current_count <= 0:
+            self._handle_unit_death(target_entity, attacker_entity)
+            battle_result["combat_log"].append(f"{target_faction}军单位被摧毁！")
+
+        # 9. 填充详细战斗结果
+        battle_result.update(
+            {
+                "pre_battle_state": pre_battle_state,
+                "post_battle_state": {
+                    "attacker_count": attacker_count.current_count,
+                    "target_count": target_count.current_count,
+                    "attacker_ap": action_points.current_ap,
+                },
+                "action_points_consumed": pre_battle_state["attacker_ap"]
+                - action_points.current_ap,
+            }
+        )
+
+        return battle_result
 
     def attack(self, attacker_entity: int, target_entity: int) -> bool:
         """执行攻击（完整规则实现）"""
@@ -267,6 +471,12 @@ class CombatSystem(System):
             target_count, target_status, target_terrain_coeff
         )
 
+        # 应用攻击加成（地形+领土）
+        terrain_attack_bonus = self._get_terrain_attack_bonus(
+            (attacker_pos.col, attacker_pos.row), attacker_unit.faction
+        )
+        effective_attack += terrain_attack_bonus
+
         # 应用防御特殊规则
         effective_defense = self._apply_defense_bonuses(
             target_entity, effective_defense
@@ -298,7 +508,7 @@ class CombatSystem(System):
 
         # 地形防御修正
         terrain_defense = self._get_terrain_defense_bonus(
-            (target_pos.col, target_pos.row)
+            (target_pos.col, target_pos.row), target_unit.faction
         )
         defense += terrain_defense
 
@@ -374,11 +584,47 @@ class CombatSystem(System):
 
         return 1.0
 
-    def _get_terrain_defense_bonus(self, position: Tuple[int, int]) -> int:
-        """获取地形防御加成"""
+    def _get_terrain_attack_bonus(
+        self, position: Tuple[int, int], faction: Faction
+    ) -> float:
+        """获取地形攻击加成 - 包含基础地形加成和领土控制加成"""
+        # 1. 基础地形攻击加成（来自地形类型）
         terrain_type = self._get_terrain_at_position(position)
         terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
-        return terrain_effect.defense_bonus if terrain_effect else 0
+        base_attack_bonus = terrain_effect.attack_bonus if terrain_effect else 0.0
+
+        # 2. 领土控制加成（如果存在领土系统）
+        territory_bonus = 0.0
+        territory_system = self._get_territory_system()
+        if territory_system:
+            territory_bonus = (
+                territory_system.get_territory_attack_bonus(position, faction) / 10.0
+            )
+
+        return base_attack_bonus + territory_bonus
+
+    def _get_terrain_defense_bonus(
+        self, position: Tuple[int, int], faction: Faction = None
+    ) -> float:
+        """获取地形防御加成 - 包含基础地形加成和领土控制加成"""
+        # 1. 基础地形防御加成（来自地形类型）
+        terrain_type = self._get_terrain_at_position(position)
+        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
+        base_defense_bonus = terrain_effect.defense_bonus if terrain_effect else 0.0
+
+        # 2. 领土控制加成（如果存在领土系统且提供了阵营信息）
+        territory_bonus = 0.0
+        if faction:
+            territory_system = self._get_territory_system()
+            if territory_system:
+                # 假设领土系统也有防御加成方法，如果没有则只使用基础加成
+                if hasattr(territory_system, "get_territory_defense_bonus"):
+                    territory_bonus = (
+                        territory_system.get_territory_defense_bonus(position, faction)
+                        / 10.0
+                    )
+
+        return base_defense_bonus + territory_bonus
 
     def _handle_unit_death(self, entity: int, killer_entity: int = None):
         """处理单位死亡"""
@@ -565,5 +811,12 @@ class CombatSystem(System):
         """获取动画系统"""
         for system in self.world.systems:
             if system.__class__.__name__ == "AnimationSystem":
+                return system
+        return None
+
+    def _get_territory_system(self):
+        """获取领土系统"""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "TerritorySystem":
                 return system
         return None

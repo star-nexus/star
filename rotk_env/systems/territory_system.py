@@ -193,7 +193,7 @@ class TerritorySystem(System):
         if game_mode == GameMode.TURN_BASED:
             # 回合制模式：检查行动力
             if not action_points or not action_points.can_perform_action(
-                ActionType.CAPTURE
+                ActionType.OCCUPY
             ):
                 return False
 
@@ -221,7 +221,7 @@ class TerritorySystem(System):
 
         # 在回合制模式下消耗行动力
         if game_mode == GameMode.TURN_BASED and action_points:
-            action_points.consume_ap(ActionType.CAPTURE)
+            action_points.consume_ap(ActionType.OCCUPY)
 
         print(f"🏴 {unit.faction.value}军开始占领地块 {target_position}")
         return True
