@@ -67,6 +67,7 @@ from ..components import (
     TurnManager,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
+from performance_profiler import profiler
 
 
 class GameScene(Scene):
@@ -468,7 +469,8 @@ class GameScene(Scene):
                     return
 
             # 更新世界
-            self.world.update(delta_time)
+            with profiler.time_system("world_update"):
+                self.world.update(delta_time)
 
             # 检查游戏结束
             game_state = self.world.get_singleton_component(GameState)

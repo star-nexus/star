@@ -9,6 +9,7 @@ from .inputs import InputSystem
 from .events import EventBus
 from ..ecs.world import World
 from .engine_event import QuitEvent
+from performance_profiler import profiler
 
 
 class GameEngine:
@@ -104,14 +105,30 @@ class GameEngine:
 
     def _update(self) -> None:
         """更新游戏逻辑"""
-        # self.screen.fill((0, 0, 0))
-        self.screen.fill((135, 141, 106))  # 清屏为白色
-        self.input_manager.update()
-        # 更新场景
-        self.scene_manager.update(self.delta_time)
-        self.render_manager.update()
-        # 刷新显示
-        pygame.display.flip()
+        profiler.start_frame()
+
+        with profiler.time_system("screen_fill"):
+            self.screen.fill((135, 141, 106))  # 清屏
+
+        with profiler.time_system("input_system"):
+            self.input_manager.update()
+
+        with profiler.time_system("scene_update"):
+            self.scene_manager.update(self.delta_time)
+
+        with profiler.time_system("render_engine"):
+            self.render_manager.update()
+
+        with profiler.time_system("display_flip"):
+            pygame.display.flip()
+
+        # 每5秒打印一次统计
+        if hasattr(self, '_last_stats_time'):
+            if time.time() - self._last_stats_time > 5.0:
+                profiler.print_stats()
+                self._last_stats_time = time.time()
+        else:
+            self._last_stats_time = time.time()
 
     def stop(self, event: Any) -> None:
         """停止游戏循环"""
