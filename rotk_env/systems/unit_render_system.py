@@ -3,7 +3,8 @@
 """
 
 import pygame
-from typing import List
+import os
+from typing import List, Dict, Optional
 from pathlib import Path
 from framework import System, RMS
 from ..components import (
@@ -16,7 +17,7 @@ from ..components import (
     FogOfWar,
     UIState,
 )
-from ..prefabs.config import GameConfig, HexOrientation, UnitType
+from ..prefabs.config import GameConfig, HexOrientation, UnitType, Faction
 from ..utils.hex_utils import HexConverter
 
 
@@ -30,6 +31,10 @@ class UnitRenderSystem(System):
         )
         self.font = None
         self.small_font = None
+        
+        # 单位贴图缓存
+        self.unit_textures: Dict[str, pygame.Surface] = {}
+        self.textures_loaded = False
 
         # 初始化字体
         pygame.font.init()
@@ -40,6 +45,53 @@ class UnitRenderSystem(System):
     def initialize(self, world) -> None:
         """初始化单位渲染系统"""
         self.world = world
+        self._load_unit_textures()
+
+    def _load_unit_textures(self) -> None:
+        """加载单位贴图"""
+        assets_path = os.path.join(
+            os.path.dirname(__file__), "..", "assets", "texture", "units"
+        )
+
+        if not os.path.exists(assets_path):
+            print(f"警告：单位贴图目录不存在: {assets_path}")
+            return
+
+        # 遍历所有阵营和兵种组合
+        for faction in Faction:
+            faction_dir = os.path.join(assets_path, faction.value)
+            if not os.path.exists(faction_dir):
+                continue
+                
+            for unit_type in UnitType:
+                texture_file = f"{unit_type.value}.png"
+                texture_path = os.path.join(faction_dir, texture_file)
+                
+                if os.path.exists(texture_path):
+                    try:
+                        texture = pygame.image.load(texture_path).convert_alpha()
+                        # 缩放贴图到合适的大小 (基于HEX_SIZE)
+                        size = GameConfig.HEX_SIZE
+                        texture = pygame.transform.scale(texture, (size, size))
+                        
+                        # 使用 "阵营_兵种" 作为key存储
+                        key = f"{faction.value}_{unit_type.value}"
+                        self.unit_textures[key] = texture
+                        print(f"成功加载单位贴图: {key}")
+                    except pygame.error as e:
+                        print(f"警告：无法加载贴图 {texture_path}: {e}")
+
+        # 检查加载结果
+        if len(self.unit_textures) > 0:
+            self.textures_loaded = True
+            print(f"单位贴图加载完成，共加载 {len(self.unit_textures)} 个贴图")
+        else:
+            print("警告：没有加载到任何单位贴图，将使用默认圆形渲染")
+
+    def _get_unit_texture(self, faction: Faction, unit_type: UnitType) -> Optional[pygame.Surface]:
+        """获取指定阵营和兵种的贴图"""
+        key = f"{faction.value}_{unit_type.value}"
+        return self.unit_textures.get(key)
 
     def subscribe_events(self):
         """订阅事件（单位渲染系统不需要订阅事件）"""
@@ -383,18 +435,13 @@ class UnitRenderSystem(System):
                     ).offset_y
                     use_animation_pos = True
 
-        # 获取单位颜色
-        color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
-
-        # 动态调整单位圆圈大小：根据是否使用动画位置和单位密度
+        # 动态调整单位大小：根据是否使用动画位置和单位密度
         base_radius = GameConfig.HEX_SIZE // 3
         if use_animation_pos:
             # 移动动画中保持正常大小
-            unit_radius = int(base_radius * zoom)
             scale_factor = 1.0
         else:
             # 静态状态下根据同格单位数量调整大小
-            # 这里需要获取同格单位数量信息
             units_in_same_hex = self._get_units_in_same_hex(entity)
             unit_count_in_hex = len(units_in_same_hex)
 
@@ -407,12 +454,22 @@ class UnitRenderSystem(System):
             else:
                 scale_factor = 0.6
 
+        # 尝试使用贴图渲染，如果没有贴图则回退到圆形
+        texture = self._get_unit_texture(unit.faction, unit.unit_type)
+        
+        if texture and self.textures_loaded:
+            # 使用贴图渲染
+            self._render_unit_texture(texture, screen_x, screen_y, zoom, scale_factor)
+        else:
+            # 回退到原来的圆形渲染
+            print("回退到原来的圆形渲染")
             unit_radius = int(base_radius * zoom * scale_factor)
-
-        RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
-        RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
+            color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
+            RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
+            RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
 
         # 绘制人数条（使用相同的缩放）
+        unit_radius = int(base_radius * zoom * scale_factor)
         self._render_unit_count_bar(
             screen_x, screen_y, unit_count, unit_radius, zoom, scale=scale_factor
         )
@@ -495,6 +552,24 @@ class UnitRenderSystem(System):
         except:
             # 如果字体渲染失败，跳过
             pass
+
+    def _render_unit_texture(self, texture: pygame.Surface, screen_x: float, screen_y: float, zoom: float, scale_factor: float):
+        """渲染单位贴图"""
+        # 计算贴图大小
+        texture_size = int(GameConfig.HEX_SIZE * zoom * scale_factor)
+        
+        # 如果需要缩放贴图
+        if texture_size != texture.get_width():
+            scaled_texture = pygame.transform.scale(texture, (texture_size, texture_size))
+        else:
+            scaled_texture = texture
+        
+        # 计算贴图位置（中心对齐）
+        texture_x = screen_x - texture_size // 2
+        texture_y = screen_y - texture_size // 2
+        
+        # 渲染贴图
+        RMS.draw(scaled_texture, (int(texture_x), int(texture_y)))
 
     def _render_unit_status(
         self,
