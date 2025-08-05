@@ -10,6 +10,7 @@ from .builder import QueryBuilder
 from typing import Dict, Set, Type, List, Any, Optional
 from collections import defaultdict
 import time
+from performance_profiler import profiler
 
 
 class World:
@@ -262,7 +263,8 @@ class World:
     def update(self, delta_time: float) -> None:
         """更新所有系统"""
         for system in self.systems:
-            if system.enabled:
+            system_name = system.__class__.__name__
+            with profiler.time_system(system_name):
                 system.update(delta_time)
 
     def get_entities_with_component(
