@@ -2,6 +2,7 @@
 动画系统 - 处理单位移动动画和视觉效果
 """
 
+from pathlib import Path
 import pygame
 from typing import Tuple, Optional
 from framework import System, World, RMS
@@ -33,8 +34,10 @@ class AnimationSystem(System):
     def initialize(self, world: World) -> None:
         self.world = world
         # 初始化字体
-        pygame.font.init()
-        self.damage_font = pygame.font.Font(None, 24)
+        # pygame.font.init()
+        self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
+        self.damage_font = pygame.font.Font(self.font_file_path, 24)
+        self.font_dict = {}
 
     def subscribe_events(self):
         pass
@@ -171,9 +174,16 @@ class AnimationSystem(System):
             font_to_use = self.damage_font
             if hasattr(damage_num, "font_size") and damage_num.font_size != 24:
                 try:
-                    import pygame
-
-                    font_to_use = pygame.font.Font(None, damage_num.font_size)
+                    if damage_num.font_size not in self.font_dict:
+                        # 如果字体大小不在缓存中，创建新的字体
+                        if not self.font_file_path.exists():
+                            raise FileNotFoundError(
+                                f"Font file not found: {self.font_file_path}"
+                            )
+                        self.font_dict[damage_num.font_size] = pygame.font.Font(
+                            self.font_file_path, damage_num.font_size
+                        )
+                    font_to_use = self.font_dict[damage_num.font_size]
                 except:
                     font_to_use = self.damage_font
 
