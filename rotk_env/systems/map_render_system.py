@@ -1,6 +1,6 @@
 """
-地图渲染系统 - 整合高性能与完整功能
-Map rendering system - integrating high performance with complete functionality
+地图渲染系统
+Map rendering system
 """
 
 import pygame
@@ -32,34 +32,34 @@ class MapRenderSystem(System):
         self.hex_converter = HexConverter(
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
-        
+
         # 地形贴图相关
         self.terrain_textures: Dict[TerrainType, List[pygame.Surface]] = {}
         self.tile_texture_cache: Dict[Tuple[int, int], pygame.Surface] = {}
         self.texture_loaded = False
-        
+
         # 性能优化缓存
         self.visible_tiles_cache: Set[Tuple[int, int]] = set()
         self.last_camera_pos = (0, 0)
         self.last_zoom = 1.0
         self.cache_tolerance = 50  # 摄像机移动容差
-        
+
         # 战争迷雾优化
         self.fog_surface = None
         self.fog_dirty = True
         self.last_fog_hash = 0
-        
+
         # 性能统计
         self.frame_count = 0
         self.render_calls_saved = 0
-        
+
         print("[整合版] 地图渲染系统初始化 - 高性能+完整功能")
 
     def initialize(self, world) -> None:
         """初始化地图渲染系统"""
         self.world = world
         self._load_terrain_textures()
-        
+
     def _load_terrain_textures(self) -> None:
         """加载地形贴图 - 保留v0的完整实现"""
         assets_path = os.path.join(
@@ -87,7 +87,9 @@ class MapRenderSystem(System):
                             texture = pygame.image.load(texture_path).convert_alpha()
                             # 预缩放贴图到标准大小，避免实时缩放
                             hex_size = GameConfig.HEX_SIZE * 2
-                            texture = pygame.transform.scale(texture, (hex_size, hex_size))
+                            texture = pygame.transform.scale(
+                                texture, (hex_size, hex_size)
+                            )
                             self.terrain_textures[terrain_type].append(texture)
                         except pygame.error as e:
                             print(f"警告：无法加载贴图 {texture_path}: {e}")
@@ -212,7 +214,7 @@ class MapRenderSystem(System):
 
         # **核心优化：智能可见区域计算**
         visible_tiles = self._get_visible_tiles_smart(camera_offset, zoom)
-        
+
         # **分层渲染：地图 -> 领土边界 -> 战争迷雾**
         self._render_map_optimized(visible_tiles, camera_offset, zoom)
         self._render_territory_boundaries_optimized(visible_tiles, camera_offset, zoom)
@@ -223,76 +225,89 @@ class MapRenderSystem(System):
             map_data = self.world.get_singleton_component(MapData)
             total_tiles = len(map_data.tiles) if map_data else 0
             tiles_saved = total_tiles - len(visible_tiles)
-            print(f"[整合版] 帧数: {self.frame_count}, 可见格子: {len(visible_tiles)}/{total_tiles}, 节省: {tiles_saved}")
+            print(
+                f"[整合版] 帧数: {self.frame_count}, 可见格子: {len(visible_tiles)}/{total_tiles}, 节省: {tiles_saved}"
+            )
 
-    def _get_visible_tiles_smart(self, camera_offset: List[float], zoom: float) -> Set[Tuple[int, int]]:
+    def _get_visible_tiles_smart(
+        self, camera_offset: List[float], zoom: float
+    ) -> Set[Tuple[int, int]]:
         """智能可见区域计算 - 使用缓存优化"""
         current_camera_pos = (camera_offset[0], camera_offset[1])
-        
+
         # 检查是否可以使用缓存
-        if (abs(current_camera_pos[0] - self.last_camera_pos[0]) < self.cache_tolerance and
-            abs(current_camera_pos[1] - self.last_camera_pos[1]) < self.cache_tolerance and
-            abs(zoom - self.last_zoom) < 0.05):
+        if (
+            abs(current_camera_pos[0] - self.last_camera_pos[0]) < self.cache_tolerance
+            and abs(current_camera_pos[1] - self.last_camera_pos[1])
+            < self.cache_tolerance
+            and abs(zoom - self.last_zoom) < 0.05
+        ):
             return self.visible_tiles_cache
-        
+
         # 重新计算可见区域
         visible_tiles = set()
-        
+
         # 计算屏幕边界对应的世界坐标
         margin = GameConfig.HEX_SIZE * 2
         screen_bounds = {
-            'left': (-camera_offset[0] - margin) / zoom,
-            'right': (GameConfig.WINDOW_WIDTH - camera_offset[0] + margin) / zoom,
-            'top': (-camera_offset[1] - margin) / zoom,
-            'bottom': (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom
+            "left": (-camera_offset[0] - margin) / zoom,
+            "right": (GameConfig.WINDOW_WIDTH - camera_offset[0] + margin) / zoom,
+            "top": (-camera_offset[1] - margin) / zoom,
+            "bottom": (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom,
         }
-        
+
         # 估算六边形坐标范围
         center_q = int(-camera_offset[0] / zoom / (GameConfig.HEX_SIZE * 1.5))
         center_r = int(-camera_offset[1] / zoom / (GameConfig.HEX_SIZE * 0.866))
-        
+
         search_radius = max(
             int(GameConfig.WINDOW_WIDTH / zoom / GameConfig.HEX_SIZE) + 3,
-            int(GameConfig.WINDOW_HEIGHT / zoom / GameConfig.HEX_SIZE) + 3
+            int(GameConfig.WINDOW_HEIGHT / zoom / GameConfig.HEX_SIZE) + 3,
         )
-        
+
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return visible_tiles
-            
+
         # 在估算范围内查找可见格子
         for q in range(center_q - search_radius, center_q + search_radius + 1):
             for r in range(center_r - search_radius, center_r + search_radius + 1):
                 if (q, r) not in map_data.tiles:
                     continue
-                    
+
                 # 检查这个格子是否在屏幕内
                 world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
-                
-                if (screen_bounds['left'] <= world_x <= screen_bounds['right'] and
-                    screen_bounds['top'] <= world_y <= screen_bounds['bottom']):
+
+                if (
+                    screen_bounds["left"] <= world_x <= screen_bounds["right"]
+                    and screen_bounds["top"] <= world_y <= screen_bounds["bottom"]
+                ):
                     visible_tiles.add((q, r))
-        
+
         # 更新缓存
         self.visible_tiles_cache = visible_tiles
         self.last_camera_pos = current_camera_pos
         self.last_zoom = zoom
-        
+
         return visible_tiles
 
-    def _render_map_optimized(self, visible_tiles: Set[Tuple[int, int]], 
-                             camera_offset: List[float], zoom: float):
+    def _render_map_optimized(
+        self,
+        visible_tiles: Set[Tuple[int, int]],
+        camera_offset: List[float],
+        zoom: float,
+    ):
         """优化的地图渲染 - 只渲染可见格子，保留完整功能"""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return
-            
+
         # 只渲染可见的格子
-        for (q, r) in visible_tiles:
+        for q, r in visible_tiles:
             tile_entity = map_data.tiles.get((q, r))
             if not tile_entity:
                 continue
-                
+
             terrain = self.world.get_component(tile_entity, Terrain)
             if not terrain:
                 continue
@@ -308,7 +323,7 @@ class MapRenderSystem(System):
             if texture and self.texture_loaded:
                 # 使用贴图渲染
                 self._render_hex_with_texture(texture, screen_x, screen_y, zoom)
-                
+
                 # 如果是城市地形，添加特殊标记
                 if terrain.terrain_type == TerrainType.CITY:
                     self._render_city_marker(q, r, camera_offset, zoom)
@@ -364,8 +379,12 @@ class MapRenderSystem(System):
         if terrain_type == TerrainType.CITY:
             self._render_city_marker(q, r, camera_offset, zoom)
 
-    def _render_fog_of_war_optimized(self, visible_tiles: Set[Tuple[int, int]], 
-                                    camera_offset: List[float], zoom: float = 1.0):
+    def _render_fog_of_war_optimized(
+        self,
+        visible_tiles: Set[Tuple[int, int]],
+        camera_offset: List[float],
+        zoom: float = 1.0,
+    ):
         """优化的战争迷雾渲染 - 只处理可见格子，保留完整功能"""
         game_state = self.world.get_singleton_component(GameState)
         fog_of_war = self.world.get_singleton_component(FogOfWar)
@@ -395,7 +414,7 @@ class MapRenderSystem(System):
         )
 
         # **核心优化：只处理屏幕可见的格子**
-        for (q, r) in visible_tiles:
+        for q, r in visible_tiles:
             # 计算屏幕位置
             world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
             screen_x = (world_x * zoom) + camera_offset[0]
@@ -418,14 +437,18 @@ class MapRenderSystem(System):
             else:
                 # 未探索区域：绘制完全黑色
                 pygame.draw.polygon(
-                    explored_fog_surface, GameConfig.FOG_UNEXPLORED_COLOR, screen_corners
+                    explored_fog_surface,
+                    GameConfig.FOG_UNEXPLORED_COLOR,
+                    screen_corners,
                 )
 
         # 应用迷雾遮罩
         RMS.draw(explored_fog_surface, (0, 0))
 
         # 绘制视野区域的外边界绿色轮廓
-        self._render_vision_boundary_optimized(visible_faction_tiles, camera_offset, zoom)
+        # self._render_vision_boundary_optimized(
+        #     visible_faction_tiles, camera_offset, zoom
+        # )
 
     def _render_vision_boundary_optimized(
         self,
@@ -461,8 +484,12 @@ class MapRenderSystem(System):
 
             # 屏幕边界检查（优化：只检查可能可见的单位）
             margin = 200 * zoom
-            if (center_screen_x < -margin or center_screen_x > GameConfig.WINDOW_WIDTH + margin or
-                center_screen_y < -margin or center_screen_y > GameConfig.WINDOW_HEIGHT + margin):
+            if (
+                center_screen_x < -margin
+                or center_screen_x > GameConfig.WINDOW_WIDTH + margin
+                or center_screen_y < -margin
+                or center_screen_y > GameConfig.WINDOW_HEIGHT + margin
+            ):
                 continue
 
             unit_stats = GameConfig.UNIT_STATS.get(unit.unit_type)
@@ -476,12 +503,15 @@ class MapRenderSystem(System):
             RMS.circle(
                 GameConfig.CURRENT_VISION_OUTLINE_COLOR,
                 (int(center_screen_x), int(center_screen_y)),
-                circle_radius, 2
+                circle_radius,
+                2,
             )
 
     def _render_territory_boundaries_optimized(
-        self, visible_tiles: Set[Tuple[int, int]], 
-        camera_offset: List[float], zoom: float = 1.0
+        self,
+        visible_tiles: Set[Tuple[int, int]],
+        camera_offset: List[float],
+        zoom: float = 1.0,
     ):
         """优化的领土边界渲染 - 只处理可见格子，保留完整功能"""
         map_data = self.world.get_singleton_component(MapData)
@@ -489,11 +519,11 @@ class MapRenderSystem(System):
             return
 
         # 遍历可见的地图块，渲染领土控制信息
-        for (q, r) in visible_tiles:
+        for q, r in visible_tiles:
             tile_entity = map_data.tiles.get((q, r))
             if not tile_entity:
                 continue
-                
+
             territory_control = self.world.get_component(tile_entity, TerritoryControl)
             if not territory_control or not territory_control.controlling_faction:
                 continue
@@ -577,24 +607,45 @@ class MapRenderSystem(System):
         territory_control: TerritoryControl,
         zoom: float,
     ):
-        """渲染工事标记"""
+        """渲染工事标记 - 根据等级在六边形内嵌镶不同颜色边框"""
         if territory_control.fortification_level <= 0:
             return
 
-        # 根据工事等级选择标记样式
-        marker_size = int(8 * zoom * territory_control.fortification_level)
-        marker_color = (139, 69, 19)  # 棕色，表示工事
+        # 根据工事等级选择边框颜色
+        fortification_colors = {
+            1: (184, 115, 51),  # 铜色 (copper)
+            2: (192, 192, 192),  # 银色 (silver)
+            3: (255, 215, 0),  # 金色 (gold)
+        }
 
-        # 绘制工事标记（小方块）
-        marker_rect = pygame.Rect(
-            center_x - marker_size // 2,
-            center_y - marker_size // 2,
-            marker_size,
-            marker_size,
-        )
+        level = min(territory_control.fortification_level, 3)  # 最大3级
+        border_color = fortification_colors.get(level, fortification_colors[1])
 
-        RMS.rect(marker_color, marker_rect)
-        RMS.rect((0, 0, 0), marker_rect, 1)  # 黑色边框
+        # 使用hex_converter获取标准的六边形角点，确保与地图格子完全对应
+        # 使用稍小的尺寸作为内嵌边框，但保持flat-top形状
+        hex_size_scaled = GameConfig.HEX_SIZE * zoom * 0.9  # 内嵌90%大小，更紧贴
+
+        # 直接使用hex_converter的方法来获取正确的flat-top六边形顶点
+        # 先计算对应的q,r坐标（这里用0,0作为相对坐标）
+        corners = self.hex_converter.get_hex_corners(0, 0)
+
+        # 调整尺寸并应用到实际中心位置
+        hex_points = []
+        scale_factor = 0.9  # 内嵌90%大小
+
+        for corner_x, corner_y in corners:
+            # 缩放并移动到实际中心位置
+            scaled_x = corner_x * scale_factor * zoom + center_x
+            scaled_y = corner_y * scale_factor * zoom + center_y
+            hex_points.append((int(scaled_x), int(scaled_y)))
+
+        # 绘制工事边框 - 根据等级调整线宽，更明显
+        border_width = max(
+            3, int(4 * zoom * level)
+        )  # 基础线宽从2增加到3，乘数从3增加到4
+
+        # 绘制六边形工事边框
+        RMS.polygon(border_color, hex_points, border_width)
 
     def _render_city_marker(
         self, q: int, r: int, camera_offset: List[float], zoom: float
@@ -617,4 +668,4 @@ class MapRenderSystem(System):
         )
         RMS.circle(
             (0, 0, 0), (int(center_x), int(center_y)), marker_size, 2  # 黑色边框
-        ) 
+        )
