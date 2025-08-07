@@ -1,11 +1,12 @@
 """
-单位渲染系统 - 整合高性能与完整功能
-Unit rendering system - integrating high performance with complete functionality
+单位渲染系统
+Unit rendering system
 """
 
 import pygame
 import os
 import math
+import time  # 添加time模块
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from framework import System, RMS
@@ -22,9 +23,26 @@ from ..components import (
 from ..prefabs.config import GameConfig, HexOrientation, UnitType, Faction
 from ..utils.hex_utils import HexConverter
 
+# 导入性能分析器
+try:
+    from performance_profiler import profiler
+except ImportError:
+    # 如果没有profiler，创建一个简单的替代
+    class DummyProfiler:
+        def time_system(self, name):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    profiler = DummyProfiler()
+
 
 class UnitRenderSystem(System):
-    """整合高性能与完整功能的单位渲染系统"""
+    """整合高性能与完整功能的单位渲染系统 - 带可控性能分析"""
 
     def __init__(self):
         super().__init__(priority=2)  # 在地图之上渲染单位
@@ -39,7 +57,7 @@ class UnitRenderSystem(System):
         self.scaled_texture_cache: Dict[Tuple[str, int], pygame.Surface] = {}
         self.textures_loaded = False
 
-        # **保留高性能版的可见区域缓存**
+        # 保留高性能版的可见区域缓存
         self.visible_units_cache: List[int] = []
         self.last_camera_hash = 0
 
@@ -48,13 +66,65 @@ class UnitRenderSystem(System):
         self.cache_hits = 0
         self.cache_misses = 0
 
+        # 🔥 性能分析开关 - 默认关闭
+        self.enable_profiler = False
+        self.profiler_interval = 60  # 每60帧打印一次统计（约1秒）
+
+        # 详细的性能分析统计
+        self.step_times = {
+            "get_visible_units": [],
+            "render_decision": [],
+            "full_featured_render": [],
+            "batch_render": [],
+            "animation_render": [],
+            "visibility_check": [],
+            "position_grouping": [],
+            "faction_grouping": [],
+            "layout_calculation": [],
+            "single_unit_render": [],
+            "texture_operations": [],
+            "ecs_queries": [],
+        }
+
         # 初始化字体
-        pygame.font.init()
+        self.font_cache: Dict[int, pygame.font.Font] = {}
         file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font = pygame.font.Font(file_path, 24)
         self.small_font = pygame.font.Font(file_path, 16)
+        self.font_cache[24] = self.font
+        self.font_cache[16] = self.small_font
 
         print("[整合版] 单位渲染系统初始化 - 高性能+完整功能")
+
+    def enable_performance_profiler(self, enabled: bool = True, interval: int = 60):
+        """
+        启用/禁用性能分析器
+
+        Args:
+            enabled: 是否启用性能分析
+            interval: 打印统计的间隔帧数（默认60帧≈1秒）
+        """
+        self.enable_profiler = enabled
+        self.profiler_interval = interval
+
+        if enabled:
+            print(f"[UnitRenderSystem] 性能分析器已启用，每{interval}帧打印一次统计")
+        else:
+            print("[UnitRenderSystem] 性能分析器已禁用")
+
+    def _get_font(self, size: int) -> Optional[pygame.font.Font]:
+        """获取指定大小的字体，如果不存在则创建并缓存"""
+        if size not in self.font_cache:
+            try:
+                # 限制最小字体大小，避免错误
+                font_size = max(size, 6)
+                self.font_cache[size] = pygame.font.Font(
+                    Path("rotk_env/assets/fonts/sh.otf"), font_size
+                )
+            except pygame.error as e:
+                print(f"警告：无法加载字体大小 {size}: {e}")
+                self.font_cache[size] = None
+        return self.font_cache[size]
 
     def initialize(self, world) -> None:
         """初始化单位渲染系统"""
@@ -114,6 +184,17 @@ class UnitRenderSystem(System):
         else:
             print("警告：没有加载到任何单位贴图，将使用默认圆形渲染")
 
+    def _add_step_time(self, step_name: str, elapsed_time: float):
+        """添加步骤耗时 - 只在启用profiler时记录"""
+        if not self.enable_profiler:
+            return
+
+        if step_name in self.step_times:
+            self.step_times[step_name].append(elapsed_time)
+            # 保持最近50次的数据
+            if len(self.step_times[step_name]) > 50:
+                self.step_times[step_name].pop(0)
+
     def _get_cached_texture(
         self, faction: Faction, unit_type: UnitType, size: int
     ) -> Optional[pygame.Surface]:
@@ -151,7 +232,10 @@ class UnitRenderSystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新单位渲染 - 整合高性能与完整功能"""
+        """更新单位渲染 - 带可控性能分析"""
+        # 🔥 只在启用profiler时进行详细计时
+        update_start = time.time() if self.enable_profiler else None
+
         camera = self.world.get_singleton_component(Camera)
         if not camera:
             return
@@ -162,30 +246,51 @@ class UnitRenderSystem(System):
         camera_offset = [camera.offset_x, camera.offset_y]
         zoom = getattr(camera, "zoom", 1.0)
 
-        # **高性能版：只渲染屏幕可见的单位**
+        # 步骤1：获取可见单位
+        step1_start = time.time() if self.enable_profiler else None
         visible_units = self._get_visible_units(camera_offset, zoom)
+        if self.enable_profiler:
+            step1_time = time.time() - step1_start
+            self._add_step_time("get_visible_units", step1_time)
 
-        # **整合版：智能渲染策略 - 基于单位密度选择渲染方式**
-        if len(visible_units) <= 20:
-            # 单位较少：使用v0版的完整复杂布局
+        # 步骤2：渲染策略决策
+        step2_start = time.time() if self.enable_profiler else None
+        render_strategy = "full_featured" if len(visible_units) <= 20 else "batch"
+        if self.enable_profiler:
+            step2_time = time.time() - step2_start
+            self._add_step_time("render_decision", step2_time)
+
+        # 步骤3：执行渲染
+        if render_strategy == "full_featured":
+            step3_start = time.time() if self.enable_profiler else None
             self._render_units_full_featured(visible_units, camera_offset, zoom)
+            if self.enable_profiler:
+                step3_time = time.time() - step3_start
+                self._add_step_time("full_featured_render", step3_time)
         else:
-            # 单位较多：使用高性能版的快速渲染
+            step3_start = time.time() if self.enable_profiler else None
             self._render_units_batch(visible_units, camera_offset, zoom)
+            if self.enable_profiler:
+                step3_time = time.time() - step3_start
+                self._add_step_time("batch_render", step3_time)
 
-        # 渲染伤害数字（如果有动画系统）
+        # 步骤4：动画渲染
+        step4_start = time.time() if self.enable_profiler else None
         animation_system = self._get_animation_system()
         if animation_system:
             animation_system.render_damage_numbers()
+        if self.enable_profiler:
+            step4_time = time.time() - step4_start
+            self._add_step_time("animation_render", step4_time)
 
-        # 性能统计
-        if self.render_count % 300 == 0:
-            cache_ratio = (
-                self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100
-            )
-            print(
-                f"[整合版] 可见单位: {len(visible_units)}, 缓存命中率: {cache_ratio:.1f}%"
-            )
+        # 性能统计打印
+        if self.enable_profiler and update_start:
+            total_time = time.time() - update_start
+            # 按设定间隔打印统计
+            if self.render_count % self.profiler_interval == 0:
+                self._print_detailed_performance_stats(
+                    len(visible_units), render_strategy, total_time
+                )
 
     def _get_visible_units(self, camera_offset: List[float], zoom: float) -> List[int]:
         """获取屏幕可见的单位 - 保留高性能版实现"""
@@ -198,9 +303,19 @@ class UnitRenderSystem(System):
         screen_top = (-camera_offset[1] - margin) / zoom
         screen_bottom = (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom
 
-        for entity in (
+        # ECS查询计时（仅在启用profiler时）
+        ecs_start = time.time() if self.enable_profiler else None
+        entities = list(
             self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
-        ):
+        )
+        if self.enable_profiler:
+            ecs_time = time.time() - ecs_start
+            self._add_step_time("ecs_queries", ecs_time)
+
+        for entity in entities:
+            # 可见性检查计时（仅在启用profiler时）
+            visibility_start = time.time() if self.enable_profiler else None
+
             position = self.world.get_component(entity, HexPosition)
             if not position:
                 continue
@@ -208,6 +323,10 @@ class UnitRenderSystem(System):
             # 检查单位是否可见
             if not self._is_unit_visible(entity):
                 continue
+
+            if self.enable_profiler:
+                visibility_time = time.time() - visibility_start
+                self._add_step_time("visibility_check", visibility_time)
 
             # 计算单位世界坐标
             world_x, world_y = self.hex_converter.hex_to_pixel(
@@ -226,32 +345,39 @@ class UnitRenderSystem(System):
     def _render_units_full_featured(
         self, visible_units: List[int], camera_offset: List[float], zoom: float
     ):
-        """完整功能的单位渲染 - 使用v0版的复杂布局逻辑"""
+        """完整功能的单位渲染"""
         if not visible_units:
             return
 
-        # 获取动画系统以获取正确的渲染位置
+        # 获取动画系统
         animation_system = self._get_animation_system()
 
-        # 收集所有可见单位并按位置分组
+        # 位置分组计时（仅在启用profiler时）
+        grouping_start = time.time() if self.enable_profiler else None
         units_by_position = {}
-
         for entity in visible_units:
             position = self.world.get_component(entity, HexPosition)
             if not position:
                 continue
 
-            # 获取基础位置（不考虑动画，因为我们需要按逻辑位置分组）
             pos_key = (position.col, position.row)
             if pos_key not in units_by_position:
                 units_by_position[pos_key] = []
             units_by_position[pos_key].append(entity)
 
+        if self.enable_profiler:
+            grouping_time = time.time() - grouping_start
+            self._add_step_time("position_grouping", grouping_time)
+
         # 渲染每个位置的单位组
         for pos_key, units in units_by_position.items():
+            group_start = time.time() if self.enable_profiler else None
             self._render_unit_group_full(
                 pos_key, units, camera_offset, zoom, animation_system
             )
+            if self.enable_profiler:
+                group_time = time.time() - group_start
+                self._add_step_time("single_unit_render", group_time)
 
     def _render_units_batch(
         self, visible_units: List[int], camera_offset: List[float], zoom: float
@@ -277,8 +403,9 @@ class UnitRenderSystem(System):
     def _render_unit_group_full(
         self, pos_key, units, camera_offset, zoom, animation_system
     ):
-        """完整功能的单位组渲染 - 使用v0版的复杂布局逻辑"""
-        # 按阵营分组
+        """完整功能的单位组渲染"""
+        # 阵营分组计时（仅在启用profiler时）
+        faction_start = time.time() if self.enable_profiler else None
         units_by_faction = {}
         for entity in units:
             unit = self.world.get_component(entity, Unit)
@@ -286,6 +413,10 @@ class UnitRenderSystem(System):
                 if unit.faction not in units_by_faction:
                     units_by_faction[unit.faction] = []
                 units_by_faction[unit.faction].append(entity)
+
+        if self.enable_profiler:
+            faction_time = time.time() - faction_start
+            self._add_step_time("faction_grouping", faction_time)
 
         # 获取基础位置
         base_world_x, base_world_y = self.hex_converter.hex_to_pixel(
@@ -311,7 +442,7 @@ class UnitRenderSystem(System):
             )
 
     def _render_same_faction_units(self, units, base_x, base_y, zoom, animation_system):
-        """渲染同一阵营的多个单位 - v0版实现"""
+        """渲染同一阵营的多个单位"""
         unit_count = len(units)
         if unit_count == 1:
             # 只有一个单位，正常渲染在中心
@@ -319,10 +450,15 @@ class UnitRenderSystem(System):
                 units[0], base_x, base_y, zoom, animation_system
             )
         else:
-            # 多个单位，在六边形内等分排列
+            # 布局计算计时（仅在启用profiler时）
+            layout_start = time.time() if self.enable_profiler else None
             positions = self._calculate_unit_positions_in_hex(
                 unit_count, base_x, base_y, zoom
             )
+            if self.enable_profiler:
+                layout_time = time.time() - layout_start
+                self._add_step_time("layout_calculation", layout_time)
+
             for i, entity in enumerate(units):
                 if i < len(positions):
                     x, y = positions[i]
@@ -423,7 +559,7 @@ class UnitRenderSystem(System):
     def _render_single_unit_full(
         self, entity, screen_x, screen_y, zoom, animation_system
     ):
-        """完整功能的单个单位渲染 - v0版实现"""
+        """完整功能的单个单位渲染"""
         position = self.world.get_component(entity, HexPosition)
         unit = self.world.get_component(entity, Unit)
         unit_count = self.world.get_component(entity, UnitCount)
@@ -468,6 +604,8 @@ class UnitRenderSystem(System):
 
         # 渲染单位本体
         texture_size = int(GameConfig.HEX_SIZE * zoom * scale_factor)
+        # 纹理操作计时（仅在启用profiler时）
+        texture_start = time.time() if self.enable_profiler else None
         texture = self._get_cached_texture(unit.faction, unit.unit_type, texture_size)
 
         if texture and self.textures_loaded:
@@ -476,13 +614,17 @@ class UnitRenderSystem(System):
             RMS.draw(texture, texture_rect.topleft)
         else:
             # 回退到圆形渲染
-            unit_radius = int(base_radius * zoom * scale_factor)
+            unit_radius = int(base_radius * zoom)
             color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
             RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
             RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
 
+        if self.enable_profiler:
+            texture_time = time.time() - texture_start
+            self._add_step_time("texture_operations", texture_time)
+
         # 绘制人数条
-        unit_radius = int(base_radius * zoom * scale_factor)
+        unit_radius = int(base_radius * zoom)
         self._render_unit_count_bar(
             screen_x, screen_y, unit_count, unit_radius, zoom, scale=scale_factor
         )
@@ -550,6 +692,9 @@ class UnitRenderSystem(System):
                 else (255, 255, 0) if health_ratio > 0.3 else (255, 0, 0)
             )
             RMS.rect(color, (int(bar_x), int(bar_y), fill_width, bar_height))
+
+        # 绘制边框
+        RMS.rect((255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 1)
 
     def _calculate_unit_positions_in_hex(self, unit_count, center_x, center_y, zoom):
         """计算六边形内单位的等分位置，确保不重叠 - v0版实现"""
@@ -715,9 +860,11 @@ class UnitRenderSystem(System):
             return
 
         try:
-            text_surface = self.font.render(symbol, True, (255, 255, 255))
-            text_rect = text_surface.get_rect(center=(int(screen_x), int(screen_y)))
-            RMS.draw(text_surface, text_rect)
+            font = self._get_font(font_size)
+            if font:
+                text_surface = font.render(symbol, True, (255, 255, 255))
+                text_rect = text_surface.get_rect(center=(int(screen_x), int(screen_y)))
+                RMS.draw(text_surface, text_rect)
         except:
             pass
 
@@ -824,3 +971,38 @@ class UnitRenderSystem(System):
             "cache_hit_ratio": cache_ratio,
             "cached_textures": len(self.scaled_texture_cache),
         }
+
+    def _print_detailed_performance_stats(
+        self, visible_count: int, strategy: str, total_time: float
+    ):
+        """打印详细的性能统计"""
+        print("\n" + "=" * 80)
+        print(
+            f"[UnitRenderSystem] 详细性能分析 - 可见单位: {visible_count}, 策略: {strategy}"
+        )
+        print(f"总耗时: {total_time*1000:.2f}ms")
+        print("=" * 80)
+
+        # 计算各步骤平均耗时
+        step_averages = {}
+        for step_name, times in self.step_times.items():
+            if times:
+                avg_time = sum(times) / len(times)
+                step_averages[step_name] = avg_time
+
+        # 按耗时排序
+        sorted_steps = sorted(step_averages.items(), key=lambda x: x[1], reverse=True)
+
+        print("步骤耗时排序:")
+        for step_name, avg_time in sorted_steps:
+            percentage = (avg_time / total_time * 100) if total_time > 0 else 0
+            print(f"  {step_name:25} {avg_time*1000:8.2f}ms ({percentage:5.1f}%)")
+
+        # 缓存统计
+        cache_ratio = (
+            self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100
+        )
+        print(
+            f"\n缓存命中率: {cache_ratio:.1f}% (命中:{self.cache_hits}, 未命中:{self.cache_misses})"
+        )
+        print("=" * 80)

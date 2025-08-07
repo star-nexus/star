@@ -1,6 +1,6 @@
 """
-地图渲染系统 - 整合高性能与完整功能
-Map rendering system - integrating high performance with complete functionality
+地图渲染系统
+Map rendering system
 """
 
 import pygame
