@@ -119,7 +119,8 @@ class GameScene(Scene):
         self._initialize_players()
 
         # 初始化单位
-        self._initialize_units(2, 2)  # 默认每个阵营10个单位
+        # for wei, shu, wu: infantry, archer, cavalry
+        self._initialize_units([[1,3,1], [1,3,1], [0,0,0]])
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -194,10 +195,8 @@ class GameScene(Scene):
             # 将玩家添加到回合管理器
             turn_manager.add_player(player_entity)
 
-    def _initialize_units(self, wei: int = 3, shu: int = 3, wu: int = None):
+    def _initialize_units(self, unit_assignments: list[list[int]]):
         """初始化单位 - 根据数量自动生成单位和位置"""
-        import math
-        import random
 
         # 定义每个阵营的起始区域中心
         faction_centers = {
@@ -210,14 +209,14 @@ class GameScene(Scene):
         unit_counts = {}
         for faction in self.players.keys():
             if faction == Faction.WEI:
-                unit_counts[faction] = wei
+                unit_counts[faction] = unit_assignments[0]
             elif faction == Faction.SHU:
-                unit_counts[faction] = shu
-            elif faction == Faction.WU and wu is not None:
-                unit_counts[faction] = wu
+                unit_counts[faction] = unit_assignments[1]
+            elif faction == Faction.WU:
+                unit_counts[faction] = unit_assignments[2]
 
         for faction, count in unit_counts.items():
-            if count <= 0:
+            if sum(count) == 0:
                 continue
 
             player_entity = self._get_player_entity(faction)
@@ -228,7 +227,7 @@ class GameScene(Scene):
             center_q, center_r = faction_centers[faction]
 
             # 生成该阵营的所有单位位置
-            positions = self._generate_unit_positions(center_q, center_r, count)
+            positions = self._generate_unit_positions(center_q, center_r, sum(count))
 
             # 生成多样化的单位类型
             unit_types = self._generate_unit_types(count)
@@ -295,12 +294,23 @@ class GameScene(Scene):
 
         return positions[:count]
 
-    def _generate_unit_types(self, count: int) -> list:
+    def _generate_unit_types(self, count: int | list) -> list:
         """生成多样化的单位类型组合"""
-        import random
-
+        
         unit_types = []
 
+        if isinstance(count, list) and len(count) == 3:
+            # count是一个3元素列表 [步兵数, 弓兵数, 骑兵数]
+            infantry_count, archer_count, cavalry_count = count
+            unit_types = []
+            
+            # 添加指定数量的各类型单位
+            unit_types.extend([UnitType.INFANTRY] * infantry_count)
+            unit_types.extend([UnitType.ARCHER] * archer_count)
+            unit_types.extend([UnitType.CAVALRY] * cavalry_count)
+            
+            return unit_types
+        
         # 基础配比：步兵40%，骑兵30%，弓兵25%，攻城5%
         base_ratios = {
             UnitType.INFANTRY: 0.50,
