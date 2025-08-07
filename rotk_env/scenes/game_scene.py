@@ -139,8 +139,8 @@ class GameScene(Scene):
             CombatSystem(),  # 战斗系统
             TerritorySystem(),  # 领土系统 (处理占领和工事)
             ResourceRecoverySystem(),  # 资源恢复系统
-            # AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
-            LLMSystem(),  # LLM系统 (优先级5)
+            AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
+            # LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
