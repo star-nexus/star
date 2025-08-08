@@ -22,11 +22,14 @@ from ..systems import (
     TerritorySystem,
     UnitActionButtonSystem,
     ActionSystem,
+    UIButtonSystem,
+    UIRenderSystem,
 )
 from ..systems.map_render_system import MapRenderSystem
 from ..systems.unit_render_system import UnitRenderSystem
-from ..systems.improved_ui_render_system import ImprovedUIRenderSystem
-from ..systems.improved_ui_button_system import ImprovedUIButtonSystem
+
+# from ..systems.improved_ui_render_system import ImprovedUIRenderSystem
+# from ..systems.improved_ui_button_system import ImprovedUIButtonSystem
 from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.statistics_system import StatisticsSystem
@@ -121,7 +124,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1,3,1], [1,3,1], [0,0,0]])
+        self._initialize_units([[1, 3, 1], [1, 3, 1], [0, 0, 0]])
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -147,14 +150,14 @@ class GameScene(Scene):
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
-            ImprovedUIButtonSystem(),  # 改进的UI按钮系统 (优先级2)
             UnitActionButtonSystem(),  # 单位动作按钮系统 (优先级4)
             # 渲染系统拆分为多个独立系统（从底层到顶层）
             MapRenderSystem(),  # 地图渲染系统 (最底层)
             UnitRenderSystem(),  # 单位渲染系统 (在地图之上)
             EffectRenderSystem(),  # 效果渲染系统 (在单位之上)
             PanelRenderSystem(),  # 面板渲染系统 (在效果之上)
-            ImprovedUIRenderSystem(),  # 改进的UI渲染系统 (最顶层)
+            UIButtonSystem(),  # 改进的UI按钮系统 (优先级2)
+            UIRenderSystem(),  # 改进的UI渲染系统 (最顶层)
             MiniMapSystem(),  # 小地图系统 (优先级5)
         ]
         if self.game_mode == GameMode.REAL_TIME:
@@ -298,21 +301,21 @@ class GameScene(Scene):
 
     def _generate_unit_types(self, count: int | list) -> list:
         """生成多样化的单位类型组合"""
-        
+
         unit_types = []
 
         if isinstance(count, list) and len(count) == 3:
             # count是一个3元素列表 [步兵数, 弓兵数, 骑兵数]
             infantry_count, archer_count, cavalry_count = count
             unit_types = []
-            
+
             # 添加指定数量的各类型单位
             unit_types.extend([UnitType.INFANTRY] * infantry_count)
             unit_types.extend([UnitType.ARCHER] * archer_count)
             unit_types.extend([UnitType.CAVALRY] * cavalry_count)
-            
+
             return unit_types
-        
+
         # 基础配比：步兵40%，骑兵30%，弓兵25%，攻城5%
         base_ratios = {
             UnitType.INFANTRY: 0.50,
@@ -339,7 +342,7 @@ class GameScene(Scene):
                 unit_types.pop()
 
         # 打乱顺序
-        random.shuffle(unit_types)
+        # random.shuffle(unit_types)
         return unit_types
 
     def _create_unit(
