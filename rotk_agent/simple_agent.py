@@ -280,7 +280,15 @@ async def chat(parts):
 
         agent = ChatAgent()
 
-        res = await agent.chat(task=params, tools=[available_actions, perform_action])
+        @tool
+        async def stop_running():
+            """检测到游戏结束时停止运行"""
+            await agent.stop()
+            # await agent
+
+        res = await agent.chat(
+            task=params, tools=[available_actions, perform_action, stop_running]
+        )
         print(res)
     else:
         print("❌ 请指定动作，如: chat dance")

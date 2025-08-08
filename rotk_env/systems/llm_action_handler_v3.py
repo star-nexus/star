@@ -1184,9 +1184,37 @@ class LLMActionHandlerV3:
 
         # 战略分析
         # strategic_summary = self._get_strategic_summary(faction)
+
+        # 获取阵营当前状态
+        faction_status = self._get_faction_status(faction)
+
+        # 获取游戏状态信息用于额外说明
+        game_state = self.world.get_singleton_component(GameState)
+        status_details = {
+            "status": faction_status,
+            "game_over": game_state.game_over if game_state else False,
+            "turn_number": game_state.turn_number if game_state else 0,
+        }
+
+        # 根据状态添加额外信息
+        if faction_status == "victory":
+            status_details["description"] = "阵营获得胜利"
+        elif faction_status == "defeat":
+            status_details["description"] = "阵营被击败"
+        elif faction_status == "draw":
+            status_details["description"] = "游戏平局"
+        elif faction_status == "eliminated":
+            status_details["description"] = "阵营已被消灭"
+        elif faction_status == "in_battle":
+            status_details["description"] = "阵营正在战斗中"
+        elif faction_status == "active":
+            status_details["description"] = "阵营处于活跃状态"
+
         print(f"final {faction.value}")
         return {
             "success": True,
+            "state": faction_status,  # 添加阵营状态，根据游戏状态，战斗中，胜利、失败
+            # "status_details": status_details,  # 详细状态信息
             "faction": faction.value,
             "total_units": total_units_count,
             "active_units": active_units_count,
@@ -1378,13 +1406,28 @@ class LLMActionHandlerV3:
                 # 阵营信息
                 "faction_state": {
                     "category": "faction_control",
-                    "description": "获取阵营整体状态",
+                    "description": "获取阵营整体状态，包括战斗状态、胜负情况等",
                     "parameters": {
                         "faction": {
                             "type": "string",
                             "required": True,
                             "description": "阵营名称(wei/shu/wu)",
                         }
+                    },
+                    "returns": {
+                        "success": {"type": "bool", "description": "执行是否成功"},
+                        "state": {
+                            "type": "string",
+                            "description": "阵营状态：active(活跃)/in_battle(战斗中)/victory(胜利)/defeat(失败)/eliminated(被消灭)/draw(平局)",
+                        },
+                        "status_details": {
+                            "type": "object",
+                            "description": "详细状态信息",
+                        },
+                        "faction": {"type": "string", "description": "阵营名称"},
+                        "total_units": {"type": "int", "description": "总单位数量"},
+                        "active_units": {"type": "int", "description": "活跃单位数量"},
+                        "units": {"type": "array", "description": "单位详细信息列表"},
                     },
                     "prerequisites": ["有效阵营名称"],
                 },
@@ -1828,10 +1871,12 @@ class LLMActionHandlerV3:
         if not vision:
             return []
 
-        # 获取单位当前位置和移动组件（为移动模式做准备）
+        # 获取单位当前位置和相关组件
         unit_position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
+        combat = self.world.get_component(unit_id, Combat)
+        unit = self.world.get_component(unit_id, Unit)
         current_pos = (unit_position.col, unit_position.row) if unit_position else None
 
         visible_tiles = []
@@ -1841,14 +1886,19 @@ class LLMActionHandlerV3:
                 "terrain": self._get_terrain_at_position(pos).value,
                 "units": self._get_units_at_position(pos),
                 "fortifications": self._get_current_fortification_level(pos),
+                # 添加占领信息
+                "territory_control": self._get_territory_control_info(
+                    pos, unit.faction if unit else None
+                ),
+                # 添加移动可达性信息
+                "movement_accessibility": self._get_movement_accessibility_info(
+                    unit_id, current_pos, pos, movement_points, unit_count
+                ),
+                # 添加攻击范围信息
+                "attack_range_info": self._get_attack_range_info(
+                    current_pos, pos, combat
+                ),
             }
-
-            # 如果observation_level为"move"，添加移动相关信息
-            # if current_pos and movement_points and unit_count:
-            move_info = self._calculate_movement_info(
-                unit_id, current_pos, pos, movement_points, unit_count
-            )
-            tile_info["movement_info"] = move_info
 
             visible_tiles.append(tile_info)
 
@@ -2287,3 +2337,228 @@ class LLMActionHandlerV3:
             TerrainType.WATER: 0,  # 无直接资源
         }
         return resource_values.get(terrain_type, 1)
+
+    def _get_faction_status(self, faction: Faction) -> str:
+        """获取阵营当前状态：战斗中、胜利、失败或活跃"""
+        # 检查游戏是否结束
+        game_state = self.world.get_singleton_component(GameState)
+        if game_state and game_state.game_over:
+            # 游戏已结束，检查获胜者
+            if game_state.winner == faction:
+                return "victory"  # 胜利
+            elif game_state.winner is not None:
+                return "defeat"  # 失败（其他阵营获胜）
+            else:
+                return "draw"  # 平局
+
+        # 检查专门的获胜者组件
+        from ..components.game_over import Winner
+
+        winner_component = self.world.get_singleton_component(Winner)
+        if winner_component and winner_component.faction is not None:
+            if winner_component.faction == faction:
+                return "victory"
+            else:
+                return "defeat"
+
+        # 游戏进行中，检查阵营是否有活跃单位
+        active_units = [
+            u for u in self._get_faction_units(faction) if self._is_unit_active(u)
+        ]
+        if not active_units:
+            return "eliminated"  # 已被消灭
+
+        # 检查是否有其他阵营的活跃单位（判断是否在战斗中）
+        other_factions_exist = False
+        for other_faction in Faction:
+            if other_faction != faction:
+                other_active_units = [
+                    u
+                    for u in self._get_faction_units(other_faction)
+                    if self._is_unit_active(u)
+                ]
+                if other_active_units:
+                    other_factions_exist = True
+                    break
+
+        if other_factions_exist:
+            # 检查是否有最近的战斗活动
+            battle_log = self.world.get_singleton_component(BattleLog)
+            if battle_log and hasattr(battle_log, "entries") and battle_log.entries:
+                # 如果最近有战斗记录，认为在战斗中
+                recent_battles = battle_log.entries[-3:]  # 最近3次战斗
+                for entry in recent_battles:
+                    if (
+                        hasattr(entry, "attacker_faction")
+                        and entry.attacker_faction == faction
+                    ) or (
+                        hasattr(entry, "defender_faction")
+                        and entry.defender_faction == faction
+                    ):
+                        return "in_battle"  # 战斗中
+
+            return "active"  # 活跃状态
+        else:
+            return "victory"  # 其他阵营都被消灭，本阵营获胜
+
+    def _get_territory_control_info(
+        self, position: Tuple[int, int], unit_faction: Faction = None
+    ) -> Dict[str, Any]:
+        """获取地块占领信息"""
+        territory_system = self._get_territory_system()
+        if not territory_system:
+            return {
+                "controlled_by": None,
+                "is_friendly": False,
+                "is_enemy": False,
+                "is_neutral": True,
+                "can_occupy": False,
+                "occupation_bonus": 0.0,
+            }
+
+        # 获取当前控制阵营
+        current_control = territory_system.get_territory_control(position)
+
+        # 判断阵营关系
+        is_friendly = (
+            current_control == unit_faction
+            if current_control and unit_faction
+            else False
+        )
+        is_enemy = (
+            current_control != unit_faction
+            if current_control and unit_faction
+            else False
+        )
+        is_neutral = current_control is None
+
+        # 判断是否可以占领（未被己方控制的地块）
+        can_occupy = not is_friendly if unit_faction else False
+
+        # 获取地形占领加成
+        terrain_type = self._get_terrain_at_position(position)
+        occupation_bonus = self._get_terrain_occupation_bonus(terrain_type)
+
+        return {
+            "controlled_by": current_control.value if current_control else None,
+            # "is_friendly": is_friendly,
+            # "is_enemy": is_enemy,
+            # "is_neutral": is_neutral,
+            # "can_occupy": can_occupy,
+            # "occupation_bonus": occupation_bonus,
+        }
+
+    def _get_movement_accessibility_info(
+        self,
+        unit_id: int,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+        movement_points: MovementPoints,
+        unit_count: UnitCount,
+    ) -> Dict[str, Any]:
+        """获取移动可达性信息"""
+        if not current_pos or not movement_points or not unit_count:
+            return {
+                "reachable": False,
+                "reason": "missing_movement_components",
+                "movement_cost": -1,
+                "remaining_movement": 0,
+            }
+
+        # 如果是当前位置
+        if current_pos == target_pos:
+            return {
+                "reachable": True,
+                "reason": "current_position",
+                "movement_cost": 0,
+                "remaining_movement": movement_points.current_mp,
+                "is_current_position": True,
+            }
+
+        # 计算有效移动力（考虑人数损失）
+        effective_movement = movement_points.get_effective_movement(unit_count)
+
+        # 检查目标位置是否被其他单位占据
+        obstacles = self._get_obstacles_excluding_unit(unit_id)
+        if target_pos in obstacles:
+            return {
+                "reachable": False,
+                "reason": "position_occupied",
+                "movement_cost": -1,
+                "remaining_movement": movement_points.current_mp,
+                "blocked_by": "other_unit",
+            }
+
+        # 尝试寻找路径
+        try:
+            from ..utils.hex_utils import PathFinding
+
+            path = PathFinding.find_path(
+                current_pos, target_pos, obstacles, effective_movement
+            )
+
+            if path and len(path) > 1:
+                # 计算路径总消耗
+                total_movement_cost = self._calculate_total_movement_cost(path)
+
+                # 检查是否可达
+                reachable = total_movement_cost <= movement_points.current_mp
+
+                return {
+                    "reachable": reachable,
+                    # "reason": (
+                    #     "sufficient_movement" if reachable else "insufficient_movement"
+                    # ),
+                    # "movement_cost": total_movement_cost,
+                    # "remaining_movement": movement_points.current_mp,
+                    # "path_length": len(path) - 1,
+                    # "effective_movement_range": effective_movement,
+                }
+            else:
+                return {
+                    "reachable": False,
+                    "reason": "no_valid_path",
+                    "movement_cost": -1,
+                    "remaining_movement": movement_points.current_mp,
+                    "effective_movement_range": effective_movement,
+                }
+        except Exception as e:
+            return {
+                "reachable": False,
+                "reason": f"path_calculation_error",
+                "movement_cost": -1,
+                "remaining_movement": movement_points.current_mp,
+                "error": str(e),
+            }
+
+    def _get_attack_range_info(
+        self, current_pos: Tuple[int, int], target_pos: Tuple[int, int], combat: Combat
+    ) -> Dict[str, Any]:
+        """获取攻击范围信息"""
+        if not current_pos or not combat:
+            return {
+                "in_attack_range": False,
+                "distance": -1,
+                "attack_range": 0,
+                "can_attack": False,
+            }
+
+        # 计算距离
+        from ..utils.hex_utils import HexMath
+
+        distance = HexMath.hex_distance(current_pos, target_pos)
+        attack_range = combat.attack_range
+
+        # 判断是否在攻击范围内
+        in_range = distance <= attack_range
+
+        # 判断是否可以攻击（距离合适且不是当前位置）
+        can_attack = in_range and distance > 0
+
+        return {
+            "in_attack_range": in_range,
+            # "distance": distance,
+            # "attack_range": attack_range,
+            # "can_attack": can_attack,
+            # "range_status": "in_range" if in_range else "out_of_range",
+        }

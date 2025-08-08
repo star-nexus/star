@@ -19,13 +19,14 @@ from ..systems import (
     AISystem,
     InputHandlingSystem,
     MiniMapSystem,
-    UIButtonSystem,
     TerritorySystem,
     UnitActionButtonSystem,
+    ActionSystem,
 )
 from ..systems.map_render_system import MapRenderSystem
 from ..systems.unit_render_system import UnitRenderSystem
-from ..systems.ui_render_system import UIRenderSystem
+from ..systems.improved_ui_render_system import ImprovedUIRenderSystem
+from ..systems.improved_ui_button_system import ImprovedUIButtonSystem
 from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.statistics_system import StatisticsSystem
@@ -136,23 +137,24 @@ class GameScene(Scene):
             GameTimeSystem(),  # 游戏时间系统 (优先级10) - 最早执行
             MapSystem(),  # 地图系统 (优先级100)
             VisionSystem(),  # 视野系统
+            ActionSystem(),  # 行动系统
             MovementSystem(),  # 移动系统
             CombatSystem(),  # 战斗系统
             TerritorySystem(),  # 领土系统 (处理占领和工事)
             ResourceRecoverySystem(),  # 资源恢复系统
-            AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
-            # LLMSystem(),  # LLM系统 (优先级5)
+            # AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
+            LLMSystem(),  # LLM系统 (优先级5)
             StatisticsSystem(),  # 统计系统
             AnimationSystem(),  # 动画系统 (优先级15)
             InputHandlingSystem(),  # 输入系统 (优先级10)
-            UIButtonSystem(),  # UI按钮系统 (优先级2)
+            ImprovedUIButtonSystem(),  # 改进的UI按钮系统 (优先级2)
             UnitActionButtonSystem(),  # 单位动作按钮系统 (优先级4)
             # 渲染系统拆分为多个独立系统（从底层到顶层）
             MapRenderSystem(),  # 地图渲染系统 (最底层)
             UnitRenderSystem(),  # 单位渲染系统 (在地图之上)
             EffectRenderSystem(),  # 效果渲染系统 (在单位之上)
             PanelRenderSystem(),  # 面板渲染系统 (在效果之上)
-            UIRenderSystem(),  # UI渲染系统 (最顶层)
+            ImprovedUIRenderSystem(),  # 改进的UI渲染系统 (最顶层)
             MiniMapSystem(),  # 小地图系统 (优先级5)
         ]
         if self.game_mode == GameMode.REAL_TIME:
@@ -454,7 +456,7 @@ class GameScene(Scene):
         game_state = GameState(
             current_player=first_faction,
             turn_number=1,
-            game_mode=GameMode.TURN_BASED,
+            game_mode=self.game_mode,
             game_over=False,
             winner=None,
             max_turns=GameConfig.MAX_TURNS,
