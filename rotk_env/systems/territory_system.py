@@ -427,3 +427,59 @@ class TerritorySystem(System):
             base_bonus += 1
 
         return base_bonus
+
+    def get_territory_control(self, position: Tuple[int, int]) -> Optional[Faction]:
+        """获取指定位置的控制阵营"""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return None
+
+        tile_entity = map_data.tiles.get(position)
+        if not tile_entity:
+            return None
+
+        territory_control = self.world.get_component(tile_entity, TerritoryControl)
+        if not territory_control:
+            return None
+
+        return territory_control.controlling_faction
+
+    def occupy_territory(
+        self, unit_entity: int, target_position: Tuple[int, int]
+    ) -> bool:
+        """占领指定地块（简化版本，直接占领）"""
+        unit = self.world.get_component(unit_entity, Unit)
+        if not unit:
+            return False
+
+        # 获取目标地块
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return False
+
+        tile_entity = map_data.tiles.get(target_position)
+        if not tile_entity:
+            return False
+
+        territory_control = self.world.get_component(tile_entity, TerritoryControl)
+        if not territory_control:
+            return False
+
+        # 检查是否已经被自己的阵营控制
+        if territory_control.controlling_faction == unit.faction:
+            return False
+
+        # 直接设置控制权（简化版本）
+        territory_control.controlling_faction = unit.faction
+        territory_control.being_captured = False
+        territory_control.capturing_unit = None
+        territory_control.capture_progress = 1.0
+
+        # 记录占领时间
+        game_time = self.world.get_singleton_component(GameTime)
+        territory_control.captured_time = (
+            game_time.game_elapsed_time if game_time else time.time()
+        )
+
+        print(f"🏁 {unit.faction.value}军快速占领地块 {target_position}")
+        return True

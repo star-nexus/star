@@ -27,7 +27,10 @@ from .effect_render_system import EffectRenderSystem
 from .panel_render_system import PanelRenderSystem
 from .ui_button_system import UIButtonSystem
 
+from .action_system import ActionSystem
+
 __all__ = [
+    "ActionSystem",
     "AnimationSystem",
     "MapSystem",
     "TurnSystem",
