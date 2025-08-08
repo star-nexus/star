@@ -14,6 +14,7 @@ class PerformanceProfiler:
         self.system_times: Dict[str, List[float]] = defaultdict(list)
         self.last_frame_time = time.time()
         self.fps_samples = []
+        self.enable_profiler = False
         
     def start_frame(self):
         """开始新帧的计时"""
@@ -74,7 +75,7 @@ class PerformanceProfiler:
     def print_stats(self):
         """打印性能统计"""
         stats = self.get_stats()
-        if not stats:
+        if not stats or not self.enable_profiler:
             return
             
         print("\n" + "="*60)
