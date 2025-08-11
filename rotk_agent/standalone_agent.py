@@ -65,6 +65,9 @@ class LLMClient:
             self.base_url = "https://api.deepseek.com/v1"
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1"
+        elif config.provider == "vllm":
+            # vLLM 默认在 http://localhost:8000 启动 OpenAI 兼容服务
+            self.base_url = config.base_url or "http://localhost:8000/v1"
         else:
             self.base_url = config.base_url or "https://api.openai.com/v1"
 
@@ -329,6 +332,13 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
     elif "gpt" in model_id or "openai" in model_id:
         provider = "openai"
         provider_config = config.get("openai", {})
+    elif model_id.startswith("vllm:") or config.get("vllm", {}).get("enabled"):
+        # vLLM 支持：model_id 以 "vllm:" 开头或配置中启用了 vllm
+        provider = "vllm"
+        provider_config = config.get("vllm", {})
+        # 如果model_id以vllm:开头，移除前缀作为实际的模型名
+        if model_id.startswith("vllm:"):
+            model_id = model_id[5:]  # 移除 "vllm:" 前缀
     else:
         # 默认尝试deepseek
         provider = "deepseek"
@@ -336,12 +346,20 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
     
     api_key = provider_config.get("api_key")
     if not api_key:
-        raise ValueError(f"未找到 {provider} 的 API key")
+        if provider == "vllm":
+            # vLLM 本地服务通常不需要真实的 API key，使用假的 token
+            api_key = "sk-no-key-required"
+        else:
+            raise ValueError(f"未找到 {provider} 的 API key")
+    
+    # 获取自定义 base_url（如果有的话）
+    base_url = provider_config.get("base_url")
     
     return LLMConfig(
         provider=provider,
         model_id=model_id,
         api_key=api_key,
+        base_url=base_url,
         temperature=0.7
     )
 
