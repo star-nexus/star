@@ -21,6 +21,21 @@ from rich import print_json
 
 console = Console()
 
+rule = """游戏规则:
+# 阵营
+有两方阵营，wei 和 shu
+所有单位同时进行操作
+# 地图
+地图大小：通常为不超过50x50六边形格子,以(0,0)为地图中心
+# 单位
+每个阵营开始时拥有若干个单位
+初始单位包含步兵、骑兵、弓兵的组合
+# 阶段
+可以任意顺序操作所有己方单位
+每个单位可进行移动、攻击、建造、使用技能等动作
+可以多次在不同单位间切换操作
+如果无法行动则结束回合
+"""
 
 @dataclass
 class LLMConfig:
@@ -67,7 +82,7 @@ class LLMClient:
             self.base_url = "https://cloud.infini-ai.com/maas/v1"
         elif config.provider == "vllm":
             # vLLM 默认在 http://localhost:8000 启动 OpenAI 兼容服务
-            self.base_url = config.base_url or "http://localhost:8000/v1"
+            self.base_url = config.base_url or "http://172.16.75.202:10000/v1"
         else:
             self.base_url = config.base_url or "https://api.openai.com/v1"
 
@@ -284,6 +299,17 @@ class StandaloneChatAgent:
                 # 解析参数
                 arguments = json.loads(arguments_str) if arguments_str else {}
                 
+                # LLM有时会生成双重编码的JSON，特别是对于嵌套的'params'。
+                # 在这里增加一层健壮性检查。
+                if 'params' in arguments and isinstance(arguments['params'], str):
+                    console.print("⚠️ 'params' 是一个字符串，尝试再次解码...", style="yellow")
+                    try:
+                        arguments['params'] = json.loads(arguments['params'])
+                    except json.JSONDecodeError as e:
+                        # 如果解码失败，说明LLM生成的JSON格式不正确。
+                        # 这是无法恢复的错误，我们应该抛出异常，让上层捕获并通知LLM。
+                        raise ValueError(f"LLM为'params'生成了无效的JSON字符串: {arguments['params']}. 错误: {e}")
+                
                 # 执行工具
                 result = await self.tool_manager.execute_tool(function_name, arguments)
                 
@@ -499,54 +525,15 @@ class AgentDemo:
             console.print(f"❌ 连接失败: {e}", style="bold red")
             return False
 
-    async def interactive_mode(self):
-        """交互模式：用户可以手动输入动作"""
-        console.print("\n🎮 进入交互模式", style="bold cyan")
-        console.print("=" * 20)
-        console.print("可用命令:")
-        console.print("  chat <prompt>")
-        console.print("  message <action> <params> - 自定义动作")
-        console.print("  list - 列出可用动作")
-        console.print("  run - 执行预定义动作")
-        console.print("  quit - 退出交互模式")
-        console.print()
-
-        # 创建异步prompt session
-        session = PromptSession()
+    async def interactive_demo(self):
 
         while True:
             try:
-                # 在patch_stdout外部获取用户输入，避免颜色问题
-                with patch_stdout():
-                    command = await session.prompt_async("🎯 请输入命令: ")
-                    command = command.strip()
-
-                if not command:
-                    await asyncio.sleep(1)
-                    continue
-
-                if command.lower() == "quit":
-                    console.print("👋 退出交互模式", style="bold green")
-                    break
-
-                parts = command.split()
-                action = parts[0].lower()
-
-                console.print(f"🎯 识别到命令: {action}", style="cyan")
-                console.print(f"   参数: {parts[1:] if len(parts) > 1 else '无'}")
-
-                if action in ACTION.keys():
-                    # 在patch_stdout外部执行操作，确保颜色正常显示
-                    await asyncio.create_task(ACTION[action](parts))
-                    # await ACTION[action](parts)
-                else:
-                    console.print(f"❌ 未知命令: {command}", style="red")
-                    console.print("输入 'quit' 退出，或查看上方的可用命令列表")
-
+                await asyncio.create_task(chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"]))
                 await asyncio.sleep(0.1)  # 短暂延迟以便查看结果
 
             except KeyboardInterrupt:
-                print("\n👋 用户中断，退出交互模式")
+                print("\n👋 用户中断，退出")
                 break
             except Exception as e:
                 print(f"❌ 命令执行错误: {e}")
@@ -576,7 +563,7 @@ class AgentDemo:
 
     async def run_interactive_demo(self):
         """运行交互式演示"""
-        console.print("🎮 Star Client Agent 交互式演示", style="bold cyan")
+        console.print("🎮 Standalone Agent 交互式演示", style="bold cyan")
         console.print("🎯 你可以手动控制 Agent 执行各种动作", style="cyan")
         console.print("=" * 50)
 
@@ -585,7 +572,7 @@ class AgentDemo:
             if not await self.connect():
                 return
             # 进入交互模式
-            await self.interactive_mode()
+            await self.interactive_demo()
 
             # 显示总结
             self.show_summary()
@@ -636,22 +623,6 @@ async def available_actions() -> list[Dict[str, Any]]:
 
 # ==================== 命令处理函数 ====================
 
-async def message(parts):
-    if len(parts) > 1:
-        custom_action = parts[1]
-        # 将参数按键值对解析成字典
-        params = {}
-        param_list = parts[2:] if len(parts) > 2 else []
-        for i in range(0, len(param_list), 2):
-            if i + 1 < len(param_list):
-                params[param_list[i]] = param_list[i + 1]
-            else:
-                params[param_list[i]] = ""  # 如果没有值，设为空字符串
-        return await perform_action(custom_action, params)
-    else:
-        console.print("❌ 请指定动作，如: message dance", style="red")
-
-
 async def chat(parts):
     if len(parts) > 1:
         custom_action = parts[0]
@@ -659,6 +630,7 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
+            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
             config_path = os.path.join(os.getcwd(), ".configs.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
@@ -720,42 +692,6 @@ async def chat(parts):
             traceback.print_exc()
     else:
         print("❌ 请指定动作，如: chat dance")
-
-
-async def list_action(parts):
-    """列出可用动作"""
-    # print("获取可用动作列表...")
-    actions = await available_actions()
-    # print(f"可用动作: {actions}")
-
-
-async def run_action(parts):
-    """执行指定动作"""
-    rule = """游戏规则:
-# 阵营
-有两方阵营，wei 和 shu
-所有单位同时进行操作
-# 地图
-地图大小：通常为不超过50x50六边形格子,以(0,0)为地图中心
-# 单位
-每个阵营开始时拥有若干个单位
-初始单位包含步兵、骑兵、弓兵的组合
-# 阶段
-可以任意顺序操作所有己方单位
-每个单位可进行移动、攻击、建造、使用技能等动作
-可以多次在不同单位间切换操作
-如果无法行动则结束回合
-"""
-    await chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"])
-
-
-# 命令映射表
-ACTION = {
-    "chat": chat,
-    "message": message,
-    "list": list_action,
-    "run": run_action,
-}
 
 
 async def main():
