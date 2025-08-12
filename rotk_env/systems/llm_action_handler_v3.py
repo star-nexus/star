@@ -131,6 +131,56 @@ class LLMActionHandlerV3:
         target_col = target_position.get("col")
         target_row = target_position.get("row")
 
+        # 检查目标位置坐标类型
+        if not isinstance(target_col, int) or not isinstance(target_row, int):
+            error_msg = f"Invalid coordinate types: col must be int, row must be int"
+            print(f"[MOVE_ACTION] 坐标类型验证失败: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "received_col": target_col,
+                    "received_row": target_row,
+                    "received_col_type": type(target_col).__name__,
+                    "received_row_type": type(target_row).__name__,
+                    "expected_types": {"col": "int", "row": "int"},
+                    "valid_example": {"target_position": {"col": 5, "row": 8}},
+                },
+            )
+
+        # 检查目标位置是否在地图边界内
+        print(
+            f"[MOVE_ACTION] 检查目标位置 ({target_col}, {target_row}) 是否在地图边界内..."
+        )
+        if not self._is_position_within_map_bounds(target_col, target_row):
+            from ..prefabs.config import GameConfig
+
+            center = GameConfig.MAP_WIDTH // 2
+            min_coord = -center
+            max_coord = center - 1
+            error_msg = f"Target position ({target_col}, {target_row}) is outside map boundaries"
+            print(f"[MOVE_ACTION] 地图边界检查失败: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "target_position": {"col": target_col, "row": target_row},
+                    "map_boundaries": {
+                        "min_col": min_coord,
+                        "max_col": max_coord,
+                        "min_row": min_coord,
+                        "max_row": max_coord,
+                    },
+                    "map_size": {
+                        "width": GameConfig.MAP_WIDTH,
+                        "height": GameConfig.MAP_HEIGHT,
+                    },
+                    "coordinate_system": "center-based",
+                    "explanation": f"Map uses center-based coordinates with (0,0) at center. For {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} map, valid range is [{min_coord}, {max_coord}]",
+                    "suggestion": f"Choose a position within bounds: col ({min_coord} to {max_coord}), row ({min_coord} to {max_coord})",
+                },
+            )
+
+        print(f"[MOVE_ACTION] 目标位置在地图边界内: ({target_col}, {target_row})")
+
         # 详细单位存在性检查
         print(f"[MOVE_ACTION] 检查单位 {unit_id} 是否存在...")
         unit = self.world.get_component(unit_id, Unit)
@@ -2203,6 +2253,20 @@ class LLMActionHandlerV3:
 
         terrain = self.world.get_component(tile_entity, Terrain)
         return terrain.terrain_type if terrain else TerrainType.PLAIN
+
+    def _is_position_within_map_bounds(self, col: int, row: int) -> bool:
+        """检查位置是否在地图边界内"""
+        from ..prefabs.config import GameConfig
+
+        # 地图使用以(0,0)为中心的坐标系
+        # 对于MAP_WIDTH=20, MAP_HEIGHT=20:
+        # center = MAP_WIDTH // 2 = 10
+        # 实际坐标范围: col [-10, 9], row [-10, 9]
+        center = GameConfig.MAP_WIDTH // 2
+        min_coord = -center
+        max_coord = center - 1
+
+        return (min_coord <= col <= max_coord) and (min_coord <= row <= max_coord)
 
     def _get_terrain_attack_bonus(
         self, position: Tuple[int, int], faction: Faction
