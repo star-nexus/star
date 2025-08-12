@@ -1282,6 +1282,114 @@ class LLMActionHandlerV3:
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """返回所有可用动作的接口文档描述"""
         action_docs = {
+            "actions": {
+                "move": {
+                    "description": "移动单位到指定位置",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "控制移动的单位ID，单位必须存活",
+                        },
+                        "target_position": {
+                            "type": "object",
+                            "required": True,
+                            "description": "目标位置，列坐标和行坐标，必须存在",
+                            "properties": {
+                                "col": {"type": "int", "description": "列坐标"},
+                                "row": {"type": "int", "description": "行坐标"},
+                            },
+                        },
+                    },
+                },
+                "attack": {
+                    "description": "攻击指定敌方单位",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "攻击方单位ID",
+                        },
+                        "target_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "目标单位ID",
+                        },
+                    },
+                },
+                "observation": {
+                    "description": "获取单位周围的观测信息",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "单位ID，单位必须存活",
+                        },
+                        "observation_level": {
+                            "type": "string",
+                            "required": False,
+                            "description": "观测级别",
+                            "default": "basic",
+                            "options": ["basic", "detailed", "tactical"],
+                        },
+                    },
+                },
+                "faction_state": {
+                    "description": "获取阵营整体详细状态信息，包括总单位数量、活跃单位数量、单位详细信息列表",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "阵营名称(wei/shu/wu)，必须有效",
+                        }
+                    },
+                },
+                "action_list": {
+                    "description": "获取所有可以在环境中调用的action接口的文档",
+                    "parameters": {},
+                },
+                "end_turn": {
+                    "description": "结束当前回合，可结束当前阵营的回合，如果当前阵营没有行动点，则结束回合",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "阵营名称(wei/shu/wu)，必须有效",
+                        },
+                        "force": {
+                            "type": "bool",
+                            "required": False,
+                            "description": "是否强制结束，如果为True，则无论当前阵营是否有行动点，都结束回合",
+                            "default": False,
+                        },
+                    },
+                },
+            },
+            "usage_examples": {
+                "move_unit": {
+                    "action": "move",
+                    "params": {"unit_id": 123, "target_position": {"col": 5, "row": 8}},
+                },
+                "attack_enemy": {
+                    "action": "attack",
+                    "params": {"unit_id": 123, "target_id": 456},
+                },
+                "observe_surroundings": {
+                    "action": "observation",
+                    "params": {"unit_id": 123, "observation_level": "detailed"},
+                },
+                "get_faction_overview": {
+                    "action": "faction_state",
+                    "params": {"faction": "wei"},
+                },
+            },
+        }
+
+        return {"success": True, **action_docs}
+
+    def handle_action_list_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """返回所有可用动作的接口文档描述"""
+        action_docs = {
             "total_actions": len(self.action_handlers),
             "actions": {
                 # 单位控制动作
