@@ -473,11 +473,59 @@ class LLMActionHandlerV3:
 
         # 检查当前移动力是否足够（使用实际剩余的移动力）
         if total_movement_cost > current_mp:
-            error_msg = f"Target too far: need {total_movement_cost} movement points, have {current_mp}"
+            error_msg = (
+                f"Insufficient movement points this turn: need {total_movement_cost}, have {current_mp}."
+            )
             print(f"[MOVE_ACTION] 移动力不足以到达目标: {error_msg}")
+
+            # 计算在当前移动力下，沿路径能够抵达的最远位置
+            cumulative_cost = 0
+            reachable_positions_along_path = []
+            for step_index, pos in enumerate(path[1:]):  # 跳过起点
+                step_cost = self._get_terrain_movement_cost(pos)
+                if cumulative_cost + step_cost <= current_mp:
+                    cumulative_cost += step_cost
+                    reachable_positions_along_path.append(pos)
+                else:
+                    break
+
+            closest_reachable_position = (
+                reachable_positions_along_path[-1]
+                if reachable_positions_along_path
+                else current_pos
+            )
+
+            # 提供若干邻近可达位置作为候选（优先更接近目标）
+            nearby_reachable_suggestions = []
+            try:
+                neighbor_candidates = self._get_adjacent_free_positions(
+                    current_pos, obstacles
+                )
+                scored = []
+                for cand in neighbor_candidates:
+                    cand_cost = self._get_terrain_movement_cost(cand)
+                    if cand_cost <= current_mp:
+                        dist = HexMath.hex_distance(cand, target_pos)
+                        scored.append((dist, cand))
+                scored.sort(key=lambda x: x[0])
+                nearby_reachable_suggestions = [c for _, c in scored[:3]]
+            except Exception:
+                pass
+
+            suggestion_text = (
+                f"Try moving to the closest reachable position this turn: {closest_reachable_position}"
+                if closest_reachable_position != current_pos
+                else (
+                    f"No step along the path is reachable this turn. Try one of these nearby positions: {nearby_reachable_suggestions}"
+                    if nearby_reachable_suggestions
+                    else "No nearby reachable positions this turn. Wait to recover movement points."
+                )
+            )
+
             return self._create_error_response(
                 error_msg,
                 {
+                    "failure_reason": "insufficient_movement_points",
                     "unit_id": unit_id,
                     "required_movement_points": total_movement_cost,
                     "current_movement_points": current_mp,
@@ -486,7 +534,38 @@ class LLMActionHandlerV3:
                     "path_length": len(path) - 1,
                     "effective_movement": effective_movement,
                     "terrain_costs": self._get_path_terrain_breakdown(path),
-                    "suggestion": f"Try a closer target or wait for {total_movement_cost - current_mp} more movement points",
+                    "closest_reachable_position": {
+                        "col": closest_reachable_position[0],
+                        "row": closest_reachable_position[1],
+                    }
+                    if isinstance(closest_reachable_position, tuple)
+                    else {
+                        "col": current_pos[0],
+                        "row": current_pos[1],
+                    },
+                    "reachable_steps": len(reachable_positions_along_path),
+                    "suggested_action": {
+                        "action": "move",
+                        "params": {
+                            "unit_id": unit_id,
+                            "target_position": {
+                                "col": (
+                                    closest_reachable_position[0]
+                                    if isinstance(closest_reachable_position, tuple)
+                                    else current_pos[0]
+                                ),
+                                "row": (
+                                    closest_reachable_position[1]
+                                    if isinstance(closest_reachable_position, tuple)
+                                    else current_pos[1]
+                                ),
+                            },
+                        },
+                    },
+                    "nearby_reachable_positions": [
+                        {"col": p[0], "row": p[1]} for p in nearby_reachable_suggestions
+                    ],
+                    "suggestion": suggestion_text,
                 },
             )
 
@@ -1223,60 +1302,27 @@ class LLMActionHandlerV3:
 
         # 计算阵营统计
         total_units_count = len(faction_units)
-        active_units = [u for u in faction_units if self._is_unit_active(u)]
-        active_units_count = len(active_units)
-
-        # 计算领土控制
-        # territory_control = self._calculate_territory_control(faction)
-
-        # 计算资源汇总
-        # resource_summary = self._calculate_resource_summary(faction_units)
-
-        # 战略分析
-        # strategic_summary = self._get_strategic_summary(faction)
+        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
+        alive_units_count = len(alive_units)
+        
+        # 计算可行动单位（存活且有行动点）
+        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
+        actionable_units_count = len(actionable_units)
 
         # 获取阵营当前状态
         faction_status = self._get_faction_status(faction)
 
-        # 获取游戏状态信息用于额外说明
-        game_state = self.world.get_singleton_component(GameState)
-        status_details = {
-            "status": faction_status,
-            "game_over": game_state.game_over if game_state else False,
-            "turn_number": game_state.turn_number if game_state else 0,
-        }
-
-        # 根据状态添加额外信息
-        if faction_status == "victory":
-            status_details["description"] = "阵营获得胜利"
-        elif faction_status == "defeat":
-            status_details["description"] = "阵营被击败"
-        elif faction_status == "draw":
-            status_details["description"] = "游戏平局"
-        elif faction_status == "eliminated":
-            status_details["description"] = "阵营已被消灭"
-        elif faction_status == "in_battle":
-            status_details["description"] = "阵营正在战斗中"
-        elif faction_status == "active":
-            status_details["description"] = "阵营处于活跃状态"
-
         print(f"final {faction.value}")
         return {
             "success": True,
-            "state": faction_status,  # 添加阵营状态，根据游戏状态，战斗中，胜利、失败
-            # "status_details": status_details,  # 详细状态信息
+            "state": faction_status,  # 阵营整体状态：active/in_battle/victory/defeat/eliminated/draw
             "faction": faction.value,
             "total_units": total_units_count,
-            "active_units": active_units_count,
+            "alive_units": alive_units_count,  # 存活单位数（人数>0）
+            "actionable_units": actionable_units_count,  # 可行动单位数（存活且有行动点）
             "units": [
-                self._get_detailed_unit_info(unit_id) for unit_id in active_units[:10]
-            ],  # 限制返回数量
-            # "territory_control": territory_control,
-            # "resource_summary": resource_summary,
-            # "units": [
-            #     self._get_detailed_unit_info(unit_id) for unit_id in faction_units[:10]
-            # ],  # 限制返回数量
-            # "strategic_summary": strategic_summary,
+                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
+            ],  # 返回存活单位的详细信息
         }
 
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2166,10 +2212,18 @@ class LLMActionHandlerV3:
                 units.append(entity)
         return units
 
-    def _is_unit_active(self, unit_id: int) -> bool:
-        """检查单位是否活跃"""
+    def _is_unit_alive(self, unit_id: int) -> bool:
+        """检查单位是否存活（人数>0）"""
         unit_count = self.world.get_component(unit_id, UnitCount)
         return unit_count and unit_count.current_count > 0
+    
+    def _can_unit_take_action(self, unit_id: int) -> bool:
+        """检查单位是否可以执行行动（存活且有行动点）"""
+        if not self._is_unit_alive(unit_id):
+            return False
+        
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        return action_points and action_points.current_ap > 0
 
     def _calculate_territory_control(self, faction: Faction) -> int:
         """计算领土控制百分比"""
@@ -2276,8 +2330,17 @@ class LLMActionHandlerV3:
             pos = self.world.get_component(entity, HexPosition)
             if pos:
                 obstacles.add((pos.col, pos.row))
+
+        # 将不可通过的地形（如水域）也视为障碍，保持与 MovementSystem 一致
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data:
+            for (q, r), tile_entity in map_data.tiles.items():
+                terrain = self.world.get_component(tile_entity, Terrain)
+                if terrain and terrain.terrain_type == TerrainType.WATER:
+                    obstacles.add((q, r))
+
         print(
-            f"[DEBUG] 实际单位障碍数量: {len(obstacles)} (排除单位 {exclude_unit_id})"
+            f"[DEBUG] 实际障碍数量(含水域): {len(obstacles)} (排除单位 {exclude_unit_id})"
         )
         return obstacles
 
@@ -2310,20 +2373,11 @@ class LLMActionHandlerV3:
 
     def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
         """获取地形移动消耗（移动力消耗）"""
+        from ..prefabs.config import GameConfig
+
         terrain_type = self._get_terrain_at_position(position)
-
-        # 地形移动消耗映射
-        terrain_costs = {
-            TerrainType.PLAIN: 1,
-            TerrainType.FOREST: 2,
-            TerrainType.HILL: 2,
-            TerrainType.MOUNTAIN: 3,
-            TerrainType.WATER: 99,  # 不可通行
-            TerrainType.CITY: 1,
-            TerrainType.URBAN: 1,
-        }
-
-        return terrain_costs.get(terrain_type, 1)
+        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
+        return terrain_effect.movement_cost if terrain_effect else 1
 
     def _get_path_terrain_breakdown(
         self, path: List[Tuple[int, int]]
@@ -2533,23 +2587,23 @@ class LLMActionHandlerV3:
             else:
                 return "defeat"
 
-        # 游戏进行中，检查阵营是否有活跃单位
-        active_units = [
-            u for u in self._get_faction_units(faction) if self._is_unit_active(u)
+        # 游戏进行中，检查阵营是否有存活单位
+        alive_units = [
+            u for u in self._get_faction_units(faction) if self._is_unit_alive(u)
         ]
-        if not active_units:
+        if not alive_units:
             return "eliminated"  # 已被消灭
 
-        # 检查是否有其他阵营的活跃单位（判断是否在战斗中）
+        # 检查是否有其他阵营的存活单位（判断是否在战斗中）
         other_factions_exist = False
         for other_faction in Faction:
             if other_faction != faction:
-                other_active_units = [
+                other_alive_units = [
                     u
                     for u in self._get_faction_units(other_faction)
-                    if self._is_unit_active(u)
+                    if self._is_unit_alive(u)
                 ]
-                if other_active_units:
+                if other_alive_units:
                     other_factions_exist = True
                     break
 
@@ -2727,10 +2781,11 @@ class LLMActionHandlerV3:
         # 判断是否可以攻击（距离合适且不是当前位置）
         can_attack = in_range and distance > 0
 
-        return {
-            "in_attack_range": in_range,
-            # "distance": distance,
-            # "attack_range": attack_range,
-            # "can_attack": can_attack,
-            # "range_status": "in_range" if in_range else "out_of_range",
-        }
+        # return {
+        #     "in_attack_range": in_range,
+        #     # "distance": distance,
+        #     # "attack_range": attack_range,
+        #     # "can_attack": can_attack,
+        #     # "range_status": "in_range" if in_range else "out_of_range",
+        # }
+        return in_range
