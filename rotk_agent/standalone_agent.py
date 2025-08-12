@@ -363,10 +363,13 @@ class StandaloneChatAgent:
                 console.print("Tool result", style="green")
                 console.print(json.dumps(result, indent=2, ensure_ascii=False), style="green", highlight=False)
                 
-                # 将工具结果添加到对话历史
+                # 过滤工具结果，移除冗余信息以保持对话历史精炼
+                filtered_result = self._filter_tool_result(function_name, result)
+                
+                # 将过滤后的工具结果添加到对话历史
                 tool_message = Message(
                     role="tool",
-                    content=json.dumps(result, ensure_ascii=False),
+                    content=json.dumps(filtered_result, ensure_ascii=False),
                     tool_call_id=tool_call_id
                 )
                 self.conversation_history.append(tool_message)
@@ -381,6 +384,115 @@ class StandaloneChatAgent:
                 )
                 self.conversation_history.append(error_message)
     
+    def _filter_tool_result(self, function_name: str, result: Any) -> Any:
+        """过滤工具结果，移除冗余信息以保持对话历史精炼"""
+        if not isinstance(result, dict):
+            return result
+        
+        # 深拷贝结果以避免修改原始数据
+        import copy
+        filtered_result = copy.deepcopy(result)
+        
+        # 针对不同的工具类型进行过滤
+        if function_name == "perform_action":
+            # 根据结果结构判断动作类型
+            if "visible_environment" in filtered_result and "unit_info" in filtered_result:
+                # observation 结果
+                filtered_result = self._filter_observation_result(filtered_result)
+            elif "faction" in filtered_result and "units" in filtered_result and "total_units" in filtered_result:
+                # faction_state 结果
+                filtered_result = self._filter_faction_state_result(filtered_result)
+            elif "message" in filtered_result and ("moved successfully" in str(filtered_result.get("message", "")) or 
+                                                  "failure_reason" in filtered_result):
+                # move 结果
+                filtered_result = self._filter_move_result(filtered_result)
+            elif "battle_summary" in filtered_result and "casualties_inflicted" in filtered_result:
+                # attack 结果
+                filtered_result = self._filter_attack_result(filtered_result)
+        
+        return filtered_result
+    
+    def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤 observation 结果，移除冗余字段"""
+        if "visible_environment" in result and isinstance(result["visible_environment"], list):
+            filtered_env = []
+            for tile in result["visible_environment"]:
+                if isinstance(tile, dict):
+                    # 保留核心信息，移除噪声字段
+                    filtered_tile = {
+                        "position": tile.get("position"),
+                        "terrain": tile.get("terrain"),
+                    }
+                    
+                    # 只在有单位时才包含 units 字段
+                    units = tile.get("units", [])
+                    if units:
+                        filtered_tile["units"] = units
+                    
+                    # 简化 movement_accessibility - 只保留是否可达
+                    movement_access = tile.get("movement_accessibility", {})
+                    if isinstance(movement_access, dict) and "reachable" in movement_access:
+                        filtered_tile["reachable"] = movement_access["reachable"]
+                    
+                    # 简化 attack_range_info - 只保留是否在攻击范围内
+                    attack_info = tile.get("attack_range_info")
+                    if isinstance(attack_info, dict) and "in_attack_range" in attack_info:
+                        filtered_tile["attackable"] = attack_info["in_attack_range"]
+                    elif attack_info is True or attack_info is False:
+                        filtered_tile["attackable"] = attack_info
+                    
+                    filtered_env.append(filtered_tile)
+            
+            result["visible_environment"] = filtered_env
+        
+        return result
+    
+    def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤 faction_state 结果"""
+        # faction_state 结果通常已经比较精炼，暂时不做额外过滤
+        return result
+    
+    def _filter_move_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤 move 结果，保留关键错误信息或成功信息"""
+        if not result.get("success", True):
+            # 移动失败时，保留关键错误信息但简化建议
+            if "suggested_action" in result:
+                # 保留建议动作但移除详细的调试信息
+                essential_keys = {
+                    "success", "message", "failure_reason", 
+                    "current_movement_points", "required_movement_points",
+                    "closest_reachable_position", "suggested_action", "suggestion"
+                }
+                filtered_result = {k: v for k, v in result.items() if k in essential_keys}
+                return filtered_result
+        
+        return result
+    
+    def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤 attack 结果"""
+        if result.get("success", True):
+            # 攻击成功时，保留核心战斗信息
+            essential_keys = {
+                "success", "message", "battle_summary", 
+                "remaining_resources", "tactical_info"
+            }
+            filtered_result = {k: v for k, v in result.items() if k in essential_keys}
+            
+            # 进一步精简 battle_summary
+            if "battle_summary" in filtered_result and isinstance(filtered_result["battle_summary"], dict):
+                battle_summary = filtered_result["battle_summary"]
+                essential_battle_keys = {
+                    "attacker_info", "target_info", "casualties_inflicted", 
+                    "target_destroyed", "distance"
+                }
+                filtered_result["battle_summary"] = {
+                    k: v for k, v in battle_summary.items() if k in essential_battle_keys
+                }
+            
+            return filtered_result
+        
+        return result
+
     async def stop(self):
         """停止代理"""
         await self.llm_client.close()
@@ -677,8 +789,8 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
