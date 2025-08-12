@@ -21,20 +21,59 @@ from rich import print_json
 
 console = Console()
 
-rule = """游戏规则:
-# 阵营
-有两方阵营，wei 和 shu
-所有单位同时进行操作
-# 地图
-地图大小：通常为不超过50x50六边形格子,以(0,0)为地图中心
-# 单位
-每个阵营开始时拥有若干个单位
-初始单位包含步兵、骑兵、弓兵的组合
-# 阶段
-可以任意顺序操作所有己方单位
-每个单位可进行移动、攻击、建造、使用技能等动作
-可以多次在不同单位间切换操作
-如果无法行动则结束回合
+rule = """# 游戏核心规则
+
+## 1. 游戏目标
+你是 **魏 (wei)** 阵营的指挥官。你的目标是运用策略，指挥你的单位，消灭所有 **蜀 (shu)** 阵营的敌方单位以获得胜利。
+
+## 2. 阵营与游戏模式
+- **阵营**: 游戏中有两个对立阵营：**魏 (wei)** 和 **蜀 (shu)**。
+- **即时制**: 游戏按即时制进行。双方可以同时操作单位，你需要快速反应。
+
+## 3. 地图与坐标系
+- **地图网格**: 游戏地图由六边形格子构成，大小约为 15x15。
+- **坐标系统**:
+    - 使用 (列, 行) 即 `(col, row)` 坐标系。
+    - 地图中心为 `(col: 0, row: 0)`。
+    - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
+    - `row` 轴: **向下为正方向** (值增大)，向上为负方向 (值减小)。
+- **出生点**:
+    - **蜀 (shu)** (敌方): 出生在地图 **左上角**，坐标值较小 (如 `col` 和 `row` 均为负数)。
+    - **魏 (wei)** (我方): 出生在地图 **右下角**，坐标值较大 (如 `col` 和 `row` 均为正数)。
+
+## 4. 行动机制：通过 `perform_action` 工具
+- **核心工具**: 游戏中的所有单位动作（如移动和攻击）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack`。
+
+- **工具用法**: `perform_action` 工具接收两个参数：
+    1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"faction_state"`, `"observation"`, `"end_turn"`)。
+    2.  `params`: 一个JSON对象（字典），包含该动作所需的所有参数 (例如: `{"unit_id": 123, "target_position": {"col": 1, "row": 2}}`)。
+
+- **严禁臆造 (No Fabrication)**:
+    - 不能凭空编造或复用示例中的 `unit_id`、`target_id`、坐标或任何战场信息。
+    - 在未通过工具获取真实数据前，不得假设任何单位的ID、位置、可视范围或敌人位置。
+    - 示例中的ID仅为占位说明，绝不能直接使用。
+
+- **前置检查清单 (必须遵循，按顺序执行)**:
+    1.  调用 `perform_action(action="faction_state", params={"faction": "wei"})` 获取我方全部单位ID与状态。
+    2.  调用 `perform_action(action="faction_state", params={"faction": "shu"})` 获取敌方单位信息（若可见）。
+    3.  对每个准备操作的我方单位，调用 `perform_action(action="observation", params={"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"})` 获取该单位可见环境与附近可攻击/可移动的目标。
+    4.  在确认单位的 `action_points` 足够、目标在视野和/或攻击/移动范围内后，才可执行后续动作。
+
+- **使用示例（仅作格式参考，不要使用其中的数字）**:
+    - 移动单位：
+      `perform_action(action="move", params={"unit_id": <WEI_UNIT_ID>, "target_position": {"col": <COL>, "row": <ROW>}})`
+    - 攻击敌人：
+      `perform_action(action="attack", params={"unit_id": <WEI_UNIT_ID>, "target_id": <SHU_UNIT_ID>})`
+
+- **行动点 (AP)**: 执行 `perform_action` 会消耗对应单位的行动点 (AP)。AP会随时间恢复。行动前，务必通过上述前置检查确认AP充足。
+
+## 5. 推荐操作流程 (OODA Loop)
+游戏是即时进行的，建议你遵循“观察-判断-决策-行动”的循环，快速响应战场变化：
+1.  **观察 (Observe)**: 先执行前置检查清单，持续使用 `available_actions` 与 `faction_state` / `observation` 获取最新战况。
+2.  **判断 (Orient)**: 基于最新状态确定威胁与机会，选择要操作的单位和目标。
+3.  **决策 (Decide)**: 规划本回合要执行的具体动作及顺序（移动→攻击或先攻击→再移动，视AP与地形而定）。
+4.  **行动 (Act)**: 通过 `perform_action` 执行动作，严格按参数格式传入 `action` 与 `params`。
+5.  **评估 (Assess)**: 检查动作返回结果；若失败，立即回到观察阶段查找原因（ID错误、范围不足、AP不足等）。必要时调用 `end_turn` 结束回合。
 """
 
 @dataclass
@@ -131,6 +170,10 @@ class LLMClient:
             "Authorization": f"Bearer {self.config.api_key}",
         }
         
+        console.print("LLM client request payload start", style="purple")
+        print_json(data=payload, indent=2, ensure_ascii=False)
+        console.print("LLM client request payload end", style="purple")
+
         # 发送请求
         response = await self.client.post(
             f"{self.base_url}/chat/completions",
@@ -141,7 +184,11 @@ class LLMClient:
         
         if response.status_code != 200:
             raise Exception(f"LLM API 错误: {response.status_code} - {response.text}")
-            
+        console.print("LLM client response status code", style="purple")
+        console.print(response.status_code, style="purple")
+        console.print("LLM client response json", style="purple")
+        print_json(data=response.json(), indent=2, ensure_ascii=False)
+        console.print("LLM client response end", style="purple")
         return response.json()
     
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
@@ -237,9 +284,9 @@ class StandaloneChatAgent:
                 message = choice["message"]
                 finish_reason = choice["finish_reason"]
                 
-                console.print(f"╭─────────────────────────────────────────────────────── Tool call response ────────────────────────────────────────────────────────╮", style="blue")
-                console.print(f"│ {json.dumps(choice, indent=2, ensure_ascii=False)}")
-                console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="blue")
+                console.print(f"╭─────────────────────────────────────────────────────── Tool call response ────────────────────────────────────────────────────────╮", style="yellow")
+                console.print(f"│ {json.dumps(choice, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
+                console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
                 
                 # 将助手响应添加到历史
                 assistant_message = Message(
@@ -292,7 +339,7 @@ class StandaloneChatAgent:
             arguments_str = tool_call["function"]["arguments"]
             
             console.print(f"╭──────────────────────────────────────── Executing tool '{function_name}' with arguments ────────────────────────────────────────╮", style="green")
-            console.print(f"│ {arguments_str}")
+            console.print(f"│ {arguments_str}", style="green", highlight=False)
             console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
             
             try:
@@ -313,8 +360,8 @@ class StandaloneChatAgent:
                 # 执行工具
                 result = await self.tool_manager.execute_tool(function_name, arguments)
                 
-                console.print("Tool result")
-                console.print(json.dumps(result, indent=2, ensure_ascii=False))
+                console.print("Tool result", style="green")
+                console.print(json.dumps(result, indent=2, ensure_ascii=False), style="green", highlight=False)
                 
                 # 将工具结果添加到对话历史
                 tool_message = Message(
@@ -374,7 +421,7 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
     if not api_key:
         if provider == "vllm":
             # vLLM 本地服务通常不需要真实的 API key，使用假的 token
-            api_key = "sk-no-key-required"
+            api_key = "EMPTY"
         else:
             raise ValueError(f"未找到 {provider} 的 API key")
     
@@ -630,8 +677,8 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            config_path = os.path.join(os.getcwd(), ".configs.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
