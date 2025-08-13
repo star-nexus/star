@@ -37,9 +37,6 @@ rule = """# 游戏核心规则
     - 地图中心为 `(col: 0, row: 0)`。
     - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
     - `row` 轴: **向下为正方向** (值增大)，向上为负方向 (值减小)。
-- **出生点**:
-    - **蜀 (shu)** (敌方): 出生在地图 **左上角**，坐标值较小 (如 `col` 和 `row` 均为负数)。
-    - **魏 (wei)** (我方): 出生在地图 **右下角**，坐标值较大 (如 `col` 和 `row` 均为正数)。
 
 ## 4. 行动机制：通过 `perform_action` 工具
 - **核心工具**: 游戏中的所有单位动作（如移动和攻击）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack`。
@@ -83,7 +80,7 @@ class LLMConfig:
     model_id: str
     api_key: str
     base_url: Optional[str] = None
-    temperature: float = 0.7
+    temperature: float = 0.2
     max_tokens: Optional[int] = None
 
 
@@ -152,6 +149,8 @@ class LLMClient:
             "model": self.config.model_id,
             "messages": formatted_messages,
             "temperature": self.config.temperature,
+            # "chat_template_kwargs": {"enable_thinking": False},
+            "max_tokens": 500,
         }
         
         if self.config.max_tokens:
@@ -266,8 +265,16 @@ class StandaloneChatAgent:
             
         # 初始化对话
         self.conversation_history = [
-            Message(role="user", content=task)
+            Message(role="system", content=task)
         ]
+        self.conversation_history.append(
+            Message(role="user", content="""
+**出生点**:
+    - **蜀 (shu)** (敌方): 出生在地图 **左上角**，坐标值较小。
+    - **魏 (wei)** (我方): 出生在地图 **右下角**，坐标值较大。
+    - 你需要了解环境可以采用的action获取双方态势，并根据态势制定策略， 并执行action。
+""")
+        )
         
         iterations = 0
         while iterations < self.max_iterations:
@@ -295,27 +302,35 @@ class StandaloneChatAgent:
                     tool_calls=message.get("tool_calls")
                 )
                 self.conversation_history.append(assistant_message)
-                
-                # 检查是否需要工具调用
-                if finish_reason == "tool_calls" and message.get("tool_calls"):
+
+                # 1) If there are tool calls, handle them — no matter the finish_reason
+                if message.get("tool_calls"):
                     await self._handle_tool_calls(message["tool_calls"])
-                elif finish_reason == "stop":
-                    # 对话完成
-                    return {
-                        "success": True,
-                        "response": message.get("content", ""),
-                        "iterations": iterations,
-                        "finish_reason": finish_reason
-                    }
-                else:
-                    # 其他完成原因
-                    return {
-                        "success": True,
-                        "response": message.get("content", ""),
-                        "iterations": iterations,
-                        "finish_reason": finish_reason
-                    }
-                    
+                    continue  # keep the loop going
+
+                # 2) Hit max length? Ask model to continue (or just continue loop)
+                if finish_reason == "length":
+                    # Option A: push a tiny user nudge
+                    self.conversation_history.append(
+                        Message(
+                            role="user", 
+                            # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
+                            content="Continue. If you need to call tools, please call them directly or with only critical explanation.")
+                    )
+                    continue
+
+                # 3) Normal terminal cases
+                if finish_reason in ("stop", "content_filter"):
+                    return {"success": True, "response": message.get("content", ""),
+                            "iterations": iterations, "finish_reason": finish_reason}
+
+                # 4) an unexpected finish reason
+                console.print(f"Unexpected finish reason: {finish_reason}", style="red")
+                return {
+                    "success": False,
+                    "error": f"Unexpected finish reason: {finish_reason}",
+                    "iterations": iterations
+                }
             except Exception as e:
                 console.print(f"聊天过程中发生错误: {e}", style="red")
                 return {
@@ -545,7 +560,7 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
-        temperature=0.7
+        temperature=0.2
     )
 
 
@@ -685,8 +700,12 @@ class AgentDemo:
             return False
 
     async def interactive_demo(self):
-
+        count = 0
         while True:
+            count += 1
+            console.print(f"🔄 第{count}次交互", style="bold red")
+            console.print(f"🔄 第{count}次交互", style="bold red")
+            console.print(f"🔄 第{count}次交互", style="bold red")
             try:
                 await asyncio.create_task(chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"]))
                 await asyncio.sleep(0.1)  # 短暂延迟以便查看结果
