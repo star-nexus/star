@@ -1381,12 +1381,12 @@ class LLMActionHandlerV3:
                     },
                 },
                 "faction_state": {
-                    "description": "获取阵营整体详细状态信息，包括总单位数量、活跃单位数量、单位详细信息列表",
+                    "description": "获取阵营整体状态信息，包括总单位数量、存活单位数量、单位详细信息列表",
                     "parameters": {
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "阵营名称(wei/shu/wu)，必须有效",
+                            "description": "阵营名称(wei | shu | wu)",
                         }
                     },
                 },
@@ -1400,7 +1400,7 @@ class LLMActionHandlerV3:
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "阵营名称(wei/shu/wu)，必须有效",
+                            "description": "阵营名称(wei | shu | wu)",
                         },
                         "force": {
                             "type": "bool",
@@ -1630,7 +1630,7 @@ class LLMActionHandlerV3:
                         },
                         "faction": {"type": "string", "description": "阵营名称"},
                         "total_units": {"type": "int", "description": "总单位数量"},
-                        "active_units": {"type": "int", "description": "活跃单位数量"},
+                        "alive_units": {"type": "int", "description": "存活单位数量"},
                         "units": {"type": "array", "description": "单位详细信息列表"},
                     },
                     "prerequisites": ["有效阵营名称"],
