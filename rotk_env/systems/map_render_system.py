@@ -215,10 +215,11 @@ class MapRenderSystem(System):
         # **核心优化：智能可见区域计算**
         visible_tiles = self._get_visible_tiles_smart(camera_offset, zoom)
 
-        # **分层渲染：地图 -> 领土边界 -> 战争迷雾**
+        # **分层渲染：地图 -> 领土边界 -> 战争迷雾 -> 坐标显示**
         self._render_map_optimized(visible_tiles, camera_offset, zoom)
         self._render_territory_boundaries_optimized(visible_tiles, camera_offset, zoom)
         self._render_fog_of_war_optimized(visible_tiles, camera_offset, zoom)
+        self._render_coordinates_optimized(visible_tiles, camera_offset, zoom)
 
         # 性能统计
         if self.frame_count % 300 == 0:
@@ -669,3 +670,60 @@ class MapRenderSystem(System):
         RMS.circle(
             (0, 0, 0), (int(center_x), int(center_y)), marker_size, 2  # 黑色边框
         )
+
+    def _render_coordinates_optimized(
+        self,
+        visible_tiles: Set[Tuple[int, int]],
+        camera_offset: List[float],
+        zoom: float = 1.0,
+    ):
+        """渲染坐标显示 - 只在可见格子上显示坐标"""
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state or not ui_state.show_coordinates:
+            return
+
+        # 计算字体大小，根据缩放调整
+        font_size = max(10, int(12 * zoom))
+
+        # 避免在缩放过小时显示坐标（文字会太小看不清）
+        if zoom < 0.3:
+            return
+
+        # 遍历可见的地图块，绘制坐标
+        for q, r in visible_tiles:
+            # 计算六边形中心的屏幕位置
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            center_x = (world_x * zoom) + camera_offset[0]
+            center_y = (world_y * zoom) + camera_offset[1]
+
+            # 创建坐标文本
+            coord_text = f"({q},{r})"
+
+            # 渲染坐标文本
+            self._render_coordinate_text(coord_text, center_x, center_y, font_size)
+
+    def _render_coordinate_text(self, text: str, x: float, y: float, font_size: int):
+        """渲染坐标文本"""
+        # 创建字体（如果没有字体库则使用默认字体）
+        try:
+            font = pygame.font.Font(None, font_size)
+        except:
+            font = pygame.font.SysFont("arial", font_size)
+
+        # 渲染文本
+        text_color = (255, 255, 255)  # 白色文字
+        outline_color = (0, 0, 0)  # 黑色描边
+
+        # 创建文本表面
+        text_surface = font.render(text, True, text_color)
+        text_rect = text_surface.get_rect(center=(int(x), int(y)))
+
+        # 绘制描边（在四个方向绘制黑色文本）
+        for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            outline_surface = font.render(text, True, outline_color)
+            outline_rect = text_rect.copy()
+            outline_rect.move_ip(dx, dy)
+            RMS.draw(outline_surface, outline_rect.topleft)
+
+        # 绘制主文本
+        RMS.draw(text_surface, text_rect.topleft)

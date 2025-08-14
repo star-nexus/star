@@ -41,6 +41,7 @@ class UIState(SingletonComponent):
     show_grid: bool = True
     show_stats: bool = False
     show_help: bool = False
+    show_coordinates: bool = False  # 显示坐标
     camera_position: Tuple[float, float] = (0.0, 0.0)
     zoom_level: float = 1.0
     # 视角相关
