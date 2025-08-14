@@ -506,7 +506,7 @@ class GameScene(Scene):
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """收集游戏统计数据"""
-        from ..components import Unit, UnitCount, GameStats
+        from ..components import Unit, UnitCount, GameTime, GameState
 
         total_units = 0
         surviving_units = 0
@@ -541,11 +541,10 @@ class GameScene(Scene):
 
         try:
             game_state = self.world.get_singleton_component(GameState)
-            if game_state:
-                total_turns = game_state.turn_number
+            total_turns = game_state.turn_number
 
-            # 计算游戏时长（简单使用回合数估算）
-            game_duration = total_turns * 1.0  # 假设每回合1秒
+            game_time = self.world.get_singleton_component(GameTime)
+            game_duration = game_time.get_game_elapsed_seconds()
 
         except Exception as e:
             print(f"获取游戏状态时出错: {e}")
