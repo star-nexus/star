@@ -57,9 +57,9 @@ class LLMActionHandlerV3:
             # 观测动作
             "observation": self.handle_observation_action,
             # 阵营信息
-            "faction_state": self.handle_faction_state,
+            "get_faction_state": self.handle_faction_state,
             # System
-            "action_list": self.handle_action_list,
+            "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # 新增 end_turn （回合）
         }
 
@@ -191,7 +191,7 @@ class LLMActionHandlerV3:
                 error_msg,
                 {
                     "requested_unit_id": unit_id,
-                    "suggestion": "Use faction_state action to see all units for a faction",
+                    "suggestion": "Use get_faction_state action to see all units for a faction",
                 },
             )
 
@@ -684,7 +684,7 @@ class LLMActionHandlerV3:
                 f"Attacker unit {unit_id} not found",
                 {
                     "unit_id": unit_id,
-                    "suggestion": "Use faction_state action to see all available units",
+                    "suggestion": "Use get_faction_state action to see all available units",
                 },
             )
 
@@ -1335,12 +1335,12 @@ class LLMActionHandlerV3:
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "控制移动的单位ID，单位必须存活",
+                            "description": "移动的单位ID，必须是存活单位",
                         },
                         "target_position": {
                             "type": "object",
                             "required": True,
-                            "description": "目标位置，列坐标和行坐标，必须存在",
+                            "description": "目标位置，列坐标和行坐标",
                             "properties": {
                                 "col": {"type": "int", "description": "列坐标"},
                                 "row": {"type": "int", "description": "行坐标"},
@@ -1369,7 +1369,7 @@ class LLMActionHandlerV3:
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID，单位必须存活",
+                            "description": "单位ID，必须是存活",
                         },
                         "observation_level": {
                             "type": "string",
@@ -1380,7 +1380,7 @@ class LLMActionHandlerV3:
                         },
                     },
                 },
-                "faction_state": {
+                "get_faction_state": {
                     "description": "获取阵营整体状态信息，包括总单位数量、存活单位数量、单位详细信息列表",
                     "parameters": {
                         "faction": {
@@ -1390,7 +1390,7 @@ class LLMActionHandlerV3:
                         }
                     },
                 },
-                "action_list": {
+                "get_action_list": {
                     "description": "获取所有可以在环境中调用的action接口的文档",
                     "parameters": {},
                 },
@@ -1425,7 +1425,7 @@ class LLMActionHandlerV3:
                     "params": {"unit_id": 123, "observation_level": "detailed"},
                 },
                 "get_faction_overview": {
-                    "action": "faction_state",
+                    "action": "get_faction_state",
                     "params": {"faction": "wei"},
                 },
             },
@@ -1608,7 +1608,7 @@ class LLMActionHandlerV3:
                     "prerequisites": ["单位存在"],
                 },
                 # 阵营信息
-                "faction_state": {
+                "get_faction_state": {
                     "category": "faction_control",
                     "description": "获取阵营整体状态，包括战斗状态、胜负情况等",
                     "parameters": {
@@ -1636,7 +1636,7 @@ class LLMActionHandlerV3:
                     "prerequisites": ["有效阵营名称"],
                 },
                 # System
-                "action_list": {
+                "get_action_list": {
                     "category": "system",
                     "description": "获取所有可用动作的接口文档",
                     "parameters": {},
@@ -1691,7 +1691,7 @@ class LLMActionHandlerV3:
                     "params": {"unit_id": 123, "observation_level": "detailed"},
                 },
                 "get_faction_overview": {
-                    "action": "faction_state",
+                    "action": "get_faction_state",
                     "params": {"faction": "wei"},
                 },
                 "finish_turn": {
