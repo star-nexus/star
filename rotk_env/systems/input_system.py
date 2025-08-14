@@ -13,6 +13,7 @@ from framework import (
     MouseMotionEvent,
 )
 from framework.engine.events import EBS
+from framework.ui.ui_layer_manager import ui_layer_manager
 from ..components import (
     InputState,
     UIState,
@@ -67,16 +68,20 @@ class InputHandlingSystem(System):
         if not input_state or not ui_state:
             return
 
-        # 处理pygame事件
-        # for event in pygame.event.get():
-        #     self._handle_event(event, input_state, ui_state)
-
         # 更新鼠标位置
         mouse_pos = pygame.mouse.get_pos()
         input_state.mouse_pos = mouse_pos
 
-        hex_pos = self._screen_to_hex(mouse_pos)
-        ui_state.hovered_tile = hex_pos
+        # 检查鼠标是否在UI上，并更新悬停状态
+        mouse_over_ui = ui_layer_manager.is_mouse_over_ui(mouse_pos)
+
+        # 只有在鼠标不在UI上时，才更新地图悬停状态
+        if not mouse_over_ui:
+            hex_pos = self._screen_to_hex(mouse_pos)
+            ui_state.hovered_tile = hex_pos
+        else:
+            # 鼠标在UI上时，清除地图悬停状态
+            ui_state.hovered_tile = None
 
         # 处理键盘输入
         keys = pygame.key.get_pressed()
@@ -85,6 +90,11 @@ class InputHandlingSystem(System):
     def _handle_mouse_click(self, event: MouseButtonDownEvent):
         """处理鼠标点击"""
         ui_state = self.world.get_singleton_component(UIState)
+
+        # 首先检查是否点击在UI上
+        if ui_layer_manager.should_block_map_interaction(event.pos):
+            # 如果鼠标在UI上，不处理地图相关事件
+            return
 
         # 首先检查是否点击了单位动作按钮面板
         action_button_system = self._get_action_button_system()
@@ -201,6 +211,11 @@ class InputHandlingSystem(System):
             # 4键：吴国视角
             print("切换到吴国视角")
             self._set_faction_view(ui_state, Faction.WU)
+
+        elif event.key == pygame.K_v:
+            # V键：切换坐标显示
+            ui_state.show_coordinates = not ui_state.show_coordinates
+            print(f"坐标显示: {'开启' if ui_state.show_coordinates else '关闭'}")
 
     def _handle_keyboard(
         self,
