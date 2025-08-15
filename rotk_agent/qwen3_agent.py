@@ -500,9 +500,36 @@ class StandaloneChatAgent:
     
     def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 observation 结果，移除冗余字段"""
-        if "visible_environment" in result and isinstance(result["visible_environment"], list):
+        # 创建结果的深拷贝以避免修改原始数据
+        import copy
+        filtered_result = copy.deepcopy(result)
+        
+        # 过滤 unit_info 字段，移除无用的噪声关键字
+        if "unit_info" in filtered_result and isinstance(filtered_result["unit_info"], dict):
+            unit_info = filtered_result["unit_info"]
+            
+            # 过滤 status 字段中的噪声关键字
+            if "status" in unit_info and isinstance(unit_info["status"], dict):
+                status = unit_info["status"]
+                # 移除 morale 和 fatigue 字段
+                status.pop("morale", None)
+                status.pop("fatigue", None)
+            
+            # 过滤 capabilities 字段中的噪声关键字
+            if "capabilities" in unit_info and isinstance(unit_info["capabilities"], dict):
+                capabilities = unit_info["capabilities"]
+                # 移除无用的能力字段
+                noise_capabilities = ["attack_points", "construction_points", "skill_points"]
+                for noise_key in noise_capabilities:
+                    capabilities.pop(noise_key, None)
+            
+            # 移除 available_skills 字段
+            unit_info.pop("available_skills", None)
+        
+        # 过滤 visible_environment 字段
+        if "visible_environment" in filtered_result and isinstance(filtered_result["visible_environment"], list):
             filtered_env = []
-            for tile in result["visible_environment"]:
+            for tile in filtered_result["visible_environment"]:
                 if isinstance(tile, dict):
                     # 保留核心信息，移除噪声字段
                     filtered_tile = {
@@ -510,10 +537,9 @@ class StandaloneChatAgent:
                         "terrain": tile.get("terrain"),
                     }
                     
-                    # 只在有单位时才包含 units 字段
+                    # 始终包含 units 字段
                     units = tile.get("units", [])
-                    if units:
-                        filtered_tile["units"] = units
+                    filtered_tile["units"] = units
                     
                     # 简化 movement_accessibility - 只保留是否可达
                     movement_access = tile.get("movement_accessibility", {})
@@ -529,9 +555,9 @@ class StandaloneChatAgent:
                     
                     filtered_env.append(filtered_tile)
             
-            result["visible_environment"] = filtered_env
+            filtered_result["visible_environment"] = filtered_env
         
-        return result
+        return filtered_result
     
     def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 faction_state 结果"""
