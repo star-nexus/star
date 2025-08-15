@@ -13,7 +13,8 @@ from framework import (
     MouseMotionEvent,
 )
 from framework.engine.events import EBS
-from framework.ui.ui_layer_manager import ui_layer_manager
+
+# from framework.ui.ui_layer_manager import ui_layer_manager
 from ..components import (
     InputState,
     UIState,
@@ -73,15 +74,15 @@ class InputHandlingSystem(System):
         input_state.mouse_pos = mouse_pos
 
         # 检查鼠标是否在UI上，并更新悬停状态
-        mouse_over_ui = ui_layer_manager.is_mouse_over_ui(mouse_pos)
+        # mouse_over_ui = ui_layer_manager.is_mouse_over_ui(mouse_pos)
 
         # 只有在鼠标不在UI上时，才更新地图悬停状态
-        if not mouse_over_ui:
-            hex_pos = self._screen_to_hex(mouse_pos)
-            ui_state.hovered_tile = hex_pos
-        else:
-            # 鼠标在UI上时，清除地图悬停状态
-            ui_state.hovered_tile = None
+        # if not mouse_over_ui:
+        hex_pos = self._screen_to_hex(mouse_pos)
+        ui_state.hovered_tile = hex_pos
+        # else:
+        #     # 鼠标在UI上时，清除地图悬停状态
+        #     ui_state.hovered_tile = None
 
         # 处理键盘输入
         keys = pygame.key.get_pressed()
@@ -92,9 +93,9 @@ class InputHandlingSystem(System):
         ui_state = self.world.get_singleton_component(UIState)
 
         # 首先检查是否点击在UI上
-        if ui_layer_manager.should_block_map_interaction(event.pos):
-            # 如果鼠标在UI上，不处理地图相关事件
-            return
+        # if ui_layer_manager.should_block_map_interaction(event.pos):
+        #     # 如果鼠标在UI上，不处理地图相关事件
+        #     return
 
         # 首先检查是否点击了单位动作按钮面板
         action_button_system = self._get_action_button_system()

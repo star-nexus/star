@@ -47,7 +47,6 @@ from ..components import (
     Unit,
     UnitCount,
     MovementPoints,
-    MovementPoints,
     ActionPoints,
     AttackPoints,
     ConstructionPoints,
