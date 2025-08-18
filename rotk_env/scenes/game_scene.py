@@ -36,6 +36,7 @@ from ..systems.statistics_system import StatisticsSystem
 from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
+from ..systems.settlement_report_system import SettlementReportSystem
 from ..components import (
     GameState,
     UIState,
@@ -158,6 +159,7 @@ class GameScene(Scene):
             UIButtonSystem(),  # 改进的UI按钮系统 (优先级2)
             UIRenderSystem(),  # 改进的UI渲染系统 (最顶层)
             MiniMapSystem(),  # 小地图系统 (优先级5)
+            SettlementReportSystem(),  # 结算报告系统 (优先级200，在游戏结束后执行)
         ]
         if self.game_mode == GameMode.REAL_TIME:
             systems.append(RealtimeSystem())
