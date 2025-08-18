@@ -9,6 +9,8 @@ from typing import Dict, Tuple, List
 from framework import System, World
 from ..components import HexPosition, Terrain, MapData, TerritoryControl
 from ..prefabs.config import GameConfig, TerrainType, Faction
+from .moba_map_generator import MOBAMapMixin
+from .encounter_map_generator import EncounterMapMixin
 
 
 class Tile:
@@ -18,14 +20,14 @@ class Tile:
         self.position = position
 
 
-class MapSystem(System):
-    """地图系统 - 管理地图生成和地形"""
+class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
+    """地图系统 - 管理地图生成和地形，支持MOBA风格地图"""
 
-    def __init__(self, competitive_mode: bool = True, symmetry_type: str = "square"):
+    def __init__(self, competitive_mode: bool = True, symmetry_type: str = "river_split"):
         super().__init__(priority=100)
         self.competitive_mode = competitive_mode
         self.symmetry_type = (
-            symmetry_type  # "horizontal", "diagonal", "river_split", "square"
+            symmetry_type  # "horizontal", "diagonal", "river_split", "square", "moba", "encounter"
         )
         self.seed = 42
 
@@ -53,6 +55,12 @@ class MapSystem(System):
             elif self.symmetry_type == "square":
                 print("[MapSystem] 🏆 生成正方形竞技地图")
                 self._generate_square_map()
+            elif self.symmetry_type == "moba":
+                print("[MapSystem] 🏟️ 生成MOBA风格地图")
+                self._generate_moba_map()
+            elif self.symmetry_type == "encounter":
+                print("[MapSystem] 🏟️ 生成Encounter风格地图")
+                self._generate_encounter_map()
             else:
                 print("[MapSystem] 🏆 生成水平轴对称竞技地图")
                 self._generate_competitive_map_v2()

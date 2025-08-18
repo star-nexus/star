@@ -36,6 +36,15 @@ class TerrainType(Enum):
     URBAN = "urban"  # 城池
     CITY = "city"  # 大城市
     HILL = "hill"  # 丘陵
+    
+    # MOBA-specific terrain types
+    LANE = "lane"  # 兵线路径 - 连接两个基地的主要通道
+    JUNGLE = "jungle"  # 野区 - 中性区域，包含野怪和资源
+    RIVER = "river"  # 河流 - 分隔两队的中央区域
+    BASE = "base"  # 基地 - 队伍主基地区域
+    TOWER = "tower"  # 防御塔 - 防御建筑位置
+    INHIBITOR = "inhibitor"  # 兵营/水晶 - 控制超级兵的建筑
+    ANCIENT = "ancient"  # 遗迹/主堡 - 游戏胜负关键建筑
 
 
 # 单位类型枚举
@@ -172,6 +181,50 @@ class GameConfig:
             attack_bonus=1,
             special_rules="高地优势+1攻击，近战先攻权+1",
         ),
+        
+        # MOBA-specific terrain effects
+        TerrainType.LANE: TerrainEffect(
+            movement_cost=1,
+            defense_bonus=0,
+            attack_bonus=0,
+            special_rules="兵线路径，移动速度+25%",
+        ),
+        TerrainType.JUNGLE: TerrainEffect(
+            movement_cost=2,
+            defense_bonus=1,
+            attack_bonus=0,
+            special_rules="野区隐蔽，视野-1，可能有中性生物",
+        ),
+        TerrainType.RIVER: TerrainEffect(
+            movement_cost=2,
+            defense_bonus=0,
+            attack_bonus=0,
+            special_rules="河流减速，但提供战略视野",
+        ),
+        TerrainType.BASE: TerrainEffect(
+            movement_cost=1,
+            defense_bonus=3,
+            attack_bonus=1,
+            special_rules="基地区域，己方单位恢复+50%，敌方单位攻击力-25%",
+        ),
+        TerrainType.TOWER: TerrainEffect(
+            movement_cost=1,
+            defense_bonus=5,
+            attack_bonus=2,
+            special_rules="防御塔区域，提供强大防御加成和攻击支援",
+        ),
+        TerrainType.INHIBITOR: TerrainEffect(
+            movement_cost=1,
+            defense_bonus=3,
+            attack_bonus=1,
+            special_rules="兵营区域，控制超级兵生成",
+        ),
+        TerrainType.ANCIENT: TerrainEffect(
+            movement_cost=1,
+            defense_bonus=8,
+            attack_bonus=3,
+            special_rules="主堡，摧毁即获胜，拥有最强防御",
+        ),
     }
 
     # 兵种基础属性（按规则手册v1.2）
@@ -229,6 +282,29 @@ class GameConfig:
         TerrainType.WATER: TerrainCoefficient(
             infantry=0.5, cavalry=0.3, archer=0.7  # 水域惩罚
         ),
+        
+        # MOBA-specific terrain coefficients
+        TerrainType.LANE: TerrainCoefficient(
+            infantry=1.1, cavalry=1.2, archer=1.1  # 兵线路径利于移动
+        ),
+        TerrainType.JUNGLE: TerrainCoefficient(
+            infantry=1.0, cavalry=0.9, archer=1.1  # 野区利于步兵和弓兵
+        ),
+        TerrainType.RIVER: TerrainCoefficient(
+            infantry=0.9, cavalry=0.8, archer=1.0  # 河流阻碍近战单位
+        ),
+        TerrainType.BASE: TerrainCoefficient(
+            infantry=1.2, cavalry=1.2, archer=1.2  # 基地区域全面加成
+        ),
+        TerrainType.TOWER: TerrainCoefficient(
+            infantry=1.3, cavalry=1.3, archer=1.4  # 防御塔区域强力加成
+        ),
+        TerrainType.INHIBITOR: TerrainCoefficient(
+            infantry=1.15, cavalry=1.15, archer=1.2  # 兵营区域中等加成
+        ),
+        TerrainType.ANCIENT: TerrainCoefficient(
+            infantry=1.5, cavalry=1.5, archer=1.5  # 主堡区域最强加成
+        ),
     }
 
     # 阵营颜色配置
@@ -247,6 +323,15 @@ class GameConfig:
         TerrainType.WATER: (135, 206, 250),  # 浅蓝色
         TerrainType.URBAN: (169, 169, 169),  # 灰色
         TerrainType.CITY: (105, 105, 105),  # 深灰色
+        
+        # MOBA-specific terrain colors
+        TerrainType.LANE: (255, 223, 128),  # 金黄色 - 兵线路径
+        TerrainType.JUNGLE: (60, 120, 60),  # 深墨绿色 - 野区
+        TerrainType.RIVER: (100, 149, 237),  # 矢车菊蓝 - 河流
+        TerrainType.BASE: (220, 220, 220),  # 亮灰色 - 基地
+        TerrainType.TOWER: (255, 165, 0),  # 橙色 - 防御塔
+        TerrainType.INHIBITOR: (255, 20, 147),  # 深粉色 - 兵营
+        TerrainType.ANCIENT: (255, 215, 0),  # 金色 - 主堡
     }
 
     @classmethod
