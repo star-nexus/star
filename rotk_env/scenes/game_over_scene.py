@@ -12,12 +12,14 @@ from framework import (
     EBS,
     MouseButtonDownEvent,
     MouseMotionEvent,
+    MouseWheelEvent,
     Event,
 )
 from framework.engine.engine_event import QuitEvent
 from framework.engine.scenes import Scene
 from ..components.game_over import Winner, GameStatistics, GameOverButtons
 from ..systems.game_over_render_system import GameOverRenderSystem
+from ..systems.settlement_report_render_system import SettlementReportRenderSystem
 from ..prefabs.config import Faction, GameConfig
 
 
@@ -47,9 +49,12 @@ class GameOverScene(Scene):
         # 创建按钮
         self._create_buttons()
 
+        # 添加渲染系统
         game_over_system = GameOverRenderSystem()
-        # 初始化渲染系统
+        settlement_report_system = SettlementReportRenderSystem()
+        
         self.world.add_system(game_over_system)
+        self.world.add_system(settlement_report_system)
 
         self.subscribe_events()
 
@@ -62,7 +67,7 @@ class GameOverScene(Scene):
         button_width = 150
         button_height = 40
         button_spacing = 20
-        total_width = 2 * button_width + button_spacing
+        total_width = 3 * button_width + 2 * button_spacing  # 3个按钮
         start_x = (screen_width - total_width) // 2
         button_y = screen_height - 150
 
@@ -75,17 +80,20 @@ class GameOverScene(Scene):
                 "hover_color": (80, 80, 100),
                 "action": self._restart_game,
             },
+            "view_report": {
+                "rect": pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height),
+                "text": "查看报告",
+                "hover": False,
+                "default_color": (60, 80, 60),
+                "hover_color": (80, 100, 80),
+                "action": self._toggle_report_view,
+            },
             "quit": {
-                "rect": pygame.Rect(
-                    start_x + button_width + button_spacing,
-                    button_y,
-                    button_width,
-                    button_height,
-                ),
+                "rect": pygame.Rect(start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height),
                 "text": "退出游戏",
                 "hover": False,
-                "default_color": (60, 60, 80),
-                "hover_color": (80, 80, 100),
+                "default_color": (80, 60, 60),
+                "hover_color": (100, 80, 80),
                 "action": self._quit_game,
             },
         }
@@ -99,6 +107,7 @@ class GameOverScene(Scene):
         # 订阅鼠标点击和移动事件
         EBS.subscribe(MouseButtonDownEvent, self.handle_event)
         EBS.subscribe(MouseMotionEvent, self.handle_event)
+        EBS.subscribe(MouseWheelEvent, self.handle_event)
 
     def update(self, dt: float) -> None:
         """更新场景"""
@@ -112,6 +121,8 @@ class GameOverScene(Scene):
                 self._handle_mouse_click(event.pos)
         elif isinstance(event, MouseMotionEvent):
             self._handle_mouse_motion(event.pos)
+        elif isinstance(event, MouseWheelEvent):
+            self._handle_mouse_wheel(event.y)
 
     def _handle_mouse_click(self, pos: tuple) -> None:
         """处理鼠标点击"""
@@ -129,12 +140,19 @@ class GameOverScene(Scene):
         if not button_component:
             return
 
-        hover_button = None
         for button_name, button in button_component.buttons.items():
             if button["rect"].collidepoint(pos):
                 button["hover"] = True
             else:
                 button["hover"] = False
+
+    def _handle_mouse_wheel(self, y: int) -> None:
+        """处理鼠标滚轮事件"""
+        # 查找结算报告渲染系统并处理滚动
+        for system in self.world.systems:
+            if isinstance(system, SettlementReportRenderSystem):
+                system.handle_scroll(y)
+                break
 
     def exit(self):
         return super().exit()
@@ -142,6 +160,12 @@ class GameOverScene(Scene):
     def _restart_game(self) -> None:
         """重新开始游戏"""
         SMS.switch_to("start")
+
+    def _toggle_report_view(self) -> None:
+        """切换报告视图"""
+        # 这里可以添加切换逻辑，比如显示/隐藏详细报告
+        print("[GameOverScene] 📊 查看详细结算报告")
+        # 可以在这里添加报告视图的切换逻辑
 
     def _quit_game(self) -> None:
         """退出游戏"""
@@ -153,3 +177,4 @@ class GameOverScene(Scene):
             self.world.reset()
         EBS.unsubscribe(MouseButtonDownEvent, self.handle_event)
         EBS.unsubscribe(MouseMotionEvent, self.handle_event)
+        EBS.unsubscribe(MouseWheelEvent, self.handle_event)
