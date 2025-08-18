@@ -486,7 +486,7 @@ class CombatSystem(System):
         base_damage = max(1, effective_attack - int(effective_defense * 0.5))
 
         # 人数影响：最终伤害再乘 (N攻 / N守)^0.5
-        count_ratio = (attacker_count.current_count / target_count.current_count) ** 0.5
+        count_ratio = 1.0 # (attacker_count.current_count / target_count.current_count) ** 0.5
         damage = int(base_damage * count_ratio)
 
         # 应用特殊修正（冲锋、技能等）
