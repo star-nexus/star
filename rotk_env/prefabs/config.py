@@ -122,8 +122,8 @@ class GameConfig:
     FPS = 60
 
     # 地图配置
-    MAP_WIDTH = 50
-    MAP_HEIGHT = 50
+    MAP_WIDTH = 15
+    MAP_HEIGHT = 15
     HEX_SIZE = 50
     HEX_ORIENTATION = HexOrientation.FLAT_TOP  # 六边形方向：尖顶向上或平顶向上
 
@@ -195,7 +195,7 @@ class GameConfig:
         UnitType.ARCHER: UnitBaseStats(
             max_count=100,
             movement=10,
-            base_attack=8,  # 低
+            base_attack=10,  # 低
             base_defense=4,  # 极低
             attack_range=3,
             vision_range=4,

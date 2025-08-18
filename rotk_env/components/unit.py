@@ -84,14 +84,15 @@ class Combat(Component):
 
         # 动态攻防公式：基础值 × (N/M)^0.7 × 状态系数 × 地形系数
         ratio = unit_count.ratio
-        count_modifier = ratio**0.7
+        attack_modifier = ratio**0.3
+        defense_modifier = 1.0
         status_modifier = GameConfig.STATE_COEFFICIENTS.get(status.current_status, 1.0)
 
         effective_attack = (
-            self.base_attack * count_modifier * status_modifier * terrain_coeff
+            self.base_attack * attack_modifier * status_modifier * terrain_coeff
         )
         effective_defense = (
-            self.base_defense * count_modifier * status_modifier * terrain_coeff
+            self.base_defense * defense_modifier * status_modifier * terrain_coeff
         )
 
         return int(effective_attack), int(effective_defense)
