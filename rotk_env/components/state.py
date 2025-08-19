@@ -91,3 +91,6 @@ class GameStats(SingletonComponent):
 
     # 当前游戏时间（实时模式用）
     total_game_time: float = 0.0
+    
+    # 🆕 添加初始单位数记录
+    initial_unit_counts: Dict[Faction, int] = field(default_factory=dict)
