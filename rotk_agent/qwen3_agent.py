@@ -390,8 +390,8 @@ class StandaloneChatAgent:
 
                 # 3) Normal terminal cases
                 if finish_reason in ("stop", "content_filter"):
-                    return {"success": True, "response": message.get("content", ""),
-                            "iterations": iterations, "finish_reason": finish_reason}
+                    print(f"success: True, response: {message.get('content', '')}, iterations: {iterations}, finish_reason: {finish_reason}")
+                    break
 
                 # 4) an unexpected finish reason
                 console.print(f"Unexpected finish reason: {finish_reason}", style="red")
