@@ -115,6 +115,9 @@ class GameScene(Scene):
         """初始化游戏"""
         # 首先初始化游戏模式组件
         self._initialize_game_mode()
+        
+        # 🆕 初始化Agent信息注册表
+        self._initialize_agent_registry()
 
         # 初始化系统
         self._initialize_systems()
@@ -124,7 +127,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1, 0, 1], [1, 0, 1], [0, 0, 0]])
+        self._initialize_units([[1, 0, 1], [1, 0, 0], [0, 0, 0]])
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -603,3 +606,11 @@ class GameScene(Scene):
 
         # 清理世界
         self.world.reset()
+
+    def _initialize_agent_registry(self):
+        """初始化Agent信息注册表"""
+        from ..components.agent_info import AgentInfoRegistry
+        
+        registry = AgentInfoRegistry()
+        self.world.add_singleton_component(registry)
+        print("[GameScene] Agent信息注册表已初始化")

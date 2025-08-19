@@ -32,8 +32,11 @@ class SettlementReport(SingletonComponent):
     # 单位信息
     units_info: Dict[str, Any] = field(default_factory=dict)  # 单位详细信息
     
-    # 模型信息（占位，待实现）
+    # 模型信息（已实现）
     model_info: Dict[str, str] = field(default_factory=dict)  # 各阵营使用的模型信息
+    
+    # Agent端点信息（已实现）
+    agent_endpoints: Dict[str, str] = field(default_factory=dict)  # 各阵营Agent的服务端点
     
     # 策略评分（占位，待实现）
     strategy_scores: Dict[str, float] = field(default_factory=dict)  # 各阵营的策略推理分数

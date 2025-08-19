@@ -42,7 +42,7 @@ rule = """# 游戏核心规则
 - **核心工具**: 游戏中的所有单位动作（如移动和攻击）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack`。
 
 - **工具用法**: `perform_action` 工具接收两个参数：
-    1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"faction_state"`, `"observation"`, `"end_turn"`)。
+    1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"get_faction_state"`, `"observation"`, `"end_turn"`)。
     2.  `params`: 一个JSON对象（字典），包含该动作所需的所有参数 (例如: `{"unit_id": 123, "target_position": {"col": 1, "row": 2}}`)。
 
 - **严禁臆造 (No Fabrication)**:
@@ -51,8 +51,8 @@ rule = """# 游戏核心规则
     - 示例中的ID仅为占位说明，绝不能直接使用。
 
 - **前置检查清单 (必须遵循，按顺序执行)**:
-    1.  调用 `perform_action(action="faction_state", params={"faction": "wei"})` 获取我方全部单位ID与状态。
-    2.  调用 `perform_action(action="faction_state", params={"faction": "shu"})` 获取敌方单位信息（若可见）。
+    1.  调用 `perform_action(action="get_faction_state", params={"faction": "wei"})` 获取我方全部单位ID与状态。
+    2.  调用 `perform_action(action="get_faction_state", params={"faction": "shu"})` 获取敌方单位信息（若可见）。
     3.  对每个准备操作的我方单位，调用 `perform_action(action="observation", params={"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"})` 获取该单位可见环境与附近可攻击/可移动的目标。
     4.  在确认单位的 `action_points` 足够、目标在视野和/或攻击/移动范围内后，才可执行后续动作。
 
@@ -66,7 +66,7 @@ rule = """# 游戏核心规则
 
 ## 5. 推荐操作流程 (OODA Loop)
 游戏是即时进行的，建议你遵循“观察-判断-决策-行动”的循环，快速响应战场变化：
-1.  **观察 (Observe)**: 先执行前置检查清单，持续使用 `available_actions` 与 `faction_state` / `observation` 获取最新战况。
+1.  **观察 (Observe)**: 先执行前置检查清单，持续使用 `available_actions` 与 `get_faction_state` / `observation` 获取最新战况。
 2.  **判断 (Orient)**: 基于最新状态确定威胁与机会，选择要操作的单位和目标。
 3.  **决策 (Decide)**: 规划本回合要执行的具体动作及顺序（移动→攻击或先攻击→再移动，视AP与地形而定）。
 4.  **行动 (Act)**: 通过 `perform_action` 执行动作，严格按参数格式传入 `action` 与 `params`。
@@ -795,7 +795,7 @@ async def perform_action(action: str, params: Any):
 
 async def available_actions() -> list[Dict[str, Any]]:
     """获取当前可用的动作"""
-    result = await perform_action("action_list", {})
+    result = await perform_action("get_action_list", {})
     return result
 
 
