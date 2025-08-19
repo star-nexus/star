@@ -61,6 +61,7 @@ class LLMActionHandlerV3:
             # System
             "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # 新增 end_turn （回合）
+            "register_agent_info": self.handle_register_agent_info,
         }
 
     def execute_action(
@@ -2789,3 +2790,64 @@ class LLMActionHandlerV3:
         #     # "range_status": "in_range" if in_range else "out_of_range",
         # }
         return in_range
+
+    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理Agent信息注册"""
+        try:
+            # 验证必需参数
+            required_params = ["faction", "provider", "model_id", "base_url"]
+            for param in required_params:
+                if param not in params:
+                    return {
+                        "success": False,
+                        "message": f"缺少必需参数: {param}"
+                    }
+            
+            faction = params["faction"]
+            provider = params["provider"]
+            model_id = params["model_id"]
+            base_url = params["base_url"]
+            
+            # 创建Agent信息对象
+            from ..components.agent_info import AgentInfo, AgentInfoRegistry
+            
+            agent_info = AgentInfo(
+                provider=provider,
+                model_id=model_id,
+                base_url=AgentInfoRegistry.sanitize_url(base_url),
+                agent_id=params.get("agent_id"),
+                version=params.get("version"),
+                note=params.get("note")
+            )
+            
+            # 获取或创建注册表
+            registry = self.world.get_singleton_component(AgentInfoRegistry)
+            if not registry:
+                registry = AgentInfoRegistry()
+                self.world.add_singleton_component(registry)
+            
+            # 注册Agent信息
+            success = registry.register_agent(faction, agent_info)
+            
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Agent信息注册成功: {faction}阵营",
+                    "registered_info": {
+                        "faction": faction,
+                        "provider": provider,
+                        "model_id": model_id,
+                        "base_url_sanitized": agent_info.base_url
+                    }
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Agent信息注册失败"
+                }
+        
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"注册Agent信息时出错: {str(e)}"
+            }

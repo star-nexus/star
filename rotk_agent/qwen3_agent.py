@@ -315,6 +315,9 @@ class StandaloneChatAgent:
         if max_iterations:
             self.max_iterations = max_iterations
             
+        # 🆕 在开始对话前先注册Agent信息
+        await self._register_agent_info()
+        
         # 初始化对话
         self.conversation_history = [
             Message(role="system", content=task)
@@ -604,6 +607,39 @@ class StandaloneChatAgent:
             return filtered_result
         
         return result
+
+    async def _register_agent_info(self):
+        """注册Agent信息到环境"""
+        try:
+            # 从配置中获取信息
+            config = self.llm_client.config
+            
+            # 确定阵营（暂时硬编码为wei，后续可从环境变量或参数获取）
+            faction = "wei"  # TODO: 从环境变量或启动参数获取
+            
+            registration_params = {
+                "faction": faction,
+                "provider": config.provider,
+                "model_id": config.model_id,
+                "base_url": config.base_url or "unknown",
+                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "version": "1.0.0",  # Agent版本
+                "note": f"Qwen3 Agent using {config.provider}"
+            }
+            
+            # 调用注册
+            result = await self.tool_manager.execute_tool("perform_action", {
+                "action": "register_agent_info",
+                "params": registration_params
+            })
+            
+            if result.get("success"):
+                console.print(f"✅ Agent信息注册成功: {faction}阵营 - {config.provider}:{config.model_id}", style="green")
+            else:
+                console.print(f"⚠️ Agent信息注册失败: {result.get('message', 'unknown error')}", style="yellow")
+        
+        except Exception as e:
+            console.print(f"❌ Agent信息注册出错: {e}", style="red")
 
     async def stop(self):
         """Stop agent"""

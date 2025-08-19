@@ -26,6 +26,7 @@ from ..components import (
     TerritoryControl
 )
 from ..prefabs.config import Faction, TerrainType, GameConfig
+from ..components.agent_info import AgentInfo, AgentInfoRegistry
 
 
 class SettlementReportSystem(System):
@@ -374,12 +375,36 @@ class SettlementReportSystem(System):
         }
     
     def _collect_placeholder_data(self) -> Dict[str, Any]:
-        """收集占位数据（待实现功能）"""
+        """收集Agent和模型信息（原占位数据方法）"""
+        # 获取Agent信息注册表
+        registry = self.world.get_singleton_component(AgentInfoRegistry)
+        
+        model_info = {}
+        agent_endpoints = {}
+        
+        if registry:
+            print(f"[SettlementReport] 📋 发现Agent注册表，已注册阵营: {list(registry.agents.keys())}")
+            
+            for faction in ["wei", "shu", "wu"]:
+                agent_info = registry.get_agent_info(faction)
+                if agent_info:
+                    model_info[faction] = agent_info.model_id
+                    agent_endpoints[faction] = agent_info.base_url
+                    print(f"[SettlementReport] ✅ {faction}阵营: {agent_info.provider}:{agent_info.model_id}")
+                else:
+                    model_info[faction] = "placeholder_model"
+                    agent_endpoints[faction] = "unknown"
+                    print(f"[SettlementReport] ⚠️ {faction}阵营: 未注册Agent信息，使用占位符")
+        else:
+            print(f"[SettlementReport] ⚠️ 未发现Agent注册表，使用占位符")
+            # 使用占位符
+            for faction in ["wei", "shu", "wu"]:
+                model_info[faction] = "placeholder_model"
+                agent_endpoints[faction] = "unknown"
+        
         return {
-            "model_info": {
-                "wei": "placeholder_model",  # 占位，待实现
-                "shu": "placeholder_model"
-            },
+            "model_info": model_info,
+            "agent_endpoints": agent_endpoints,  # 新增字段
             "strategy_scores": {
                 "wei": 0.0,  # 占位，待实现
                 "shu": 0.0
