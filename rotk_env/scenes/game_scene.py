@@ -124,7 +124,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1, 3, 1], [1, 3, 1], [0, 0, 0]])
+        self._initialize_units([[1, 0, 1], [1, 0, 1], [0, 0, 0]])
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -220,6 +220,20 @@ class GameScene(Scene):
                 unit_counts[faction] = unit_assignments[1]
             elif faction == Faction.WU:
                 unit_counts[faction] = unit_assignments[2]
+
+        # 🆕 记录初始单位数到GameStats（确保GameStats已存在）
+        game_stats = self.world.get_singleton_component(GameStats)
+        if not game_stats:
+            # 如果GameStats不存在，先创建一个临时的，等_initialize_stats时会正确初始化
+            print("[GameScene] ⚠️ GameStats组件不存在，等待后续初始化...")
+            pass
+        
+        # 将初始单位数暂存，在_initialize_stats中再写入GameStats
+        self._temp_initial_unit_counts = {}
+        for faction, count in unit_counts.items():
+            total_units = sum(count)
+            self._temp_initial_unit_counts[faction] = total_units
+            print(f"[GameScene] 准备记录 {faction.value} 阵营初始单位数: {total_units}")
 
         for faction, count in unit_counts.items():
             if sum(count) == 0:
@@ -437,6 +451,14 @@ class GameScene(Scene):
         # 初始化游戏统计组件
         stats = GameStats()
         stats.game_start_time = time.time()
+        
+        # 🆕 将之前记录的初始单位数写入GameStats
+        if hasattr(self, '_temp_initial_unit_counts'):
+            stats.initial_unit_counts = self._temp_initial_unit_counts.copy()
+            print(f"[GameScene] ✅ 已将初始单位数写入GameStats: {stats.initial_unit_counts}")
+        else:
+            print("[GameScene] ⚠️ 未找到临时的初始单位数记录")
+        
         self.world.add_singleton_component(stats)
 
         # 初始化战斗日志

@@ -193,25 +193,39 @@ class SettlementReportSystem(System):
         """收集单位信息"""
         units_info = {}
         
+        # 🆕 获取初始单位数记录
+        game_stats = self.world.get_singleton_component(GameStats)
+        initial_counts = game_stats.initial_unit_counts if game_stats else {}
+        
+        # 🔍 添加调试信息
+        print(f"[SettlementReport] 📊 调试信息:")
+        print(f"  GameStats组件存在: {game_stats is not None}")
+        if game_stats:
+            print(f"  初始单位数记录: {initial_counts}")
+        else:
+            print("  ❌ GameStats组件不存在!")
+        
         for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
             faction_units = []
-            total_units = 0
             surviving_units = 0
             total_health = 0
             
+            # 🆕 使用记录的初始单位数，而不是当前存活的单位数
+            total_units = initial_counts.get(faction, 0)
+            
+            # 只统计当前存活的单位
             for entity in self.world.query().with_component(Unit).entities():
                 unit = self.world.get_component(entity, Unit)
                 unit_count = self.world.get_component(entity, UnitCount)
                 
                 if unit.faction == faction:
-                    total_units += 1
                     current_count = unit_count.current_count if unit_count else 0
                     
                     if current_count > 0:
                         surviving_units += 1
                         total_health += current_count
                     
-                    # 记录单位详细信息
+                    # 记录单位详细信息（包括死亡单位，如果仍在世界中）
                     unit_info = {
                         "unit_id": entity,
                         "unit_type": unit.unit_type.value,
@@ -222,14 +236,25 @@ class SettlementReportSystem(System):
                     }
                     faction_units.append(unit_info)
             
-            if total_units > 0:
+            # 🔍 添加更多调试信息
+            print(f"  {faction.value}阵营:")
+            print(f"    初始单位数: {total_units}")
+            print(f"    存活单位数: {surviving_units}")
+            print(f"    单位详情数量: {len(faction_units)}")
+            
+            if total_units > 0:  # 🆕 只要有初始单位就记录统计信息
+                destroyed_units = total_units - surviving_units  # 🆕 正确计算损失单位数
                 units_info[faction.value] = {
-                    "total_units": total_units,
+                    "total_units": total_units,  # 🆕 使用初始单位数
+                    "current_units": surviving_units,  # 🆕 明确标识当前存活单位数
                     "surviving_units": surviving_units,
-                    "destroyed_units": total_units - surviving_units,
+                    "destroyed_units": destroyed_units,  # 🆕 正确的损失单位数
                     "total_health": total_health,
                     "units": faction_units
                 }
+                print(f"    ✅ 添加到结算报告")
+            else:
+                print(f"    ❌ 初始单位数为0，跳过")
         
         return units_info
     
@@ -441,17 +466,17 @@ class SettlementReportSystem(System):
             
             with open(csv_file, "a", encoding="utf-8", newline="") as f:
                 if not csv_exists:
-                    # 写入CSV头部
+                    # 🆕 更新CSV头部，添加 current_units 字段
                     headers = [
                         "experiment_id", "timestamp", "map_type", "game_mode", "is_tie", "winner_faction",
                         "is_half_win", "game_duration_seconds", "total_turns",
-                        "wei_total_units", "wei_surviving_units", "wei_destroyed_units",
-                        "shu_total_units", "shu_surviving_units", "shu_destroyed_units",
+                        "wei_total_units", "wei_current_units", "wei_surviving_units", "wei_destroyed_units",
+                        "shu_total_units", "shu_current_units", "shu_surviving_units", "shu_destroyed_units",
                         "total_battles", "symmetry_type"
                     ]
                     f.write(",".join(headers) + "\n")
                 
-                # 写入数据行
+                # 🆕 更新数据行，添加 current_units 数据
                 row_data = [
                     report_data["experiment_id"],
                     report_data["timestamp"],
@@ -463,9 +488,11 @@ class SettlementReportSystem(System):
                     f"{report_data['game_duration_seconds']:.2f}",
                     str(report_data.get("total_turns", 0)),
                     str(report_data["units_info"].get("wei", {}).get("total_units", 0)),
+                    str(report_data["units_info"].get("wei", {}).get("current_units", 0)),  # 🆕
                     str(report_data["units_info"].get("wei", {}).get("surviving_units", 0)),
                     str(report_data["units_info"].get("wei", {}).get("destroyed_units", 0)),
                     str(report_data["units_info"].get("shu", {}).get("total_units", 0)),
+                    str(report_data["units_info"].get("shu", {}).get("current_units", 0)),  # 🆕
                     str(report_data["units_info"].get("shu", {}).get("surviving_units", 0)),
                     str(report_data["units_info"].get("shu", {}).get("destroyed_units", 0)),
                     str(report_data["battle_statistics"]["total_battles"]),
