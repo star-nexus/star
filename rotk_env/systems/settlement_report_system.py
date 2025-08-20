@@ -396,10 +396,12 @@ class SettlementReportSystem(System):
         """收集Agent和模型信息（原占位数据方法）"""
         # 获取Agent信息注册表
         registry = self.world.get_singleton_component(AgentInfoRegistry)
-        
+        game_stats = self.world.get_singleton_component(GameStats)
+
         model_info = {}
         agent_endpoints = {}
-        
+        response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+
         if registry:
             print(f"[SettlementReport] 📋 发现Agent注册表，已注册阵营: {list(registry.agents.keys())}")
             
@@ -419,7 +421,18 @@ class SettlementReportSystem(System):
             for faction in ["wei", "shu", "wu"]:
                 model_info[faction] = "placeholder_model"
                 agent_endpoints[faction] = "unknown"
-        
+
+        # 🆕 读取交互次数（按阵营聚合）
+        try:
+            if game_stats:
+                from ..prefabs.config import Faction as _Faction
+                for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
+                    response_times[f.value] = game_stats.response_times_by_faction.get(f, 0)
+            else:
+                print("[SettlementReport] ⚠️ GameStats组件不存在，response_times 使用默认0")
+        except Exception as e:
+            print(f"[SettlementReport] ⚠️ 读取response_times失败: {e}")
+
         return {
             "model_info": model_info,
             "agent_endpoints": agent_endpoints,  # 新增字段
@@ -428,10 +441,7 @@ class SettlementReportSystem(System):
                 "shu": 0.0
             },
             "enable_thinking": None,  # 占位，待实现
-            "response_times": {
-                "wei": 0,  # 占位，待实现
-                "shu": 0
-            }
+            "response_times": response_times
         }
     
     def _get_map_type(self) -> str:
