@@ -89,8 +89,8 @@ class SettlementReportSystem(System):
         # 收集单位信息
         units_info = self._collect_units_info()
         
-        # 收集战斗统计
-        battle_stats = self._collect_battle_statistics()
+        # 收集战斗统计（传入units_info以修正casualties数据）
+        battle_stats = self._collect_battle_statistics(units_info)
         
         # 收集地图统计
         map_stats = self._collect_map_statistics()
@@ -259,7 +259,7 @@ class SettlementReportSystem(System):
         
         return units_info
     
-    def _collect_battle_statistics(self) -> Dict[str, Any]:
+    def _collect_battle_statistics(self, units_info: Dict[str, Any] = None) -> Dict[str, Any]:
         """收集战斗统计"""
         game_stats = self.world.get_singleton_component(GameStats)
         
@@ -279,11 +279,29 @@ class SettlementReportSystem(System):
             # 统计各阵营伤亡
             for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
                 faction_stats = game_stats.faction_stats.get(faction, {})
-                battle_stats["faction_battle_stats"][faction.value] = faction_stats
                 
-                # 计算伤亡统计
+                # 🆕 修正faction_battle_stats中的losses字段
+                if units_info and faction.value in units_info:
+                    corrected_losses = units_info[faction.value].get("destroyed_units", 0)
+                    # 创建修正后的faction_stats副本
+                    corrected_faction_stats = faction_stats.copy()
+                    corrected_faction_stats["losses"] = corrected_losses
+                    battle_stats["faction_battle_stats"][faction.value] = corrected_faction_stats
+                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营faction_battle_stats.losses: {faction_stats.get('losses', 0)} -> {corrected_losses}")
+                else:
+                    battle_stats["faction_battle_stats"][faction.value] = faction_stats
+                
+                # 🆕 修正伤亡统计 - 使用units_info中的正确数据
+                if units_info and faction.value in units_info:
+                    # 使用units_info中已正确计算的destroyed_units作为units_lost
+                    corrected_units_lost = units_info[faction.value].get("destroyed_units", 0)
+                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营casualties.units_lost: {faction_stats.get('units_lost', 0)} -> {corrected_units_lost}")
+                else:
+                    # 回退到原有逻辑
+                    corrected_units_lost = faction_stats.get("units_lost", 0)
+                
                 casualties = {
-                    "units_lost": faction_stats.get("units_lost", 0),
+                    "units_lost": corrected_units_lost,  # 🆕 使用修正后的值
                     "damage_dealt": faction_stats.get("damage_dealt", 0),
                     "damage_taken": faction_stats.get("damage_taken", 0)
                 }
