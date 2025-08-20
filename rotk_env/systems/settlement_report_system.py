@@ -433,12 +433,21 @@ class SettlementReportSystem(System):
         except Exception as e:
             print(f"[SettlementReport] ⚠️ 读取response_times失败: {e}")
 
+        # 🆕 读取策略评分
+        strategy_scores: Dict[str, float] = {"wei": 0.0, "shu": 0.0, "wu": 0.0}
+        try:
+            if game_stats and hasattr(game_stats, "strategy_scores_by_faction"):
+                from ..prefabs.config import Faction as _Faction
+                for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
+                    strategy_scores[f.value] = float(game_stats.strategy_scores_by_faction.get(f, 0.0))
+        except Exception as e:
+            print(f"[SettlementReport] ⚠️ 读取strategy_scores失败: {e}")
+
         return {
             "model_info": model_info,
             "agent_endpoints": agent_endpoints,  # 新增字段
             "strategy_scores": {
-                "wei": 0.0,  # 占位，待实现
-                "shu": 0.0
+                **strategy_scores
             },
             "enable_thinking": None,  # 占位，待实现
             "response_times": response_times

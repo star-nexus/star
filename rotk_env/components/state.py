@@ -102,3 +102,9 @@ class GameStats(SingletonComponent):
     response_times_by_faction: Dict[Faction, int] = field(default_factory=dict)
     # 🆕 记录agent与阵营的映射（用于按阵营汇总）
     agent_id_to_faction: Dict[str, Faction] = field(default_factory=dict)
+
+    # 🆕 策略评分统计
+    strategy_scores_by_faction: Dict[Faction, float] = field(default_factory=dict)
+    strategy_ping_count_by_faction: Dict[Faction, int] = field(default_factory=dict)
+    strategy_evidence: Dict[Faction, List[str]] = field(default_factory=dict)
+    last_strategy_ping_ts: Dict[Faction, float] = field(default_factory=dict)
