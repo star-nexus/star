@@ -116,7 +116,9 @@ class LLMSystem(System):
 
     def _init_system_actions(self) -> Dict[str, callable]:
         """初始化系统级动作映射"""
-        return {}
+        return {
+            "strategy_ping": self.handle_strategy_ping,
+        }
 
     def add_listener(self):
         # 添加事件监听器
@@ -231,6 +233,95 @@ class LLMSystem(System):
         except Exception as _e:
             # 统计失败不影响主流程
             print(f"[LLMSystem] 记录交互次数时发生非致命错误: {_e}")
+
+    # === 策略评分：Agent 端主动打点 ===
+    def handle_strategy_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """接收Agent端策略思考命中打点，进行计分与限流。
+
+        期望参数：
+          - faction: str (wei/shu/wu) 必填
+          - score: float (默认0.5, 0 < score ≤ 1.0)
+          - evidence: str (可选，简短策略摘要)
+        限制：
+          - 同一阵营限流间隔（默认2秒）内只计一次
+          - 每阵营每分钟上限（默认6次 = 3分）
+        """
+        try:
+            faction_key = params.get("faction")
+            score = params.get("score", 0.5)
+            evidence = params.get("evidence", None)
+
+            if not faction_key:
+                return {"success": False, "message": "Missing faction"}
+            try:
+                from ..prefabs.config import Faction as _Faction
+                faction = _Faction(faction_key)
+            except Exception:
+                return {"success": False, "message": f"Invalid faction: {faction_key}"}
+
+            # 校验分值
+            try:
+                score = float(score)
+            except Exception:
+                return {"success": False, "message": "Invalid score"}
+            if not (0.0 < score <= 1.0):
+                return {"success": False, "message": "Score out of range (0, 1]"}
+
+            # 获取统计组件
+            stats = self.world.get_singleton_component(GameStats)
+            if stats is None:
+                stats = GameStats()
+                self.world.add_singleton_component(stats)
+
+            import time as _time
+            now = _time.time()
+
+            # 限流：同阵营最小响应间隔
+            min_interval_sec = 2.0
+            last_ts = stats.last_strategy_ping_ts.get(faction)
+            if last_ts is not None and (now - last_ts) < min_interval_sec:
+                return {"success": False, "message": "Strategy ping throttled"}
+
+            # 每分钟上限
+            per_minute_cap = 6  # 次数
+            window_sec = 60.0
+            # 简易：用 ping_count 和 last_ts 粗略控制，如果上一分钟内次数已达上限，则拒绝
+            count = stats.strategy_ping_count_by_faction.get(faction, 0)
+            # 可选更精细：维护一个时间戳队列，这里先保持简单
+            if count >= per_minute_cap and last_ts and (now - last_ts) < window_sec:
+                return {"success": False, "message": "Per-minute cap reached"}
+
+            # 通过，累计分值
+            current_score = stats.strategy_scores_by_faction.get(faction, 0.0)
+            stats.strategy_scores_by_faction[faction] = round(current_score + score, 4)
+
+            # 更新计数、时间戳
+            stats.strategy_ping_count_by_faction[faction] = count + 1
+            stats.last_strategy_ping_ts[faction] = now
+
+            # 记录证据（保留最近10条）
+            if evidence:
+                ev_list = stats.strategy_evidence.get(faction, [])
+                # 截断证据
+                try:
+                    evidence = str(evidence)
+                    if len(evidence) > 120:
+                        evidence = evidence[:117] + "..."
+                except Exception:
+                    evidence = "<invalid evidence>"
+                ev_list.append(evidence)
+                if len(ev_list) > 10:
+                    ev_list = ev_list[-10:]
+                stats.strategy_evidence[faction] = ev_list
+            
+            return {
+                "success": True,
+                "message": "Strategy score accepted",
+                "new_score": stats.strategy_scores_by_faction[faction],
+                "pings": stats.strategy_ping_count_by_faction[faction],
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Strategy ping failed: {e}"}
 
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
