@@ -25,6 +25,7 @@ from rotk_env.components import (
     Camera,
     UIState,
     GameModeComponent,
+    GameStats,
 )
 from rotk_env.prefabs.config import Faction, UnitType, GameMode
 from rotk_env.systems.llm_observation_system import ObservationLevel
@@ -187,6 +188,50 @@ class LLMSystem(System):
         """执行动作 - 同步接口"""
         return self.client.response_to_agent(agent_id, action_id, outcome, outcome_type)
 
+    def _record_interaction(self, agent_id: str | None, params: Dict[str, Any] | None) -> None:
+        """记录一次 ENV -> Agent 响应交互。
+
+        - 按 agent 维度累计
+        - 通过 agent -> faction 映射进行阵营累计；若本次参数提供了 faction 则建立映射
+        """
+        try:
+            stats = self.world.get_singleton_component(GameStats)
+            if stats is None:
+                stats = GameStats()
+                self.world.add_singleton_component(stats)
+
+            # 按 agent 统计
+            if agent_id:
+                stats.response_times_by_agent[agent_id] = (
+                    stats.response_times_by_agent.get(agent_id, 0) + 1
+                )
+
+            # 阵营聚合：优先使用既有映射；否则尝试从本次参数中解析 faction 并建立映射
+            from ..prefabs.config import Faction as _Faction
+            mapped_faction = None
+
+            if agent_id and agent_id in stats.agent_id_to_faction:
+                mapped_faction = stats.agent_id_to_faction.get(agent_id)
+            else:
+                faction_key = None
+                if isinstance(params, dict):
+                    faction_key = params.get("faction")
+                if faction_key:
+                    try:
+                        mapped_faction = _Faction(faction_key)
+                        if agent_id:
+                            stats.agent_id_to_faction[agent_id] = mapped_faction
+                    except Exception:
+                        mapped_faction = None
+
+            if mapped_faction:
+                stats.response_times_by_faction[mapped_faction] = (
+                    stats.response_times_by_faction.get(mapped_faction, 0) + 1
+                )
+        except Exception as _e:
+            # 统计失败不影响主流程
+            print(f"[LLMSystem] 记录交互次数时发生非致命错误: {_e}")
+
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
         agent_id = sender.get("id") if sender.get("type") == "agent" else None
@@ -197,6 +242,8 @@ class LLMSystem(System):
                 "timestamp": time.time(),
             }
             self.send_message(error_response, target={"type": "agent", "id": agent_id})
+            # 统一位置计数：显式错误响应也计数
+            self._record_interaction(agent_id, None)
 
     def subscribe_events(self):
         return super().subscribe_events()
@@ -299,11 +346,15 @@ class LLMSystem(System):
             self.client.response_to_agent(
                 agent_id, action_id, standardized_result, "str"
             )
+            # 统一位置计数：正常响应
+            self._record_interaction(agent_id, params)
 
         except Exception as e:
             print(f"执行动作 {action} 时出错: {e}")
             error_result = self._create_system_error_response(action, str(e), 2010)
             self.client.response_to_agent(agent_id, action_id, error_result, "str")
+            # 统一位置计数：异常时的错误响应也计数
+            self._record_interaction(agent_id, params)
 
     def _is_observation_action(self, action: str) -> bool:
         """判断是否为观测动作"""
