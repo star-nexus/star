@@ -23,12 +23,12 @@ class Tile:
 class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     """地图系统 - 管理地图生成和地形，支持MOBA风格地图"""
 
-    def __init__(self, competitive_mode: bool = True, symmetry_type: str = "river_split"):
+    def __init__(
+        self, competitive_mode: bool = True, symmetry_type: str = "river_split"
+    ):
         super().__init__(priority=100)
         self.competitive_mode = competitive_mode
-        self.symmetry_type = (
-            symmetry_type  # "horizontal", "diagonal", "river_split", "square", "moba", "encounter"
-        )
+        self.symmetry_type = symmetry_type  # "horizontal", "diagonal", "river_split", "square", "moba", "encounter"
         self.seed = 42
 
     def initialize(self, world: World) -> None:
@@ -69,123 +69,118 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             self._generate_standard_map()
 
     def _generate_square_map(self):
-        """生成地图 - 生成视觉上为正方形的六边形地图"""
+        """生成地图 - 生成视觉上为正方形的六边形地图（使用偏移坐标）"""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
-        # 计算地图的半径，使其能容纳正方形区域
-        map_radius = max(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2
+        # 使用偏移坐标系直接生成矩形区域
+        for col in range(GameConfig.MAP_WIDTH):
+            for row in range(GameConfig.MAP_HEIGHT):
+                # 生成地形
+                terrain_type = self._generate_terrain_offset(col, row)
 
-        # 使用矩形边界约束生成六边形地图，确保视觉上为正方形
-        for q in range(-map_radius, map_radius + 1):
-            for r in range(-map_radius, map_radius + 1):
-                # 计算世界坐标来检查是否在正方形边界内
-                from ..utils.hex_utils import HexConverter
+                # 创建地块实体
+                tile_entity = self.world.create_entity()
+                self.world.add_component(tile_entity, HexPosition(col, row))
+                self.world.add_component(tile_entity, Terrain(terrain_type))
+                self.world.add_component(tile_entity, Tile((col, row)))
 
-                hex_converter = HexConverter(
-                    GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
-                )
-                world_x, world_y = hex_converter.hex_to_pixel(q, r)
-
-                # 定义正方形边界（基于世界坐标）
-                half_width = (
-                    GameConfig.MAP_WIDTH * GameConfig.HEX_SIZE * 0.75
-                )  # 调整系数以获得更好的正方形效果
-                half_height = GameConfig.MAP_HEIGHT * GameConfig.HEX_SIZE * 0.65
-
-                # 检查当前六边形是否在正方形边界内
-                if abs(world_x) <= half_width and abs(world_y) <= half_height:
-                    # 随机生成地形
-                    terrain_type = self._generate_terrain(q, r)
-
-                    # 创建地块实体
-                    tile_entity = self.world.create_entity()
-                    self.world.add_component(tile_entity, HexPosition(q, r))
-                    self.world.add_component(tile_entity, Terrain(terrain_type))
-                    self.world.add_component(tile_entity, Tile((q, r)))
-
-                    # 添加到地图数据
-                    map_data.tiles[(q, r)] = tile_entity
+                # 添加到地图数据
+                map_data.tiles[(col, row)] = tile_entity
 
         self.world.add_singleton_component(map_data)
 
     def _generate_competitive_map_v2(self):
-        """🏆 生成竞技对抗地图 V2.0 - 真正的对称性"""
+        """🏆 生成竞技对抗地图 V2.0 - 使用偏移坐标系统"""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
         print(
-            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 真正对称竞技地图"
+            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 真正对称竞技地图（偏移坐标）"
         )
 
-        # 直接生成完整地图 - 每个坐标的地形由对称函数决定
-        terrain_map = self._generate_symmetric_terrain_map()
+        # 直接使用偏移坐标生成地图
+        terrain_map = self._generate_symmetric_terrain_map_offset()
 
         # 创建ECS实体
-        self._create_competitive_map_entities(map_data, terrain_map)
+        self._create_competitive_map_entities_offset(map_data, terrain_map)
 
         # 添加到世界
         self.world.add_singleton_component(map_data)
 
         # 打印分析报告
-        self._print_competitive_map_analysis_v2(terrain_map)
+        self._print_competitive_map_analysis_v2_offset(terrain_map)
 
-    def _generate_symmetric_terrain_map(self) -> Dict[Tuple[int, int], TerrainType]:
-        """生成完全对称的地形地图"""
+    def _generate_symmetric_terrain_map_offset(
+        self,
+    ) -> Dict[Tuple[int, int], TerrainType]:
+        """生成完全对称的地形地图（偏移坐标）"""
         terrain_map = {}
-        center = GameConfig.MAP_WIDTH // 2
 
         # 遍历整个地图
-        for q in range(GameConfig.MAP_WIDTH):
-            for r in range(GameConfig.MAP_HEIGHT):
-                # 转换为以中心为原点的坐标
-                center_q = q - center
-                center_r = r - center
-
+        for col in range(GameConfig.MAP_WIDTH):
+            for row in range(GameConfig.MAP_HEIGHT):
                 # 🔥 核心：使用保证对称的地形生成函数
-                terrain = self._generate_symmetric_terrain(center_q, center_r)
-                terrain_map[(center_q, center_r)] = terrain
+                terrain = self._generate_symmetric_terrain_offset(col, row)
+                terrain_map[(col, row)] = terrain
 
         return terrain_map
 
-    def _generate_symmetric_terrain(self, q: int, r: int) -> TerrainType:
-        """🎯 生成绝对对称的地形 - 核心算法"""
+    def _generate_symmetric_terrain_offset(self, col: int, row: int) -> TerrainType:
+        """🎯 生成绝对对称的地形 - 偏移坐标版本"""
+        # 计算地图中心
+        center_col = GameConfig.MAP_WIDTH // 2
+        center_row = GameConfig.MAP_HEIGHT // 2
 
-        # 🔥 关键：使用abs(r)确保对称性
-        abs_r = abs(r)
-        distance_from_center = math.sqrt(q * q + abs_r * abs_r)
+        # 转换为以中心为原点的坐标
+        center_based_col = col - center_col
+        center_based_row = row - center_row
 
-        # 使用对称的种子：对于(q,r)和(q,-r)产生相同的随机数
-        symmetric_seed = q * 10007 + abs_r * 10009 + self.seed
+        # 🔥 关键：使用abs(row)确保水平对称性
+        abs_row = abs(center_based_row)
+        distance_from_center = math.sqrt(
+            center_based_col * center_based_col + abs_row * abs_row
+        )
+
+        # 使用对称的种子：对于(col,row)和(col,-row)产生相同的随机数
+        symmetric_seed = center_based_col * 10007 + abs_row * 10009 + self.seed
         rand = random.Random(symmetric_seed)
         value = rand.random()
 
         # === Zone A: 出生点/大本营区域 ===
-        if abs_r >= 6:  # 地图的南北两端
-            return self._generate_spawn_area_terrain(q, abs_r, value)
+        if abs_row >= 6:  # 地图的南北两端
+            return self._generate_spawn_area_terrain_offset(
+                center_based_col, abs_row, value
+            )
 
         # === Zone B: 中央战略区 ===
         elif distance_from_center <= 1.5:  # 正中心
-            return self._generate_central_zone_terrain(q, abs_r, value)
+            return self._generate_central_zone_terrain_offset(
+                center_based_col, abs_row, value
+            )
 
         # === Zone C: 战术缓冲带 ===
         elif distance_from_center <= 4.5:
-            return self._generate_tactical_buffer_terrain(q, abs_r, value)
+            return self._generate_tactical_buffer_terrain_offset(
+                center_based_col, abs_row, value
+            )
 
         # === Zone D: 对抗主路 ===
         else:  # 外围区域
-            return self._generate_outer_zone_terrain(q, abs_r, value)
+            return self._generate_outer_zone_terrain_offset(
+                center_based_col, abs_row, value
+            )
 
-    def _generate_spawn_area_terrain(
-        self, q: int, abs_r: int, value: float
+    def _generate_spawn_area_terrain_offset(
+        self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成出生点区域地形 - 安全且资源丰富"""
-        abs_q = abs(q)
+        """生成出生点区域地形 - 偏移坐标版本"""
+        abs_col = abs(col)
 
         # 出生点核心：纯平原，便于初期部署
-        if abs_q <= 1 and abs_r >= 6:
+        if abs_col <= 1 and abs_row >= 6:
             return TerrainType.PLAIN
 
         # 出生点周围：混合平原、丘陵、少量森林
@@ -196,13 +191,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         else:
             return TerrainType.FOREST  # 20% 森林
 
-    def _generate_central_zone_terrain(
-        self, q: int, abs_r: int, value: float
+    def _generate_central_zone_terrain_offset(
+        self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成中央战略区地形 - 高价值目标"""
+        """生成中央战略区地形 - 偏移坐标版本"""
 
         # 正中心点：唯一的城市
-        if q == 0 and abs_r == 0:
+        if col == 0 and abs_row == 0:
             return TerrainType.URBAN
 
         # 中心周围：高价值地形
@@ -213,14 +208,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         else:
             return TerrainType.FOREST  # 30% 森林 (战术掩护)
 
-    def _generate_tactical_buffer_terrain(
-        self, q: int, abs_r: int, value: float
+    def _generate_tactical_buffer_terrain_offset(
+        self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成战术缓冲带地形 - 多样化战术选择"""
-        abs_q = abs(q)
+        """生成战术缓冲带地形 - 偏移坐标版本"""
+        abs_col = abs(col)
 
         # 接近中轴线：相对开阔的主要通道
-        if abs_q <= 2:
+        if abs_col <= 2:
             if value < 0.5:
                 return TerrainType.PLAIN
             elif value < 0.8:
@@ -241,13 +236,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.WATER  # 少量水域作为天然屏障
 
-    def _generate_outer_zone_terrain(
-        self, q: int, abs_r: int, value: float
+    def _generate_outer_zone_terrain_offset(
+        self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成外围区域地形 - 平衡的多样化"""
+        """生成外围区域地形 - 偏移坐标版本"""
 
         # 边缘地带：更多山地和水域作为天然边界
-        if abs(q) >= 6 or abs_r >= 5:
+        if abs(col) >= 6 or abs_row >= 5:
             if value < 0.3:
                 return TerrainType.MOUNTAIN
             elif value < 0.5:
@@ -270,26 +265,34 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.WATER
 
-    def _create_competitive_map_entities(
+    def _create_competitive_map_entities_offset(
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """创建竞技地图的实体"""
+        """创建竞技地图的实体 - 偏移坐标版本"""
+        # 计算出生点位置（使用偏移坐标）
+        center_row = GameConfig.MAP_HEIGHT // 2
         spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
         spawn_points = {
-            Faction.SHU: (0, spawn_distance),  # 上方出生点
-            Faction.WEI: (0, -spawn_distance),  # 下方出生点
+            Faction.SHU: (
+                GameConfig.MAP_WIDTH // 2,
+                center_row + spawn_distance,
+            ),  # 上方出生点
+            Faction.WEI: (
+                GameConfig.MAP_WIDTH // 2,
+                center_row - spawn_distance,
+            ),  # 下方出生点
         }
 
-        for (q, r), terrain_type in terrain_map.items():
+        for (col, row), terrain_type in terrain_map.items():
             # 创建地块实体
             tile_entity = self.world.create_entity()
-            self.world.add_component(tile_entity, HexPosition(q, r))
+            self.world.add_component(tile_entity, HexPosition(col, row))
             self.world.add_component(tile_entity, Terrain(terrain_type))
-            self.world.add_component(tile_entity, Tile((q, r)))
+            self.world.add_component(tile_entity, Tile((col, row)))
 
             # 在出生点附近设置初始领土控制
             controlling_faction = self._get_initial_territory_control(
-                (q, r), spawn_points
+                (col, row), spawn_points
             )
             if controlling_faction:
                 self.world.add_component(
@@ -308,7 +311,147 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                 )
 
             # 添加到地图数据
-            map_data.tiles[(q, r)] = tile_entity
+            map_data.tiles[(col, row)] = tile_entity
+
+    def _print_competitive_map_analysis_v2_offset(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """打印竞技地图分析报告 V2.0 - 偏移坐标版本"""
+        terrain_count = {}
+        for terrain in terrain_map.values():
+            terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
+
+        print("\n" + "=" * 70)
+        print("🏆 竞技对抗地图分析报告 V2.0 (偏移坐标系)")
+        print("=" * 70)
+        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print(f"🎯 设计原则: 水平对称，直观坐标系")
+        print(f"⚖️  对称轴: 水平中轴线 (row={GameConfig.MAP_HEIGHT//2})")
+        print(f"🗂️  坐标系: 偏移坐标（更直观的行列布局）")
+        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+
+        print("\n🌍 地形分布统计:")
+        total_tiles = len(terrain_map)
+        for terrain, count in sorted(
+            terrain_count.items(), key=lambda x: x[1], reverse=True
+        ):
+            percentage = count / total_tiles * 100
+            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+
+        # 详细地图可视化打印
+        self._print_terrain_map_visual_offset(terrain_map)
+
+        # 严格的对称性验证
+        self._verify_map_symmetry_v2_offset(terrain_map)
+
+        # 出生点信息
+        center_row = GameConfig.MAP_HEIGHT // 2
+        spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
+        print(f"\n🚀 阵营出生点:")
+        print(
+            f"  SHU (蜀): ({GameConfig.MAP_WIDTH//2}, {center_row + spawn_distance})  - 地图上方"
+        )
+        print(
+            f"  WEI (魏): ({GameConfig.MAP_WIDTH//2}, {center_row - spawn_distance}) - 地图下方"
+        )
+        print(f"  📏 出生点距离: {2 * spawn_distance} 格")
+
+        print("=" * 70)
+
+    def _print_terrain_map_visual_offset(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """🗺️ 打印地图的可视化表示 - 偏移坐标版本"""
+        print("\n🗺️ 地形地图可视化 (行从上到下, 列从左到右):")
+        print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
+
+        terrain_chars = {
+            TerrainType.PLAIN: "P",
+            TerrainType.FOREST: "F",
+            TerrainType.HILL: "H",
+            TerrainType.MOUNTAIN: "M",
+            TerrainType.WATER: "W",
+            TerrainType.URBAN: "U",
+        }
+
+        print("\n   ", end="")
+
+        # 打印列标题 (col坐标)
+        for col in range(GameConfig.MAP_WIDTH):
+            print(f"{col:2}", end=" ")
+        print()
+
+        # 打印每一行
+        for row in range(GameConfig.MAP_HEIGHT):
+            print(f"{row:2}:", end=" ")
+            for col in range(GameConfig.MAP_WIDTH):
+                if (col, row) in terrain_map:
+                    terrain = terrain_map[(col, row)]
+                    char = terrain_chars.get(terrain, "?")
+                    print(f" {char}", end=" ")
+                else:
+                    print("  ", end=" ")
+            print(f" :{row}")
+
+        # 再次打印底部列标题
+        print("   ", end="")
+        for col in range(GameConfig.MAP_WIDTH):
+            print(f"{col:2}", end=" ")
+        print()
+
+    def _verify_map_symmetry_v2_offset(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """🔍 严格验证地图对称性 V2.0 - 偏移坐标版本"""
+        print(f"\n🔍 对称性验证 V2.0 (偏移坐标):")
+
+        asymmetric_pairs = []
+        symmetric_pairs = 0
+        total_checks = 0
+
+        center_row = GameConfig.MAP_HEIGHT // 2
+
+        # 检查每个位置与其镜像位置
+        for col in range(GameConfig.MAP_WIDTH):
+            for row in range(GameConfig.MAP_HEIGHT):
+                if (col, row) in terrain_map:
+                    # 计算镜像位置：相对于水平中轴线对称
+                    mirror_row = 2 * center_row - row
+                    mirror_pos = (col, mirror_row)
+                    total_checks += 1
+
+                    if mirror_pos in terrain_map:
+                        if terrain_map[(col, row)] == terrain_map[mirror_pos]:
+                            symmetric_pairs += 1
+                        else:
+                            asymmetric_pairs.append(
+                                {
+                                    "pos1": (col, row),
+                                    "terrain1": terrain_map[(col, row)].value,
+                                    "pos2": mirror_pos,
+                                    "terrain2": terrain_map[mirror_pos].value,
+                                }
+                            )
+                    else:
+                        asymmetric_pairs.append(
+                            {
+                                "pos1": (col, row),
+                                "terrain1": terrain_map[(col, row)].value,
+                                "pos2": mirror_pos,
+                                "terrain2": "缺失",
+                            }
+                        )
+
+        if len(asymmetric_pairs) == 0:
+            print(f"  ✅ 完美对称！{symmetric_pairs}/{total_checks} 个位置完全对称")
+        else:
+            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            for i, pair in enumerate(asymmetric_pairs[:5]):
+                print(
+                    f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
+                )
+            if len(asymmetric_pairs) > 5:
+                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
 
     def _get_initial_territory_control(
         self,
@@ -771,59 +914,124 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             if len(asymmetric_pairs) > 5:
                 print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
 
-    # 保留原有方法以兼容性
     def _generate_standard_map(self):
-        """生成标准随机地图（原有逻辑）"""
+        """生成标准随机地图（使用偏移坐标）"""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
         # 生成地图
-        for q in range(GameConfig.MAP_WIDTH):
-            for r in range(GameConfig.MAP_HEIGHT):
-                # 转换为以中心为原点的坐标系
-                center_q = q - GameConfig.MAP_WIDTH // 2
-                center_r = r - GameConfig.MAP_HEIGHT // 2
-
-                # 随机生成地形
-                terrain_type = self._generate_terrain(center_q, center_r)
+        for col in range(GameConfig.MAP_WIDTH):
+            for row in range(GameConfig.MAP_HEIGHT):
+                # 使用偏移坐标生成地形
+                terrain_type = self._generate_terrain_offset(col, row)
 
                 # 创建地块实体
                 tile_entity = self.world.create_entity()
-                self.world.add_component(tile_entity, HexPosition(q, r))
+                self.world.add_component(tile_entity, HexPosition(col, row))
                 self.world.add_component(tile_entity, Terrain(terrain_type))
-                self.world.add_component(tile_entity, Tile((q, r)))
+                self.world.add_component(tile_entity, Tile((col, row)))
 
                 # 添加到地图数据
-                map_data.tiles[(q, r)] = tile_entity
+                map_data.tiles[(col, row)] = tile_entity
 
         self.world.add_singleton_component(map_data)
 
     def get_competitive_spawn_positions(self) -> Dict[Faction, Tuple[int, int]]:
-        """获取竞技模式的出生位置"""
+        """获取竞技模式的出生位置（偏移坐标）"""
         if not self.competitive_mode:
             return {}
 
+        center_col = GameConfig.MAP_WIDTH // 2
+        center_row = GameConfig.MAP_HEIGHT // 2
+
         if self.symmetry_type == "river_split":
             return {
-                Faction.SHU: (-4, 4),  # 左上区域前沿
-                Faction.WEI: (4, -4),  # 右下区域前沿
+                Faction.SHU: (center_col - 4, center_row + 4),  # 左上区域前沿
+                Faction.WEI: (center_col + 4, center_row - 4),  # 右下区域前沿
             }
         elif self.symmetry_type == "diagonal":
-            return {Faction.SHU: (-6, 6), Faction.WEI: (6, -6)}  # 左上角  # 右下角
+            return {
+                Faction.SHU: (center_col - 6, center_row + 6),  # 左上角
+                Faction.WEI: (center_col + 6, center_row - 6),  # 右下角
+            }
         else:
             # 水平对称模式
             spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
-            return {Faction.SHU: (0, spawn_distance), Faction.WEI: (0, -spawn_distance)}
+            return {
+                Faction.SHU: (center_col, center_row + spawn_distance),  # 上方出生点
+                Faction.WEI: (center_col, center_row - spawn_distance),  # 下方出生点
+            }
 
     def enable_competitive_mode(self, enabled: bool = True):
         """启用/禁用竞技模式"""
         self.competitive_mode = enabled
         print(f"[MapSystem] 竞技模式: {'启用' if enabled else '禁用'}")
 
-    # 保留原有的地形生成方法以兼容性
+    def _generate_terrain_offset(self, col: int, row: int) -> TerrainType:
+        """生成地形类型 - 偏移坐标版本"""
+        # 使用固定种子确保地形生成的一致性
+        rand = random.Random(col * 10007 + row * 10009 + self.seed)
+        value = rand.random()
+
+        # 计算到地图中心的距离
+        center_col = GameConfig.MAP_WIDTH // 2
+        center_row = GameConfig.MAP_HEIGHT // 2
+        distance = math.sqrt((col - center_col) ** 2 + (row - center_row) ** 2)
+        max_distance = math.sqrt(center_col**2 + center_row**2)
+        distance_ratio = distance / max_distance
+
+        # 基于距离和随机值决定地形
+        if distance < 3:
+            # 中心区域：更多城池和平原
+            if value < 0.2:
+                return TerrainType.URBAN
+            elif value < 0.7:
+                return TerrainType.PLAIN
+            elif value < 0.85:
+                return TerrainType.HILL
+            else:
+                return TerrainType.FOREST
+        elif distance_ratio > 0.8:
+            # 边缘区域：更多山地和水域
+            if value < 0.25:
+                return TerrainType.MOUNTAIN
+            elif value < 0.4:
+                return TerrainType.WATER
+            elif value < 0.7:
+                return TerrainType.FOREST
+            else:
+                return TerrainType.HILL
+        elif distance_ratio > 0.6:
+            # 外围区域：混合地形
+            if value < 0.3:
+                return TerrainType.FOREST
+            elif value < 0.5:
+                return TerrainType.HILL
+            elif value < 0.65:
+                return TerrainType.MOUNTAIN
+            elif value < 0.75:
+                return TerrainType.WATER
+            else:
+                return TerrainType.PLAIN
+        else:
+            # 中间区域：平衡的多样化地形
+            if value < 0.35:
+                return TerrainType.PLAIN
+            elif value < 0.55:
+                return TerrainType.FOREST
+            elif value < 0.75:
+                return TerrainType.HILL
+            elif value < 0.85:
+                return TerrainType.MOUNTAIN
+            elif value < 0.92:
+                return TerrainType.WATER
+            else:
+                return TerrainType.URBAN
+
+    # 保留原有的地形生成方法以兼容性（立方/轴坐标系统）
     def _generate_terrain(self, q: int, r: int) -> TerrainType:
-        """生成地形类型 - 适配地图（原有方法保持不变）"""
+        """生成地形类型 - 立方坐标版本（已弃用，保留兼容性）"""
         # 使用固定种子确保地形生成的一致性
         rand = random.Random(q * 10007 + r * 10009)
         value = rand.random()
