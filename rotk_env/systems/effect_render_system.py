@@ -87,7 +87,7 @@ class EffectRenderSystem(System):
         if not position:
             return
 
-        # 转换为屏幕坐标（修复坐标转换）
+        # 转换为屏幕坐标
         world_x, world_y = self.hex_converter.hex_to_pixel(position.col, position.row)
         screen_x = world_x * zoom + camera_offset[0]
         screen_y = world_y * zoom + camera_offset[1]
@@ -239,7 +239,7 @@ class EffectRenderSystem(System):
             ):
                 continue
 
-            # 转换为屏幕坐标（修复坐标转换）
+            # 转换为屏幕坐标
             world_x, world_y = self.hex_converter.hex_to_pixel(tile_col, tile_row)
             screen_x = world_x * zoom + camera_offset[0]
             screen_y = world_y * zoom + camera_offset[1]

@@ -22,27 +22,64 @@ class HexMath:
         return q, r, -q - r
 
     @staticmethod
+    def offset_to_axial(col: int, row: int) -> Tuple[int, int]:
+        """偏移坐标转轴坐标（奇数列偏移）"""
+        q = col
+        r = row - (col - (col & 1)) // 2
+        return q, r
+
+    @staticmethod
+    def axial_to_offset(q: int, r: int) -> Tuple[int, int]:
+        """轴坐标转偏移坐标（奇数列偏移）"""
+        col = q
+        row = r + (q - (q & 1)) // 2
+        return col, row
+
+    @staticmethod
     def hex_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
-        """计算两个六边形之间的距离"""
-        q1, r1 = pos1
-        q2, r2 = pos2
+        """计算两个六边形之间的距离（支持偏移坐标）"""
+        # 如果输入是偏移坐标，先转换为轴坐标
+        q1, r1 = HexMath.offset_to_axial(*pos1)
+        q2, r2 = HexMath.offset_to_axial(*pos2)
         s1 = -q1 - r1
         s2 = -q2 - r2
         return (abs(q1 - q2) + abs(r1 - r2) + abs(s1 - s2)) // 2
 
     @staticmethod
-    def hex_neighbors(q: int, r: int) -> List[Tuple[int, int]]:
-        """获取六边形的6个邻居"""
-        # 六边形的6个方向向量
-        directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-        return [(q + dq, r + dr) for dq, dr in directions]
+    def hex_neighbors(col: int, row: int) -> List[Tuple[int, int]]:
+        """获取六边形的6个邻居（偏移坐标，基于像素坐标推导的正确定义）"""
+        # 奇数列和偶数列的邻居模式不同
+        # 通过像素坐标验证的正确邻居定义
+        if col % 2 == 0:  # 偶数列
+            directions = [
+                (1, -1),  # 右上
+                (0, -1),  # 上
+                (-1, -1),  # 左上
+                (-1, 0),  # 左
+                (0, 1),  # 下
+                (1, 0),  # 右
+            ]
+        else:  # 奇数列
+            directions = [
+                (1, 0),  # 右
+                (0, -1),  # 上
+                (-1, 0),  # 左
+                (-1, 1),  # 左下
+                (0, 1),  # 下
+                (1, 1),  # 右下
+            ]
+        return [(col + dc, row + dr) for dc, dr in directions]
 
     @staticmethod
-    def hex_ring(center_q: int, center_r: int, radius: int) -> List[Tuple[int, int]]:
-        """获取指定半径的六边形环"""
+    def hex_ring(
+        center_col: int, center_row: int, radius: int
+    ) -> List[Tuple[int, int]]:
+        """获取指定半径的六边形环（偏移坐标）"""
         if radius == 0:
-            return [(center_q, center_r)]
+            return [(center_col, center_row)]
 
+        # 转换为轴坐标进行计算
+        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
         results = []
         q, r = center_q + radius, center_r - radius
 
@@ -51,42 +88,55 @@ class HexMath:
 
         for i, (dq, dr) in enumerate(directions):
             for j in range(radius):
-                results.append((q, r))
+                # 转换回偏移坐标
+                col, row = HexMath.axial_to_offset(q, r)
+                results.append((col, row))
                 q += dq
                 r += dr
 
         return results
 
     @staticmethod
-    def hex_spiral(center_q: int, center_r: int, radius: int) -> List[Tuple[int, int]]:
-        """获取指定半径内的所有六边形（螺旋顺序）"""
-        results = [(center_q, center_r)]
+    def hex_spiral(
+        center_col: int, center_row: int, radius: int
+    ) -> List[Tuple[int, int]]:
+        """获取指定半径内的所有六边形（螺旋顺序，偏移坐标）"""
+        results = [(center_col, center_row)]
         for r in range(1, radius + 1):
-            results.extend(HexMath.hex_ring(center_q, center_r, r))
+            results.extend(HexMath.hex_ring(center_col, center_row, r))
         return results
 
     @staticmethod
     def hex_in_range(
-        center_q: int, center_r: int, range_val: int
+        center_col: int, center_row: int, range_val: int
     ) -> Set[Tuple[int, int]]:
-        """获取指定范围内的所有六边形"""
+        """获取指定范围内的所有六边形（偏移坐标）"""
         results = set()
+        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
+
         for q in range(center_q - range_val, center_q + range_val + 1):
             for r in range(
                 max(center_r - range_val, -q - range_val),
                 min(center_r + range_val, -q + range_val) + 1,
             ):
-                if HexMath.hex_distance((center_q, center_r), (q, r)) <= range_val:
-                    results.add((q, r))
+                if (
+                    HexMath.hex_distance(
+                        (center_col, center_row), HexMath.axial_to_offset(q, r)
+                    )
+                    <= range_val
+                ):
+                    col, row = HexMath.axial_to_offset(q, r)
+                    results.add((col, row))
         return results
 
     @staticmethod
     def line_of_sight(
         start: Tuple[int, int], end: Tuple[int, int]
     ) -> List[Tuple[int, int]]:
-        """计算两点间的视线路径"""
-        q1, r1 = start
-        q2, r2 = end
+        """计算两点间的视线路径（偏移坐标）"""
+        # 转换为轴坐标进行计算
+        q1, r1 = HexMath.offset_to_axial(*start)
+        q2, r2 = HexMath.offset_to_axial(*end)
 
         distance = HexMath.hex_distance(start, end)
         if distance == 0:
@@ -97,7 +147,9 @@ class HexMath:
             t = i / distance
             q = int(round(q1 + (q2 - q1) * t))
             r = int(round(r1 + (r2 - r1) * t))
-            results.append((q, r))
+            # 转换回偏移坐标
+            col, row = HexMath.axial_to_offset(q, r)
+            results.append((col, row))
 
         return results
 
@@ -113,35 +165,39 @@ class HexConverter:
         self.width = math.sqrt(3) * hex_size
         self.height = 2 * hex_size
 
-    def hex_to_pixel(self, q: int, r: int) -> Tuple[float, float]:
-        """六边形坐标转屏幕像素坐标"""
+    def hex_to_pixel(self, col: int, row: int) -> Tuple[float, float]:
+        """六边形坐标转屏幕像素坐标（使用偏移坐标，row增大向上显示）"""
         sqrt3 = 1.7320508075688772  # math.sqrt(3)
-
         if self.orientation == HexOrientation.POINTY_TOP:
-            # 尖顶向上布局
-            x = self.size * (sqrt3 * q + sqrt3 / 2.0 * r)
-            y = self.size * (3.0 / 2.0 * r)
+            # 尖顶向上布局 - 奇数列偏移
+            x = self.size * sqrt3 * (col + 0.5 * (row & 1))
+            y = -self.size * 3 / 2 * row  # row增大时Y减小，在屏幕上向上显示
         else:  # FLAT_TOP
-            # 平顶向上布局
-            x = self.size * (3.0 / 2.0 * q)
-            y = self.size * (sqrt3 / 2.0 * q + sqrt3 * r)
+            # 平顶向上布局 - 奇数列偏移
+            x = self.size * 3 / 2 * col
+            y = (
+                -self.size * sqrt3 * (row + 0.5 * (col & 1))
+            )  # row增大时Y减小，在屏幕上向上显示
 
         return x, y
 
     def pixel_to_hex(self, x: float, y: float) -> Tuple[int, int]:
-        """屏幕像素坐标转六边形坐标"""
+        """屏幕像素坐标转六边形坐标（返回偏移坐标）"""
         sqrt3 = 1.7320508075688772  # math.sqrt(3)
 
         if self.orientation == HexOrientation.POINTY_TOP:
-            # 尖顶向上布局的逆变换
-            q = (sqrt3 / 3.0 * x - 1.0 / 3.0 * y) / self.size
-            r = (2.0 / 3.0 * y) / self.size
+            # 尖顶向上布局的逆变换，注意Y轴翻转
+            q = (sqrt3 / 3.0 * x - 1.0 / 3.0 * (-y)) / self.size
+            r = (2.0 / 3.0 * (-y)) / self.size
         else:  # FLAT_TOP
-            # 平顶向上布局的逆变换
+            # 平顶向上布局的逆变换，注意Y轴翻转
             q = (2.0 / 3.0 * x) / self.size
-            r = (-1.0 / 3.0 * x + sqrt3 / 3.0 * y) / self.size
+            r = (-1.0 / 3.0 * x + sqrt3 / 3.0 * (-y)) / self.size
 
-        return self.hex_round(q, r)
+        # 首先四舍五入到轴坐标
+        rq, rr = self.hex_round(q, r)
+        # 然后转换为偏移坐标
+        return HexMath.axial_to_offset(rq, rr)
 
     @staticmethod
     def hex_round(q: float, r: float) -> Tuple[int, int]:
@@ -168,9 +224,9 @@ class HexConverter:
 
         return rq, rr
 
-    def get_hex_corners(self, q: int, r: int) -> List[Tuple[float, float]]:
-        """获取六边形的6个顶点坐标"""
-        center_x, center_y = self.hex_to_pixel(q, r)
+    def get_hex_corners(self, col: int, row: int) -> List[Tuple[float, float]]:
+        """获取六边形的6个顶点坐标（使用偏移坐标，笛卡尔坐标系）"""
+        center_x, center_y = self.hex_to_pixel(col, row)
         corners = []
 
         if self.orientation == HexOrientation.POINTY_TOP:
@@ -184,6 +240,7 @@ class HexConverter:
             angle_deg = 60 * i + start_angle
             angle_rad = math.radians(angle_deg)
             x = center_x + self.size * math.cos(angle_rad)
+            # Y轴已经在hex_to_pixel中翻转，这里保持一致
             y = center_y + self.size * math.sin(angle_rad)
             corners.append((x, y))
 
@@ -191,7 +248,7 @@ class HexConverter:
 
 
 class PathFinding:
-    """A*寻路算法实现"""
+    """A*寻路算法实现（使用偏移坐标）"""
 
     @staticmethod
     def find_path(
@@ -200,7 +257,7 @@ class PathFinding:
         obstacles: Set[Tuple[int, int]],
         max_distance: int = None,
     ) -> List[Tuple[int, int]]:
-        """使用A*算法寻找路径"""
+        """使用A*算法寻找路径（偏移坐标）"""
         if start == goal:
             return [start]
 
@@ -248,7 +305,7 @@ class PathFinding:
     def get_movement_range(
         start: Tuple[int, int], movement_points: int, obstacles: Set[Tuple[int, int]]
     ) -> Set[Tuple[int, int]]:
-        """获取移动范围内的所有可达位置"""
+        """获取移动范围内的所有可达位置（偏移坐标）"""
         reachable = set()
         visited = set()
         queue = [(start, 0)]  # (position, cost)
