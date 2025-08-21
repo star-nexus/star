@@ -257,8 +257,8 @@ class LLMObservationSystem:
                 unit_info["movement"] = {
                     "current": movement.current_mp,
                     "max": movement.max_mp,
-                    "has_moved": movement.has_moved,
-                    "can_move": movement.current_mp > 0 and not movement.has_moved,
+                    # "has_moved": movement.has_moved,  # 移除单次移动显示
+                    "can_move": movement.current_mp > 0,  # 只要有移动力就能移动
                 }
 
             if combat:
@@ -266,11 +266,12 @@ class LLMObservationSystem:
                     "attack": combat.base_attack,
                     "defense": combat.base_defense,
                     "range": combat.attack_range,
-                    "has_attacked": (
-                        combat.has_attacked
-                        if hasattr(combat, "has_attacked")
-                        else False
-                    ),
+                    # "has_attacked": (  # 移除单次攻击限制显示
+                    #     combat.has_attacked
+                    #     if hasattr(combat, "has_attacked")
+                    #     else False
+                    # ),
+                    "can_attack": True,  # 只要有攻击能力就能攻击
                 }
 
             # 单位视野内的信息
@@ -531,7 +532,7 @@ class LLMObservationSystem:
                 unit_info["movement"] = {
                     "current": movement.current_mp,
                     "max": movement.max_mp,
-                    "has_moved": movement.has_moved,
+                    # "has_moved": movement.has_moved,  # 移除单次移动显示
                 }
 
             if combat:
@@ -539,7 +540,8 @@ class LLMObservationSystem:
                     "attack": combat.attack,
                     "defense": combat.defense,
                     "range": combat.attack_range,
-                    "has_attacked": combat.has_attacked,
+                    # "has_attacked": combat.has_attacked,  # 移除单次攻击限制显示
+                    "can_attack": True,  # 只要有攻击能力就能攻击
                 }
 
             if status:
@@ -558,10 +560,10 @@ class LLMObservationSystem:
 
         actions = []
 
-        if movement and movement.current_mp > 0 and not movement.has_moved:
+        if movement and movement.current_mp > 0:  # 只要有移动力就能移动
             actions.append("move")
 
-        if combat and not combat.has_attacked:
+        if combat:  # 只要有攻击能力就能攻击（不检查has_attacked）
             actions.append("attack")
 
         actions.extend(["defend", "scout", "retreat", "fortify"])
@@ -586,8 +588,7 @@ class LLMObservationSystem:
                     .entities()
                     if (
                         self.world.get_component(e, Unit).faction == faction
-                        and self.world.get_component(e, MovementPoints).current_movement
-                        > 0
+                        and self.world.get_component(e, MovementPoints).current_mp > 0
                     )
                 ]
             ),

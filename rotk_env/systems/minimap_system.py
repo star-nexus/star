@@ -43,7 +43,7 @@ class MiniMapSystem(System):
         self._render_minimap(minimap)
 
     def _render_minimap(self, minimap: MiniMap):
-        """渲染小地图"""
+        """渲染小地图 - 修复坐标边界计算"""
         map_data = self.world.get_singleton_component(MapData)
         camera = self.world.get_singleton_component(Camera)
         if not map_data:
@@ -56,7 +56,10 @@ class MiniMapSystem(System):
         minimap_surface = pygame.Surface((rect_w, rect_h), pygame.SRCALPHA)
         minimap_surface.fill((0, 0, 0, minimap.background_alpha))
 
-        # 计算地图边界
+        # 计算世界坐标边界（确保每次渲染都是最新的）
+        self._calculate_world_bounds(map_data)
+
+        # 计算地图边界（保持向后兼容，但不再用于主要计算）
         min_q = min(coord[0] for coord in map_data.tiles.keys())
         max_q = max(coord[0] for coord in map_data.tiles.keys())
         min_r = min(coord[1] for coord in map_data.tiles.keys())
@@ -94,6 +97,27 @@ class MiniMapSystem(System):
         # 绘制到主屏幕
         RMS.draw(minimap_surface, (rect_x, rect_y))
 
+    def _calculate_world_bounds(self, map_data: MapData):
+        """计算世界坐标边界，用于正确的坐标映射"""
+        min_x = min_y = float("inf")
+        max_x = max_y = float("-inf")
+
+        for q, r in map_data.tiles.keys():
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            min_x = min(min_x, world_x)
+            max_x = max(max_x, world_x)
+            min_y = min(min_y, world_y)
+            max_y = max(max_y, world_y)
+
+        # 添加一些边距以确保所有内容都能显示
+        padding = 50
+        self._world_bounds = {
+            "min_x": min_x - padding,
+            "max_x": max_x + padding,
+            "min_y": min_y - padding,
+            "max_y": max_y + padding,
+        }
+
     def _get_screen_rect(self, minimap: MiniMap) -> Tuple[int, int, int, int]:
         """获取小地图在屏幕上的矩形区域"""
         x, y = minimap.position
@@ -111,34 +135,51 @@ class MiniMapSystem(System):
         map_width: int,
         map_height: int,
     ):
-        """渲染小地图地形"""
+        """渲染小地图地形 - 修复坐标转换"""
         for (q, r), tile_entity in map_data.tiles.items():
             terrain = self.world.get_component(tile_entity, Terrain)
             if not terrain:
                 continue
 
-            # 计算在小地图中的位置
-            rel_x = (q - min_q) / map_width
-            rel_y = (r - min_r) / map_height
+            # 使用正确的六边形坐标转换
+            # 将六边形坐标转换为世界像素坐标
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+
+            # 计算所有tile的世界坐标边界
+            if not hasattr(self, "_world_bounds"):
+                self._calculate_world_bounds(map_data)
+
+            # 将世界坐标映射到小地图坐标
+            rel_x = (world_x - self._world_bounds["min_x"]) / (
+                self._world_bounds["max_x"] - self._world_bounds["min_x"]
+            )
+            rel_y = (world_y - self._world_bounds["min_y"]) / (
+                self._world_bounds["max_y"] - self._world_bounds["min_y"]
+            )
 
             pixel_x = int(rel_x * minimap.width)
             pixel_y = int(rel_y * minimap.height)
 
-            # 根据地形类型选择颜色
-            terrain_colors = {
-                "plain": (144, 238, 144),  # 浅绿色
-                "forest": (34, 139, 34),  # 深绿色
-                "mountain": (139, 69, 19),  # 棕色
-                "water": (70, 130, 180),  # 钢蓝色
-                "city": (255, 215, 0),  # 金色
-                "hill": (205, 133, 63),  # 秘鲁色
-            }
+            # 确保坐标在有效范围内
+            if 0 <= pixel_x < minimap.width and 0 <= pixel_y < minimap.height:
+                # 根据地形类型选择颜色
+                terrain_colors = {
+                    "plain": (144, 238, 144),  # 浅绿色
+                    "forest": (34, 139, 34),  # 深绿色
+                    "mountain": (139, 69, 19),  # 棕色
+                    "water": (70, 130, 180),  # 钢蓝色
+                    "city": (255, 215, 0),  # 金色
+                    "urban": (255, 215, 0),  # 金色（与city相同）
+                    "hill": (205, 133, 63),  # 秘鲁色
+                }
 
-            color = terrain_colors.get(terrain.terrain_type.value, (128, 128, 128))
+                color = terrain_colors.get(terrain.terrain_type.value, (128, 128, 128))
 
-            # 绘制一个小方块代表地形
-            tile_size = max(1, int(minimap.scale * 10))
-            pygame.draw.rect(surface, color, (pixel_x, pixel_y, tile_size, tile_size))
+                # 绘制一个小方块代表地形
+                tile_size = max(2, int(minimap.scale * 12))
+                pygame.draw.rect(
+                    surface, color, (pixel_x, pixel_y, tile_size, tile_size)
+                )
 
     def _render_units(
         self,
@@ -149,7 +190,7 @@ class MiniMapSystem(System):
         map_width: int,
         map_height: int,
     ):
-        """渲染小地图单位"""
+        """渲染小地图单位 - 修复坐标转换"""
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
@@ -157,25 +198,44 @@ class MiniMapSystem(System):
             if not pos or not unit:
                 continue
 
-            # 计算在小地图中的位置
-            rel_x = (pos.col - min_q) / map_width
-            rel_y = (pos.row - min_r) / map_height
+            # HexPosition 使用 col/row，需要转换为 q/r 坐标
+            # 在六边形网格中，通常 col=q, row=r
+            world_x, world_y = self.hex_converter.hex_to_pixel(pos.col, pos.row)
+
+            # 确保世界边界已计算
+            if not hasattr(self, "_world_bounds"):
+                # 如果没有计算过，使用当前已知的地图数据重新计算
+                map_data = self.world.get_singleton_component(MapData)
+                if map_data:
+                    self._calculate_world_bounds(map_data)
+                else:
+                    return
+
+            # 将世界坐标映射到小地图坐标
+            rel_x = (world_x - self._world_bounds["min_x"]) / (
+                self._world_bounds["max_x"] - self._world_bounds["min_x"]
+            )
+            rel_y = (world_y - self._world_bounds["min_y"]) / (
+                self._world_bounds["max_y"] - self._world_bounds["min_y"]
+            )
 
             pixel_x = int(rel_x * minimap.width)
             pixel_y = int(rel_y * minimap.height)
 
-            # 根据阵营选择颜色
-            faction_colors = {
-                "wei": (255, 0, 0),  # 红色
-                "shu": (0, 255, 0),  # 绿色
-                "wu": (0, 0, 255),  # 蓝色
-            }
+            # 确保坐标在有效范围内
+            if 0 <= pixel_x < minimap.width and 0 <= pixel_y < minimap.height:
+                # 根据阵营选择颜色
+                faction_colors = {
+                    "wei": (255, 0, 0),  # 红色
+                    "shu": (0, 255, 0),  # 绿色
+                    "wu": (0, 0, 255),  # 蓝色
+                }
 
-            color = faction_colors.get(unit.faction.value, (255, 255, 255))
+                color = faction_colors.get(unit.faction.value, (255, 255, 255))
 
-            # 绘制单位点
-            unit_size = max(2, int(minimap.scale * 15))
-            pygame.draw.circle(surface, color, (pixel_x, pixel_y), unit_size)
+                # 绘制单位点
+                unit_size = max(3, int(minimap.scale * 15))
+                pygame.draw.circle(surface, color, (pixel_x, pixel_y), unit_size)
 
     def _render_camera_viewport(
         self,
@@ -187,44 +247,66 @@ class MiniMapSystem(System):
         map_width: int,
         map_height: int,
     ):
-        """渲染小地图摄像机视口"""
+        """渲染小地图摄像机视口 - 修复坐标转换"""
         # 计算当前摄像机在世界坐标中看到的区域
         camera_offset = camera.get_offset()
 
-        # 估算视口覆盖的hex范围（简化计算）
+        # 估算视口覆盖的区域（使用世界坐标）
         screen_width = GameConfig.WINDOW_WIDTH
         screen_height = GameConfig.WINDOW_HEIGHT
-        hex_size = GameConfig.HEX_SIZE
 
-        # 将屏幕中心转换为hex坐标
-        center_world_x = -camera_offset[0] + screen_width // 2
-        center_world_y = -camera_offset[1] + screen_height // 2
-        center_q, center_r = self.hex_converter.pixel_to_hex(
-            center_world_x, center_world_y
-        )
+        # 摄像机视口的四个角（世界坐标）
+        viewport_corners = [
+            (-camera_offset[0], -camera_offset[1]),  # 左上
+            (-camera_offset[0] + screen_width, -camera_offset[1]),  # 右上
+            (-camera_offset[0], -camera_offset[1] + screen_height),  # 左下
+            (
+                -camera_offset[0] + screen_width,
+                -camera_offset[1] + screen_height,
+            ),  # 右下
+        ]
 
-        # 估算视口大小（hex单位）
-        viewport_hex_width = screen_width // (hex_size * 1.5)
-        viewport_hex_height = screen_height // (hex_size * 0.866)
+        # 确保世界边界已计算
+        if not hasattr(self, "_world_bounds"):
+            map_data = self.world.get_singleton_component(MapData)
+            if map_data:
+                self._calculate_world_bounds(map_data)
+            else:
+                return
 
-        # 计算视口在小地图中的位置和大小
-        viewport_rel_x = (center_q - viewport_hex_width // 2 - min_q) / map_width
-        viewport_rel_y = (center_r - viewport_hex_height // 2 - min_r) / map_height
-        viewport_rel_w = viewport_hex_width / map_width
-        viewport_rel_h = viewport_hex_height / map_height
+        # 将视口corners映射到小地图坐标
+        minimap_corners = []
+        for world_x, world_y in viewport_corners:
+            rel_x = (world_x - self._world_bounds["min_x"]) / (
+                self._world_bounds["max_x"] - self._world_bounds["min_x"]
+            )
+            rel_y = (world_y - self._world_bounds["min_y"]) / (
+                self._world_bounds["max_y"] - self._world_bounds["min_y"]
+            )
 
-        viewport_x = int(viewport_rel_x * minimap.width)
-        viewport_y = int(viewport_rel_y * minimap.height)
-        viewport_w = int(viewport_rel_w * minimap.width)
-        viewport_h = int(viewport_rel_h * minimap.height)
+            pixel_x = int(rel_x * minimap.width)
+            pixel_y = int(rel_y * minimap.height)
+            minimap_corners.append((pixel_x, pixel_y))
+
+        # 计算视口矩形（使用边界框）
+        min_x = min(corner[0] for corner in minimap_corners)
+        max_x = max(corner[0] for corner in minimap_corners)
+        min_y = min(corner[1] for corner in minimap_corners)
+        max_y = max(corner[1] for corner in minimap_corners)
+
+        viewport_x = max(0, min_x)
+        viewport_y = max(0, min_y)
+        viewport_w = min(minimap.width - viewport_x, max_x - min_x)
+        viewport_h = min(minimap.height - viewport_y, max_y - min_y)
 
         # 绘制视口框
-        pygame.draw.rect(
-            surface,
-            (255, 255, 255),
-            (viewport_x, viewport_y, viewport_w, viewport_h),
-            2,
-        )
+        if viewport_w > 0 and viewport_h > 0:
+            pygame.draw.rect(
+                surface,
+                (255, 255, 255),
+                (viewport_x, viewport_y, viewport_w, viewport_h),
+                2,
+            )
 
     def handle_click(self, mouse_pos: Tuple[int, int]) -> bool:
         """处理小地图点击，返回是否点击了小地图"""
