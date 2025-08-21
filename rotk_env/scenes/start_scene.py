@@ -171,30 +171,39 @@ class StartScene(Scene):
         panel_x = (screen_width - 600) // 2
         panel_y = 200
 
+        print(f"点击位置: {pos}, 面板位置: ({panel_x}, {panel_y})")  # 调试信息
+
         # 检查游戏模式选项点击
-        mode_y = panel_y + 90
+        mode_y = panel_y + 30 + 60  # panel_y + 30 (y_offset) + 60 (option_y offset)
         for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
             option_rect = pygame.Rect(panel_x + 50 + i * 150, mode_y, 120, 30)
+            print(f"模式选项 {i} ({mode.value}) 区域: {option_rect}")  # 调试信息
             if option_rect.collidepoint(pos):
                 config.selected_mode = mode
+                print(f"选中模式: {mode.value}")  # 调试信息
                 return
 
         # 检查玩家配置选项点击
-        player_y = panel_y + 190
+        player_y = panel_y + 130 + 60  # panel_y + 130 (y_offset) + 60 (option_y offset)
         player_configs = [
             {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
             {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
             {
-                Faction.WEI: PlayerType.HUMAN,
-                Faction.SHU: PlayerType.LLM,
-                Faction.WU: PlayerType.LLM,
+                Faction.WEI: PlayerType.AI,
+                Faction.SHU: PlayerType.AI,
+                Faction.WU: PlayerType.AI,
             },
         ]
 
         for i, player_config in enumerate(player_configs):
             option_rect = pygame.Rect(panel_x + 50, player_y + i * 30, 200, 30)
+            config_name = ["人机对战", "AI对战", "三国模式"][i]
+            print(f"玩家配置 {i} ({config_name}) 区域: {option_rect}")  # 调试信息
             if option_rect.collidepoint(pos):
                 config.selected_players = player_config.copy()
+                print(
+                    f"选中玩家配置: {config_name}, 阵营: {list(player_config.keys())}"
+                )  # 调试信息
                 return
 
         # # 检查场景配置选项点击

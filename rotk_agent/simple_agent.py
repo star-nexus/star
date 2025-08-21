@@ -352,7 +352,7 @@ async def perform_action(action: str, params: Any):
 async def available_actions() -> list[Dict[str, Any]]:
     """获取当前可用的动作"""
 
-    result = await perform_action("action_list", {})
+    result = await perform_action("get_action_list", {})
 
     return result
 
