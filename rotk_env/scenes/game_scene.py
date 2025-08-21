@@ -119,6 +119,9 @@ class GameScene(Scene):
         # 🆕 初始化Agent信息注册表
         self._initialize_agent_registry()
 
+        # 初始化游戏统计 - 必须在系统初始化之前，因为MapSystem需要保存地图信息到GameStats
+        self._initialize_stats()
+
         # 初始化系统
         self._initialize_systems()
 
@@ -128,9 +131,6 @@ class GameScene(Scene):
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
         self._initialize_units([[1, 0, 1], [1, 0, 0], [0, 0, 0]])
-
-        # 初始化游戏统计
-        self._initialize_stats()
 
         # 初始化小地图
         self._initialize_minimap()
