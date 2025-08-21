@@ -69,6 +69,7 @@ from .random_events import (
     RandomEventQueue,
     CombatRoll,
 )
+from .agent_info import AgentInfo, AgentInfoRegistry
 
 __all__ = [
     # 基础组件
@@ -149,4 +150,6 @@ __all__ = [
     "UnitSkillEvent",
     "RandomEventQueue",
     "CombatRoll",
+    "AgentInfo",
+    "AgentInfoRegistry",
 ]
