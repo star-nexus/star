@@ -61,6 +61,7 @@ class LLMActionHandlerV3:
             # System
             "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # 新增 end_turn （回合）
+            "register_agent_info": self.handle_register_agent_info,
         }
 
     def execute_action(
@@ -591,48 +592,24 @@ class LLMActionHandlerV3:
 
         if success:
             print(f"[MOVE_ACTION] 移动成功！")
-            # 移动成功后，需要重新获取组件状态（因为MovementSystem已经修改了它们）
-            updated_action_points = self.world.get_component(unit_id, ActionPoints)
-            updated_movement_points = self.world.get_component(unit_id, MovementPoints)
+            
+            # 从 MovementAnimation 组件获取默认速度，或者硬编码一个已知值
+            # 这里我们使用在 rotk_env/components/animation.py 中定义的默认值 2.0
+            animation_speed = 2.0 
+            path_length = len(path) - 1 if path else 0
+            estimated_duration = path_length / animation_speed if animation_speed > 0 else 0
 
             result = {
                 "success": True,
-                "message": f"Unit {unit_id} moved successfully from {current_pos} to {target_pos}",
-                # "movement_details": {
-                #     "start_position": current_pos,
-                #     "end_position": target_pos,
-                #     "path": path,
-                #     "path_length": len(path) - 1,
-                #     "terrain_breakdown": self._get_path_terrain_breakdown(path),
-                # },
-                # "resource_consumption": {
-                #     "action_points_used": 1,  # 固定消耗1点行动点启动决策
-                #     "movement_points_used": total_movement_cost,  # 实际移动力消耗
-                # },
-                # "remaining_resources": {
-                #     "action_points": (
-                #         updated_action_points.current_ap if updated_action_points else 0
-                #     ),
-                #     "movement_points": (
-                #         updated_movement_points.current_mp
-                #         if updated_movement_points
-                #         else 0
-                #     ),
-                # },
-                # "unit_status_after_move": {
-                #     "unit_id": unit_id,
-                #     "position": target_pos,
-                #     "can_move_further": (
-                #         updated_movement_points.current_mp
-                #         if updated_movement_points
-                #         else 0
-                #     )
-                #     > 0,
-                #     "can_take_more_actions": (
-                #         updated_action_points.current_ap if updated_action_points else 0
-                #     )
-                #     > 0,
-                # },
+                "message": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
+                "action_status": "in_progress",
+                "movement_details": {
+                    "start_position": {"col": current_pos[0], "row": current_pos[1]},
+                    "target_position": {"col": target_pos[0], "row": target_pos[1]},
+                    "path": path,
+                    "path_length": path_length,
+                    "estimated_duration_seconds": round(estimated_duration, 2)
+                }
             }
             print(f"[MOVE_ACTION] 移动完成，返回结果: {result}")
             return result
@@ -2789,3 +2766,64 @@ class LLMActionHandlerV3:
         #     # "range_status": "in_range" if in_range else "out_of_range",
         # }
         return in_range
+
+    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理Agent信息注册"""
+        try:
+            # 验证必需参数
+            required_params = ["faction", "provider", "model_id", "base_url"]
+            for param in required_params:
+                if param not in params:
+                    return {
+                        "success": False,
+                        "message": f"缺少必需参数: {param}"
+                    }
+            
+            faction = params["faction"]
+            provider = params["provider"]
+            model_id = params["model_id"]
+            base_url = params["base_url"]
+            
+            # 创建Agent信息对象
+            from ..components.agent_info import AgentInfo, AgentInfoRegistry
+            
+            agent_info = AgentInfo(
+                provider=provider,
+                model_id=model_id,
+                base_url=AgentInfoRegistry.sanitize_url(base_url),
+                agent_id=params.get("agent_id"),
+                version=params.get("version"),
+                note=params.get("note")
+            )
+            
+            # 获取或创建注册表
+            registry = self.world.get_singleton_component(AgentInfoRegistry)
+            if not registry:
+                registry = AgentInfoRegistry()
+                self.world.add_singleton_component(registry)
+            
+            # 注册Agent信息
+            success = registry.register_agent(faction, agent_info)
+            
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Agent信息注册成功: {faction}阵营",
+                    "registered_info": {
+                        "faction": faction,
+                        "provider": provider,
+                        "model_id": model_id,
+                        "base_url_sanitized": agent_info.base_url
+                    }
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Agent信息注册失败"
+                }
+        
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"注册Agent信息时出错: {str(e)}"
+            }

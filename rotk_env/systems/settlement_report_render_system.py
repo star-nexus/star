@@ -353,23 +353,45 @@ class SettlementReportRenderSystem(System):
         return y_offset
     
     def _render_placeholder_info(self, screen: pygame.Surface, report: SettlementReport) -> None:
-        """渲染占位信息（待实现功能）"""
+        """渲染Agent和模型信息"""
         font = self._get_font(18, bold=True)
         y_offset = 1500 + self.scroll_offset
         
-        # 占位信息标题
-        placeholder_title = "🔮 待实现功能（占位信息）"
-        placeholder_surface = font.render(placeholder_title, True, (150, 150, 150))
-        screen.blit(placeholder_surface, (40, y_offset))
+        # Agent信息标题
+        agent_title = "🤖 Agent & 模型信息"
+        agent_surface = font.render(agent_title, True, (255, 255, 255))
+        screen.blit(agent_surface, (40, y_offset))
         y_offset += 30
         
         content_font = self._get_font(16)
         
-        # 模型信息
-        model_text = f"   模型信息: {report.model_info}"
-        model_surface = content_font.render(model_text, True, (150, 150, 150))
-        screen.blit(model_surface, (40, y_offset))
-        y_offset += 20
+        # 渲染各阵营的模型信息
+        for faction_key in ["wei", "shu"]:
+            if faction_key in report.model_info:
+                model_name = report.model_info[faction_key]
+                endpoint = report.agent_endpoints.get(faction_key, "unknown")
+                
+                faction_name = faction_key.upper()
+                
+                # 阵营标题
+                faction_title = f"   {faction_name}阵营:"
+                faction_surface = content_font.render(faction_title, True, (255, 200, 100))
+                screen.blit(faction_surface, (40, y_offset))
+                y_offset += 20
+                
+                # 模型信息
+                model_color = (100, 255, 100) if model_name != "placeholder_model" else (150, 150, 150)
+                model_text = f"     模型: {model_name}"
+                model_surface = content_font.render(model_text, True, model_color)
+                screen.blit(model_surface, (40, y_offset))
+                y_offset += 20
+                
+                # 服务端点
+                endpoint_color = (200, 200, 200) if endpoint != "unknown" else (150, 150, 150)
+                endpoint_text = f"     端点: {endpoint}"
+                endpoint_surface = content_font.render(endpoint_text, True, endpoint_color)
+                screen.blit(endpoint_surface, (40, y_offset))
+                y_offset += 25
         
         # 策略评分
         strategy_text = f"   策略评分: {report.strategy_scores}"

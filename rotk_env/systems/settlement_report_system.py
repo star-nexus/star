@@ -26,6 +26,7 @@ from ..components import (
     TerritoryControl
 )
 from ..prefabs.config import Faction, TerrainType, GameConfig
+from ..components.agent_info import AgentInfo, AgentInfoRegistry
 
 
 class SettlementReportSystem(System):
@@ -88,8 +89,8 @@ class SettlementReportSystem(System):
         # 收集单位信息
         units_info = self._collect_units_info()
         
-        # 收集战斗统计
-        battle_stats = self._collect_battle_statistics()
+        # 收集战斗统计（传入units_info以修正casualties数据）
+        battle_stats = self._collect_battle_statistics(units_info)
         
         # 收集地图统计
         map_stats = self._collect_map_statistics()
@@ -258,7 +259,7 @@ class SettlementReportSystem(System):
         
         return units_info
     
-    def _collect_battle_statistics(self) -> Dict[str, Any]:
+    def _collect_battle_statistics(self, units_info: Dict[str, Any] = None) -> Dict[str, Any]:
         """收集战斗统计"""
         game_stats = self.world.get_singleton_component(GameStats)
         
@@ -278,11 +279,29 @@ class SettlementReportSystem(System):
             # 统计各阵营伤亡
             for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
                 faction_stats = game_stats.faction_stats.get(faction, {})
-                battle_stats["faction_battle_stats"][faction.value] = faction_stats
                 
-                # 计算伤亡统计
+                # 🆕 修正faction_battle_stats中的losses字段
+                if units_info and faction.value in units_info:
+                    corrected_losses = units_info[faction.value].get("destroyed_units", 0)
+                    # 创建修正后的faction_stats副本
+                    corrected_faction_stats = faction_stats.copy()
+                    corrected_faction_stats["losses"] = corrected_losses
+                    battle_stats["faction_battle_stats"][faction.value] = corrected_faction_stats
+                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营faction_battle_stats.losses: {faction_stats.get('losses', 0)} -> {corrected_losses}")
+                else:
+                    battle_stats["faction_battle_stats"][faction.value] = faction_stats
+                
+                # 🆕 修正伤亡统计 - 使用units_info中的正确数据
+                if units_info and faction.value in units_info:
+                    # 使用units_info中已正确计算的destroyed_units作为units_lost
+                    corrected_units_lost = units_info[faction.value].get("destroyed_units", 0)
+                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营casualties.units_lost: {faction_stats.get('units_lost', 0)} -> {corrected_units_lost}")
+                else:
+                    # 回退到原有逻辑
+                    corrected_units_lost = faction_stats.get("units_lost", 0)
+                
                 casualties = {
-                    "units_lost": faction_stats.get("units_lost", 0),
+                    "units_lost": corrected_units_lost,  # 🆕 使用修正后的值
                     "damage_dealt": faction_stats.get("damage_dealt", 0),
                     "damage_taken": faction_stats.get("damage_taken", 0)
                 }
@@ -374,21 +393,64 @@ class SettlementReportSystem(System):
         }
     
     def _collect_placeholder_data(self) -> Dict[str, Any]:
-        """收集占位数据（待实现功能）"""
+        """收集Agent和模型信息（原占位数据方法）"""
+        # 获取Agent信息注册表
+        registry = self.world.get_singleton_component(AgentInfoRegistry)
+        game_stats = self.world.get_singleton_component(GameStats)
+
+        model_info = {}
+        agent_endpoints = {}
+        response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+
+        if registry:
+            print(f"[SettlementReport] 📋 发现Agent注册表，已注册阵营: {list(registry.agents.keys())}")
+            
+            for faction in ["wei", "shu", "wu"]:
+                agent_info = registry.get_agent_info(faction)
+                if agent_info:
+                    model_info[faction] = agent_info.model_id
+                    agent_endpoints[faction] = agent_info.base_url
+                    print(f"[SettlementReport] ✅ {faction}阵营: {agent_info.provider}:{agent_info.model_id}")
+                else:
+                    model_info[faction] = "placeholder_model"
+                    agent_endpoints[faction] = "unknown"
+                    print(f"[SettlementReport] ⚠️ {faction}阵营: 未注册Agent信息，使用占位符")
+        else:
+            print(f"[SettlementReport] ⚠️ 未发现Agent注册表，使用占位符")
+            # 使用占位符
+            for faction in ["wei", "shu", "wu"]:
+                model_info[faction] = "placeholder_model"
+                agent_endpoints[faction] = "unknown"
+
+        # 🆕 读取交互次数（按阵营聚合）
+        try:
+            if game_stats:
+                from ..prefabs.config import Faction as _Faction
+                for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
+                    response_times[f.value] = game_stats.response_times_by_faction.get(f, 0)
+            else:
+                print("[SettlementReport] ⚠️ GameStats组件不存在，response_times 使用默认0")
+        except Exception as e:
+            print(f"[SettlementReport] ⚠️ 读取response_times失败: {e}")
+
+        # 🆕 读取策略评分
+        strategy_scores: Dict[str, float] = {"wei": 0.0, "shu": 0.0, "wu": 0.0}
+        try:
+            if game_stats and hasattr(game_stats, "strategy_scores_by_faction"):
+                from ..prefabs.config import Faction as _Faction
+                for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
+                    strategy_scores[f.value] = float(game_stats.strategy_scores_by_faction.get(f, 0.0))
+        except Exception as e:
+            print(f"[SettlementReport] ⚠️ 读取strategy_scores失败: {e}")
+
         return {
-            "model_info": {
-                "wei": "placeholder_model",  # 占位，待实现
-                "shu": "placeholder_model"
-            },
+            "model_info": model_info,
+            "agent_endpoints": agent_endpoints,  # 新增字段
             "strategy_scores": {
-                "wei": 0.0,  # 占位，待实现
-                "shu": 0.0
+                **strategy_scores
             },
             "enable_thinking": None,  # 占位，待实现
-            "response_times": {
-                "wei": 0,  # 占位，待实现
-                "shu": 0
-            }
+            "response_times": response_times
         }
     
     def _get_map_type(self) -> str:

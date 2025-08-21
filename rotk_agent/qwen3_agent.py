@@ -245,6 +245,8 @@ class StandaloneChatAgent:
         self.tool_manager = ToolManager()
         self.conversation_history: List[Message] = []
         self.max_iterations = 100  # 防止无限循环
+        # 🆕 策略打点节流控制
+        self._strategy_last_ping_ts: float = 0.0
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -315,6 +317,9 @@ class StandaloneChatAgent:
         if max_iterations:
             self.max_iterations = max_iterations
             
+        # 🆕 在开始对话前先注册Agent信息
+        await self._register_agent_info()
+        
         # 初始化对话
         self.conversation_history = [
             Message(role="system", content=task)
@@ -355,6 +360,13 @@ class StandaloneChatAgent:
                     tool_calls=message.get("tool_calls")
                 )
                 self.conversation_history.append(assistant_message)
+
+                # 🆕 在收到LLM响应后尝试策略关键词检测并上报
+                try:
+                    assistant_text = message.get("content", "") or ""
+                    await self._maybe_strategy_ping(assistant_text)
+                except Exception as _e:
+                    console.print(f"⚠️ strategy_ping detection error: {_e}", style="yellow")
 
                 # === Detect text-based tool calls ===
                 # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
@@ -469,6 +481,143 @@ class StandaloneChatAgent:
                     tool_call_id=tool_call_id
                 )
                 self.conversation_history.append(error_message)
+
+    # ==================== 策略关键词检测与上报 ====================
+    def _contains_strategy_keywords(self, text: str) -> bool:
+        """简易关键词+结构判定为策略性思考。"""
+        if not text:
+            return False
+        t = text.lower()
+        zh_keys = [
+            "策略", "战略", "战术", "推进", "收缩", "防守", "进攻", "包抄", "侧翼", "伏击", "牵制",
+            "佯攻", "撤退", "补给", "集结", "兵力部署", "路线", "优先级", "据点", "卡位", "占领",
+            "固守", "视野", "地形优势", "补给线", "防线", "桥头堡", "绕后", "夹击", "高地", " chokepoint",
+            "协同", "集火", "分兵"
+        ]
+        en_keys = [
+            "strategy", "strategic", "tactic", "tactical", "plan", "objective", "priority",
+            "advance", "retreat", "hold", "defend", "attack", "flank", "ambush", "harass",
+            "pin down", "fix-in-place", "regroup", "supply", "chokepoint", "terrain advantage",
+            "strongpoint", "encircle"
+        ]
+        # 命中关键词
+        key_hit = any(k in text for k in zh_keys) or any(k in t for k in en_keys)
+        if not key_hit:
+            return False
+        # 要求出现动作/目标/次序类词组之一，降低误报
+        structure_terms = ["先", "然后", "再", "首先", "优先", "目标", "步骤", "顺序", "选择", "方案", "计划",
+                           "first", "then", "next", "priority", "goal", "objective", "step", "order"]
+        # 结构词命中或序列判定命中即可视为策略思考
+        structure_hit = any(term in text for term in structure_terms) or any(term in t for term in structure_terms)
+        if structure_hit:
+            return True
+        # 尝试序列模式（移动/位置 -> 攻击 或 攻击 -> 移动）
+        return self._contains_strategy_sequence(text)
+
+    def _contains_strategy_sequence(self, text: str) -> bool:
+        """检测序列式策略句式，如“位置/移动 -> 攻击”或“攻击 -> 移动”。"""
+        if not text:
+            return False
+        import re
+        t = text.lower()
+
+        # 中文序列正则（限定跨距≤20字符）
+        zh_patterns = [
+            r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,20}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
+            r"(位置|坐标).{0,20}(攻击|开火|打击|交战)",
+            r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,20}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
+        ]
+        # 英文序列正则（在小写文本上匹配）
+        en_patterns = [
+            r"(move|advance|relocate|close in|position).{0,20}(attack|engage|fire|strike|assault)",
+            r"(attack|engage|fire|strike|assault).{0,20}(move|advance|relocate|retreat|position)",
+        ]
+
+        for pat in zh_patterns:
+            if re.search(pat, text):
+                return True
+        for pat in en_patterns:
+            if re.search(pat, t):
+                return True
+
+        # 分句序列检测：前一句含移动/位置，后一句含攻击；或反之
+        move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达", "位置", "坐标", "观察", "侦查"]
+        attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同"]
+        move_terms_en = ["move", "advance", "relocate", "close in", "position", "coordinate", "retreat"]
+        attack_terms_en = ["attack", "engage", "fire", "strike", "assault", "charge", "suppress"]
+
+        segments = re.split(r"[。；;\.!?\n]+", text)
+        def has_any(seg: str, terms_zh: list[str], terms_en: list[str]) -> bool:
+            s = seg.lower()
+            if any(k in seg for k in terms_zh):
+                return True
+            if any(k in s for k in terms_en):
+                return True
+            return False
+
+        for i in range(len(segments) - 1):
+            a = segments[i].strip()
+            b = segments[i + 1].strip()
+            if not a or not b:
+                continue
+            # 移动/位置 -> 攻击
+            if has_any(a, move_terms_zh, move_terms_en) and has_any(b, attack_terms_zh, attack_terms_en):
+                return True
+            # 攻击 -> 移动
+            if has_any(a, attack_terms_zh, attack_terms_en) and has_any(b, move_terms_zh, move_terms_en):
+                return True
+
+        # 同句索引顺序检测（宽松阈值）
+        # 先出现任一移动/位置词，再出现任一攻击词，或反之
+        def first_index(seg: str, terms: list[str]) -> int:
+            idxs = []
+            ls = seg.lower()
+            for term in terms:
+                pos = seg.find(term)
+                if pos == -1:
+                    pos = ls.find(term)
+                if pos != -1:
+                    idxs.append(pos)
+            return min(idxs) if idxs else -1
+
+        move_idx = first_index(text, move_terms_zh + move_terms_en)
+        attack_idx = first_index(text, attack_terms_zh + attack_terms_en)
+        if move_idx != -1 and attack_idx != -1 and abs(attack_idx - move_idx) <= 80:
+            return True
+
+        return False
+
+    async def _maybe_strategy_ping(self, assistant_text: str):
+        """若检测到策略性内容，则向 ENV 上报 strategy_ping（节流）。"""
+        import time
+        # 节流：至少每2秒最多1次
+        now = time.time()
+        if (now - getattr(self, "_strategy_last_ping_ts", 0.0)) < 2.0:
+            return
+        # 关键词或序列命中即判定为策略
+        hit_keywords = self._contains_strategy_keywords(assistant_text)
+        hit_sequence = self._contains_strategy_sequence(assistant_text)
+        if not (hit_keywords or hit_sequence):
+            return
+        # 通过后更新节流时间
+        self._strategy_last_ping_ts = now
+        # 推断阵营：目前默认wei；如后续从上下文携带，可替换
+        faction = "wei"
+        evidence = assistant_text.strip()
+        if len(evidence) > 120:
+            evidence = evidence[:117] + "..."
+        try:
+            await self.tool_manager.execute_tool("perform_action", {
+                "action": "strategy_ping",
+                "params": {
+                    "faction": faction,
+                    # 序列命中则提到1.0分，否则0.5分
+                    "score": 1.0 if hit_sequence else 0.5,
+                    "evidence": evidence
+                }
+            })
+        except Exception as e:
+            console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
     
     def _filter_tool_result(self, function_name: str, result: Any) -> Any:
         """Filter tool results, remove redundant information to keep conversation history concise"""
@@ -604,6 +753,39 @@ class StandaloneChatAgent:
             return filtered_result
         
         return result
+
+    async def _register_agent_info(self):
+        """注册Agent信息到环境"""
+        try:
+            # 从配置中获取信息
+            config = self.llm_client.config
+            
+            # 确定阵营（暂时硬编码为wei，后续可从环境变量或参数获取）
+            faction = "wei"  # TODO: 从环境变量或启动参数获取
+            
+            registration_params = {
+                "faction": faction,
+                "provider": config.provider,
+                "model_id": config.model_id,
+                "base_url": config.base_url or "unknown",
+                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "version": "1.0.0",  # Agent版本
+                "note": f"Agent using {config.provider}"
+            }
+            
+            # 调用注册
+            result = await self.tool_manager.execute_tool("perform_action", {
+                "action": "register_agent_info",
+                "params": registration_params
+            })
+            
+            if result.get("success"):
+                console.print(f"✅ Agent信息注册成功: {faction}阵营 - {config.provider}:{config.model_id}", style="green")
+            else:
+                console.print(f"⚠️ Agent信息注册失败: {result.get('message', 'unknown error')}", style="yellow")
+        
+        except Exception as e:
+            console.print(f"❌ Agent信息注册出错: {e}", style="red")
 
     async def stop(self):
         """Stop agent"""
@@ -870,6 +1052,66 @@ async def get_response(request_id):
     return response
 
 
+def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
+    """
+    根据动作类型、参数和响应结果计算智能延迟时间
+    
+    Args:
+        action: 动作类型 (如 "move", "attack" 等)
+        params: 动作参数
+        response: 服务器响应结果
+    
+    Returns:
+        float: 延迟秒数，0表示无需延迟
+    """
+    if not isinstance(response, dict) or not response.get("success", False):
+        # 动作失败时无需延迟
+        return 0.0
+    
+    if action == "move":
+        # 移动动作：根据路径长度和距离估算延迟
+        return _calculate_move_delay(params, response)
+    elif action == "attack":
+        # 攻击动作：固定延迟以等待攻击动画
+        return 0.2  # 攻击动画通常较短
+    elif action in ["get_faction_state", "observation", "get_action_list"]:
+        # 查询类动作：无需延迟
+        return 0.0
+    else:
+        # 其他动作：保守的默认延迟
+        return 0.1
+
+
+def _calculate_move_delay(params: Any, response: Any) -> float:
+    """计算移动动作的延迟时间"""
+    try:
+        # 方法1：从响应中的 movement_details 获取预估时间
+        if isinstance(response, dict) and "movement_details" in response:
+            estimated_duration = response["movement_details"].get("estimated_duration_seconds", 0)
+            if estimated_duration > 0:
+                # 增加10%的缓冲时间，确保动画完成
+                return estimated_duration * 1.1
+        
+        # 方法2：根据路径长度估算（备用方案）
+        if isinstance(response, dict) and "movement_details" in response:
+            path_length = response["movement_details"].get("path_length", 0)
+            if path_length > 0:
+                # 假设动画速度为2格/秒，增加缓冲
+                return path_length / 2.0 + 0.2
+        
+        # 方法3：根据起始和目标位置计算曼哈顿距离（最后备选）
+        if isinstance(params, dict) and "target_position" in params:
+            # 这里无法获取起始位置，使用保守估计
+            return 1.0  # 保守的1秒延迟
+        
+        # 默认延迟
+        return 1.0
+    
+    except Exception as e:
+        console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
+        return 1.0  # 出错时使用保守延迟
+    
+
 async def perform_action(action: str, params: Any):
     """执行动作"""
     # print(f"🚀 执行动作: {action}, 参数: {params}")
@@ -883,8 +1125,12 @@ async def perform_action(action: str, params: Any):
     # print(f"执行动作的立刻结果 - success: {success}")
     response = await get_response(success)
 
-    # if response:
-        #  print_json(data=response)
+    # 🆕 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
+    delay_time = _calculate_action_delay(action, params, response)
+    if delay_time > 0:
+        console.print(f"⏳ 等待 {delay_time}s 让动作完成...", style="cyan")
+        await asyncio.sleep(delay_time)
+
     return response
 
 
@@ -903,8 +1149,8 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
