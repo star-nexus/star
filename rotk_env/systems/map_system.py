@@ -24,11 +24,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     """地图系统 - 管理地图生成和地形，支持MOBA风格地图"""
 
     def __init__(
-        self, competitive_mode: bool = True, symmetry_type: str = "river_split"
+        self, competitive_mode: bool = True, symmetry_type: str = "river_split_offset"
     ):
         super().__init__(priority=100)
         self.competitive_mode = competitive_mode
-        self.symmetry_type = symmetry_type  # "horizontal", "diagonal", "river_split", "square", "moba", "encounter"
+        self.symmetry_type = symmetry_type  # "horizontal", "diagonal", "river_split", "river_split_offset", "square", "moba", "encounter"
         self.seed = 42
 
     def initialize(self, world: World) -> None:
@@ -47,8 +47,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         """生成地图 - 根据模式选择生成方式"""
         if self.competitive_mode:
             if self.symmetry_type == "river_split":
-                print("[MapSystem] 🏆 生成河流分割对角线竞技地图")
+                print("[MapSystem] 🏆 生成河流分割对角线竞技地图（偏移坐标）")
                 self._generate_river_split_diagonal_map()
+            elif self.symmetry_type == "river_split_offset":
+                print("[MapSystem] 🏆 生成河流分割对角线竞技地图（偏移坐标）")
+                self._generate_river_split_diagonal_map_offset()
             elif self.symmetry_type == "diagonal":
                 print("[MapSystem] 🏆 生成对角线对称竞技地图")
                 self._generate_competitive_map_diagonal()
@@ -944,11 +947,18 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         center_col = GameConfig.MAP_WIDTH // 2
         center_row = GameConfig.MAP_HEIGHT // 2
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
 
-        if self.symmetry_type == "river_split":
+        if self.symmetry_type == "river_split_offset":
             return {
-                Faction.SHU: (center_col - 4, center_row + 4),  # 左上区域前沿
-                Faction.WEI: (center_col + 4, center_row - 4),  # 右下区域前沿
+                Faction.SHU: (-half_width + 3, -half_height + 3),  # 左下区域前沿
+                Faction.WEI: (half_width - 3, half_height - 3),   # 右上区域前沿
+            }
+        elif self.symmetry_type == "river_split":
+            return {
+                Faction.SHU: (center_col - 4, center_row + 4),
+                Faction.WEI: (center_col + 4, center_row - 4),
             }
         elif self.symmetry_type == "diagonal":
             return {
@@ -1379,6 +1389,442 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  📏 直线距离: {math.sqrt(8**2 + 8**2):.1f} 格")
         print(f"  🌊 需跨越河流才能到达对方区域")
         print(f"  🏰 城池更靠后方，提供安全的战略纵深")
+
+    def _generate_river_split_diagonal_map_offset(self):
+        """🌊 生成河流分割的对角线对称竞技地图 - 偏移坐标系版本"""
+        map_data = MapData(
+            width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
+        )
+
+        print(
+            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 河流分割竞技地图（偏移坐标）"
+        )
+        print(f"[MapSystem] 设计特色: 对角线河流分界，左下右上对称，对角战略布局")
+
+        # 生成河流分割地图（偏移坐标版本）
+        terrain_map = self._generate_river_split_terrain_map_offset()
+
+        # 创建ECS实体（偏移坐标版本）
+        self._create_river_split_map_entities_offset(map_data, terrain_map)
+
+        # 添加到世界
+        self.world.add_singleton_component(map_data)
+
+        # 打印分析报告（偏移坐标版本）
+        self._print_river_split_map_analysis_offset(terrain_map)
+
+    def _generate_river_split_terrain_map_offset(self) -> Dict[Tuple[int, int], TerrainType]:
+        """生成河流分割的地形地图 - 以(0,0)为中心的坐标版本"""
+        terrain_map = {}
+
+        # 计算地图半径
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        # 遍历整个地图（以(0,0)为中心的坐标）
+        for x in range(-half_width, half_width + 1):
+            for y in range(-half_height, half_height + 1):
+                terrain = self._generate_river_split_terrain_centered(x, y)
+                terrain_map[(x, y)] = terrain
+
+        return terrain_map
+
+    def _generate_river_split_terrain_centered(self, x: int, y: int) -> TerrainType:
+        """🎯 完全确定性的河流分割地形 - 以(0,0)为中心的坐标版本，左下右上对角线对称"""
+        
+        # 计算地图半径
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+        
+        # === 第一优先级：后方城池（对角线对称） ===
+        # 左下角城池和右上角城池
+        if (x == -half_width + 2 and y == -half_height + 2) or (x == half_width - 2 and y == half_height - 2):
+            return TerrainType.URBAN
+
+        # === 第二优先级：对角线河流系统 ===
+        # 使用反对角线（从右上到左下），对角线方程：x + y = 0
+        diagonal_distance = abs(x + y)
+        
+        if diagonal_distance == 0:
+            # 正好在反对角线上
+            if x == 0 and y == 0:
+                return TerrainType.PLAIN  # 中心争夺点
+            else:
+                return TerrainType.WATER  # 河流
+        elif diagonal_distance == 1:
+            # 河流两侧
+            # 在地图中心附近或特定位置设为平地，其他为河流
+            if (abs(x) <= 1 and abs(y) <= 1) or ((x * x + y * y) % 5 == 0):
+                return TerrainType.PLAIN
+            else:
+                return TerrainType.WATER
+
+        # === 第三优先级：城池和中央区域的战略地形 ===
+        
+        # 🛡️ 城池防御区：确保城池周围是平地（对角线对称）
+        # 左下城池防御区
+        city1_dist = math.sqrt((x - (-half_width + 2)) ** 2 + (y - (-half_height + 2)) ** 2)
+        # 右上城池防御区
+        city2_dist = math.sqrt((x - (half_width - 2)) ** 2 + (y - (half_height - 2)) ** 2)
+        if city1_dist <= 1.5 or city2_dist <= 1.5:
+            return TerrainType.PLAIN
+
+        # ✨ 中央区域的战略点（对角线对称）
+        # 定义一半的战略丘陵，另一半通过对角线对称生成
+        strategic_hills = [
+            (-2, 1),   # 左下象限的丘陵
+            (-1, 2),
+            (-3, 2),
+        ]
+        
+        for hx, hy in strategic_hills:
+            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            if (x == hx and y == hy) or (x == -hy and y == -hx):
+                return TerrainType.HILL
+
+        # 中央森林区域（对角线对称）
+        central_forests = [
+            (-1, -1),  # 左下象限的森林
+            (1, 1),    # 右上象限的森林
+            (-3, 1),   # 左下象限的森林
+        ]
+        
+        for fx, fy in central_forests:
+            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            if (x == fx and y == fy) or (x == -fy and y == -fx):
+                return TerrainType.FOREST
+
+        # === 第四优先级：外围的自然地形集群（对角线对称） ===
+        
+        # 🌲 森林集群：使用圆形分布，更自然
+        forest_clusters = [
+            # 只需定义一半，另一半通过对角线对称自动生成
+            ((-half_width + 3, -half_height + 2), 1.8),  # 左下后方森林
+            ((-2, 2), 1.2),                              # 左下前沿森林
+            ((-half_width + 2, -half_height + 4), 1.0),  # 左下侧翼森林
+        ]
+
+        for (center_fx, center_fy), radius in forest_clusters:
+            # 检查原始点
+            distance1 = math.sqrt((x - center_fx) ** 2 + (y - center_fy) ** 2)
+            # 检查对角线对称点 (x, y) ↔ (-y, -x)
+            sym_center_x = -center_fy
+            sym_center_y = -center_fx
+            distance2 = math.sqrt((x - sym_center_x) ** 2 + (y - sym_center_y) ** 2)
+            if distance1 <= radius or distance2 <= radius:
+                return TerrainType.FOREST
+
+        # 🏔️ 山脉集群：战略高地，圆形分布
+        mountain_clusters = [
+            # 只需定义一半，另一半通过对角线对称自动生成
+            ((-1, -3), 1.0),  # 左下关键高地
+            ((-half_width + 1, -half_height + 1), 0.8),  # 左下角落要塞
+        ]
+
+        for (center_mx, center_my), radius in mountain_clusters:
+            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            distance1 = math.sqrt((x - center_mx) ** 2 + (y - center_my) ** 2)
+            sym_center_x = -center_my
+            sym_center_y = -center_mx
+            distance2 = math.sqrt((x - sym_center_x) ** 2 + (y - sym_center_y) ** 2)
+            if distance1 <= radius or distance2 <= radius:
+                return TerrainType.MOUNTAIN
+
+        # 🏔️ 战略高地：精确的单点制高点
+        strategic_points = [
+            # 只需定义一半，另一半通过对角线对称自动生成
+            (1, 3),
+            (-2, 4),
+        ]
+
+        for px, py in strategic_points:
+            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            if (x == px and y == py) or (x == -py and y == -px):
+                return TerrainType.HILL
+
+        # === 第五优先级：边界处理 ===
+        # 🏔️ 地图边缘：稀疏的山脉边界
+        if abs(x) == half_width or abs(y) == half_height:
+            # 只在特定位置设置边界山脉，不是全部
+            if (x + y) % 3 == 0:
+                return TerrainType.MOUNTAIN
+            else:
+                return TerrainType.FOREST
+
+        # === 第六优先级：默认地形 ===
+        # 所有其他区域都是平地
+        return TerrainType.PLAIN
+
+    def _create_river_split_map_entities_offset(
+        self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """创建河流分割地图的实体 - 以(0,0)为中心的坐标版本"""
+        # 计算地图半径
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+        
+        # 出生点：在左下角和右上角的对称位置
+        spawn_points = {
+            Faction.SHU: (-half_width + 3, -half_height + 3),  # 左下区域前沿
+            Faction.WEI: (half_width - 3, half_height - 3),   # 右上区域前沿
+        }
+
+        for (x, y), terrain_type in terrain_map.items():
+            # 创建地块实体
+            tile_entity = self.world.create_entity()
+            self.world.add_component(tile_entity, HexPosition(x, y))
+            self.world.add_component(tile_entity, Terrain(terrain_type))
+            self.world.add_component(tile_entity, Tile((x, y)))
+
+            # 在出生点和城池附近设置领土控制
+            controlling_faction = self._get_river_split_territory_control_centered(
+                (x, y), spawn_points
+            )
+            if controlling_faction:
+                self.world.add_component(
+                    tile_entity,
+                    TerritoryControl(
+                        controlling_faction=controlling_faction,
+                        being_captured=False,
+                        capturing_unit=None,
+                        capture_progress=0.0,
+                        capture_time_required=5.0,
+                        fortified=False,
+                        fortification_level=0,
+                        captured_time=0.0,
+                        is_city=(terrain_type == TerrainType.URBAN),
+                    ),
+                )
+
+            # 添加到地图数据
+            map_data.tiles[(x, y)] = tile_entity
+
+    def _get_river_split_territory_control_centered(
+        self,
+        pos: Tuple[int, int],
+        spawn_points: Dict[Faction, Tuple[int, int]],
+        control_radius: int = 2,
+    ) -> Faction:
+        """确定河流分割地图的初始领土控制 - 以(0,0)为中心的坐标版本"""
+        x, y = pos
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        # 出生点周围控制
+        for faction, (spawn_x, spawn_y) in spawn_points.items():
+            distance = math.sqrt((x - spawn_x) ** 2 + (y - spawn_y) ** 2)
+            if distance <= control_radius:
+                return faction
+
+        # 🏰 城池控制（对角线对称）
+        # 左下城池 (-half_width+2, -half_height+2) 位于SHU的区域
+        if math.sqrt((x - (-half_width + 2)) ** 2 + (y - (-half_height + 2)) ** 2) <= 2:
+            return Faction.SHU
+
+        # 右上城池 (half_width-2, half_height-2) 位于WEI的区域
+        if math.sqrt((x - (half_width - 2)) ** 2 + (y - (half_height - 2)) ** 2) <= 2:
+            return Faction.WEI
+
+        return None
+
+    def _print_river_split_map_analysis_offset(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """打印河流分割地图分析报告 - 以(0,0)为中心的坐标版本"""
+        terrain_count = {}
+        for terrain in terrain_map.values():
+            terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
+
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        print("\n" + "=" * 70)
+        print("🌊 河流分割对角线竞技地图分析报告（中心坐标）")
+        print("=" * 70)
+        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print(f"🎯 设计特色: 左下右上对角线对称，河流分界")
+        print(f"🌊 河流系统: 沿反对角线 (x + y = 0)")
+        print(f"🏰 战略要点: 中心争夺点(0,0) + 对角城池")
+        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+        print(f"📍 坐标范围: x∈[{-half_width}, {half_width}], y∈[{-half_height}, {half_height}]")
+
+        print("\n🌍 地形分布统计:")
+        total_tiles = len(terrain_map)
+        for terrain, count in sorted(
+            terrain_count.items(), key=lambda x: x[1], reverse=True
+        ):
+            percentage = count / total_tiles * 100
+            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+
+        # 地图可视化
+        self._print_terrain_map_visual_centered(terrain_map)
+
+        # 对称性验证
+        self._verify_diagonal_symmetry_centered(terrain_map)
+
+        # 战略要点分析
+        self._analyze_river_split_strategic_points_centered(terrain_map)
+
+        print("=" * 70)
+
+    def _print_terrain_map_visual_centered(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """🗺️ 打印地图的可视化表示 - 以(0,0)为中心的坐标版本"""
+        print("\n🗺️ 地形地图可视化 (y从上到下, x从左到右, 中心(0,0)):")
+        print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
+
+        terrain_chars = {
+            TerrainType.PLAIN: "P",
+            TerrainType.FOREST: "F",
+            TerrainType.HILL: "H",
+            TerrainType.MOUNTAIN: "M",
+            TerrainType.WATER: "W",
+            TerrainType.URBAN: "U",
+        }
+
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        print("\n   ", end="")
+
+        # 打印列标题 (x坐标)
+        for x in range(-half_width, half_width + 1):
+            print(f"{x:2}", end=" ")
+        print()
+
+        # 打印每一行 (y从高到低，即从上到下)
+        for y in range(half_height, -half_height - 1, -1):
+            print(f"{y:2}:", end=" ")
+            for x in range(-half_width, half_width + 1):
+                if (x, y) in terrain_map:
+                    terrain = terrain_map[(x, y)]
+                    char = terrain_chars.get(terrain, "?")
+                    print(f" {char}", end=" ")
+                else:
+                    print("  ", end=" ")
+            print(f" :{y}")
+
+        # 再次打印底部列标题
+        print("   ", end="")
+        for x in range(-half_width, half_width + 1):
+            print(f"{x:2}", end=" ")
+        print()
+
+    def _verify_diagonal_symmetry_centered(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """🔍 验证对角线对称性 - 以(0,0)为中心的坐标版本"""
+        print(f"\n🔍 对角线对称性验证（中心坐标）:")
+
+        asymmetric_pairs = []
+        symmetric_pairs = 0
+        total_checks = 0
+
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        # 检查每个位置与其对角线镜像位置
+        for x in range(-half_width, half_width + 1):
+            for y in range(-half_height, half_height + 1):
+                if (x, y) in terrain_map:
+                    # 对角线镜像：(x, y) ↔ (-y, -x)
+                    mirror_pos = (-y, -x)
+                    total_checks += 1
+
+                    if mirror_pos in terrain_map:
+                        if terrain_map[(x, y)] == terrain_map[mirror_pos]:
+                            symmetric_pairs += 1
+                        else:
+                            asymmetric_pairs.append(
+                                {
+                                    "pos1": (x, y),
+                                    "terrain1": terrain_map[(x, y)].value,
+                                    "pos2": mirror_pos,
+                                    "terrain2": terrain_map[mirror_pos].value,
+                                }
+                            )
+                    else:
+                        asymmetric_pairs.append(
+                            {
+                                "pos1": (x, y),
+                                "terrain1": terrain_map[(x, y)].value,
+                                "pos2": mirror_pos,
+                                "terrain2": "缺失",
+                            }
+                        )
+
+        if len(asymmetric_pairs) == 0:
+            print(
+                f"  ✅ 完美对角线对称！{symmetric_pairs}/{total_checks} 个位置完全对称"
+            )
+        else:
+            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            for i, pair in enumerate(asymmetric_pairs[:5]):
+                print(
+                    f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
+                )
+            if len(asymmetric_pairs) > 5:
+                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
+
+    def _analyze_river_split_strategic_points_centered(
+        self, terrain_map: Dict[Tuple[int, int], TerrainType]
+    ):
+        """分析河流分割地图的战略要点 - 以(0,0)为中心的坐标版本"""
+        print(f"\n🎯 战略要点分析:")
+
+        half_width = GameConfig.MAP_WIDTH // 2
+        half_height = GameConfig.MAP_HEIGHT // 2
+
+        # 统计各类地形簇
+        # 使用反对角线分割：x + y < 0 为左下区域，x + y > 0 为右上区域
+        shu_area_count = sum(
+            1 for (x, y) in terrain_map.keys() 
+            if x + y < 0
+        )
+        wei_area_count = sum(
+            1 for (x, y) in terrain_map.keys() 
+            if x + y > 0
+        )
+        river_count = sum(
+            1 for terrain in terrain_map.values() if terrain == TerrainType.WATER
+        )
+        city_count = sum(
+            1 for terrain in terrain_map.values() if terrain == TerrainType.URBAN
+        )
+        plain_count = sum(
+            1 for terrain in terrain_map.values() if terrain == TerrainType.PLAIN
+        )
+        mountain_count = sum(
+            1 for terrain in terrain_map.values() if terrain == TerrainType.MOUNTAIN
+        )
+
+        print(f"  🔵 SHU控制区: {shu_area_count} 块 (左下区域, x+y<0)")
+        print(f"  🔴 WEI控制区: {wei_area_count} 块 (右上区域, x+y>0)")
+        print(f"  🌊 河流系统: {river_count} 块 (对角分界线, x+y=0)")
+        print(f"  🏰 城池数量: {city_count} 座 (对角要塞)")
+        print(f"  🌱 平地总数: {plain_count} 块 (主要活动区域)")
+        print(f"  🏔️ 山脉总数: {mountain_count} 块 (战略高地)")
+        print(f"  ⭐ 中心争夺点: (0, 0) - 平地")
+
+        print(f"\n🚀 阵营部署:")
+        shu_spawn_x = -half_width + 3
+        shu_spawn_y = -half_height + 3
+        shu_city_x = -half_width + 2
+        shu_city_y = -half_height + 2
+        wei_spawn_x = half_width - 3
+        wei_spawn_y = half_height - 3
+        wei_city_x = half_width - 2
+        wei_city_y = half_height - 2
+        
+        print(f"  SHU (蜀): 出生点({shu_spawn_x}, {shu_spawn_y}), 城池({shu_city_x}, {shu_city_y}) - 左下区域")
+        print(f"  WEI (魏): 出生点({wei_spawn_x}, {wei_spawn_y}), 城池({wei_city_x}, {wei_city_y}) - 右上区域")
+        
+        # 计算出生点间距离
+        spawn_distance = math.sqrt((wei_spawn_x - shu_spawn_x)**2 + (wei_spawn_y - shu_spawn_y)**2)
+        print(f"  📏 直线距离: {spawn_distance:.1f} 格")
+        print(f"  🌊 需跨越对角河流才能到达对方区域")
+        print(f"  🏰 城池位于后方，提供安全的战略纵深")
 
     def set_symmetry_type(self, symmetry_type: str):
         """设置对称类型"""
