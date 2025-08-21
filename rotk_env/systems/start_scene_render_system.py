@@ -167,7 +167,7 @@ class StartSceneRenderSystem(System):
             ({Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI}, "AI对战"),
             (
                 {
-                    Faction.WEI: PlayerType.HUMAN,
+                    Faction.WEI: PlayerType.AI,
                     Faction.SHU: PlayerType.AI,
                     Faction.WU: PlayerType.AI,
                 },

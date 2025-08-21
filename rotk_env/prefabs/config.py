@@ -36,7 +36,7 @@ class TerrainType(Enum):
     URBAN = "urban"  # 城池
     CITY = "city"  # 大城市
     HILL = "hill"  # 丘陵
-    
+
     # MOBA-specific terrain types
     LANE = "lane"  # 兵线路径 - 连接两个基地的主要通道
     JUNGLE = "jungle"  # 野区 - 中性区域，包含野怪和资源
@@ -181,7 +181,6 @@ class GameConfig:
             attack_bonus=1,
             special_rules="高地优势+1攻击，近战先攻权+1",
         ),
-        
         # MOBA-specific terrain effects
         TerrainType.LANE: TerrainEffect(
             movement_cost=1,
@@ -282,7 +281,6 @@ class GameConfig:
         TerrainType.WATER: TerrainCoefficient(
             infantry=0.5, cavalry=0.3, archer=0.7  # 水域惩罚
         ),
-        
         # MOBA-specific terrain coefficients
         TerrainType.LANE: TerrainCoefficient(
             infantry=1.1, cavalry=1.2, archer=1.1  # 兵线路径利于移动
@@ -323,7 +321,6 @@ class GameConfig:
         TerrainType.WATER: (135, 206, 250),  # 浅蓝色
         TerrainType.URBAN: (169, 169, 169),  # 灰色
         TerrainType.CITY: (105, 105, 105),  # 深灰色
-        
         # MOBA-specific terrain colors
         TerrainType.LANE: (255, 223, 128),  # 金黄色 - 兵线路径
         TerrainType.JUNGLE: (60, 120, 60),  # 深墨绿色 - 野区
