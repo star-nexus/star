@@ -1052,6 +1052,66 @@ async def get_response(request_id):
     return response
 
 
+def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
+    """
+    根据动作类型、参数和响应结果计算智能延迟时间
+    
+    Args:
+        action: 动作类型 (如 "move", "attack" 等)
+        params: 动作参数
+        response: 服务器响应结果
+    
+    Returns:
+        float: 延迟秒数，0表示无需延迟
+    """
+    if not isinstance(response, dict) or not response.get("success", False):
+        # 动作失败时无需延迟
+        return 0.0
+    
+    if action == "move":
+        # 移动动作：根据路径长度和距离估算延迟
+        return _calculate_move_delay(params, response)
+    elif action == "attack":
+        # 攻击动作：固定延迟以等待攻击动画
+        return 0.2  # 攻击动画通常较短
+    elif action in ["get_faction_state", "observation", "get_action_list"]:
+        # 查询类动作：无需延迟
+        return 0.0
+    else:
+        # 其他动作：保守的默认延迟
+        return 0.1
+
+
+def _calculate_move_delay(params: Any, response: Any) -> float:
+    """计算移动动作的延迟时间"""
+    try:
+        # 方法1：从响应中的 movement_details 获取预估时间
+        if isinstance(response, dict) and "movement_details" in response:
+            estimated_duration = response["movement_details"].get("estimated_duration_seconds", 0)
+            if estimated_duration > 0:
+                # 增加10%的缓冲时间，确保动画完成
+                return estimated_duration * 1.1
+        
+        # 方法2：根据路径长度估算（备用方案）
+        if isinstance(response, dict) and "movement_details" in response:
+            path_length = response["movement_details"].get("path_length", 0)
+            if path_length > 0:
+                # 假设动画速度为2格/秒，增加缓冲
+                return path_length / 2.0 + 0.2
+        
+        # 方法3：根据起始和目标位置计算曼哈顿距离（最后备选）
+        if isinstance(params, dict) and "target_position" in params:
+            # 这里无法获取起始位置，使用保守估计
+            return 1.0  # 保守的1秒延迟
+        
+        # 默认延迟
+        return 1.0
+    
+    except Exception as e:
+        console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
+        return 1.0  # 出错时使用保守延迟
+    
+
 async def perform_action(action: str, params: Any):
     """执行动作"""
     # print(f"🚀 执行动作: {action}, 参数: {params}")
@@ -1065,8 +1125,12 @@ async def perform_action(action: str, params: Any):
     # print(f"执行动作的立刻结果 - success: {success}")
     response = await get_response(success)
 
-    # if response:
-        #  print_json(data=response)
+    # 🆕 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
+    delay_time = _calculate_action_delay(action, params, response)
+    if delay_time > 0:
+        console.print(f"⏳ 等待 {delay_time}s 让动作完成...", style="cyan")
+        await asyncio.sleep(delay_time)
+
     return response
 
 
