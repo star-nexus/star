@@ -83,9 +83,9 @@ class MovementSystem(System):
         action_points.current_ap -= 1
 
         # 2. 消耗移动力（执行层级）：根据路径和地形消耗
-        # 消耗移动点数和行动点数
+        # 消耗移动点数（移除has_moved限制，允许多次移动）
         movement_points.current_mp -= total_cost
-        movement_points.has_moved = True
+        # movement_points.has_moved = True  # 移除单次移动限制
 
         # 记录移动行动到统计系统
         statistics_system = self._get_statistics_system()

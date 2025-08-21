@@ -474,9 +474,7 @@ class LLMActionHandlerV3:
 
         # 检查当前移动力是否足够（使用实际剩余的移动力）
         if total_movement_cost > current_mp:
-            error_msg = (
-                f"Insufficient movement points this turn: need {total_movement_cost}, have {current_mp}."
-            )
+            error_msg = f"Insufficient movement points this turn: need {total_movement_cost}, have {current_mp}."
             print(f"[MOVE_ACTION] 移动力不足以到达目标: {error_msg}")
 
             # 计算在当前移动力下，沿路径能够抵达的最远位置
@@ -535,15 +533,17 @@ class LLMActionHandlerV3:
                     "path_length": len(path) - 1,
                     "effective_movement": effective_movement,
                     "terrain_costs": self._get_path_terrain_breakdown(path),
-                    "closest_reachable_position": {
-                        "col": closest_reachable_position[0],
-                        "row": closest_reachable_position[1],
-                    }
-                    if isinstance(closest_reachable_position, tuple)
-                    else {
-                        "col": current_pos[0],
-                        "row": current_pos[1],
-                    },
+                    "closest_reachable_position": (
+                        {
+                            "col": closest_reachable_position[0],
+                            "row": closest_reachable_position[1],
+                        }
+                        if isinstance(closest_reachable_position, tuple)
+                        else {
+                            "col": current_pos[0],
+                            "row": current_pos[1],
+                        }
+                    ),
                     "reachable_steps": len(reachable_positions_along_path),
                     "suggested_action": {
                         "action": "move",
@@ -777,15 +777,15 @@ class LLMActionHandlerV3:
                 },
             )
 
-        # 检查是否已攻击过
-        if attacker_combat.has_attacked:
-            return self._create_error_response(
-                f"Unit {unit_id} has already attacked this turn",
-                {
-                    "unit_id": unit_id,
-                    "suggestion": "Each unit can only attack once per turn",
-                },
-            )
+        # 注释掉攻击次数限制 - 允许多次攻击（只要有足够的行动点）
+        # if attacker_combat.has_attacked:
+        #     return self._create_error_response(
+        #         f"Unit {unit_id} has already attacked this turn",
+        #         {
+        #             "unit_id": unit_id,
+        #             "suggestion": "Each unit can only attack once per turn",
+        #         },
+        #     )
 
         # 检查目标是否还活着
         if target_count.current_count <= 0:
@@ -907,7 +907,7 @@ class LLMActionHandlerV3:
             },
             "remaining_resources": {
                 "action_points": post_attack_state["attacker_action_points"],
-                "can_attack_again": not post_attack_state["attacker_has_attacked"],
+                # "can_attack_again": not post_attack_state["attacker_has_attacked"],  # 移除单次攻击限制
             },
             "tactical_info": {
                 "attack_was_effective": casualties_inflicted > 0,
@@ -1281,7 +1281,7 @@ class LLMActionHandlerV3:
         total_units_count = len(faction_units)
         alive_units = [u for u in faction_units if self._is_unit_alive(u)]
         alive_units_count = len(alive_units)
-        
+
         # 计算可行动单位（存活且有行动点）
         actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
         actionable_units_count = len(actionable_units)
@@ -1307,7 +1307,7 @@ class LLMActionHandlerV3:
         action_docs = {
             "actions": {
                 "move": {
-                    "description": "移动单位到指定位置",
+                    "description": "移动单位到指定位置（可多次移动，直到移动力耗尽）",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
@@ -1326,7 +1326,7 @@ class LLMActionHandlerV3:
                     },
                 },
                 "attack": {
-                    "description": "攻击指定敌方单位",
+                    "description": "攻击指定敌方单位（可多次攻击，直到行动点耗尽）",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
@@ -1372,7 +1372,7 @@ class LLMActionHandlerV3:
                     "parameters": {},
                 },
                 "end_turn": {
-                    "description": "结束当前回合，可结束当前阵营的回合，如果当前阵营没有行动点，则结束回合",
+                    "description": "结束当前回合，可结束当前阵营的回合，如果当前阵营没有行动点，则结束回合，并结束当前任务",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1621,7 +1621,7 @@ class LLMActionHandlerV3:
                 },
                 "end_turn": {
                     "category": "system",
-                    "description": "可结束当前回合",
+                    "description": "所有unit无法行动时，或者已完成全部计划时，可以结束当前回合，交由对手执行，己方除了观察不可再进行任何操作",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1714,7 +1714,7 @@ class LLMActionHandlerV3:
             )
 
         # 执行结束回合
-        success = turn_system.end_turn(faction, force)
+        success = turn_system.agent_end_turn()
 
         if success:
             # 获取新的当前玩家
@@ -2193,12 +2193,12 @@ class LLMActionHandlerV3:
         """检查单位是否存活（人数>0）"""
         unit_count = self.world.get_component(unit_id, UnitCount)
         return unit_count and unit_count.current_count > 0
-    
+
     def _can_unit_take_action(self, unit_id: int) -> bool:
         """检查单位是否可以执行行动（存活且有行动点）"""
         if not self._is_unit_alive(unit_id):
             return False
-        
+
         action_points = self.world.get_component(unit_id, ActionPoints)
         return action_points and action_points.current_ap > 0
 

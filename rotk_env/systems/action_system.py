@@ -58,7 +58,7 @@ class ActionSystem(System):
 
         # 消耗移动力和行动力
         movement.current_movement -= movement_cost
-        movement.has_moved = True
+        # movement.has_moved = True  # 移除单次移动限制
 
         # 移动消耗的行动力等于地形消耗
         terrain_cost = self._get_terrain_movement_cost(target_pos)
@@ -195,7 +195,7 @@ class ActionSystem(System):
                 movement.current_movement = movement.get_effective_movement(unit_count)
             else:
                 movement.current_movement = movement.base_movement
-            movement.has_moved = False
+            # movement.has_moved = False  # 移除单次移动限制
 
             # 处理状态持续时间
             if unit_status.status_duration > 0:

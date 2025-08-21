@@ -217,7 +217,7 @@ class CombatSystem(System):
 
         # 5. 消耗行动力
         action_points.consume_ap(ActionType.ATTACK)
-        attacker_combat.has_attacked = True
+        # attacker_combat.has_attacked = True  # 移除单次攻击限制，允许多次攻击
 
         # 6. 处理特殊效果
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -360,7 +360,7 @@ class CombatSystem(System):
 
         # 5. 消耗行动力
         action_points.consume_ap(ActionType.ATTACK)
-        attacker_combat.has_attacked = True
+        # attacker_combat.has_attacked = True  # 移除单次攻击限制，允许多次攻击
 
         # 6. 处理特殊效果
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -403,9 +403,9 @@ class CombatSystem(System):
         if attacker_count.ratio <= 0.1:
             return False
 
-        # 检查是否已经攻击过
-        if attacker_combat.has_attacked:
-            return False
+        # 注释掉攻击次数限制检查 - 允许多次攻击（只要有足够的行动点）
+        # if attacker_combat.has_attacked:
+        #     return False
 
         # 检查攻击范围
         distance = HexMath.hex_distance(
@@ -486,7 +486,9 @@ class CombatSystem(System):
         base_damage = max(1, effective_attack - int(effective_defense * 0.5))
 
         # 人数影响：最终伤害再乘 (N攻 / N守)^0.5
-        count_ratio = 1.0 # (attacker_count.current_count / target_count.current_count) ** 0.5
+        count_ratio = (
+            1.0  # (attacker_count.current_count / target_count.current_count) ** 0.5
+        )
         damage = int(base_damage * count_ratio)
 
         # 应用特殊修正（冲锋、技能等）
