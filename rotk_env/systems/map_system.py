@@ -34,6 +34,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def initialize(self, world: World) -> None:
         self.world = world
         self.generate_map()
+        # 生成地图后，保存地图信息到GameStats
+        self._save_map_info_to_stats()
 
     def subscribe_events(self):
         """订阅事件"""
@@ -1103,7 +1105,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
     def set_symmetry_type(self, symmetry_type: str):
         """设置对称类型"""
-        if symmetry_type in ["horizontal", "diagonal", "river_split"]:
+        if symmetry_type in ["horizontal", "diagonal", "river_split", "river_split_offset", "square", "moba", "encounter"]:
             self.symmetry_type = symmetry_type
             print(f"[MapSystem] 对称类型设置为: {symmetry_type}")
         else:
@@ -1826,16 +1828,47 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  🌊 需跨越对角河流才能到达对方区域")
         print(f"  🏰 城池位于后方，提供安全的战略纵深")
 
-    def set_symmetry_type(self, symmetry_type: str):
-        """设置对称类型"""
-        if symmetry_type in ["horizontal", "diagonal", "river_split"]:
-            self.symmetry_type = symmetry_type
-            print(f"[MapSystem] 对称类型设置为: {symmetry_type}")
-        else:
-            print(
-                f"[MapSystem] 警告: 未知的对称类型 {symmetry_type}，使用默认值 'horizontal'"
-            )
-            self.symmetry_type = "horizontal"
+    def _save_map_info_to_stats(self):
+        """保存地图信息到GameStats中"""
+        import time
+        from ..components import GameStats
+        
+        # 获取GameStats组件，如果不存在就暂时跳过
+        game_stats = self.world.get_singleton_component(GameStats)
+        if not game_stats:
+            print("[MapSystem] GameStats组件不存在，跳过地图信息保存")
+            return
+        
+        # 确定坐标系类型
+        coordinate_system = "centered" if self.symmetry_type == "river_split_offset" else "offset"
+        
+        # 获取出生点位置
+        spawn_positions = {}
+        if self.competitive_mode:
+            spawn_positions = self.get_competitive_spawn_positions()
+        
+        # 收集地图信息
+        map_info = {
+            "map_width": GameConfig.MAP_WIDTH,
+            "map_height": GameConfig.MAP_HEIGHT,
+            "map_type": self.symmetry_type,
+            "competitive_mode": self.competitive_mode,
+            "map_seed": self.seed,
+            "spawn_positions": {faction.value: pos for faction, pos in spawn_positions.items()},
+            "coordinate_system": coordinate_system,
+            "symmetry_type": self.symmetry_type,
+            "generation_timestamp": time.time(),
+        }
+        
+        # 保存到GameStats
+        game_stats.map_info = map_info
+        
+        print(f"[MapSystem] ✅ 地图信息已保存到GameStats:")
+        print(f"  - 地图尺寸: {map_info['map_width']}x{map_info['map_height']}")
+        print(f"  - 地图类型: {map_info['map_type']}")
+        print(f"  - 竞技模式: {map_info['competitive_mode']}")
+        print(f"  - 坐标系: {map_info['coordinate_system']}")
+        print(f"  - 出生点: {map_info['spawn_positions']}")
 
     def _generate_river_split_diagonal_map(self):
         """🌊 生成河流分割的对角线对称竞技地图"""

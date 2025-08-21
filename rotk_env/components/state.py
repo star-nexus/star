@@ -108,3 +108,16 @@ class GameStats(SingletonComponent):
     strategy_ping_count_by_faction: Dict[Faction, int] = field(default_factory=dict)
     strategy_evidence: Dict[Faction, List[str]] = field(default_factory=dict)
     last_strategy_ping_ts: Dict[Faction, float] = field(default_factory=dict)
+
+    # 🆕 地图信息统计
+    map_info: Dict[str, any] = field(default_factory=dict)
+    # 地图信息包含：
+    # - map_width: int - 地图宽度
+    # - map_height: int - 地图高度  
+    # - map_type: str - 地图类型/模式 (如 "river_split", "river_split_offset", "diagonal" 等)
+    # - competitive_mode: bool - 是否为竞技模式
+    # - map_seed: int - 地图生成种子
+    # - spawn_positions: Dict[Faction, Tuple[int, int]] - 各阵营出生点位置
+    # - coordinate_system: str - 坐标系类型 ("centered" 表示以(0,0)为中心, "offset" 表示从左上角开始)
+    # - symmetry_type: str - 对称类型
+    # - generation_timestamp: float - 地图生成时间戳
