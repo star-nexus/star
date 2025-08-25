@@ -1,6 +1,7 @@
 import asyncio
 import argparse
 from contextvars import ContextVar
+from datetime import datetime
 import os
 import sys
 import json
@@ -21,6 +22,13 @@ from rich import print_json
 
 console = Console()
 
+    # - 使用 (列, 行) 即 `(col, row)` 六安编写坐标系。
+    # - 地图中心为 `(col: 0, row: 0)`。
+    # - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
+    # - `row` 轴: **向下为正方向** (值增大)，向上为负方向 (值减小)。
+    # **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
+    # **Neighbors** (must use):
+
 rule = """# 游戏核心规则
 
 ## 1. 游戏目标
@@ -33,10 +41,18 @@ rule = """# 游戏核心规则
 ## 3. 地图与坐标系
 - **地图网格**: 游戏地图由六边形格子构成，大小约为 15x15。
 - **坐标系统**:
-    - 使用 (列, 行) 即 `(col, row)` 坐标系。
-    - 地图中心为 `(col: 0, row: 0)`。
-    - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
-    - `row` 轴: **向下为正方向** (值增大)，向上为负方向 (值减小)。
+    - **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
+    - **Neighbors** (must use):
+        * if `c` even: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`
+        * if `c` odd : `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`
+
+    - **Distance**: convert offset→axial: `q=c`, `r=r - floor(c/2)`; then `d = (|dq| + |dr| + |d(q+r)|)/2`.
+
+    - **Rules**:
+        - Never use Euclidean/Manhattan/Chebyshev.
+        - Before any action (attack/skill/move), compute `d`.
+        - Attack only if `d ≤ range`; else plan moves via valid neighbors.
+        - If ENV says “out of range”, recompute then revise.
 
 ## 4. 行动机制：通过 `perform_action` 工具
 - **核心工具**: 游戏中的所有单位动作（如move和attack）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack` 或 `get_faction_state。
@@ -115,6 +131,8 @@ class LLMClient:
             self.base_url = "https://api.deepseek.com/v1"
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1"
+        elif config.provider == "siliconflow":
+            self.base_url = "https://api.siliconflow.cn/v1"
         elif config.provider == "vllm":
             self.base_url = config.base_url or "http://172.16.75.202:10000/v1"
         else:
@@ -147,9 +165,24 @@ class LLMClient:
             "model": self.config.model_id,
             "messages": formatted_messages,
             "temperature": self.config.temperature,
-            "chat_template_kwargs": {"enable_thinking": False},
             "max_tokens": 800,
         }
+        
+        # 针对不同提供商添加特殊参数
+        if self.config.provider == "siliconflow":
+            # SiliconFlow 特殊参数
+            payload.update({
+                "enable_thinking": False,
+                "stream": False,
+                "top_p": 0.7,
+                "min_p": 0.05,
+                "top_k": 50,
+                "frequency_penalty": 0.5,
+                "n": 1
+            })
+        elif self.config.provider == "vllm":
+            # VLLM 特殊参数
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         
         if self.config.max_tokens:
             payload["max_tokens"] = self.config.max_tokens
@@ -172,21 +205,76 @@ class LLMClient:
         console.print("LLM client request payload end", style="purple")
 
         # 发送请求
-        response = await self.client.post(
-            f"{self.base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=60.0
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"LLM API error: {response.status_code} - {response.text}")
-        console.print("LLM client response status code", style="purple")
-        console.print(response.status_code, style="purple")
-        console.print("LLM client response json", style="purple")
-        print_json(data=response.json(), indent=2, ensure_ascii=False)
-        console.print("LLM client response end", style="purple")
-        return response.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=60.0
+            )
+            
+            if response.status_code != 200:
+                error_details = {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "url": str(response.url),
+                    "request_payload": payload,
+                    "config": {
+                        "provider": self.config.provider,
+                        "model_id": self.config.model_id,
+                        "base_url": self.base_url
+                    }
+                }
+                
+                try:
+                    response_data = response.json()
+                    error_details["response_json"] = response_data
+                    error_message = response_data.get("error", {}).get("message", response.text)
+                except:
+                    error_details["response_text"] = response.text
+                    error_message = response.text
+                
+                console.print("🚨 LLM API 错误详情:", style="red bold")
+                console.print(f"状态码: {error_details['status_code']}", style="red")
+                console.print(f"URL: {error_details['url']}", style="red")
+                console.print(f"提供商: {error_details['config']['provider']}", style="red")
+                console.print(f"模型: {error_details['config']['model_id']}", style="red")
+                console.print("响应内容:", style="red")
+                print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
+                
+                raise Exception(f"LLM API error: {response.status_code} - {error_message}")
+                
+            console.print("LLM client response status code", style="purple")
+            console.print(response.status_code, style="purple")
+            console.print("LLM client response json", style="purple")
+            response_data = response.json()
+            print_json(data=response_data, indent=2, ensure_ascii=False)
+            console.print("LLM client response end", style="purple")
+            return response_data
+            
+        except httpx.ConnectError as e:
+            error_msg = f"无法连接到 {self.config.provider} API 服务器: {self.base_url}"
+            console.print(f"🔌 连接错误: {error_msg}", style="red")
+            console.print(f"请检查网络连接和API服务器状态", style="yellow")
+            raise Exception(error_msg) from e
+            
+        except httpx.TimeoutException as e:
+            error_msg = f"{self.config.provider} API 请求超时 (>60秒)"
+            console.print(f"⏱️ 超时错误: {error_msg}", style="red")
+            console.print(f"请检查网络状况或尝试重新请求", style="yellow")
+            raise Exception(error_msg) from e
+            
+        except httpx.HTTPStatusError as e:
+            error_msg = f"{self.config.provider} API HTTP错误: {e.response.status_code}"
+            console.print(f"🌐 HTTP错误: {error_msg}", style="red")
+            raise Exception(error_msg) from e
+            
+        except Exception as e:
+            error_msg = f"发送API请求时发生未知错误: {str(e)}"
+            console.print(f"❌ 未知错误: {error_msg}", style="red")
+            console.print(f"请求URL: {self.base_url}/chat/completions", style="yellow")
+            console.print(f"提供商: {self.config.provider}", style="yellow")
+            raise Exception(error_msg) from e
     
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
         """Format tool definitions to OpenAI format"""
@@ -247,6 +335,8 @@ class StandaloneChatAgent:
         self.max_iterations = 100  # 防止无限循环
         # 🆕 策略打点节流控制
         self._strategy_last_ping_ts: float = 0.0
+        # 🆕 保护对话历史的锁（用于并行工具调用）
+        self._history_lock = asyncio.Lock()
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -402,10 +492,20 @@ class StandaloneChatAgent:
 
                 # 3) Normal terminal cases
                 if finish_reason in ("stop", "content_filter"):
+                    self.conversation_history.append(
+                        Message(
+                            role="user", 
+                            # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
+                            content="The action is complete. Please continue.")
+                    )
+                    continue
+
+                # 4) Normal terminal cases
+                if finish_reason in ("content_filter"):
                     print(f"success: True, response: {message.get('content', '')}, iterations: {iterations}, finish_reason: {finish_reason}")
                     break
 
-                # 4) an unexpected finish reason
+                # 5) an unexpected finish reason
                 console.print(f"Unexpected finish reason: {finish_reason}", style="red")
                 return {
                     "success": False,
@@ -413,10 +513,90 @@ class StandaloneChatAgent:
                     "iterations": iterations
                 }
             except Exception as e:
-                console.print(f"Error during chat: {e}", style="red")
+                # 详细的异常信息收集和显示
+                import traceback
+                import httpx
+                
+                error_details = {
+                    "exception_type": type(e).__name__,
+                    "exception_message": str(e),
+                    "iteration": iterations,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # 获取完整的堆栈跟踪
+                tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
+                error_details["full_traceback"] = "".join(tb_lines)
+                
+                # 针对不同类型的异常添加特定信息
+                if isinstance(e, httpx.HTTPStatusError):
+                    error_details["http_status_code"] = e.response.status_code
+                    error_details["response_headers"] = dict(e.response.headers)
+                    try:
+                        error_details["response_body"] = e.response.text
+                    except:
+                        error_details["response_body"] = "无法读取响应体"
+                        
+                elif isinstance(e, httpx.ConnectError):
+                    error_details["connection_error"] = "无法连接到服务器"
+                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
+                    
+                elif isinstance(e, httpx.TimeoutException):
+                    error_details["timeout_error"] = "请求超时"
+                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
+                    
+                elif isinstance(e, httpx.RequestError):
+                    error_details["request_error"] = "请求错误"
+                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
+                    
+                elif "JSON" in str(e) or "json" in str(e):
+                    error_details["json_error"] = "JSON解析错误，可能是API返回格式不正确"
+                
+                # 显示详细错误信息
+                console.print("=" * 80, style="red")
+                console.print("🚨 详细错误信息", style="red bold")
+                console.print("=" * 80, style="red")
+                console.print(f"📍 异常类型: {error_details['exception_type']}", style="red")
+                console.print(f"📝 错误消息: {error_details['exception_message']}", style="red") 
+                console.print(f"🔄 当前迭代: {error_details['iteration']}", style="red")
+                console.print(f"⏰ 发生时间: {error_details['timestamp']}", style="red")
+                
+                # 根据异常类型显示特定信息
+                if "http_status_code" in error_details:
+                    console.print(f"🌐 HTTP状态码: {error_details['http_status_code']}", style="red")
+                    console.print(f"📤 响应头: {error_details['response_headers']}", style="yellow")
+                    console.print(f"📥 响应体: {error_details['response_body'][:500]}...", style="yellow")
+                    
+                if "connection_error" in error_details:
+                    console.print(f"🔌 连接错误: {error_details['connection_error']}", style="red")
+                    console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+                    
+                if "timeout_error" in error_details:
+                    console.print(f"⏱️ 超时错误: {error_details['timeout_error']}", style="red")
+                    console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+                    
+                if "json_error" in error_details:
+                    console.print(f"📋 JSON错误: {error_details['json_error']}", style="red")
+                
+                # 显示堆栈跟踪（可选择性显示）
+                console.print("\n🔍 完整堆栈跟踪:", style="red")
+                console.print(error_details["full_traceback"], style="dim red")
+                
+                # 保存错误信息到文件（便于后续分析）
+                try:
+                    error_log_file = f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    with open(error_log_file, 'w', encoding='utf-8') as f:
+                        json.dump(error_details, f, ensure_ascii=False, indent=2)
+                    console.print(f"💾 错误详情已保存到: {error_log_file}", style="blue")
+                except Exception as log_error:
+                    console.print(f"⚠️ 无法保存错误日志: {log_error}", style="yellow")
+                
+                console.print("=" * 80, style="red")
+                
                 return {
                     "success": False,
                     "error": str(e),
+                    "error_details": error_details,
                     "iterations": iterations
                 }
         
@@ -429,57 +609,91 @@ class StandaloneChatAgent:
     
     async def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]]):
         """Handle tool calls"""
+        console.print(f"🔧 处理 {len(tool_calls)} 个工具调用", style="cyan")
+        
+        # 🆕 支持并行执行多个工具调用（可选）
+        parallel_execution = len(tool_calls) > 1 and all(
+            tool_call["function"]["name"] == "perform_action" 
+            for tool_call in tool_calls
+        )
+        
+        if parallel_execution:
+            console.print("⚡ 检测到多个perform_action调用，使用并行执行模式", style="cyan")
+            await self._handle_tool_calls_parallel(tool_calls)
+        else:
+            console.print("🔄 使用顺序执行模式", style="cyan")
+            await self._handle_tool_calls_sequential(tool_calls)
+    
+    async def _handle_tool_calls_sequential(self, tool_calls: List[Dict[str, Any]]):
+        """顺序执行工具调用"""
         for tool_call in tool_calls:
-            tool_call_id = tool_call["id"]
-            function_name = tool_call["function"]["name"]
-            arguments_str = tool_call["function"]["arguments"]
+            await self._execute_single_tool_call(tool_call)
+    
+    async def _handle_tool_calls_parallel(self, tool_calls: List[Dict[str, Any]]):
+        """并行执行工具调用"""
+        # 创建并行任务
+        tasks = []
+        for tool_call in tool_calls:
+            task = asyncio.create_task(self._execute_single_tool_call(tool_call))
+            tasks.append(task)
+        
+        # 等待所有任务完成
+        await asyncio.gather(*tasks)
+    
+    async def _execute_single_tool_call(self, tool_call: Dict[str, Any]):
+        """执行单个工具调用"""
+        tool_call_id = tool_call["id"]
+        function_name = tool_call["function"]["name"]
+        arguments_str = tool_call["function"]["arguments"]
+        
+        console.print(f"╭──────────────────────────────────────── Executing tool '{function_name}' with arguments ────────────────────────────────────────╮", style="green")
+        console.print(f"│ {arguments_str}", style="green", highlight=False)
+        console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        
+        try:
+            # 解析参数
+            arguments = json.loads(arguments_str) if arguments_str else {}
             
-            console.print(f"╭──────────────────────────────────────── Executing tool '{function_name}' with arguments ────────────────────────────────────────╮", style="green")
-            console.print(f"│ {arguments_str}", style="green", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+            # LLM有时会生成双重编码的JSON，特别是对于嵌套的'params'。
+            # 在这里增加一层健壮性检查。
+            if 'params' in arguments and isinstance(arguments['params'], str):
+                console.print("⚠️ 'params' is a string, trying to decode again...", style="yellow")
+                try:
+                    arguments['params'] = json.loads(arguments['params'])
+                except json.JSONDecodeError as e:
+                    # 如果解码失败，说明LLM生成的JSON格式不正确。
+                    # 这是无法恢复的错误，我们应该抛出异常，让上层捕获并通知LLM。
+                    raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
             
-            try:
-                # 解析参数
-                arguments = json.loads(arguments_str) if arguments_str else {}
-                
-                # LLM有时会生成双重编码的JSON，特别是对于嵌套的'params'。
-                # 在这里增加一层健壮性检查。
-                if 'params' in arguments and isinstance(arguments['params'], str):
-                    console.print("⚠️ 'params' is a string, trying to decode again...", style="yellow")
-                    try:
-                        arguments['params'] = json.loads(arguments['params'])
-                    except json.JSONDecodeError as e:
-                        # 如果解码失败，说明LLM生成的JSON格式不正确。
-                        # 这是无法恢复的错误，我们应该抛出异常，让上层捕获并通知LLM。
-                        raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
-                
-                # 执行工具
-                result = await self.tool_manager.execute_tool(function_name, arguments)
-                
-                console.print(f"╭──────────────────────────────────────── Tool '{function_name}' Result ────────────────────────────────────────╮", style="yellow")
-                console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-                console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
-                
+            # 执行工具
+            result = await self.tool_manager.execute_tool(function_name, arguments)
+            
+            console.print(f"╭──────────────────────────────────────── Tool '{function_name}' Result ────────────────────────────────────────╮", style="yellow")
+            console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
+            
 
-                # 过滤工具结果，移除冗余信息以保持对话历史精炼
-                filtered_result = self._filter_tool_result(function_name, result)
-                
-                # 将过滤后的工具结果添加到对话历史
-                tool_message = Message(
-                    role="tool",
-                    content=json.dumps(filtered_result, ensure_ascii=False),
-                    tool_call_id=tool_call_id
-                )
+            # 过滤工具结果，移除冗余信息以保持对话历史精炼
+            filtered_result = self._filter_tool_result(function_name, result)
+            
+            # 将过滤后的工具结果添加到对话历史（使用锁保护并行访问）
+            tool_message = Message(
+                role="tool",
+                content=json.dumps(filtered_result, ensure_ascii=False),
+                tool_call_id=tool_call_id
+            )
+            async with self._history_lock:
                 self.conversation_history.append(tool_message)
-                
-            except Exception as e:
-                console.print(f"Tool execution error: {e}", style="red")
-                # 添加错误信息到对话历史
-                error_message = Message(
-                    role="tool",
-                    content=json.dumps({"error": str(e)}, ensure_ascii=False),
-                    tool_call_id=tool_call_id
-                )
+            
+        except Exception as e:
+            console.print(f"Tool execution error: {e}", style="red")
+            # 添加错误信息到对话历史（使用锁保护并行访问）
+            error_message = Message(
+                role="tool",
+                content=json.dumps({"error": str(e)}, ensure_ascii=False),
+                tool_call_id=tool_call_id
+            )
+            async with self._history_lock:
                 self.conversation_history.append(error_message)
 
     # ==================== 策略关键词检测与上报 ====================
@@ -806,8 +1020,8 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
         provider = "infinigence"  # Based on observation, claude models are provided by infinigence
         provider_config = config.get("infinigence", {})
     elif "deepseek" in model_id:
-        provider = "deepseek"
-        provider_config = config.get("deepseek", {})
+        provider = "siliconflow"
+        provider_config = config.get("siliconflow", {})
     elif "gpt" in model_id or "openai" in model_id:
         provider = "openai"
         provider_config = config.get("openai", {})
@@ -820,8 +1034,8 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
             model_id = model_id[5:]  # Remove "vllm:" prefix
     else:
         # Default to deepseek
-        provider = "deepseek"
-        provider_config = config.get("deepseek", {})
+        provider = "siliconflow"
+        provider_config = config.get("siliconflow", {})
     
     api_key = provider_config.get("api_key")
     if not api_key:
@@ -1052,66 +1266,6 @@ async def get_response(request_id):
     return response
 
 
-def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
-    """
-    根据动作类型、参数和响应结果计算智能延迟时间
-    
-    Args:
-        action: 动作类型 (如 "move", "attack" 等)
-        params: 动作参数
-        response: 服务器响应结果
-    
-    Returns:
-        float: 延迟秒数，0表示无需延迟
-    """
-    if not isinstance(response, dict) or not response.get("success", False):
-        # 动作失败时无需延迟
-        return 0.0
-    
-    if action == "move":
-        # 移动动作：根据路径长度和距离估算延迟
-        return _calculate_move_delay(params, response)
-    elif action == "attack":
-        # 攻击动作：固定延迟以等待攻击动画
-        return 0.2  # 攻击动画通常较短
-    elif action in ["get_faction_state", "observation", "get_action_list"]:
-        # 查询类动作：无需延迟
-        return 0.0
-    else:
-        # 其他动作：保守的默认延迟
-        return 0.1
-
-
-def _calculate_move_delay(params: Any, response: Any) -> float:
-    """计算移动动作的延迟时间"""
-    try:
-        # 方法1：从响应中的 movement_details 获取预估时间
-        if isinstance(response, dict) and "movement_details" in response:
-            estimated_duration = response["movement_details"].get("estimated_duration_seconds", 0)
-            if estimated_duration > 0:
-                # 增加10%的缓冲时间，确保动画完成
-                return estimated_duration * 1.1
-        
-        # 方法2：根据路径长度估算（备用方案）
-        if isinstance(response, dict) and "movement_details" in response:
-            path_length = response["movement_details"].get("path_length", 0)
-            if path_length > 0:
-                # 假设动画速度为2格/秒，增加缓冲
-                return path_length / 2.0 + 0.2
-        
-        # 方法3：根据起始和目标位置计算曼哈顿距离（最后备选）
-        if isinstance(params, dict) and "target_position" in params:
-            # 这里无法获取起始位置，使用保守估计
-            return 1.0  # 保守的1秒延迟
-        
-        # 默认延迟
-        return 1.0
-    
-    except Exception as e:
-        console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
-        return 1.0  # 出错时使用保守延迟
-    
-
 async def perform_action(action: str, params: Any):
     """执行动作"""
     # print(f"🚀 执行动作: {action}, 参数: {params}")
@@ -1150,7 +1304,8 @@ async def chat(parts):
         # 加载配置并创建独立的聊天代理
         try:
             # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            config_path = os.path.join(os.getcwd(), ".configs.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
@@ -1212,6 +1367,68 @@ async def chat(parts):
     else:
         print("❌ 请指定动作，如: chat dance")
 
+
+
+
+def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
+    """
+    根据动作类型、参数和响应结果计算智能延迟时间
+    
+    Args:
+        action: 动作类型 (如 "move", "attack" 等)
+        params: 动作参数
+        response: 服务器响应结果
+    
+    Returns:
+        float: 延迟秒数，0表示无需延迟
+    """
+    if not isinstance(response, dict) or not response.get("success", False):
+        # 动作失败时无需延迟
+        return 0.0
+    
+    if action == "move":
+        # 移动动作：根据路径长度和距离估算延迟
+        return _calculate_move_delay(params, response)
+    elif action == "attack":
+        # 攻击动作：固定延迟以等待攻击动画
+        return 0.2  # 攻击动画通常较短
+    elif action in ["get_faction_state", "observation", "get_action_list"]:
+        # 查询类动作：无需延迟
+        return 0.0
+    else:
+        # 其他动作：保守的默认延迟
+        return 0.1
+
+
+def _calculate_move_delay(params: Any, response: Any) -> float:
+    """计算移动动作的延迟时间"""
+    try:
+        # 方法1：从响应中的 movement_details 获取预估时间
+        if isinstance(response, dict) and "movement_details" in response:
+            estimated_duration = response["movement_details"].get("estimated_duration_seconds", 0)
+            if estimated_duration > 0:
+                # 增加10%的缓冲时间，确保动画完成
+                return estimated_duration * 1.1
+        
+        # 方法2：根据路径长度估算（备用方案）
+        if isinstance(response, dict) and "movement_details" in response:
+            path_length = response["movement_details"].get("path_length", 0)
+            if path_length > 0:
+                # 假设动画速度为2格/秒，增加缓冲
+                return path_length / 2.0 + 0.2
+        
+        # 方法3：根据起始和目标位置计算曼哈顿距离（最后备选）
+        if isinstance(params, dict) and "target_position" in params:
+            # 这里无法获取起始位置，使用保守估计
+            return 1.0  # 保守的1秒延迟
+        
+        # 默认延迟
+        return 1.0
+    
+    except Exception as e:
+        console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
+        return 1.0  # 出错时使用保守延迟
+    
 
 async def main():
     """主函数"""
