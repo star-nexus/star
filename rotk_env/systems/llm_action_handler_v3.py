@@ -592,12 +592,14 @@ class LLMActionHandlerV3:
 
         if success:
             print(f"[MOVE_ACTION] 移动成功！")
-            
+
             # 从 MovementAnimation 组件获取默认速度，或者硬编码一个已知值
             # 这里我们使用在 rotk_env/components/animation.py 中定义的默认值 2.0
-            animation_speed = 2.0 
+            animation_speed = 2.0
             path_length = len(path) - 1 if path else 0
-            estimated_duration = path_length / animation_speed if animation_speed > 0 else 0
+            estimated_duration = (
+                path_length / animation_speed if animation_speed > 0 else 0
+            )
 
             result = {
                 "success": True,
@@ -608,8 +610,8 @@ class LLMActionHandlerV3:
                     "target_position": {"col": target_pos[0], "row": target_pos[1]},
                     "path": path,
                     "path_length": path_length,
-                    "estimated_duration_seconds": round(estimated_duration, 2)
-                }
+                    "estimated_duration_seconds": round(estimated_duration, 2),
+                },
             }
             print(f"[MOVE_ACTION] 移动完成，返回结果: {result}")
             return result
@@ -1377,7 +1379,7 @@ class LLMActionHandlerV3:
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "阵营名称(wei | shu | wu)",
+                            "description": "自己当前阵营名称(wei | shu | wu)",
                         },
                         "force": {
                             "type": "bool",
@@ -1626,7 +1628,7 @@ class LLMActionHandlerV3:
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "阵营名称",
+                            "description": "自己当前阵营名称(wei | shu | wu)",
                         },
                         "force": {
                             "type": "bool",
@@ -2267,12 +2269,12 @@ class LLMActionHandlerV3:
         return None
 
     def _get_current_player(self):
-        """获取当前玩家"""
-        turn_manager = self.world.get_singleton_component(TurnManager)
-        if turn_manager:
-            current_player_entity = turn_manager.get_current_player()
-            if current_player_entity:
-                return self.world.get_component(current_player_entity, Player)
+        """获取当前阵营"""
+        # turn_manager = self.world.get_singleton_component(TurnManager)
+        # if turn_manager:
+        #     current_player_entity = turn_manager.get_current_player()
+        #     if current_player_entity:
+        #         return self.world.get_component(current_player_entity, Player)
 
         # 备用方法：通过 GameState 获取当前阵营
         game_state = self.world.get_singleton_component(GameState)
@@ -2774,37 +2776,34 @@ class LLMActionHandlerV3:
             required_params = ["faction", "provider", "model_id", "base_url"]
             for param in required_params:
                 if param not in params:
-                    return {
-                        "success": False,
-                        "message": f"缺少必需参数: {param}"
-                    }
-            
+                    return {"success": False, "message": f"缺少必需参数: {param}"}
+
             faction = params["faction"]
             provider = params["provider"]
             model_id = params["model_id"]
             base_url = params["base_url"]
-            
+
             # 创建Agent信息对象
             from ..components.agent_info import AgentInfo, AgentInfoRegistry
-            
+
             agent_info = AgentInfo(
                 provider=provider,
                 model_id=model_id,
                 base_url=AgentInfoRegistry.sanitize_url(base_url),
                 agent_id=params.get("agent_id"),
                 version=params.get("version"),
-                note=params.get("note")
+                note=params.get("note"),
             )
-            
+
             # 获取或创建注册表
             registry = self.world.get_singleton_component(AgentInfoRegistry)
             if not registry:
                 registry = AgentInfoRegistry()
                 self.world.add_singleton_component(registry)
-            
+
             # 注册Agent信息
             success = registry.register_agent(faction, agent_info)
-            
+
             if success:
                 return {
                     "success": True,
@@ -2813,17 +2812,11 @@ class LLMActionHandlerV3:
                         "faction": faction,
                         "provider": provider,
                         "model_id": model_id,
-                        "base_url_sanitized": agent_info.base_url
-                    }
+                        "base_url_sanitized": agent_info.base_url,
+                    },
                 }
             else:
-                return {
-                    "success": False,
-                    "message": "Agent信息注册失败"
-                }
-        
+                return {"success": False, "message": "Agent信息注册失败"}
+
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"注册Agent信息时出错: {str(e)}"
-            }
+            return {"success": False, "message": f"注册Agent信息时出错: {str(e)}"}
