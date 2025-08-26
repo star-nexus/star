@@ -166,6 +166,7 @@ class LLMClient:
             "messages": formatted_messages,
             "temperature": self.config.temperature,
             "max_tokens": 800,
+            "stream": False,
         }
         
         # 针对不同提供商添加特殊参数
@@ -173,12 +174,6 @@ class LLMClient:
             # SiliconFlow 特殊参数
             payload.update({
                 "enable_thinking": False,
-                "stream": False,
-                "top_p": 0.7,
-                "min_p": 0.05,
-                "top_k": 50,
-                "frequency_penalty": 0.5,
-                "n": 1
             })
         elif self.config.provider == "vllm":
             # VLLM 特殊参数
@@ -611,7 +606,7 @@ class StandaloneChatAgent:
         """Handle tool calls"""
         console.print(f"🔧 处理 {len(tool_calls)} 个工具调用", style="cyan")
         
-        # 🆕 支持并行执行多个工具调用（可选）
+        # 支持并行执行多个工具调用
         parallel_execution = len(tool_calls) > 1 and all(
             tool_call["function"]["name"] == "perform_action" 
             for tool_call in tool_calls
@@ -1256,36 +1251,54 @@ class AgentDemo:
 
 # ==================== 工具函数实现 ====================
 
-async def get_response(request_id):
-    """获取动作执行的响应"""
-    # print(f"等待响应: {request_id}")
-    while not RemoteContext.get_id_map().get(request_id, None):
+async def get_response(request_id, timeout_seconds: float = 60.0):
+    """获取动作执行的响应，带超时和ID冲突检测"""
+    import time
+    
+    start_time = time.time()
+    console.print(f"⏳ 等待响应 ID: {request_id}，超时设置: {timeout_seconds}s", style="cyan")
+    
+    while True:
+        # 检查是否有响应
+        response = RemoteContext.get_id_map().get(request_id, None)
+        if response is not None:
+            # 从映射中移除响应
+            RemoteContext.get_id_map().pop(request_id, None)
+            elapsed = time.time() - start_time
+            console.print(f"✅ 收到响应 ID: {request_id}，耗时: {elapsed:.2f}s", style="green")
+            return response
+        
+        # 检查超时
+        elapsed = time.time() - start_time
+        if elapsed >= timeout_seconds:
+            console.print(f"⏰ 响应超时 ID: {request_id}，已等待: {elapsed:.2f}s", style="red")
+            console.print(f"🔍 当前ID映射状态: {dict(RemoteContext.get_id_map())}", style="yellow")
+            raise TimeoutError(f"等待响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
+        
         await asyncio.sleep(0.1)  # 等待响应
-    response = RemoteContext.get_id_map().pop(request_id)
-    # print(f"响应结果: {response}")
-    return response
 
 
 async def perform_action(action: str, params: Any):
     """执行动作"""
-    # print(f"🚀 执行动作: {action}, 参数: {params}")
+    try:
+        client = RemoteContext.get_client()
+        request_id = await client.send_action(action, params)
+        response = await get_response(request_id, timeout_seconds=60.0)
+        
+        # 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
+        delay_time = _calculate_action_delay(action, params, response)
+        if delay_time > 0:
+            console.print(f"⏳ 等待 {delay_time}s 让动作完成...", style="cyan")
+            await asyncio.sleep(delay_time)
 
-    response = None
-
-    client = RemoteContext.get_client()
-    # print(f"当前客户端: {client}")
-
-    success = await client.send_action(action, params)
-    # print(f"执行动作的立刻结果 - success: {success}")
-    response = await get_response(success)
-
-    # 🆕 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
-    delay_time = _calculate_action_delay(action, params, response)
-    if delay_time > 0:
-        console.print(f"⏳ 等待 {delay_time}s 让动作完成...", style="cyan")
-        await asyncio.sleep(delay_time)
-
-    return response
+        return response
+        
+    except TimeoutError as e:
+        console.print(f"⏰ 动作执行超时: {e}", style="red")
+        return {"error": f"Action timeout: {str(e)}", "success": False}
+    except Exception as e:
+        console.print(f"❌ 动作执行错误: {e}", style="red")
+        return {"error": f"Action failed: {str(e)}", "success": False}
 
 
 async def get_available_actions() -> list[Dict[str, Any]]:
@@ -1303,9 +1316,9 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
             # config_path = os.path.join(os.getcwd(), ".configs.toml")
-            config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
