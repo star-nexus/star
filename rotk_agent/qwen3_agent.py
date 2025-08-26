@@ -41,6 +41,10 @@ rule = """# 游戏核心规则
 ## 3. 地图与坐标系
 - **地图网格**: 游戏地图由六边形格子构成，大小约为 15x15。
 - **坐标系统**:
+    - 使用 (列, 行) 即 `(col, row)` 坐标系。
+    - 地图中心位置为 `(col: 0, row: 0)`。
+    - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
+    - `row` 轴: **向上为正方向** (值增大)，向下为负方向 (值减小)。
     - **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
     - **Neighbors** (must use):
         * if `c` even: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`
@@ -60,6 +64,7 @@ rule = """# 游戏核心规则
 - **工具用法**: `perform_action` 工具接收两个参数：
     1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"get_faction_state"`, `"observation"`, `"end_turn"`)。
     2.  `params`: 一个JSON对象（字典），包含该动作所需的所有参数 (例如: `{"unit_id": 123, "target_position": {"col": 1, "row": 2}}`)。
+    3. 你可以同时操作多个单位执行多个动作。
 
 - **严禁臆造 (No Fabrication)**:
     - 不能凭空编造或复用示例中的 `unit_id`、`target_id`、坐标或任何战场信息。
@@ -78,7 +83,7 @@ rule = """# 游戏核心规则
     - 攻击敌人：
       `perform_action(action="attack", params={"unit_id": <WEI_UNIT_ID>, "target_id": <SHU_UNIT_ID>})`
 
-- **行动点 (AP)**: 执行 `perform_action` 会消耗对应单位的行动点 (AP)。AP会随时间恢复。行动前，务必通过上述前置检查确认AP充足。
+- **行动点 (AP)**: 执行 `perform_action` 会消耗对应单位的行动点 (AP)。AP会自动恢复。
 
 ## 5. 推荐操作流程 (OODA Loop)
 游戏是即时进行的，建议你遵循“观察-判断-决策-行动”的循环，快速响应战场变化：
@@ -412,8 +417,8 @@ class StandaloneChatAgent:
         self.conversation_history.append(
             Message(role="user", content="""
 **出生点**:
-    - **蜀 (shu)** (敌方): 出生在地图 **左上角**，坐标值较小。
-    - **魏 (wei)** (我方): 出生在地图 **右下角**，坐标值较大。
+    - **蜀 (shu)** (敌方): 出生在地图 **左下角**，坐标值较小。
+    - **魏 (wei)** (我方): 出生在地图 **右上角**，坐标值较大。
     - 你需要了解环境可以采用的action获取双方态势，并根据态势制定策略， 并执行action。
 """)
         )
@@ -1316,8 +1321,8 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.toml")
             # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
