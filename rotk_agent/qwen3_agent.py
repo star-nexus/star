@@ -29,9 +29,9 @@ console = Console()
     # **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
     # **Neighbors** (must use):
 
-rule = """# 游戏核心规则
+rule = """# 核心规则
 
-## 1. 游戏目标
+## 1. 你的目标
 你是 **魏 (wei)** 阵营的指挥官。你的目标是运用策略，指挥你的单位，消灭所有 **蜀 (shu)** 阵营的敌方单位以获得胜利。
 
 ## 2. 阵营与游戏模式
@@ -56,7 +56,7 @@ rule = """# 游戏核心规则
         - Never use Euclidean/Manhattan/Chebyshev.
         - Before any action (attack/skill/move), compute `d`.
         - Attack only if `d ≤ range`; else plan moves via valid neighbors.
-        - If ENV says “out of range”, recompute then revise.
+        - If ENV says "out of range", recompute then revise.
 
 ## 4. 行动机制：通过 `perform_action` 工具
 - **核心工具**: 游戏中的所有单位动作（如move和attack）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack` 或 `get_faction_state。
@@ -64,7 +64,7 @@ rule = """# 游戏核心规则
 - **工具用法**: `perform_action` 工具接收两个参数：
     1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"get_faction_state"`, `"observation"`, `"end_turn"`)。
     2.  `params`: 一个JSON对象（字典），包含该动作所需的所有参数 (例如: `{"unit_id": 123, "target_position": {"col": 1, "row": 2}}`)。
-    3. 你可以同时操作多个单位执行多个动作。
+    3. `perform_action`工具允许在一次回复中调用多次，实现多个unit的同时操作。
 
 - **严禁臆造 (No Fabrication)**:
     - 不能凭空编造或复用示例中的 `unit_id`、`target_id`、坐标或任何战场信息。
@@ -86,7 +86,7 @@ rule = """# 游戏核心规则
 - **行动点 (AP)**: 执行 `perform_action` 会消耗对应单位的行动点 (AP)。AP会自动恢复。
 
 ## 5. 推荐操作流程 (OODA Loop)
-游戏是即时进行的，建议你遵循“观察-判断-决策-行动”的循环，快速响应战场变化：
+游戏是即时进行的，建议你遵循"观察-判断-决策-行动"的循环，快速响应战场变化：
 1.  **观察 (Observe)**: 先执行前置检查清单，持续使用 `get_faction_state` / `observation` 获取最新战况。
 2.  **判断 (Orient)**: 基于最新状态确定威胁与机会，选择要操作的单位和目标。必须使用精炼且准确的描述，不可大段描述。
 3.  **决策 (Decide)**: 规划本回合要执行的具体action及顺序（移动→攻击或先攻击→再移动，视AP与地形而定）。必须使用精炼且准确的描述，不可大段描述。
@@ -491,7 +491,7 @@ class StandaloneChatAgent:
                     continue
 
                 # 3) Normal terminal cases
-                if finish_reason in ("stop", "content_filter"):
+                if finish_reason in ("stop"):
                     self.conversation_history.append(
                         Message(
                             role="user", 
@@ -581,6 +581,13 @@ class StandaloneChatAgent:
                 # 显示堆栈跟踪（可选择性显示）
                 console.print("\n🔍 完整堆栈跟踪:", style="red")
                 console.print(error_details["full_traceback"], style="dim red")
+
+                if _is_context_overflow_error(e, error_details):
+                    # 在这里触发"软重启/裁剪"而非 break
+                    # 例如：只保留 system + 最近 N 条消息（建议 30~50）
+                    await self._shrink_history(window=40)  # 你实现的裁剪函数
+                    console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
+                    continue                
                 
                 # 保存错误信息到文件（便于后续分析）
                 try:
@@ -729,7 +736,7 @@ class StandaloneChatAgent:
         return self._contains_strategy_sequence(text)
 
     def _contains_strategy_sequence(self, text: str) -> bool:
-        """检测序列式策略句式，如“位置/移动 -> 攻击”或“攻击 -> 移动”。"""
+        """检测序列式策略句式，如"位置/移动 -> 攻击"或"攻击 -> 移动"。"""
         if not text:
             return False
         import re
@@ -968,6 +975,18 @@ class StandaloneChatAgent:
         
         return result
 
+
+    async def _shrink_history(self, window: int = 40):
+        # 保留第一条system消息
+        system_msgs = [m for m in self.conversation_history if m.role == "system"][:1]
+        
+        # 从非system消息中取最后window条
+        non_system_msgs = [m for m in self.conversation_history if m.role != "system"]
+        tail = non_system_msgs[-window:]
+        
+        self.conversation_history = system_msgs + tail
+
+
     async def _register_agent_info(self):
         """注册Agent信息到环境"""
         try:
@@ -1000,6 +1019,7 @@ class StandaloneChatAgent:
         
         except Exception as e:
             console.print(f"❌ Agent信息注册出错: {e}", style="red")
+
 
     async def stop(self):
         """Stop agent"""
@@ -1321,8 +1341,8 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            config_path = os.path.join(os.getcwd(), ".configs.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.toml")
             # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
@@ -1447,6 +1467,45 @@ def _calculate_move_delay(params: Any, response: Any) -> float:
         console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
         return 1.0  # 出错时使用保守延迟
     
+
+def _is_context_overflow_error(exc: Exception, error_details: dict | None = None) -> bool:
+    """检测是否为上下文/token超限错误（兼容多提供商常见文案）"""
+    import json
+    txt = str(exc) if exc else ""
+    blob = txt
+    if error_details:
+        try:
+            blob += " " + json.dumps(error_details, ensure_ascii=False)
+        except Exception:
+            pass
+    s = blob.lower()
+
+    # 常见触发词（OpenAI/兼容栈/vLLM/SiliconFlow等常见报错文案）
+    triggers = [
+        "maximum context length",
+        "max context length",
+        "context length is",
+        "context window",
+        "prompt is too long",
+        "too many tokens",
+        "exceeds the maximum",
+        "requested",  # 搭配 tokens
+        "tokens"      # 搭配 requested
+    ]
+    if any(k in s for k in triggers):
+        return True
+
+    # 进一步从响应JSON中抽取（若已保存到 error_details）
+    try:
+        rsp = (error_details or {}).get("response_json") or {}
+        msg = (rsp.get("error") or {}).get("message", "")
+        if msg and any(k in msg.lower() for k in ["context", "token", "too long"]):
+            return True
+    except Exception:
+        pass
+
+    return False
+
 
 async def main():
     """主函数"""
