@@ -73,17 +73,23 @@ rule = """# 核心规则
 
 - **前置检查清单 (必须遵循，按顺序执行)**:
     1.  调用 `get_available_actions` 工具获取当前可以执行的action列表。
-    2.  调用 `perform_action` 工具 "arguments": "{\"action\": \"faction_state\", \"params\": {\"faction\": \"wei\"}}" 获取我方全部单位ID与状态。
-    3.  调用 `perform_action` 工具 "arguments": "{\"action\": \"faction_state\", \"params\": {\"faction\": \"shu\"}}" 获取敌方单位信息（若可见）。
-    4.  对每个准备操作的我方单位，调用 `perform_action`工具 "arguments": "{\"action\": \"observation\", \"params\": {\"unit_id\": <WEI_UNIT_ID>, \"observation_level\": \"basic\"}}" 获取该单位可见环境与附近可攻击/可移动的目标。
+    2.  调用 `perform_action` 工具 "arguments": "{"action": "get_faction_state", "params": {"faction": "wei"}}" 获取我方全部单位ID与状态。
+    3.  调用 `perform_action` 工具 "arguments": "{"action": "get_faction_state", "params": {"faction": "shu"}}" 获取敌方单位信息（若可见）。
+    4.  对每个准备操作的我方单位，调用 `perform_action`工具 "arguments": "{"action": "observation", "params": {"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"}}" 获取该单位可见环境与附近可攻击/可移动的目标。
 
 - **使用示例（仅作格式参考，不要使用其中的数字）**:
-    - 移动单位：
-      `perform_action(action="move", params={"unit_id": <WEI_UNIT_ID>, "target_position": {"col": <COL>, "row": <ROW>}})`
-    - 攻击敌人：
-      `perform_action(action="attack", params={"unit_id": <WEI_UNIT_ID>, "target_id": <SHU_UNIT_ID>})`
+    - 移动单位`perform_action`工具：
+      {"action": "move", "params": {"unit_id": <WEI_UNIT_ID>, "target_position": {"col": <COL>, "row": <ROW>}}}
+    - 攻击敌人`perform_action`工具：
+      {"action": "attack", "params": {"unit_id": <WEI_UNIT_ID>, "target_id": <SHU_UNIT_ID>}}
+    - 获取我方单位状态`perform_action`工具：
+      {"action": "get_faction_state", "params": {"faction": "wei"}}
+    - 获取敌方单位状态`perform_action`工具：
+      {"action": "get_faction_state", "params": {"faction": "shu"}}
+    - 获取单位可见环境与附近可攻击/可移动的目标`perform_action`工具：
+      {"action": "observation", "params": {"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"}}
 
-- **行动点 (AP)**: 执行 `perform_action` 会消耗对应单位的行动点 (AP)。AP会自动恢复。
+- **行动点 (AP)**: 执行move或attack操作会消耗对应单位的行动点 (AP)。AP会自动恢复。
 
 ## 5. 推荐操作流程 (OODA Loop)
 游戏是即时进行的，建议你遵循"观察-判断-决策-行动"的循环，快速响应战场变化：
@@ -210,7 +216,7 @@ class LLMClient:
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=60.0
+                timeout=180.0
             )
             
             if response.status_code != 200:
@@ -259,7 +265,7 @@ class LLMClient:
             raise Exception(error_msg) from e
             
         except httpx.TimeoutException as e:
-            error_msg = f"{self.config.provider} API 请求超时 (>60秒)"
+            error_msg = f"{self.config.provider} API 请求超时 (>180秒)"
             console.print(f"⏱️ 超时错误: {error_msg}", style="red")
             console.print(f"请检查网络状况或尝试重新请求", style="yellow")
             raise Exception(error_msg) from e
@@ -354,7 +360,7 @@ class StandaloneChatAgent:
         Parse text-based tool calls from content field.
         
         Expected format examples:
-        - '{"name": "perform_action", "arguments": {"action": "faction_state", "params": {"faction": "shu"}}}\n</tool_call>'
+        - '{"name": "perform_action", "arguments": {"action": "get_faction_state", "params": {"faction": "shu"}}}\n</tool_call>'
         - '{"name": "get_available_actions", "arguments": {}}\n</tool_call>'
         """
         import re
@@ -513,75 +519,10 @@ class StandaloneChatAgent:
                     "iterations": iterations
                 }
             except Exception as e:
-                # 详细的异常信息收集和显示
-                import traceback
-                import httpx
+                # 使用全局错误日志功能
+                error_details = create_error_details(e, iteration=iterations, function_name="StandaloneChatAgent.chat")
                 
-                error_details = {
-                    "exception_type": type(e).__name__,
-                    "exception_message": str(e),
-                    "iteration": iterations,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # 获取完整的堆栈跟踪
-                tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
-                error_details["full_traceback"] = "".join(tb_lines)
-                
-                # 针对不同类型的异常添加特定信息
-                if isinstance(e, httpx.HTTPStatusError):
-                    error_details["http_status_code"] = e.response.status_code
-                    error_details["response_headers"] = dict(e.response.headers)
-                    try:
-                        error_details["response_body"] = e.response.text
-                    except:
-                        error_details["response_body"] = "无法读取响应体"
-                        
-                elif isinstance(e, httpx.ConnectError):
-                    error_details["connection_error"] = "无法连接到服务器"
-                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
-                    
-                elif isinstance(e, httpx.TimeoutException):
-                    error_details["timeout_error"] = "请求超时"
-                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
-                    
-                elif isinstance(e, httpx.RequestError):
-                    error_details["request_error"] = "请求错误"
-                    error_details["request_url"] = str(e.request.url) if hasattr(e, 'request') and e.request else "未知"
-                    
-                elif "JSON" in str(e) or "json" in str(e):
-                    error_details["json_error"] = "JSON解析错误，可能是API返回格式不正确"
-                
-                # 显示详细错误信息
-                console.print("=" * 80, style="red")
-                console.print("🚨 详细错误信息", style="red bold")
-                console.print("=" * 80, style="red")
-                console.print(f"📍 异常类型: {error_details['exception_type']}", style="red")
-                console.print(f"📝 错误消息: {error_details['exception_message']}", style="red") 
-                console.print(f"🔄 当前迭代: {error_details['iteration']}", style="red")
-                console.print(f"⏰ 发生时间: {error_details['timestamp']}", style="red")
-                
-                # 根据异常类型显示特定信息
-                if "http_status_code" in error_details:
-                    console.print(f"🌐 HTTP状态码: {error_details['http_status_code']}", style="red")
-                    console.print(f"📤 响应头: {error_details['response_headers']}", style="yellow")
-                    console.print(f"📥 响应体: {error_details['response_body'][:500]}...", style="yellow")
-                    
-                if "connection_error" in error_details:
-                    console.print(f"🔌 连接错误: {error_details['connection_error']}", style="red")
-                    console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
-                    
-                if "timeout_error" in error_details:
-                    console.print(f"⏱️ 超时错误: {error_details['timeout_error']}", style="red")
-                    console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
-                    
-                if "json_error" in error_details:
-                    console.print(f"📋 JSON错误: {error_details['json_error']}", style="red")
-                
-                # 显示堆栈跟踪（可选择性显示）
-                console.print("\n🔍 完整堆栈跟踪:", style="red")
-                console.print(error_details["full_traceback"], style="dim red")
-
+                # 检查是否为上下文溢出错误
                 if _is_context_overflow_error(e, error_details):
                     # 在这里触发"软重启/裁剪"而非 break
                     # 例如：只保留 system + 最近 N 条消息（建议 30~50）
@@ -589,22 +530,15 @@ class StandaloneChatAgent:
                     console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
                     continue                
                 
-                # 保存错误信息到文件（便于后续分析）
-                try:
-                    error_log_file = f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                    with open(error_log_file, 'w', encoding='utf-8') as f:
-                        json.dump(error_details, f, ensure_ascii=False, indent=2)
-                    console.print(f"💾 错误详情已保存到: {error_log_file}", style="blue")
-                except Exception as log_error:
-                    console.print(f"⚠️ 无法保存错误日志: {log_error}", style="yellow")
-                
-                console.print("=" * 80, style="red")
+                # 记录错误日志
+                log_file = log_error_to_file(error_details, display_console=True)
                 
                 return {
                     "success": False,
                     "error": str(e),
                     "error_details": error_details,
-                    "iterations": iterations
+                    "iterations": iterations,
+                    "error_log_file": log_file
                 }
         
         # 达到最大迭代次数
@@ -1274,9 +1208,155 @@ class AgentDemo:
             await self.cleanup()
 
 
+# ==================== 全局错误日志功能 ====================
+
+def create_error_details(exception: Exception, **extra_context) -> Dict[str, Any]:
+    """
+    创建详细的错误信息字典
+    
+    Args:
+        exception: 异常对象
+        **extra_context: 额外的上下文信息（如 iteration, function_name 等）
+    
+    Returns:
+        包含详细错误信息的字典
+    """
+    import traceback
+    import httpx
+    
+    error_details = {
+        "exception_type": type(exception).__name__,
+        "exception_message": str(exception),
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # 添加额外的上下文信息
+    error_details.update(extra_context)
+    
+    # 获取完整的堆栈跟踪
+    tb_lines = traceback.format_exception(type(exception), exception, exception.__traceback__)
+    error_details["full_traceback"] = "".join(tb_lines)
+    
+    # 针对不同类型的异常添加特定信息
+    if isinstance(exception, httpx.HTTPStatusError):
+        error_details["http_status_code"] = exception.response.status_code
+        error_details["response_headers"] = dict(exception.response.headers)
+        try:
+            error_details["response_body"] = exception.response.text
+        except:
+            error_details["response_body"] = "无法读取响应体"
+            
+    elif isinstance(exception, httpx.ConnectError):
+        error_details["connection_error"] = "无法连接到服务器"
+        error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
+        
+    elif isinstance(exception, httpx.TimeoutException):
+        error_details["timeout_error"] = "请求超时"
+        error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
+        
+    elif isinstance(exception, httpx.RequestError):
+        error_details["request_error"] = "请求错误"
+        error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
+        
+    elif isinstance(exception, TimeoutError):
+        error_details["timeout_error"] = "操作超时"
+        
+    elif "JSON" in str(exception) or "json" in str(exception):
+        error_details["json_error"] = "JSON解析错误，可能是API返回格式不正确"
+    
+    return error_details
+
+
+def log_error_to_file(error_details: Dict[str, Any], display_console: bool = True) -> Optional[str]:
+    """
+    将错误详情保存到文件并可选择性地在控制台显示
+    
+    Args:
+        error_details: 错误详情字典
+        display_console: 是否在控制台显示错误信息
+        
+    Returns:
+        错误日志文件路径，如果保存失败则返回None
+    """
+    # 在控制台显示详细错误信息
+    if display_console:
+        console.print("=" * 80, style="red")
+        console.print("🚨 详细错误信息", style="red bold")
+        console.print("=" * 80, style="red")
+        console.print(f"📍 异常类型: {error_details.get('exception_type', 'Unknown')}", style="red")
+        console.print(f"📝 错误消息: {error_details.get('exception_message', 'Unknown')}", style="red") 
+        console.print(f"⏰ 发生时间: {error_details.get('timestamp', 'Unknown')}", style="red")
+        
+        # 显示函数/迭代信息（如果有）
+        if "function_name" in error_details:
+            console.print(f"🔧 发生函数: {error_details['function_name']}", style="red")
+        if "iteration" in error_details:
+            console.print(f"🔄 当前迭代: {error_details['iteration']}", style="red")
+        
+        # 根据异常类型显示特定信息
+        if "http_status_code" in error_details:
+            console.print(f"🌐 HTTP状态码: {error_details['http_status_code']}", style="red")
+            console.print(f"📤 响应头: {error_details['response_headers']}", style="yellow")
+            console.print(f"📥 响应体: {error_details['response_body'][:500]}...", style="yellow")
+            
+        if "connection_error" in error_details:
+            console.print(f"🔌 连接错误: {error_details['connection_error']}", style="red")
+            console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+            
+        if "timeout_error" in error_details:
+            console.print(f"⏱️ 超时错误: {error_details['timeout_error']}", style="red")
+            if "request_url" in error_details:
+                console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+            
+        if "json_error" in error_details:
+            console.print(f"📋 JSON错误: {error_details['json_error']}", style="red")
+        
+        # 显示堆栈跟踪（可选择性显示）
+        console.print("\n🔍 完整堆栈跟踪:", style="red")
+        console.print(error_details.get("full_traceback", ""), style="dim red")
+    
+    # 保存错误信息到文件
+    try:
+        error_log_file = f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(error_log_file, 'w', encoding='utf-8') as f:
+            json.dump(error_details, f, ensure_ascii=False, indent=2)
+        
+        if display_console:
+            console.print(f"💾 错误详情已保存到: {error_log_file}", style="blue")
+            console.print("=" * 80, style="red")
+        
+        return error_log_file
+    except Exception as log_error:
+        if display_console:
+            console.print(f"⚠️ 无法保存错误日志: {log_error}", style="yellow")
+        return None
+
+
+def handle_error_with_logging(exception: Exception, **extra_context) -> Dict[str, Any]:
+    """
+    处理异常并生成错误日志的便捷函数
+    
+    Args:
+        exception: 异常对象
+        **extra_context: 额外的上下文信息
+        
+    Returns:
+        包含错误信息的响应字典
+    """
+    error_details = create_error_details(exception, **extra_context)
+    log_file = log_error_to_file(error_details, display_console=True)
+    
+    return {
+        "success": False,
+        "error": str(exception),
+        "error_details": error_details,
+        "error_log_file": log_file
+    }
+
+
 # ==================== 工具函数实现 ====================
 
-async def get_response(request_id, timeout_seconds: float = 60.0):
+async def get_response(request_id, timeout_seconds: float = 180.0):
     """获取动作执行的响应，带超时和ID冲突检测"""
     import time
     
@@ -1298,7 +1378,12 @@ async def get_response(request_id, timeout_seconds: float = 60.0):
         if elapsed >= timeout_seconds:
             console.print(f"⏰ 响应超时 ID: {request_id}，已等待: {elapsed:.2f}s", style="red")
             console.print(f"🔍 当前ID映射状态: {dict(RemoteContext.get_id_map())}", style="yellow")
-            raise TimeoutError(f"等待响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
+            timeout_error = TimeoutError(f"等待响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
+            # 添加额外的上下文信息到异常对象中
+            timeout_error.request_id = request_id
+            timeout_error.elapsed_time = elapsed
+            timeout_error.timeout_seconds = timeout_seconds
+            raise timeout_error
         
         await asyncio.sleep(0.1)  # 等待响应
 
@@ -1308,7 +1393,7 @@ async def perform_action(action: str, params: Any):
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
-        response = await get_response(request_id, timeout_seconds=60.0)
+        response = await get_response(request_id, timeout_seconds=180.0)
         
         # 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
         delay_time = _calculate_action_delay(action, params, response)
@@ -1320,10 +1405,23 @@ async def perform_action(action: str, params: Any):
         
     except TimeoutError as e:
         console.print(f"⏰ 动作执行超时: {e}", style="red")
-        return {"error": f"Action timeout: {str(e)}", "success": False}
+        return handle_error_with_logging(
+            e, 
+            function_name="perform_action",
+            action=action,
+            params=params,
+            request_id=getattr(e, 'request_id', 'unknown'),
+            elapsed_time=getattr(e, 'elapsed_time', 'unknown'),
+            timeout_seconds=getattr(e, 'timeout_seconds', 'unknown')
+        )
     except Exception as e:
         console.print(f"❌ 动作执行错误: {e}", style="red")
-        return {"error": f"Action failed: {str(e)}", "success": False}
+        return handle_error_with_logging(
+            e, 
+            function_name="perform_action",
+            action=action,
+            params=params
+        )
 
 
 async def get_available_actions() -> list[Dict[str, Any]]:
@@ -1341,9 +1439,9 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
             # config_path = os.path.join(os.getcwd(), ".configs.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
