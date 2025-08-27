@@ -5,6 +5,7 @@
 
 import asyncio
 import time
+import uuid
 from typing import Dict, Any, List
 from .async_client import AsyncWebSocketClient
 from .types import ClientInfo, MessageType, ClientType
@@ -12,7 +13,8 @@ from .types import ClientInfo, MessageType, ClientType
 
 def gen_id() -> int:
     """生成唯一ID"""
-    return int(asyncio.get_event_loop().time() * 1000)  # 毫秒级时间戳作为ID
+    # return int(asyncio.get_event_loop().time() * 1000) 
+    return uuid.uuid4().int 
 
 
 class AgentClient(AsyncWebSocketClient):
