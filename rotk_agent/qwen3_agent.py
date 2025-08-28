@@ -418,13 +418,12 @@ class StandaloneChatAgent:
     - **蜀 (shu)** (敌方): 出生在地图 **16点钟方向，地图左下角**，坐标值较小。
     - **魏 (wei)** (我方): 出生在地图 **2点钟方向，地图右上角**，坐标值较大。
     - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-    - 你要调动所有单位积极进攻，尽快消灭敌人。
+    - 多用get_faction_state了解当前态势，然后调动所有单位积极进攻，消灭敌人。
 """)
         )
 
         # 🧭 示范一次正确的工具调用格式（示例，不会被执行）
         try:
-            demo_args = json.dumps({"action": "get_available_actions", "params": {}}, ensure_ascii=False)
             self.conversation_history.append(
                 Message(
                     role="assistant",
@@ -433,8 +432,8 @@ class StandaloneChatAgent:
                         "id": "call_demo",
                         "type": "function",
                         "function": {
-                            "name": "perform_action",
-                            "arguments": demo_args
+                            "name": "get_available_actions",
+                            "arguments": {}
                         }
                     }]
                 )
@@ -1453,9 +1452,9 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            # config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
             # config_path = os.path.join(os.getcwd(), ".configs.toml")
-            config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
+            # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
