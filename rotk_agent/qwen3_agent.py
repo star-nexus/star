@@ -29,75 +29,60 @@ console = Console()
     # **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
     # **Neighbors** (must use):
 
-rule = """# 核心规则
+rule = """
+# 核心规则
 
-## 1. 你的目标
-你是 **魏 (wei)** 阵营的指挥官。你的目标是运用策略，指挥你的单位，消灭所有 **蜀 (shu)** 阵营的敌方单位以获得胜利。
+## 1. 目标与阵营
+- 你是 **魏 (wei)** 阵营的指挥官，目标是指挥己方单位消灭所有 **蜀 (shu)** 敌军。  
+- 游戏为 **即时制**：双方可同时操作，需要快速反应。
 
-## 2. 阵营与游戏模式
-- **阵营**: 游戏中有两个对立阵营：**魏 (wei)** 和 **蜀 (shu)**。
-- **即时制**: 游戏按即时制进行。双方可以同时操作单位，你需要快速反应。
+## 2. 地图与坐标
+- 地图：15×15 六边形格，**flat-topped even-q offset** 坐标 `(col,row)`。  
+- 轴向规则：`col` 右正、左负；`row` 上正、下负。  
+- 邻居坐标：
+  - 若 `col` 偶数: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`  
+  - 若 `col` 奇数: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`  
+- 距离：offset→axial (`q=c`, `r=r-floor(c/2)`)，再计算  
+  `d = (|dq|+|dr|+|d(q+r)|)/2`。  
+- **禁止** 使用欧式/曼哈顿/切比雪夫距离。攻击/移动必须用 hex 距离验证。
 
-## 3. 地图与坐标系
-- **地图网格**: 游戏地图由六边形格子构成，大小约为 15x15。
-- **坐标系统**:
-    - 使用 (列, 行) 即 `(col, row)` 坐标系。
-    - 地图中心位置为 `(col: 0, row: 0)`。
-    - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
-    - `row` 轴: **向上为正方向** (值增大)，向下为负方向 (值减小)。
-    - **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
-    - **Neighbors** (must use):
-        * if `c` even: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`
-        * if `c` odd : `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`
+## 3. 工具调用规范
+- **必须**使用 `tool_calls`，不得把 JSON 写在 `content`。  
+- **参数格式**：`function.arguments` 是单层 JSON 对象，绝不能带反斜杠或外层引号。  
+- **禁止**：
+  - 在 `perform_action` 内调用 `get_available_actions`。  
+  - 在 `content` 输出 JSON/工具调用。  
+  - 臆造 `unit_id`、`target_id`、坐标等数据。必须先通过工具获取。  
 
-    - **Distance**: convert offset→axial: `q=c`, `r=r - floor(c/2)`; then `d = (|dq| + |dr| + |d(q+r)|)/2`.
+### 工具列表
+- **get_available_actions**: 获取当前可执行动作，参数 `{}`。  
+- **perform_action**: 执行动作，参数体：
+  - `{"action":"move","params":{"unit_id":<ID>,"target_position":{"col":X,"row":Y}}}`  
+  - `{"action":"attack","params":{"unit_id":<ID>,"target_id":<ENEMY_ID>}}`  
+  - `{"action":"get_faction_state","params":{"faction":"wei"|"shu"}}`  
+  - `{"action":"observation","params":{"unit_id":<ID>,"observation_level":"basic"}}`  
+- **stop_running**: 暂停一回合恢复 AP，参数 `{}`。
 
-    - **Rules**:
-        - Never use Euclidean/Manhattan/Chebyshev.
-        - Before any action (attack/skill/move), compute `d`.
-        - Attack only if `d ≤ range`; else plan moves via valid neighbors.
-        - If ENV says "out of range", recompute then revise.
+### 并行调用
+- 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 observation/move/attack）。  
+- 遇到独立操作时，**合并到同一轮**。  
+- 串行仅用于前一步结果必须依赖时。  
 
-## 4. 行动机制：通过 `perform_action` 工具
-- **核心工具**: 游戏中的所有单位动作（如move和attack）都**必须**通过调用 `perform_action` 工具来执行。你不能直接调用 `move` 或 `attack` 或 `get_faction_state。
+## 4. 前置检查清单（执行顺序）
+1. `get_available_actions`  
+2. `perform_action` → `{"action":"get_faction_state","params":{"faction":"wei"}}`  
+3. `perform_action` → `{"action":"get_faction_state","params":{"faction":"shu"}}`  
+4. 针对每个己方单位：`perform_action` → `{"action":"observation","params":{"unit_id":<ID>,"observation_level":"basic"}}`
 
-- **工具用法**: `perform_action` 工具接收两个参数：
-    1.  `action`: 一个字符串，指定要执行的动作名称 (例如: `"move"`, `"attack"`, `"get_faction_state"`, `"observation"`, `"end_turn"`)。
-    2.  `params`: 一个JSON对象（字典），包含该动作所需的所有参数 (例如: `{"unit_id": 123, "target_position": {"col": 1, "row": 2}}`)。
-    3. `perform_action`工具允许在一次回复中调用多次，实现多个unit的同时操作。
+## 5. 推荐 OODA 流程
+1. **观察 (Observe)**：执行前置检查，持续更新状态。  
+2. **判断 (Orient)**：确定威胁/机会，精炼描述即可。  
+3. **决策 (Decide)**：规划行动（先攻后移或先移后攻），简洁表述。  
+4. **行动 (Act)**：调用 `perform_action` 完成操作。  
+5. **评估 (Assess)**：若失败（AP不足/超距/ID错误等），立刻回到观察阶段并修正。
 
-- **严禁臆造 (No Fabrication)**:
-    - 不能凭空编造或复用示例中的 `unit_id`、`target_id`、坐标或任何战场信息。
-    - 在未通过工具获取真实数据前，不得假设任何单位的ID、位置、可视范围或敌人位置。
-    - 示例中的ID仅为占位说明，绝不能直接使用。
-
-- **前置检查清单 (必须遵循，按顺序执行)**:
-    1.  调用 `get_available_actions` 工具获取当前可以执行的action列表。
-    2.  调用 `perform_action` 工具 "arguments": "{"action": "get_faction_state", "params": {"faction": "wei"}}" 获取我方全部单位ID与状态。
-    3.  调用 `perform_action` 工具 "arguments": "{"action": "get_faction_state", "params": {"faction": "shu"}}" 获取敌方单位信息（若可见）。
-    4.  对每个准备操作的我方单位，调用 `perform_action`工具 "arguments": "{"action": "observation", "params": {"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"}}" 获取该单位可见环境与附近可攻击/可移动的目标。
-
-- **使用示例（仅作格式参考，不要使用其中的数字）**:
-    - 移动单位`perform_action`工具：
-      {"action": "move", "params": {"unit_id": <WEI_UNIT_ID>, "target_position": {"col": <COL>, "row": <ROW>}}}
-    - 攻击敌人`perform_action`工具：
-      {"action": "attack", "params": {"unit_id": <WEI_UNIT_ID>, "target_id": <SHU_UNIT_ID>}}
-    - 获取我方单位状态`perform_action`工具：
-      {"action": "get_faction_state", "params": {"faction": "wei"}}
-    - 获取敌方单位状态`perform_action`工具：
-      {"action": "get_faction_state", "params": {"faction": "shu"}}
-    - 获取单位可见环境与附近可攻击/可移动的目标`perform_action`工具：
-      {"action": "observation", "params": {"unit_id": <WEI_UNIT_ID>, "observation_level": "basic"}}
-
-- **行动点 (AP)**: 执行move或attack操作会消耗对应单位的行动点 (AP)。AP会自动恢复。
-
-## 5. 推荐操作流程 (OODA Loop)
-游戏是即时进行的，建议你遵循"观察-判断-决策-行动"的循环，快速响应战场变化：
-1.  **观察 (Observe)**: 先执行前置检查清单，持续使用 `get_faction_state` / `observation` 获取最新战况。
-2.  **判断 (Orient)**: 基于最新状态确定威胁与机会，选择要操作的单位和目标。必须使用精炼且准确的描述，不可大段描述。
-3.  **决策 (Decide)**: 规划本回合要执行的具体action及顺序（移动→攻击或先攻击→再移动，视AP与地形而定）。必须使用精炼且准确的描述，不可大段描述。
-4.  **行动 (Act)**: 使用`perform_action` tool来执行action，必须严格按参数格式传入 `action` 与 `params`。
-5.  **评估 (Assess)**: 检查动作返回结果；若失败，立即回到观察阶段查找原因（ID错误、范围不足、AP不足等）。
+## 6. 行动点 (AP)
+- move / attack 消耗 AP；AP 会自动恢复。行动规划需考虑 AP。  
 """
 
 @dataclass
@@ -193,9 +178,12 @@ class LLMClient:
         if self.config.max_tokens:
             payload["max_tokens"] = self.config.max_tokens
             
-        # 添加工具定义
+        # 添加工具定义与调用策略
         if tools:
             payload["tools"] = self._format_tools(tools)
+            # 提示模型优先使用工具，并允许并行工具调用（兼容OpenAI风格，其他提供商忽略也无害）
+            payload["tool_choice"] = "auto"
+            payload["parallel_tool_calls"] = True
             
         # 添加额外参数
         payload.update(kwargs)
@@ -343,6 +331,8 @@ class StandaloneChatAgent:
         self._strategy_last_ping_ts: float = 0.0
         # 🆕 保护对话历史的锁（用于并行工具调用）
         self._history_lock = asyncio.Lock()
+        # 🆕 Agent注册状态标记（确保只注册一次）
+        self._agent_registered: bool = False
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -413,8 +403,10 @@ class StandaloneChatAgent:
         if max_iterations:
             self.max_iterations = max_iterations
             
-        # 🆕 在开始对话前先注册Agent信息
-        await self._register_agent_info()
+        # 🆕 在开始对话前注册Agent信息（只注册一次）
+        if not self._agent_registered:
+            await self._register_agent_info()
+            self._agent_registered = True
         
         # 初始化对话
         self.conversation_history = [
@@ -423,12 +415,33 @@ class StandaloneChatAgent:
         self.conversation_history.append(
             Message(role="user", content="""
 **出生点**:
-    - **蜀 (shu)** (敌方): 出生在地图 **左下角**，坐标值较小。
-    - **魏 (wei)** (我方): 出生在地图 **右上角**，坐标值较大。
-    - 你需要了解环境可以采用的action获取双方态势，并根据态势制定策略， 并执行action。
+    - **蜀 (shu)** (敌方): 出生在地图 **16点钟方向，地图左下角**，坐标值较小。
+    - **魏 (wei)** (我方): 出生在地图 **2点钟方向，地图右上角**，坐标值较大。
+    - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
+    - 你要调动所有单位积极进攻，尽快消灭敌人。
 """)
         )
-        
+
+        # 🧭 示范一次正确的工具调用格式（示例，不会被执行）
+        try:
+            demo_args = json.dumps({"action": "get_available_actions", "params": {}}, ensure_ascii=False)
+            self.conversation_history.append(
+                Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[{
+                        "id": "call_demo",
+                        "type": "function",
+                        "function": {
+                            "name": "perform_action",
+                            "arguments": demo_args
+                        }
+                    }]
+                )
+            )
+        except Exception:
+            console.print("🚫 示范一次正确的工具调用格式（示例，不会被执行）", style="yellow")
+
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
@@ -911,14 +924,15 @@ class StandaloneChatAgent:
 
 
     async def _shrink_history(self, window: int = 40):
-        # 保留第一条system消息
+        # save the first system message
         system_msgs = [m for m in self.conversation_history if m.role == "system"][:1]
-        
-        # 从非system消息中取最后window条
+        # Hardcode: keep the first user message
+        user_msgs = [m for m in self.conversation_history if m.role == "user"][:1]
+        # get the last window messages from non-system messages
         non_system_msgs = [m for m in self.conversation_history if m.role != "system"]
         tail = non_system_msgs[-window:]
         
-        self.conversation_history = system_msgs + tail
+        self.conversation_history = system_msgs + user_msgs + tail
 
 
     async def _register_agent_info(self):
@@ -1454,7 +1468,7 @@ async def chat(parts):
                 name="get_available_actions",
                 function=get_available_actions,
                 description="获取可以执行的action列表。",
-                parameters={"type": "object", "properties": {}, "required": []},
+                parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
             )
             
             agent.register_tool(
@@ -1463,10 +1477,12 @@ async def chat(parts):
                 description="在游戏环境中执行一个特定的动作。",
                 parameters={
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
                         "action": {
                             "type": "string",
                             "description": "要执行的动作的名称。",
+                            "enum": ["move", "attack", "get_faction_state", "observation"],
                         },
                         "params": {
                             "type": "object",
@@ -1480,12 +1496,12 @@ async def chat(parts):
             
             async def stop_running():
                 """检测到游戏结束时停止运行"""
-                return {"message": "Game over detected, agent should stop", "stop_requested": True}
+                return {"message": "You chose to stop running. Take a reset and start again."}
             
             agent.register_tool(
                 name="stop_running",
                 function=stop_running,
-                description="当检测到游戏结束时，停止代理的运行。",
+                description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
                 parameters={"type": "object", "properties": {}, "required": []},
             )
 
