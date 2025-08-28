@@ -1369,10 +1369,6 @@ class LLMActionHandlerV3:
                         }
                     },
                 },
-                "get_action_list": {
-                    "description": "获取所有可以在环境中调用的action接口的文档",
-                    "parameters": {},
-                },
                 "end_turn": {
                     "description": "结束当前回合，可结束当前阵营的回合，如果当前阵营没有行动点，则结束回合，并结束当前任务",
                     "parameters": {
