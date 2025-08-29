@@ -943,7 +943,6 @@ class StandaloneChatAgent:
             
             # 确定阵营（暂时硬编码为wei，后续可从环境变量或参数获取）
             faction = "wei"  # TODO: 从环境变量或启动参数获取
-            
             registration_params = {
                 "faction": faction,
                 "provider": config.provider,
@@ -952,14 +951,12 @@ class StandaloneChatAgent:
                 "agent_id": getattr(self, 'agent_id', 'unknown'),
                 "version": "1.0.0",  # Agent版本
                 "note": f"Agent using {config.provider}"
-            }
-            
+            }        
             # 调用注册
             result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
             })
-            
             if result.get("success"):
                 console.print(f"✅ Agent信息注册成功: {faction}阵营 - {config.provider}:{config.model_id}", style="green")
             else:
@@ -974,54 +971,34 @@ class StandaloneChatAgent:
         await self.llm_client.close()
 
 
-def load_config(config_path: str = ".configs.toml") -> LLMConfig:
+def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> LLMConfig:
     """Load LLM configuration from config file"""
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
     
     config = toml.load(config_path)
-    default_config = config.get("default", {})
-    model_id = default_config.get("model_id", "deepseek-chat")
+    try:
+        provider_config = config[provider]
+    except KeyError:
+        raise ValueError(f"Invalid provider: {provider}")
+
+    try:
+        model_id = provider_config["model_id"]
+    except KeyError:
+        raise ValueError(f"Model ID not found for {provider}")
     
-    # 根据模型ID推断提供商
-    if "claude" in model_id:
-        provider = "infinigence"  # Based on observation, claude models are provided by infinigence
-        provider_config = config.get("infinigence", {})
-    elif "deepseek" in model_id:
-        provider = "siliconflow"
-        provider_config = config.get("siliconflow", {})
-    elif "gpt" in model_id or "openai" in model_id:
-        provider = "openai"
-        provider_config = config.get("openai", {})
-    elif model_id.startswith("vllm:") or config.get("vllm", {}).get("enabled"):
-        # vLLM support: model_id starts with "vllm:" or vllm is enabled in config
-        provider = "vllm"
-        provider_config = config.get("vllm", {})
-        # If model_id starts with vllm:, remove the prefix to get the actual model name
-        if model_id.startswith("vllm:"):
-            model_id = model_id[5:]  # Remove "vllm:" prefix
-    else:
-        # Default to deepseek
-        provider = "siliconflow"
-        provider_config = config.get("siliconflow", {})
-    
-    api_key = provider_config.get("api_key")
-    if not api_key:
-        if provider == "vllm":
-            # vLLM local service usually doesn't require a real API key, use a fake token
-            api_key = "EMPTY"
-        else:
-            raise ValueError(f"API key not found for {provider}")
-    
-    # Get custom base_url (if any)
-    base_url = provider_config.get("base_url")
+    api_key = provider_config.get("api_key", "EMPTY")
+    base_url = provider_config.get("base_url", "")
+    temperature = provider_config.get("temperature", 0.7)
+    max_tokens = provider_config.get("max_tokens", 800)
     
     return LLMConfig(
         provider=provider,
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
-        temperature=0.7
+        temperature=temperature,
+        max_tokens=max_tokens
     )
 
 
@@ -1070,11 +1047,11 @@ class AgentDemo:
 
     def __init__(
         self,
-        server_url="ws://localhost:8000/ws/metaverse",
+        hub_url="ws://localhost:8000/ws/metaverse",
         env_id="env_1",
         agent_id="agent_1",
     ):
-        self.server_url = server_url
+        self.hub_url = hub_url
         self.env_id = env_id
         self.agent_id = agent_id
         self.agent_client = None
@@ -1084,7 +1061,7 @@ class AgentDemo:
 
     def init_client(self):
         # Create client
-        self.agent_client = AgentClient(self.server_url, self.env_id, self.agent_id)
+        self.agent_client = AgentClient(self.hub_url, self.env_id, self.agent_id)
         self.setup_hub_listeners()
         RemoteContext.set_client(self.agent_client)
         # Initialize state
@@ -1142,7 +1119,7 @@ class AgentDemo:
     async def connect(self):
         """创建并连接 Agent 客户端"""
         console.print("🤖 创建 Agent 客户端", style="bold blue")
-        console.print(f"📡 服务器: {self.server_url}")
+        console.print(f"📡 服务器: {self.hub_url}")
         console.print(f"🌍 环境ID: {self.env_id}")
         console.print(f"🆔 Agent ID: {self.agent_id}")
         console.print("=" * 50)
@@ -1200,7 +1177,7 @@ class AgentDemo:
 
     async def run_interactive_demo(self):
         """Run interactive demo"""
-        console.print("🎮 Standalone Agent interactive demo", style="bold cyan")
+        console.print(f"🎮 Agent interactive demo", style="bold cyan")
         console.print("🎯 You can manually control the Agent to perform various actions", style="cyan")
         console.print("=" * 50)
 
@@ -1453,14 +1430,13 @@ async def chat(parts):
 
         # 加载配置并创建独立的聊天代理
         try:
-            config_path = os.path.join(os.getcwd(), ".configs.vllm.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.toml")
-            # config_path = os.path.join(os.getcwd(), ".configs.silicon.toml")
+            config_path = os.path.join(os.getcwd(), ".configs.toml")
             console.print(f"在当前工作目录找到配置文件: {config_path}")
             console.print("尝试加载配置文件")
             console.print(config_path)
             
-            llm_config = load_config(config_path)
+            provider = os.environ.get("LLM_PROVIDER", "openai")
+            llm_config = load_config(config_path, provider=provider)
             agent = StandaloneChatAgent(llm_config)
             
             # 注册工具
@@ -1624,29 +1600,35 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
 async def main():
     """主函数"""
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="Standalone Agent 演示程序")
+    parser = argparse.ArgumentParser(description="Agent 演示程序")
 
     parser.add_argument(
-        "--server-url",
+        "--hub-url",
         default="ws://localhost:8000/ws/metaverse",
-        help="Server address (default: ws://localhost:8000/ws/metaverse)",
+        help="Hub address (default: ws://localhost:8000/ws/metaverse)",
     )
     parser.add_argument(
         "--env-id", type=str, default="env_1", help="Environment ID (default: env_1)"
     )
     parser.add_argument(
-        "--agent-id", type=str, default="agent_1", help="Agent ID (default: 1)"
+        "--agent-id", type=str, default="agent_1", help="Agent ID (default: agent_1)"
+    )
+    parser.add_argument(
+        "--provider", type=str, default="openai", help="Provider (default: openai)"
     )
 
     args = parser.parse_args()
 
-    console.print(f"📡 Server: {args.server_url}")
+    console.print(f"📡 Hub: {args.hub_url}")
     console.print(f"🌍 Environment ID: {args.env_id}")
     console.print(f"🆔 Agent ID: {args.agent_id}")
+    console.print(f"🔧 Provider: {args.provider}")
     console.print("=" * 60)
 
+    # Set provider via environment variable once
+    os.environ["LLM_PROVIDER"] = args.provider
     # Create demo instance
-    demo = AgentDemo(args.server_url, args.env_id, args.agent_id)
+    demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
     console.print("🎮 Interactive mode", style="bold cyan")
     await demo.run_interactive_demo()
 
