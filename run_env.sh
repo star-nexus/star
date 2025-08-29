@@ -1,0 +1,1 @@
+uv run rotk_env/main.py
