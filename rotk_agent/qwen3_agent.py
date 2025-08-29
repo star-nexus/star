@@ -423,23 +423,23 @@ class StandaloneChatAgent:
         )
 
         # 🧭 示范一次正确的工具调用格式（示例，不会被执行）
-        try:
-            self.conversation_history.append(
-                Message(
-                    role="assistant",
-                    content="",
-                    tool_calls=[{
-                        "id": "call_demo",
-                        "type": "function",
-                        "function": {
-                            "name": "get_available_actions",
-                            "arguments": {}
-                        }
-                    }]
-                )
-            )
-        except Exception:
-            console.print("🚫 示范一次正确的工具调用格式（示例，不会被执行）", style="yellow")
+        # try:
+        #     self.conversation_history.append(
+        #         Message(
+        #             role="assistant",
+        #             content="",
+        #             tool_calls=[{
+        #                 "id": "call_demo",
+        #                 "type": "function",
+        #                 "function": {
+        #                     "name": "get_available_actions",
+        #                     "arguments": {}
+        #                 }
+        #             }]
+        #         )
+        #     )
+        # except Exception:
+        #     console.print("🚫 示范一次正确的工具调用格式（示例，不会被执行）", style="yellow")
 
         iterations = 0
         while iterations < self.max_iterations:
@@ -491,7 +491,8 @@ class StandaloneChatAgent:
                     )
                     continue
 
-
+                if iterations == 10 or iterations == 70:
+                    self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
                 # 1) If there are tool calls, handle them — no matter the finish_reason
                 if message.get("tool_calls"):
                     await self._handle_tool_calls(message["tool_calls"])
@@ -1020,7 +1021,7 @@ def load_config(config_path: str = ".configs.toml") -> LLMConfig:
         model_id=model_id,
         api_key=api_key,
         base_url=base_url,
-        temperature=0.2
+        temperature=0.7
     )
 
 
