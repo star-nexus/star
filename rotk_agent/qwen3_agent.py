@@ -29,62 +29,6 @@ console = Console()
     # **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
     # **Neighbors** (must use):
 
-rule = """
-# 核心规则
-
-## 1. 目标与阵营
-- 你是 **魏 (wei)** 阵营的指挥官，目标是指挥己方单位消灭所有 **蜀 (shu)** 敌军。  
-- 游戏为 **即时制**：双方可同时操作，需要快速反应。
-
-## 2. 地图与坐标
-- 地图：15×15 六边形格，**flat-topped even-q offset** 坐标 `(col,row)`。  
-- 轴向规则：`col` 右正、左负；`row` 上正、下负。  
-- 邻居坐标：
-  - 若 `col` 偶数: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`  
-  - 若 `col` 奇数: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`  
-- 距离：offset→axial (`q=c`, `r=r-floor(c/2)`)，再计算  
-  `d = (|dq|+|dr|+|d(q+r)|)/2`。  
-- **禁止** 使用欧式/曼哈顿/切比雪夫距离。攻击/移动必须用 hex 距离验证。
-
-## 3. 工具调用规范
-- **必须**使用 `tool_calls`，不得把 JSON 写在 `content`。  
-- **参数格式**：`function.arguments` 是单层 JSON 对象，绝不能带反斜杠或外层引号。  
-- **禁止**：
-  - 在 `perform_action` 内调用 `get_available_actions`。  
-  - 在 `content` 输出 JSON/工具调用。  
-  - 臆造 `unit_id`、`target_id`、坐标等数据。必须先通过工具获取。  
-
-### 工具列表
-- **get_available_actions**: 获取当前可执行动作，参数 `{}`。  
-- **perform_action**: 执行动作，参数体：
-  - `{"action":"move","params":{"unit_id":<ID>,"target_position":{"col":X,"row":Y}}}`  
-  - `{"action":"attack","params":{"unit_id":<ID>,"target_id":<ENEMY_ID>}}`  
-  - `{"action":"get_faction_state","params":{"faction":"wei"|"shu"}}`  
-  - `{"action":"observation","params":{"unit_id":<ID>,"observation_level":"basic"}}`  
-- **stop_running**: 暂停一回合恢复 AP，参数 `{}`。
-
-### 并行调用
-- 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 observation/move/attack）。  
-- 遇到独立操作时，**合并到同一轮**。  
-- 串行仅用于前一步结果必须依赖时。  
-
-## 4. 前置检查清单（执行顺序）
-1. `get_available_actions`  
-2. `perform_action` → `{"action":"get_faction_state","params":{"faction":"wei"}}`  
-3. `perform_action` → `{"action":"get_faction_state","params":{"faction":"shu"}}`  
-4. 针对每个己方单位：`perform_action` → `{"action":"observation","params":{"unit_id":<ID>,"observation_level":"basic"}}`
-
-## 5. 推荐 OODA 流程
-1. **观察 (Observe)**：执行前置检查，持续更新状态。  
-2. **判断 (Orient)**：确定威胁/机会，精炼描述即可。  
-3. **决策 (Decide)**：规划行动（先攻后移或先移后攻），简洁表述。  
-4. **行动 (Act)**：调用 `perform_action` 完成操作。  
-5. **评估 (Assess)**：若失败（AP不足/超距/ID错误等），立刻回到观察阶段并修正。
-
-## 6. 行动点 (AP)
-- move / attack 消耗 AP；AP 会自动恢复。行动规划需考虑 AP。  
-"""
-
 @dataclass
 class LLMConfig:
     """LLM Configuration"""
@@ -125,7 +69,7 @@ class LLMClient:
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1"
         elif config.provider == "deepseek":
-            self.base_url = "https://api.deepseek.com/v1"
+            self.base_url = "https://api.deepseek.com"
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1"
         elif config.provider == "siliconflow":
@@ -169,12 +113,12 @@ class LLMClient:
         # 针对不同提供商添加特殊参数
         if self.config.provider == "siliconflow":
             # SiliconFlow 特殊参数
-            payload.update({
-                "enable_thinking": self.config.enable_thinking,
-            })
+            payload["enable_thinking"] = bool(self.config.enable_thinking)    
         elif self.config.provider == "vllm":
             # VLLM 特殊参数
-            payload["chat_template_kwargs"] = {"enable_thinking": self.config.enable_thinking}
+            payload["chat_template_kwargs"] = {
+                    "enable_thinking": bool(self.config.enable_thinking)
+                }
             
         # 添加工具定义与调用策略
         if tools:
@@ -320,7 +264,7 @@ class ToolManager:
 class StandaloneChatAgent:
     """Independent chat agent"""
     
-    def __init__(self, llm_config: LLMConfig, system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
@@ -332,6 +276,8 @@ class StandaloneChatAgent:
         self._history_lock = asyncio.Lock()
         # 🆕 Agent注册状态标记（确保只注册一次）
         self._agent_registered: bool = False
+        
+        self.faction = faction
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -763,8 +709,6 @@ class StandaloneChatAgent:
             return
         # 通过后更新节流时间
         self._strategy_last_ping_ts = now
-        # 推断阵营：目前默认wei；如后续从上下文携带，可替换
-        faction = "wei"
         evidence = assistant_text.strip()
         if len(evidence) > 120:
             evidence = evidence[:117] + "..."
@@ -772,7 +716,7 @@ class StandaloneChatAgent:
             await self.tool_manager.execute_tool("perform_action", {
                 "action": "strategy_ping",
                 "params": {
-                    "faction": faction,
+                    "faction": self.faction,
                     # 序列命中则提到1.0分，否则0.5分
                     "score": 1.0 if hit_sequence else 0.5,
                     "evidence": evidence
@@ -935,10 +879,8 @@ class StandaloneChatAgent:
             # 从配置中获取信息
             config = self.llm_client.config
             
-            # 确定阵营（暂时硬编码为wei，后续可从环境变量或参数获取）
-            faction = "wei"  # TODO: 从环境变量或启动参数获取
             registration_params = {
-                "faction": faction,
+                "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
@@ -952,7 +894,7 @@ class StandaloneChatAgent:
                 "params": registration_params
             })
             if result.get("success"):
-                console.print(f"✅ Agent信息注册成功: {faction}阵营 - {config.provider}:{config.model_id}", style="green")
+                console.print(f"✅ Agent信息注册成功: {self.faction}阵营 - {config.provider}:{config.model_id}", style="green")
             else:
                 console.print(f"⚠️ Agent信息注册失败: {result.get('message', 'unknown error')}", style="yellow")
         
@@ -1133,21 +1075,94 @@ class AgentDemo:
             console.print(f"❌ 连接失败: {e}", style="bold red")
             return False
 
+    def get_faction_from_env(self) -> str:
+        """从环境变量获取势力，默认为wei"""
+        return os.environ.get("AGENT_FACTION", "wei").lower()
+
+    def get_faction_info(self, faction: str) -> dict:
+        """获取势力基本信息"""
+        faction_configs = {
+            "wei": {"name": "魏", "enemy": "蜀 (shu)"},
+            "shu": {"name": "蜀", "enemy": "魏 (wei)"},
+            "wu": {"name": "吴", "enemy": "魏 (wei)"}
+        }
+        return faction_configs.get(faction, faction_configs["wei"])
+
     async def interactive_demo(self):
-        user_prompt = """
-**出生点**:
-    - **蜀 (shu)** (敌方): 出生在地图 **16点钟方向，地图左下角**，坐标值较小。
-    - **魏 (wei)** (我方): 出生在地图 **2点钟方向，地图右上角**，坐标值较大。
+        # 从环境变量获取势力信息
+        faction = self.get_faction_from_env()
+        faction_info = self.get_faction_info(faction)
+        
+        system_prompt = f"""
+        # 核心规则
+
+        ## 1. 目标与阵营
+        - 你是 **{faction_info["name"]} ({faction})** 阵营的指挥官，目标是指挥己方单位消灭所有 **{faction_info["enemy"]}** 敌军。  
+        - 游戏为 **即时制**：双方可同时操作，需要快速反应。
+
+        ## 2. 地图与坐标
+        - 地图：15×15 六边形格，**flat-topped even-q offset** 坐标 `(col,row)`。  
+        - 轴向规则：`col` 右正、左负；`row` 上正、下负。  
+        - 邻居坐标：
+        - 若 `col` 偶数: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`  
+        - 若 `col` 奇数: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`  
+        - 距离：offset→axial (`q=c`, `r=r-floor(c/2)`)，再计算  
+        `d = (|dq|+|dr|+|d(q+r)|)/2`。  
+        - **禁止** 使用欧式/曼哈顿/切比雪夫距离。攻击/移动必须用 hex 距离验证。
+
+        ## 3. 工具调用规范
+        - **必须**使用 `tool_calls`，不得把 JSON 写在 `content`。  
+        - **参数格式**：`function.arguments` 是单层 JSON 对象，绝不能带反斜杠或外层引号。  
+        - **禁止**：
+        - 在 `perform_action` 内调用 `get_available_actions`。  
+        - 在 `content` 输出 JSON/工具调用。  
+        - 臆造 `unit_id`、`target_id`、坐标等数据。必须先通过工具获取。  
+
+        ### 工具列表
+        - **get_available_actions**: 获取当前可执行动作，参数 `{{}}`。  
+        - **perform_action**: 执行动作，参数体：
+        - `{{"action":"move","params":{{"unit_id":<ID>,"target_position":{{"col":X,"row":Y}}}}}}`  
+        - `{{"action":"attack","params":{{"unit_id":<ID>,"target_id":<ENEMY_ID>}}}}`  
+        - `{{"action":"get_faction_state","params":{{"faction":"{faction}"|"shu"|"wu"}}}}`  
+        - `{{"action":"observation","params":{{"unit_id":<ID>,"observation_level":"basic"}}}}`  
+        - **stop_running**: 暂停一回合恢复 AP，参数 `{{}}`。
+
+        ### 并行调用
+        - 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 observation/move/attack）。  
+        - 遇到独立操作时，**合并到同一轮**。  
+        - 串行仅用于前一步结果必须依赖时。  
+
+        ## 4. 前置检查清单（执行顺序）
+        1. `get_available_actions`  
+        2. `perform_action` → `{{"action":"get_faction_state","params":{{"faction":"{faction}"}}}}`  
+        3. `perform_action` → `{{"action":"get_faction_state","params":{{"faction":"shu"}}}}`（如果敌军）  
+        4. 针对每个己方单位：`perform_action` → `{{"action":"observation","params":{{"unit_id":<ID>,"observation_level":"basic"}}}}`
+
+        ## 5. 推荐 OODA 流程
+        1. **观察 (Observe)**：执行前置检查，持续更新状态。  
+        2. **判断 (Orient)**：确定威胁/机会，精炼描述即可。  
+        3. **决策 (Decide)**：规划行动（先攻后移或先移后攻），简洁表述。  
+        4. **行动 (Act)**：调用 `perform_action` 完成操作。  
+        5. **评估 (Assess)**：若失败（AP不足/超距/ID错误等），立刻回到观察阶段并修正。
+
+        ## 6. 行动点 (AP)
+        - move / attack 消耗 AP；AP 会自动恢复。行动规划需考虑 AP。  
+        """
+
+        user_prompt = f"""
+    **当前配置**:
+    - **势力**: {faction_info["name"]} ({faction}) - 我方
+    - **主要敌人**: {faction_info["enemy"]}
     - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-    - 多用get_faction_state了解当前态势，然后调动所有单位积极进攻，消灭敌人。
+    - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前态势，然后调动所有单位积极进攻，消灭敌人。
         """
     
         count = 0
         while True:
             count += 1
-            console.print(f"🔄 {count}th interaction", style="bold red")
+            console.print(f"🔄 Launch {count}th expedition...", style="bold red")
             try:
-                await asyncio.create_task(create_agent(user_prompt))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1186,13 +1201,13 @@ class AgentDemo:
         console.print("=" * 50)
 
         try:
-            # 连接
+            # Connect
             if not await self.connect():
                 return
-            # 进入交互模式
+            # Launch interactive Agent demo
             await self.interactive_demo()
 
-            # 显示总结
+            # Show summary
             self.show_summary()
 
         except KeyboardInterrupt:
@@ -1427,7 +1442,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== 命令处理函数 ====================
 
-async def create_agent(user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
     # 加载配置并创建独立的聊天代理
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1437,7 +1452,7 @@ async def create_agent(user_prompt: str = ""):
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = StandaloneChatAgent(llm_config, rule)
+        agent = StandaloneChatAgent(llm_config, faction, system_prompt)
         
         # 注册工具
         agent.register_tool(
@@ -1614,6 +1629,13 @@ async def main():
     parser.add_argument(
         "--provider", type=str, default="openai", help="Provider (default: openai)"
     )
+    parser.add_argument(
+        "--faction", 
+        type=str, 
+        default="wei", 
+        choices=["wei", "shu", "wu"],
+        help="控制的势力 (default: wei)"
+    )
 
     args = parser.parse_args()
 
@@ -1621,10 +1643,13 @@ async def main():
     console.print(f"🌍 Environment ID: {args.env_id}")
     console.print(f"🆔 Agent ID: {args.agent_id}")
     console.print(f"🔧 Provider: {args.provider}")
+    console.print(f"⚔️ Faction: {args.faction}")
     console.print("=" * 60)
 
-    # Set provider via environment variable once
+    # Set environment variables
     os.environ["LLM_PROVIDER"] = args.provider
+    os.environ["AGENT_FACTION"] = args.faction
+
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
     console.print("🎮 Interactive mode", style="bold cyan")
