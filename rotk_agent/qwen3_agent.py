@@ -1351,7 +1351,7 @@ def handle_error_with_logging(exception: Exception, **extra_context) -> Dict[str
 
 # ==================== 工具函数实现 ====================
 
-async def get_response(request_id, timeout_seconds: float = 180.0):
+async def get_env_response(request_id, timeout_seconds: float =60.0):
     """获取动作执行的响应，带超时和ID冲突检测"""
     import time
     
@@ -1388,7 +1388,7 @@ async def perform_action(action: str, params: Any):
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
-        response = await get_response(request_id, timeout_seconds=180.0)
+        response = await get_env_response(request_id, timeout_seconds=15.0)
         
         # 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
         delay_time = _calculate_action_delay(action, params, response)
