@@ -322,9 +322,10 @@ class ToolManager:
 class StandaloneChatAgent:
     """Independent chat agent"""
     
-    def __init__(self, llm_config: LLMConfig):
+    def __init__(self, llm_config: LLMConfig, system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
+        self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 100  # 防止无限循环
         # 🆕 策略打点节流控制
@@ -389,16 +390,18 @@ class StandaloneChatAgent:
                         console.print(f"📝 Parsed tool call: {function_name} with args: {arguments}", style="cyan")
                     
                 except json.JSONDecodeError as e:
-                    console.print(f"⚠️ Failed to parse tool call JSON: {json_str} - {e}", style="yellow")
+                    console.print(f"⚠️ Found text-based tool call with content", style="red")
+                    console.print(f"⚠️ Failed to parse tool call JSON: {json_str} - {e}", style="red")
+                    self.conversation_history.append(Message(role="user", content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format. Please try again."))
                     continue
                     
         except Exception as e:
-            console.print(f"⚠️ Error parsing text-based tool calls: {e}", style="yellow")
+            console.print(f"⚠️ Error parsing text-based tool calls: {e}", style="red")
         
         return tool_calls
 
 
-    async def chat(self, task: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
+    async def chat(self, user_prompt: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
         """Main chat loop"""
         if max_iterations:
             self.max_iterations = max_iterations
@@ -410,16 +413,10 @@ class StandaloneChatAgent:
         
         # 初始化对话
         self.conversation_history = [
-            Message(role="system", content=task)
+            Message(role="system", content=self.system_prompt)
         ]
         self.conversation_history.append(
-            Message(role="user", content="""
-**出生点**:
-    - **蜀 (shu)** (敌方): 出生在地图 **16点钟方向，地图左下角**，坐标值较小。
-    - **魏 (wei)** (我方): 出生在地图 **2点钟方向，地图右上角**，坐标值较大。
-    - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-    - 多用get_faction_state了解当前态势，然后调动所有单位积极进攻，消灭敌人。
-""")
+            Message(role="user", content=user_prompt)
         )
 
         # 🧭 示范一次正确的工具调用格式（示例，不会被执行）
@@ -460,7 +457,6 @@ class StandaloneChatAgent:
                 console.print(f"│ {json.dumps(choice, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
                 console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
-
                 # 将助手响应添加到历史
                 assistant_message = Message(
                     role="assistant",
@@ -491,11 +487,11 @@ class StandaloneChatAgent:
                     )
                     continue
 
-                if iterations == 10 or iterations == 70:
-                    self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
                 # 1) If there are tool calls, handle them — no matter the finish_reason
                 if message.get("tool_calls"):
                     await self._handle_tool_calls(message["tool_calls"])
+                    if iterations == 10 or iterations == 70:
+                        self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
                     continue  # keep the loop going
 
                 # 2) Hit max length? Ask model to continue (or just continue loop)
@@ -515,7 +511,7 @@ class StandaloneChatAgent:
                         Message(
                             role="user", 
                             # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
-                            content="The action is complete. Please continue.")
+                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them.")
                     )
                     continue
 
@@ -990,7 +986,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 800)
+    max_tokens = provider_config.get("max_tokens", 1000)
     
     return LLMConfig(
         provider=provider,
@@ -1138,12 +1134,20 @@ class AgentDemo:
             return False
 
     async def interactive_demo(self):
+        user_prompt = """
+**出生点**:
+    - **蜀 (shu)** (敌方): 出生在地图 **16点钟方向，地图左下角**，坐标值较小。
+    - **魏 (wei)** (我方): 出生在地图 **2点钟方向，地图右上角**，坐标值较大。
+    - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
+    - 多用get_faction_state了解当前态势，然后调动所有单位积极进攻，消灭敌人。
+        """
+    
         count = 0
         while True:
             count += 1
             console.print(f"🔄 {count}th interaction", style="bold red")
             try:
-                await asyncio.create_task(chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"]))
+                await asyncio.create_task(chat(user_prompt))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1423,77 +1427,71 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== 命令处理函数 ====================
 
-async def chat(parts):
-    if len(parts) > 1:
-        custom_action = parts[0]
-        params = parts[1] if len(parts) > 1 else ""
-
-        # 加载配置并创建独立的聊天代理
-        try:
-            config_path = os.path.join(os.getcwd(), ".configs.toml")
-            console.print(f"在当前工作目录找到配置文件: {config_path}")
-            console.print("尝试加载配置文件")
-            console.print(config_path)
-            
-            provider = os.environ.get("LLM_PROVIDER", "openai")
-            llm_config = load_config(config_path, provider=provider)
-            agent = StandaloneChatAgent(llm_config)
-            
-            # 注册工具
-            agent.register_tool(
-                name="get_available_actions",
-                function=get_available_actions,
-                description="获取可以执行的action列表。",
-                parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
-            )
-            
-            agent.register_tool(
-                name="perform_action",
-                function=perform_action,
-                description="在游戏环境中执行一个特定的动作。",
-                parameters={
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "description": "要执行的动作的名称。",
-                            "enum": ["move", "attack", "get_faction_state", "observation"],
-                        },
-                        "params": {
-                            "type": "object",
-                            "description": "指定动作所需的参数字典。",
-                            "additionalProperties": True,
-                        },
+async def chat(user_prompt: str = ""):
+    # 加载配置并创建独立的聊天代理
+    try:
+        config_path = os.path.join(os.getcwd(), ".configs.toml")
+        console.print(f"在当前工作目录找到配置文件: {config_path}")
+        console.print("尝试加载配置文件")
+        console.print(config_path)
+        
+        provider = os.environ.get("LLM_PROVIDER", "openai")
+        llm_config = load_config(config_path, provider=provider)
+        agent = StandaloneChatAgent(llm_config, rule)
+        
+        # 注册工具
+        agent.register_tool(
+            name="get_available_actions",
+            function=get_available_actions,
+            description="获取可以执行的action列表。",
+            parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+        )
+        
+        agent.register_tool(
+            name="perform_action",
+            function=perform_action,
+            description="在游戏环境中执行一个特定的动作。",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "要执行的动作的名称。",
+                        "enum": ["move", "attack", "get_faction_state", "observation"],
                     },
-                    "required": ["action", "params"],
+                    "params": {
+                        "type": "object",
+                        "description": "指定动作所需的参数字典。",
+                        "additionalProperties": True,
+                    },
                 },
-            )
-            
-            async def stop_running():
-                """检测到游戏结束时停止运行"""
-                return {"message": "You chose to stop running. Take a reset and start again."}
-            
-            agent.register_tool(
-                name="stop_running",
-                function=stop_running,
-                description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
-                parameters={"type": "object", "properties": {}, "required": []},
-            )
+                "required": ["action", "params"],
+            },
+        )
+        
+        async def stop_running():
+            """检测到游戏结束时停止运行"""
+            return {"message": "You chose to stop running. Take a reset and start again."}
+        
+        agent.register_tool(
+            name="stop_running",
+            function=stop_running,
+            description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
+            parameters={"type": "object", "properties": {}, "required": []},
+        )
 
-            # 执行聊天任务
-            result = await agent.chat(task=params)
-            console.print(f"聊天任务完成: {result}")
-            
-            # 清理资源
-            await agent.stop()
-            
-        except Exception as e:
-            console.print(f"聊天过程中发生错误: {e}", style="red")
-            import traceback
-            traceback.print_exc()
-    else:
-        print("❌ 请指定动作，如: chat dance")
+        # 执行聊天任务
+        result = await agent.chat(user_prompt)
+        console.print(f"聊天任务完成: {result}")
+        
+        # 清理资源
+        await agent.stop()
+        
+    except Exception as e:
+        console.print(f"聊天过程中发生错误: {e}", style="red")
+        import traceback
+        traceback.print_exc()
 
 
 
