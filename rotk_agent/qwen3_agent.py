@@ -94,6 +94,7 @@ class LLMConfig:
     base_url: Optional[str] = None
     temperature: float = 0.2
     max_tokens: Optional[int] = None
+    enable_thinking: bool = False
 
 
 @dataclass
@@ -161,7 +162,7 @@ class LLMClient:
             "model": self.config.model_id,
             "messages": formatted_messages,
             "temperature": self.config.temperature,
-            "max_tokens": 800,
+            "max_tokens": self.config.max_tokens,
             "stream": False,
         }
         
@@ -169,14 +170,11 @@ class LLMClient:
         if self.config.provider == "siliconflow":
             # SiliconFlow 特殊参数
             payload.update({
-                "enable_thinking": False,
+                "enable_thinking": self.config.enable_thinking,
             })
         elif self.config.provider == "vllm":
             # VLLM 特殊参数
-            payload["chat_template_kwargs"] = {"enable_thinking": False}
-        
-        if self.config.max_tokens:
-            payload["max_tokens"] = self.config.max_tokens
+            payload["chat_template_kwargs"] = {"enable_thinking": self.config.enable_thinking}
             
         # 添加工具定义与调用策略
         if tools:
@@ -987,6 +985,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature", 0.7)
     max_tokens = provider_config.get("max_tokens", 1000)
+    enable_thinking = provider_config.get("enable_thinking", False)
     
     return LLMConfig(
         provider=provider,
@@ -994,7 +993,8 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
         api_key=api_key,
         base_url=base_url,
         temperature=temperature,
-        max_tokens=max_tokens
+        max_tokens=max_tokens,
+        enable_thinking=enable_thinking
     )
 
 
@@ -1147,7 +1147,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 {count}th interaction", style="bold red")
             try:
-                await asyncio.create_task(chat(user_prompt))
+                await asyncio.create_task(create_agent(user_prompt))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1427,7 +1427,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== 命令处理函数 ====================
 
-async def chat(user_prompt: str = ""):
+async def create_agent(user_prompt: str = ""):
     # 加载配置并创建独立的聊天代理
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
