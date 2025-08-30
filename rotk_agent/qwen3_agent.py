@@ -650,7 +650,7 @@ class StandaloneChatAgent:
 
         # 分句序列检测：前一句含移动/位置，后一句含攻击；或反之
         move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达", "位置", "坐标", "观察", "侦查"]
-        attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同"]
+        attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同", "集中火力"]
         move_terms_en = ["move", "advance", "relocate", "close in", "position", "coordinate", "retreat"]
         attack_terms_en = ["attack", "engage", "fire", "strike", "assault", "charge", "suppress"]
 
