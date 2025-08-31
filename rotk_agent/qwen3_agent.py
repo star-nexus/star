@@ -36,6 +36,15 @@ class LLMConfig:
 
 
 @dataclass
+class Message:
+    """Message"""
+    role: str  # "user", "assistant", "system", "tool"
+    content: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+
+
+@dataclass
 class ToolDefinition:
     """Tool Definition"""
     name: str
@@ -44,13 +53,34 @@ class ToolDefinition:
     function: Callable
 
 
-@dataclass
-class Message:
-    """Message"""
-    role: str  # "user", "assistant", "system", "tool"
-    content: str
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_call_id: Optional[str] = None
+class ToolManager:
+    """Tool Manager"""
+    
+    def __init__(self):
+        self.tools: Dict[str, ToolDefinition] = {}
+    
+    def register_tool(self, tool: ToolDefinition):
+        """Register tool"""
+        self.tools[tool.name] = tool
+    
+    def get_tool_definitions(self) -> List[ToolDefinition]:
+        """Get all tool definitions"""
+        return list(self.tools.values())
+    
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute tool"""
+        if tool_name not in self.tools:
+            raise ValueError(f"Tool {tool_name} does not exist")
+        
+        tool = self.tools[tool_name]
+        try:
+            # 如果是异步函数
+            if asyncio.iscoroutinefunction(tool.function):
+                return await tool.function(**arguments)
+            else:
+                return tool.function(**arguments)
+        except Exception as e:
+            return {"error": f"工具执行错误: {str(e)}"}
 
 
 class LLMClient:
@@ -215,37 +245,80 @@ class LLMClient:
         await self.client.aclose()
 
 
-class ToolManager:
-    """Tool Manager"""
-    
-    def __init__(self):
-        self.tools: Dict[str, ToolDefinition] = {}
-    
-    def register_tool(self, tool: ToolDefinition):
-        """Register tool"""
-        self.tools[tool.name] = tool
-    
-    def get_tool_definitions(self) -> List[ToolDefinition]:
-        """Get all tool definitions"""
-        return list(self.tools.values())
-    
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """Execute tool"""
-        if tool_name not in self.tools:
-            raise ValueError(f"Tool {tool_name} does not exist")
-        
-        tool = self.tools[tool_name]
-        try:
-            # 如果是异步函数
-            if asyncio.iscoroutinefunction(tool.function):
-                return await tool.function(**arguments)
-            else:
-                return tool.function(**arguments)
-        except Exception as e:
-            return {"error": f"工具执行错误: {str(e)}"}
+class RemoteContext:
+    """Remote context compatible with existing code"""
+    client: ContextVar[AgentClient] = ContextVar("client")
+    status: ContextVar[dict] = ContextVar("status")
+    task_manager: ContextVar[object] = ContextVar("task_manager")
+    id_map: ContextVar[dict] = ContextVar("id_map", default={})
+
+    @staticmethod
+    def set_client(client: AgentClient):
+        RemoteContext.client.set(client)
+
+    @staticmethod
+    def get_client() -> AgentClient:
+        return RemoteContext.client.get()
+
+    @staticmethod
+    def set_status(status: dict):
+        RemoteContext.status.set(status)
+
+    @staticmethod
+    def get_status() -> dict:
+        return RemoteContext.status.get()
+
+    @staticmethod
+    def set_task_manager(task_manager: object):
+        RemoteContext.task_manager.set(task_manager)
+
+    @staticmethod
+    def get_task_manager() -> object:
+        return RemoteContext.task_manager.get()
+
+    @staticmethod
+    def set_id_map(id_map: dict):
+        RemoteContext.id_map.set(id_map)
+
+    @staticmethod
+    def get_id_map() -> dict:
+        return RemoteContext.id_map.get()
 
 
-class StandaloneChatAgent:
+def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> LLMConfig:
+    """Load LLM configuration from config file"""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    config = toml.load(config_path)
+    try:
+        provider_config = config[provider]
+    except KeyError:
+        raise ValueError(f"Invalid provider: {provider}")
+
+    try:
+        model_id = provider_config["model_id"]
+    except KeyError:
+        raise ValueError(f"Model ID not found for {provider}")
+    
+    api_key = provider_config.get("api_key", "EMPTY")
+    base_url = provider_config.get("base_url", "")
+    temperature = provider_config.get("temperature", 0.7)
+    max_tokens = provider_config.get("max_tokens", 1000)
+    enable_thinking = provider_config.get("enable_thinking", False)
+    
+    return LLMConfig(
+        provider=provider,
+        model_id=model_id,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        enable_thinking=enable_thinking
+    )
+
+
+class RoTKChatAgent:
     
     def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
@@ -270,7 +343,6 @@ class StandaloneChatAgent:
         )
         self.tool_manager.register_tool(tool)
     
-
     def _parse_text_based_tool_calls(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse text-based tool calls from content field.
@@ -325,159 +397,6 @@ class StandaloneChatAgent:
         
         return tool_calls
 
-
-    async def chat(self, user_prompt: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
-        """Main chat loop"""
-        if max_iterations:
-            self.max_iterations = max_iterations
-
-        if not self._agent_registered:
-            await self._register_agent_info()
-            self._agent_registered = True
-        
-        # 初始化对话
-        self.conversation_history = [
-            Message(role="system", content=self.system_prompt)
-        ]
-        self.conversation_history.append(
-            Message(role="user", content=user_prompt)
-        )
-
-        # 🧭 示范一次正确的工具调用格式（示例，不会被执行）
-        # try:
-        #     self.conversation_history.append(
-        #         Message(
-        #             role="assistant",
-        #             content="",
-        #             tool_calls=[{
-        #                 "id": "call_demo",
-        #                 "type": "function",
-        #                 "function": {
-        #                     "name": "get_available_actions",
-        #                     "arguments": {}
-        #                 }
-        #             }]
-        #         )
-        #     )
-        # except Exception:
-        #     console.print("🚫 示范一次正确的工具调用格式（示例，不会被执行）", style="yellow")
-
-        iterations = 0
-        while iterations < self.max_iterations:
-            iterations += 1
-            
-            try:
-                # 获取 LLM 响应
-                response = await self.llm_client.chat_completion(
-                    messages=self.conversation_history,
-                    tools=self.tool_manager.get_tool_definitions()
-                )
-
-                choice = response["choices"][0]
-                message = choice["message"]
-                finish_reason = choice["finish_reason"]
-                
-                console.print(f"╭─────────────────────────────────────────────────────── LLM response: ────────────────────────────────────────────────────────╮", style="yellow")
-                console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
-                console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
-
-                # 将助手响应添加到历史
-                assistant_message = Message(
-                    role="assistant",
-                    content=message.get("content", ""),
-                    tool_calls=message.get("tool_calls")
-                )
-                self.conversation_history.append(assistant_message)
-
-                # 🆕 在收到LLM响应后尝试策略关键词检测并上报
-                console.print("🔍 Attempting strategy detection", style="cyan")
-                asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
-                console.print("🔍 Strategy detection completed", style="cyan")
-
-                # === Detect text-based tool calls ===
-                # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
-                tool_calls_to_use = message.get("tool_calls", [])
-                if not tool_calls_to_use and message.get("content"):
-                    console.print(f"🔧 Detecting text-based tool calls in content: {message['content']}", style="cyan")
-                    parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
-                    if parsed_tool_calls:
-                        console.print("🔧 Detected text-based tool calls, converting to standard format", style="cyan")
-                        self.conversation_history.append(
-                            Message(
-                                role="user", 
-                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
-                        )
-                        continue  # 只有检测到工具调用时才continue
-                    else:
-                        console.print("🔧 Undetected text-based tool calls.", style="cyan")
-
-                # 1) If there are tool calls, handle them — no matter the finish_reason
-                if message.get("tool_calls"):
-                    console.print(f"🔧 Handling tool calls: {message['tool_calls']}", style="cyan")
-                    await self._handle_tool_calls(message["tool_calls"])
-                    if iterations == 10 or iterations == 70:
-                        self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
-                    continue  # keep the loop going
-
-                # 2) Hit max length? Ask model to continue (or just continue loop)
-                if finish_reason == "length":
-                    # Option A: push a tiny user nudge
-                    self.conversation_history.append(
-                        Message(
-                            role="user", 
-                            content="Note: If you need to call tools, please call them directly or with only critical explanation.")
-                    )
-                    continue
-
-                # 3) Normal terminal cases
-                if finish_reason in ("stop"):
-                    self.conversation_history.append(
-                        Message(
-                            role="user", 
-                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them.")
-                    )
-                    continue
-
-                # 4) Normal terminal cases
-                if finish_reason in ("content_filter"):
-                    print(f"success: True, response: {message.get('content', '')}, iterations: {iterations}, finish_reason: {finish_reason}")
-                    break
-
-                # 5) an unexpected finish reason
-                console.print(f"Unexpected finish reason: {finish_reason}", style="red")
-                return {
-                    "success": False,
-                    "error": f"Unexpected finish reason: {finish_reason}",
-                    "iterations": iterations
-                }
-            except Exception as e:
-                # 使用全局错误日志功能
-                error_details = create_error_details(e, iteration=iterations, function_name="StandaloneChatAgent.chat")
-                
-                # 检查是否为上下文溢出错误
-                if _is_context_overflow_error(e, error_details):
-                    await self._shrink_history(window=40)
-                    console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
-                    continue                
-                
-                # 记录错误日志
-                log_file = log_error_to_file(error_details, display_console=True)
-                
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "error_details": error_details,
-                    "iterations": iterations,
-                    "error_log_file": log_file
-                }
-        
-        # 达到最大迭代次数
-        return {
-            "success": False,
-            "error": "Max iterations reached",
-            "iterations": iterations
-        }
-    
     async def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]]):
         """Handle tool calls"""
         console.print(f"🔧 处理 {len(tool_calls)} 个工具调用", style="cyan")
@@ -853,78 +772,138 @@ class StandaloneChatAgent:
         await self.llm_client.close()
 
 
-def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> LLMConfig:
-    """Load LLM configuration from config file"""
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    
-    config = toml.load(config_path)
-    try:
-        provider_config = config[provider]
-    except KeyError:
-        raise ValueError(f"Invalid provider: {provider}")
+    async def chat(self, user_prompt: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
+        """Main chat loop"""
+        if max_iterations:
+            self.max_iterations = max_iterations
 
-    try:
-        model_id = provider_config["model_id"]
-    except KeyError:
-        raise ValueError(f"Model ID not found for {provider}")
-    
-    api_key = provider_config.get("api_key", "EMPTY")
-    base_url = provider_config.get("base_url", "")
-    temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 1000)
-    enable_thinking = provider_config.get("enable_thinking", False)
-    
-    return LLMConfig(
-        provider=provider,
-        model_id=model_id,
-        api_key=api_key,
-        base_url=base_url,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        enable_thinking=enable_thinking
-    )
+        if not self._agent_registered:
+            await self._register_agent_info()
+            self._agent_registered = True
+        
+        # 初始化对话
+        self.conversation_history = [
+            Message(role="system", content=self.system_prompt)
+        ]
+        self.conversation_history.append(
+            Message(role="user", content=user_prompt)
+        )
 
+        iterations = 0
+        while iterations < self.max_iterations:
+            iterations += 1
+            
+            try:
+                # 获取 LLM 响应
+                response = await self.llm_client.chat_completion(
+                    messages=self.conversation_history,
+                    tools=self.tool_manager.get_tool_definitions()
+                )
 
-class RemoteContext:
-    """Remote context compatible with existing code"""
-    client: ContextVar[AgentClient] = ContextVar("client")
-    status: ContextVar[dict] = ContextVar("status")
-    task_manager: ContextVar[object] = ContextVar("task_manager")
-    id_map: ContextVar[dict] = ContextVar("id_map", default={})
+                choice = response["choices"][0]
+                message = choice["message"]
+                finish_reason = choice["finish_reason"]
+                
+                console.print(f"╭─────────────────────────────────────────────────────── LLM response: ────────────────────────────────────────────────────────╮", style="yellow")
+                console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
+                console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
-    @staticmethod
-    def set_client(client: AgentClient):
-        RemoteContext.client.set(client)
+                # 将助手响应添加到历史
+                assistant_message = Message(
+                    role="assistant",
+                    content=message.get("content", ""),
+                    tool_calls=message.get("tool_calls")
+                )
+                self.conversation_history.append(assistant_message)
 
-    @staticmethod
-    def get_client() -> AgentClient:
-        return RemoteContext.client.get()
+                # 🆕 在收到LLM响应后尝试策略关键词检测并上报
+                console.print("🔍 Attempting strategy detection", style="cyan")
+                asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
+                console.print("🔍 Strategy detection completed", style="cyan")
 
-    @staticmethod
-    def set_status(status: dict):
-        RemoteContext.status.set(status)
+                # === Detect text-based tool calls ===
+                # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
+                tool_calls_to_use = message.get("tool_calls", [])
+                if not tool_calls_to_use and message.get("content"):
+                    console.print(f"🔧 Detecting text-based tool calls in content: {message['content']}", style="cyan")
+                    parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
+                    if parsed_tool_calls:
+                        console.print("🔧 Detected text-based tool calls, converting to standard format", style="cyan")
+                        self.conversation_history.append(
+                            Message(
+                                role="user", 
+                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
+                        )
+                        continue  # 只有检测到工具调用时才continue
+                    else:
+                        console.print("🔧 Undetected text-based tool calls.", style="cyan")
 
-    @staticmethod
-    def get_status() -> dict:
-        return RemoteContext.status.get()
+                # 1) If there are tool calls, handle them — no matter the finish_reason
+                if message.get("tool_calls"):
+                    console.print(f"🔧 Handling tool calls: {message['tool_calls']}", style="cyan")
+                    await self._handle_tool_calls(message["tool_calls"])
+                    if iterations == 10 or iterations == 70:
+                        self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
+                    continue  # keep the loop going
 
-    @staticmethod
-    def set_task_manager(task_manager: object):
-        RemoteContext.task_manager.set(task_manager)
+                # 2) Hit max length? Ask model to continue (or just continue loop)
+                if finish_reason == "length":
+                    # Option A: push a tiny user nudge
+                    self.conversation_history.append(
+                        Message(
+                            role="user", 
+                            content="Note: If you need to call tools, please call them directly or with only critical explanation.")
+                    )
+                    continue
 
-    @staticmethod
-    def get_task_manager() -> object:
-        return RemoteContext.task_manager.get()
+                # 3) Normal terminal cases
+                if finish_reason in ("stop"):
+                    self.conversation_history.append(
+                        Message(
+                            role="user", 
+                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them.")
+                    )
+                    continue
 
-    @staticmethod
-    def set_id_map(id_map: dict):
-        RemoteContext.id_map.set(id_map)
+                # 4) Normal terminal cases
+                if finish_reason in ("content_filter"):
+                    print(f"success: True, response: {message.get('content', '')}, iterations: {iterations}, finish_reason: {finish_reason}")
+                    break
 
-    @staticmethod
-    def get_id_map() -> dict:
-        return RemoteContext.id_map.get()
-
+                # 5) an unexpected finish reason
+                console.print(f"Unexpected finish reason: {finish_reason}", style="red")
+                return {
+                    "success": False,
+                    "error": f"Unexpected finish reason: {finish_reason}",
+                    "iterations": iterations
+                }
+            except Exception as e:
+                # 使用全局错误日志功能
+                error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
+                
+                # 检查是否为上下文溢出错误
+                if _is_context_overflow_error(e, error_details):
+                    await self._shrink_history(window=40)
+                    console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
+                    continue                
+                
+                # 记录错误日志
+                log_file = log_error_to_file(error_details, display_console=True)
+                
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "error_details": error_details,
+                    "iterations": iterations,
+                    "error_log_file": log_file
+                }
+        # 达到最大迭代次数
+        return {
+            "success": False,
+            "error": "Max iterations reached",
+            "iterations": iterations
+        }
+  
 
 class AgentDemo:
     """Agent client demo class - compatible with existing code"""
@@ -1398,7 +1377,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = StandaloneChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
         # 注册工具
         agent.register_tool(
