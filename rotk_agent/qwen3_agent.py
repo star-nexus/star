@@ -403,15 +403,17 @@ class StandaloneChatAgent:
                     if parsed_tool_calls:
                         console.print("🔧 Detected text-based tool calls, converting to standard format", style="cyan")
                         self.conversation_history.append(
-                        Message(
-                            role="user", 
-                            # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
-                            content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
-                    )
-                    continue
+                            Message(
+                                role="user", 
+                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
+                        )
+                        continue  # 只有检测到工具调用时才continue
+                    else:
+                        console.print("🔧 Undetected text-based tool calls.", style="cyan")
 
                 # 1) If there are tool calls, handle them — no matter the finish_reason
                 if message.get("tool_calls"):
+                    console.print(f"🔧 Handling tool calls: {message['tool_calls']}", style="cyan")
                     await self._handle_tool_calls(message["tool_calls"])
                     if iterations == 10 or iterations == 70:
                         self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
