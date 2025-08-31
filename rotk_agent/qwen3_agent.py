@@ -90,6 +90,12 @@ class LLMClient:
         self.config = config
         self.client = httpx.AsyncClient()
         
+        # LLM API interaction statistics
+        # Count the number of interactions at the beginning of the method to ensure all requests are recorded
+        self.api_call_count = 0  # Total number of calls
+        self.api_success_count = 0  # Number of successful calls
+        self.api_error_count = 0  # Number of failed calls
+        
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1"
         elif config.provider == "deepseek":
@@ -159,7 +165,10 @@ class LLMClient:
         print_json(data=payload, indent=2, ensure_ascii=False)
         console.print("LLM client request payload end", style="purple")
 
-        # 发送请求
+        # Send request
+        # Count API call (count before sending to ensure all calls are tracked)
+        self.api_call_count += 1
+        
         try:
             response = await self.client.post(
                 f"{self.base_url}/chat/completions",
@@ -197,29 +206,41 @@ class LLMClient:
                 console.print("响应内容:", style="red")
                 print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
                 
+                # Count failed API calls
+                self.api_error_count += 1
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
                 
             response_data = response.json()
+            # Count successful API calls
+            self.api_success_count += 1
             return response_data
             
         except httpx.ConnectError as e:
+            # Count failed API calls
+            self.api_error_count += 1
             error_msg = f"无法连接到 {self.config.provider} API 服务器: {self.base_url}"
             console.print(f"🔌 连接错误: {error_msg}", style="red")
             console.print(f"请检查网络连接和API服务器状态", style="yellow")
             raise Exception(error_msg) from e
             
         except httpx.TimeoutException as e:
+            # Count failed API calls
+            self.api_error_count += 1
             error_msg = f"{self.config.provider} API 请求超时 (>180秒)"
             console.print(f"⏱️ 超时错误: {error_msg}", style="red")
             console.print(f"请检查网络状况或尝试重新请求", style="yellow")
             raise Exception(error_msg) from e
             
         except httpx.HTTPStatusError as e:
+            # Count failed API calls
+            self.api_error_count += 1
             error_msg = f"{self.config.provider} API HTTP错误: {e.response.status_code}"
             console.print(f"🌐 HTTP错误: {error_msg}", style="red")
             raise Exception(error_msg) from e
             
         except Exception as e:
+            # Count failed API calls
+            self.api_error_count += 1
             error_msg = f"发送API请求时发生未知错误: {str(e)}"
             console.print(f"❌ 未知错误: {error_msg}", style="red")
             console.print(f"请求URL: {self.base_url}/chat/completions", style="yellow")
@@ -239,6 +260,15 @@ class LLMClient:
                 }
             })
         return formatted_tools
+    
+    def get_api_stats(self) -> Dict[str, int]:
+        """获取 API 调用统计"""
+        return {
+            "total_calls": self.api_call_count,
+            "successful_calls": self.api_success_count,
+            "failed_calls": self.api_error_count,
+            "success_rate": round(self.api_success_count / self.api_call_count * 100, 2) if self.api_call_count > 0 else 0.0
+        }
     
     async def close(self):
         """Close client"""
@@ -767,8 +797,34 @@ class RoTKChatAgent:
             console.print(f"❌ Agent信息注册出错: {e}", style="red")
 
 
+    async def _report_llm_stats(self):
+        """Report LLM API interaction statistics to ENV"""
+        try:
+            api_stats = self.llm_client.get_api_stats()
+            console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
+            
+            result = await self.tool_manager.execute_tool("perform_action", {
+                "action": "report_llm_stats",
+                "params": {
+                    "faction": self.faction,
+                    "api_stats": api_stats,
+                    "provider": self.llm_client.config.provider,
+                    "model_id": self.llm_client.config.model_id
+                }
+            })
+            
+            if result.get("success"):
+                console.print("✅ LLM statistics reported successfully", style="green")
+            else:
+                console.print(f"⚠️ LLM statistics reported failed: {result.get('message', 'unknown error')}", style="yellow")
+                
+        except Exception as e:
+            console.print(f"❌ LLM statistics reported failed: {e}", style="red")
+
     async def stop(self):
         """Stop agent"""
+        # Report LLM statistics before stopping
+        await self._report_llm_stats()
         await self.llm_client.close()
 
 
@@ -792,6 +848,24 @@ class RoTKChatAgent:
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
+            
+            # 🆕 检查游戏是否结束
+            try:
+                status = RemoteContext.get_status() or {}
+                # 🆕 只在状态包含game_ended字段或出现异常时显示调试信息
+                if "game_ended" in status:
+                    console.print(f"🔍 状态检查 (第{iterations}次): {status}", style="dim cyan")
+                if status.get("game_ended", False):
+                    console.print("🏁 检测到游戏结束，准备上报LLM统计并退出", style="yellow bold")
+                    await self._report_llm_stats()
+                    return {
+                        "success": True,
+                        "message": "Game ended, LLM stats reported",
+                        "iterations": iterations,
+                        "reason": "game_ended"
+                    }
+            except Exception as status_error:
+                console.print(f"⚠️ 检查游戏状态时出错: {status_error}", style="yellow")
             
             try:
                 # 获取 LLM 响应
@@ -897,7 +971,8 @@ class RoTKChatAgent:
                     "iterations": iterations,
                     "error_log_file": log_file
                 }
-        # 达到最大迭代次数
+        # Max iterations reached
+        asyncio.create_task(self._report_llm_stats())
         return {
             "success": False,
             "error": "Max iterations reached",
@@ -951,10 +1026,26 @@ class AgentDemo:
                 outcome_type = msg_data.get("outcome_type")
                 outcome = msg_data.get("outcome")
                 RemoteContext.get_id_map().update({msg_data["id"]: outcome})
-                RemoteContext.set_status(
-                    {"self_status": {f"任务{msg_data['id']}": outcome}}
-                )
+                # 🔧 修复：更新状态而不是替换，保留已有的状态字段
+                try:
+                    current_status = RemoteContext.get_status() or {}
+                except:
+                    current_status = {}
+                current_status.update({"self_status": {f"任务{msg_data['id']}": outcome}})
+                RemoteContext.set_status(current_status)
                 message += f"\n   结果: {outcome}, 结果类型: {outcome_type}"
+            elif msg_type == "game_end_notification":
+                # 🆕 处理游戏结束通知
+                console.print("🏁 收到游戏结束通知，准备上报LLM统计并退出", style="yellow bold")
+                # 🔧 修复：更新状态而不是替换，保留已有的状态字段
+                try:
+                    current_status = RemoteContext.get_status() or {}
+                except:
+                    current_status = {}
+                current_status.update({"game_ended": True})
+                RemoteContext.set_status(current_status)
+                console.print(f"🔧 状态已更新: {current_status}", style="cyan")  # 🆕 调试信息
+                message += f"\n   游戏结束通知: {msg_data}"
             # console.print(message, style="blue")
             self.messages.append(message)
 

@@ -121,3 +121,14 @@ class GameStats(SingletonComponent):
     # - coordinate_system: str - 坐标系类型 ("centered" 表示以(0,0)为中心, "offset" 表示从左上角开始)
     # - symmetry_type: str - 对称类型
     # - generation_timestamp: float - 地图生成时间戳
+
+    # 🆕 LLM API 交互统计
+    llm_api_stats: Dict[Faction, Dict[str, any]] = field(default_factory=dict)
+    # LLM API 统计包含：
+    # - total_calls: int - 总调用次数
+    # - successful_calls: int - 成功次数
+    # - failed_calls: int - 失败次数  
+    # - success_rate: float - 成功率
+    # - provider: str - LLM 提供商
+    # - model_id: str - 模型ID
+    # - timestamp: float - 最后更新时间戳

@@ -35,6 +35,9 @@ class SettlementReportSystem(System):
     def __init__(self):
         super().__init__(priority=200)  # 高优先级，在游戏结束后执行
         self.report_generated = False
+        # 🆕 等待Agent上报LLM统计的延迟时间（秒）
+        self.wait_for_agent_stats_delay = 3.0
+        self.game_end_detected_time = None
         
     def initialize(self, world: World) -> None:
         self.world = world
@@ -45,12 +48,29 @@ class SettlementReportSystem(System):
         
     def update(self, delta_time: float) -> None:
         """更新系统"""
-        # 检查游戏是否结束，如果结束且未生成报告，则生成报告
+        # 检查游戏是否结束，如果结束且未生成报告，则等待Agent上报统计后再生成报告
         if not self.report_generated:
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                self._generate_settlement_report()
-                self.report_generated = True
+                # 🆕 首次检测到游戏结束，记录时间
+                if self.game_end_detected_time is None:
+                    import time
+                    self.game_end_detected_time = time.time()
+                    print(f"[SettlementReport] 🏁 检测到游戏结束，等待 {self.wait_for_agent_stats_delay}s 收集Agent LLM统计...")
+                    return
+                
+                # 🆕 检查是否已等待足够时间
+                import time
+                elapsed_time = time.time() - self.game_end_detected_time
+                if elapsed_time >= self.wait_for_agent_stats_delay:
+                    print(f"[SettlementReport] ⏰ 等待时间结束 ({elapsed_time:.1f}s)，开始生成结算报告...")
+                    self._generate_settlement_report()
+                    self.report_generated = True
+                else:
+                    # 还未到等待时间，继续等待
+                    remaining_time = self.wait_for_agent_stats_delay - elapsed_time
+                    if int(remaining_time) != int(remaining_time + delta_time):  # 每秒输出一次
+                        print(f"[SettlementReport] ⏳ 等待Agent上报统计，剩余 {remaining_time:.1f}s...")
     
     def _generate_settlement_report(self) -> None:
         """生成结算报告"""
@@ -443,6 +463,29 @@ class SettlementReportSystem(System):
         except Exception as e:
             print(f"[SettlementReport] ⚠️ 读取strategy_scores失败: {e}")
 
+        # 🆕 读取 LLM API 统计数据
+        llm_api_stats: Dict[str, Dict[str, any]] = {"wei": {}, "shu": {}, "wu": {}}
+        try:
+            if game_stats and hasattr(game_stats, "llm_api_stats"):
+                from ..prefabs.config import Faction as _Faction
+                for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
+                    if f in game_stats.llm_api_stats:
+                        llm_api_stats[f.value] = game_stats.llm_api_stats[f]
+                        print(f"[SettlementReport] ✅ {f.value}阵营 LLM API 统计: {game_stats.llm_api_stats[f]}")
+                    else:
+                        llm_api_stats[f.value] = {
+                            "total_calls": 0,
+                            "successful_calls": 0, 
+                            "failed_calls": 0,
+                            "success_rate": 0.0,
+                            "provider": "unknown",
+                            "model_id": "unknown"
+                        }
+            else:
+                print("[SettlementReport] ⚠️ GameStats中未找到llm_api_stats字段")
+        except Exception as e:
+            print(f"[SettlementReport] ⚠️ 读取llm_api_stats失败: {e}")
+
         return {
             "model_info": model_info,
             "agent_endpoints": agent_endpoints,  # 新增字段
@@ -450,7 +493,8 @@ class SettlementReportSystem(System):
                 **strategy_scores
             },
             "enable_thinking": None,  # 占位，待实现
-            "response_times": response_times
+            "response_times": response_times,
+            "llm_api_stats": llm_api_stats  # 🆕 LLM API 统计数据
         }
     
     def _get_map_type(self) -> str:
