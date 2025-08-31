@@ -79,6 +79,9 @@ class LLMSystem(System):
     def __init__(self):
         super().__init__()
         self.name = "LLMSystem"
+        
+        # 🆕 游戏结束通知状态
+        self.game_end_notified = False
 
         # 系统级错误代码
         self.system_error_codes = {
@@ -118,6 +121,7 @@ class LLMSystem(System):
         """初始化系统级动作映射"""
         return {
             "strategy_ping": self.handle_strategy_ping,
+            "report_llm_stats": self.handle_report_llm_stats,
         }
 
     def add_listener(self):
@@ -191,11 +195,8 @@ class LLMSystem(System):
         return self.client.response_to_agent(agent_id, action_id, outcome, outcome_type)
 
     def _record_interaction(self, agent_id: str | None, params: Dict[str, Any] | None) -> None:
-        """记录一次 ENV -> Agent 响应交互。
 
-        - 按 agent 维度累计
-        - 通过 agent -> faction 映射进行阵营累计；若本次参数提供了 faction 则建立映射
-        """
+        """ Record one interaction from ENV to Agent """
         try:
             stats = self.world.get_singleton_component(GameStats)
             if stats is None:
@@ -208,7 +209,7 @@ class LLMSystem(System):
                     stats.response_times_by_agent.get(agent_id, 0) + 1
                 )
 
-            # 阵营聚合：优先使用既有映射；否则尝试从本次参数中解析 faction 并建立映射
+            # Using existing mapping or parsing from parameters
             from ..prefabs.config import Faction as _Faction
             mapped_faction = None
 
@@ -232,7 +233,7 @@ class LLMSystem(System):
                 )
         except Exception as _e:
             # 统计失败不影响主流程
-            print(f"[LLMSystem] 记录交互次数时发生非致命错误: {_e}")
+            print(f"Record ENV <-> Agent interaction error: {_e}")
 
     # === 策略评分：Agent 端主动打点 ===
     def handle_strategy_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -323,6 +324,71 @@ class LLMSystem(System):
         except Exception as e:
             return {"success": False, "message": f"Strategy ping failed: {e}"}
 
+    def handle_report_llm_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Report LLM API interaction statistics from Agent to ENV
+        
+        Expected parameters:
+          - faction: str (wei/shu/wu) Required
+          - api_stats: Dict - LLM API statistics data
+            - total_calls: int - Total number of calls
+            - successful_calls: int - Number of successful calls  
+            - failed_calls: int - Number of failed calls
+            - success_rate: float - Success rate
+          - provider: str - LLM provider
+          - model_id: str - Model ID
+        """
+        try:
+            faction_key = params.get("faction")
+            api_stats = params.get("api_stats", {})
+            provider = params.get("provider", "unknown")
+            model_id = params.get("model_id", "unknown")
+            
+            if not faction_key:
+                return {"success": False, "message": "Missing faction"}
+            
+            try:
+                from ..prefabs.config import Faction as _Faction
+                faction = _Faction(faction_key)
+            except Exception:
+                return {"success": False, "message": f"Invalid faction: {faction_key}"}
+            
+            if not isinstance(api_stats, dict):
+                return {"success": False, "message": "Invalid api_stats format"}
+            
+            # 获取统计组件
+            stats = self.world.get_singleton_component(GameStats)
+            if stats is None:
+                stats = GameStats()
+                self.world.add_singleton_component(stats)
+            
+            # 确保 llm_api_stats 字段存在
+            if not hasattr(stats, 'llm_api_stats'):
+                stats.llm_api_stats = {}
+            
+            # 存储 LLM API 统计数据
+            stats.llm_api_stats[faction] = {
+                "total_calls": api_stats.get("total_calls", 0),
+                "successful_calls": api_stats.get("successful_calls", 0),
+                "failed_calls": api_stats.get("failed_calls", 0),
+                "success_rate": api_stats.get("success_rate", 0.0),
+                "provider": provider,
+                "model_id": model_id,
+                "timestamp": time.time()
+            }
+            
+            print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
+            
+            return {
+                "success": True,
+                "message": "LLM stats received",
+                "faction": faction_key,
+                "stats": api_stats
+            }
+            
+        except Exception as e:
+            return {"success": False, "message": f"Report LLM stats failed: {e}"}
+
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
         agent_id = sender.get("id") if sender.get("type") == "agent" else None
@@ -336,10 +402,54 @@ class LLMSystem(System):
             # 统一位置计数：显式错误响应也计数
             self._record_interaction(agent_id, None)
 
+    def notify_game_end_to_all_agents(self, winner: Optional[Faction] = None, reason: str = "game_completed"):
+        """向所有连接的Agent发送游戏结束通知"""
+        try:
+            game_end_notification = {
+                "type": "game_end_notification",
+                "winner": winner.value if winner else None,
+                "reason": reason,
+                "timestamp": time.time(),
+                "message": "Game has ended. Please report your LLM statistics."
+            }
+            
+            # 向所有连接的Agent发送通知
+            agent_count = 0
+            for agent_id, agent_info in self.client.connected_agents.items():
+                try:
+                    self.send_message(
+                        game_end_notification,
+                        target={"type": "agent", "id": agent_id}
+                    )
+                    agent_count += 1
+                    print(f"[LLMSystem] ✅ 已向Agent {agent_id} 发送游戏结束通知")
+                except Exception as e:
+                    print(f"[LLMSystem] ❌ 向Agent {agent_id} 发送游戏结束通知失败: {e}")
+            
+            print(f"[LLMSystem] 📢 游戏结束通知已发送给 {agent_count} 个Agent")
+            return agent_count
+            
+        except Exception as e:
+            print(f"[LLMSystem] ❌ 发送游戏结束通知时出错: {e}")
+            return 0
+
     def subscribe_events(self):
         return super().subscribe_events()
 
     def update(self, dt):
+        # 🆕 检查游戏是否结束，如果结束且未通知过，则发送游戏结束通知
+        if not self.game_end_notified:
+            game_state = self.world.get_singleton_component(GameState)
+            if game_state and game_state.game_over:
+                print("[LLMSystem] 🏁 检测到游戏结束，开始发送游戏结束通知给所有Agent")
+                agent_count = self.notify_game_end_to_all_agents(
+                    winner=game_state.winner,
+                    reason="game_completed"
+                )
+                self.game_end_notified = True
+                print(f"[LLMSystem] ✅ 游戏结束通知完成，已通知 {agent_count} 个Agent")
+        
+        # 原有的注释代码保持不变
         # print(f"LLMSystem update: {dt}")
         # with patch_stdout():
         #     command = self.session.prompt(
@@ -347,44 +457,6 @@ class LLMSystem(System):
         #         completer=None,
         #         complete_while_typing=True,
         #     )
-
-        # command = command.strip()
-
-        # if not command:
-        #     return
-
-        # if command.lower() == "quit":
-        #     print("👋 退出交互模式")
-        #     return
-
-        # parts = command.split()
-        # action = parts[0].lower()
-
-        # print(f"🎯 识别到命令: {action}")
-        # print(f"   参数: {parts[1:] if len(parts) > 1 else '无'}")
-
-        # match action:
-        #     case "chat":
-        #         self.exec_action(
-        #             {
-        #                 "instruction": "message",
-        #                 "data": {"action": "chat", "parameters": "你好聊天么？"},
-        #                 "msg_from": {
-        #                     "role_type": "agent",
-        #                     "env_id": 1,
-        #                     "agent_id": 2,
-        #                 },
-        #                 "msg_to": {
-        #                     "role_type": "agent",
-        #                     "env_id": 1,
-        #                     "agent_id": 1,
-        #                 },
-        #                 "timestamp": time.time(),
-        #             }
-        #         )
-        #     case _:
-        #         print(f"❌ 未知命令: {command}")
-        #         print("输入 'quit' 退出，或查看上方的可用命令列表")
         pass
 
     # === ENV 方法 ===
@@ -397,13 +469,22 @@ class LLMSystem(System):
         action_id = payload.get("id")
         action = payload.get("action")
         params = payload.get("parameters", {})
+        
+        # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
+        self._record_interaction(agent_id, params)
+        
         if isinstance(params, dict):
             params = params
         elif isinstance(params, str):
             if params == "":
                 params = {}
             else:
-                params = json.loads(params)
+                try:
+                    params = json.loads(params)
+                except Exception:
+                    print(f"Parse params error: {params}")
+                    print("Use empty params instead.")
+                    params = {}
 
         start_time = time.time()
 
@@ -428,24 +509,20 @@ class LLMSystem(System):
 
             # 标准化响应格式
             execution_time = time.time() - start_time
-            # standardized_result = self._standardize_response(
-            #     result, action, params, execution_time
-            # )
             standardized_result = result
 
             print(f"{action} response: {standardized_result}")
             self.client.response_to_agent(
                 agent_id, action_id, standardized_result, "str"
             )
-            # 统一位置计数：正常响应
-            self._record_interaction(agent_id, params)
 
         except Exception as e:
             print(f"执行动作 {action} 时出错: {e}")
             error_result = self._create_system_error_response(action, str(e), 2010)
-            self.client.response_to_agent(agent_id, action_id, error_result, "str")
-            # 统一位置计数：异常时的错误响应也计数
-            self._record_interaction(agent_id, params)
+            try:
+                self.client.response_to_agent(agent_id, action_id, error_result, "str")
+            except Exception as response_error:
+                print(f"发送错误响应失败: {response_error}")
 
     def _is_observation_action(self, action: str) -> bool:
         """判断是否为观测动作"""

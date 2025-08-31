@@ -47,6 +47,9 @@ class SettlementReport(SingletonComponent):
     # 响应时间（占位，待实现）
     response_times: Dict[str, int] = field(default_factory=dict)  # 各阵营的响应次数
     
+    # 🆕 LLM API 统计
+    llm_api_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # 各阵营的 LLM API 交互统计
+    
     # 战斗统计
     battle_statistics: Dict[str, Any] = field(default_factory=dict)  # 战斗相关统计
     
