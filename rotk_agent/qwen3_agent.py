@@ -22,12 +22,6 @@ from rich import print_json
 
 console = Console()
 
-    # - 使用 (列, 行) 即 `(col, row)` 六安编写坐标系。
-    # - 地图中心为 `(col: 0, row: 0)`。
-    # - `col` 轴: **向右为正方向** (值增大)，向左为负方向 (值减小)。
-    # - `row` 轴: **向下为正方向** (值增大)，向上为负方向 (值减小)。
-    # **Map**: flat-topped hex, **even-q offset** coords `(c,r)`.
-    # **Neighbors** (must use):
 
 @dataclass
 class LLMConfig:
@@ -110,20 +104,15 @@ class LLMClient:
             "stream": False,
         }
         
-        # 针对不同提供商添加特殊参数
         if self.config.provider == "siliconflow":
-            # SiliconFlow 特殊参数
             payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        elif self.config.provider == "vllm":
-            # VLLM 特殊参数
+        elif self.config.provider.startswith("vllm"):
             payload["chat_template_kwargs"] = {
                     "enable_thinking": bool(self.config.enable_thinking)
                 }
             
-        # 添加工具定义与调用策略
         if tools:
             payload["tools"] = self._format_tools(tools)
-            # 提示模型优先使用工具，并允许并行工具调用（兼容OpenAI风格，其他提供商忽略也无害）
             payload["tool_choice"] = "auto"
             payload["parallel_tool_calls"] = True
             
@@ -180,12 +169,7 @@ class LLMClient:
                 
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
                 
-            console.print("LLM client response status code", style="purple")
-            console.print(response.status_code, style="purple")
-            console.print("LLM client response json", style="purple")
             response_data = response.json()
-            print_json(data=response_data, indent=2, ensure_ascii=False)
-            console.print("LLM client response end", style="purple")
             return response_data
             
         except httpx.ConnectError as e:
@@ -262,22 +246,19 @@ class ToolManager:
 
 
 class StandaloneChatAgent:
-    """Independent chat agent"""
     
     def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
-        self.max_iterations = 100  # 防止无限循环
-        # 🆕 策略打点节流控制
-        self._strategy_last_ping_ts: float = 0.0
-        # 🆕 保护对话历史的锁（用于并行工具调用）
+        self.max_iterations = 100
+        self.faction = faction
+        
         self._history_lock = asyncio.Lock()
-        # 🆕 Agent注册状态标记（确保只注册一次）
         self._agent_registered: bool = False
         
-        self.faction = faction
+        self._strategy_last_ping_ts: float = 0.0
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -349,8 +330,7 @@ class StandaloneChatAgent:
         """Main chat loop"""
         if max_iterations:
             self.max_iterations = max_iterations
-            
-        # 🆕 在开始对话前注册Agent信息（只注册一次）
+
         if not self._agent_registered:
             await self._register_agent_info()
             self._agent_registered = True
@@ -392,14 +372,14 @@ class StandaloneChatAgent:
                     messages=self.conversation_history,
                     tools=self.tool_manager.get_tool_definitions()
                 )
-                
+
                 choice = response["choices"][0]
                 message = choice["message"]
                 finish_reason = choice["finish_reason"]
                 
                 console.print(f"╭─────────────────────────────────────────────────────── LLM response: ────────────────────────────────────────────────────────╮", style="yellow")
-                console.print(f"│ {json.dumps(choice, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
-                console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
+                console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
+                console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
                 # 将助手响应添加到历史
                 assistant_message = Message(
@@ -410,16 +390,15 @@ class StandaloneChatAgent:
                 self.conversation_history.append(assistant_message)
 
                 # 🆕 在收到LLM响应后尝试策略关键词检测并上报
-                try:
-                    assistant_text = message.get("content", "") or ""
-                    await self._maybe_strategy_ping(assistant_text)
-                except Exception as _e:
-                    console.print(f"⚠️ strategy_ping detection error: {_e}", style="yellow")
+                console.print("🔍 Attempting strategy detection", style="cyan")
+                asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
+                console.print("🔍 Strategy detection completed", style="cyan")
 
                 # === Detect text-based tool calls ===
                 # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
                 tool_calls_to_use = message.get("tool_calls", [])
                 if not tool_calls_to_use and message.get("content"):
+                    console.print(f"🔧 Detecting text-based tool calls in content: {message['content']}", style="cyan")
                     parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
                     if parsed_tool_calls:
                         console.print("🔧 Detected text-based tool calls, converting to standard format", style="cyan")
@@ -444,7 +423,6 @@ class StandaloneChatAgent:
                     self.conversation_history.append(
                         Message(
                             role="user", 
-                            # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
                             content="Note: If you need to call tools, please call them directly or with only critical explanation.")
                     )
                     continue
@@ -454,7 +432,6 @@ class StandaloneChatAgent:
                     self.conversation_history.append(
                         Message(
                             role="user", 
-                            # content="Continue. If you need to call tools, please call them directly, without any additional explanation."),
                             content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them.")
                     )
                     continue
@@ -477,9 +454,7 @@ class StandaloneChatAgent:
                 
                 # 检查是否为上下文溢出错误
                 if _is_context_overflow_error(e, error_details):
-                    # 在这里触发"软重启/裁剪"而非 break
-                    # 例如：只保留 system + 最近 N 条消息（建议 30~50）
-                    await self._shrink_history(window=40)  # 你实现的裁剪函数
+                    await self._shrink_history(window=40)
                     console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
                     continue                
                 
@@ -525,13 +500,11 @@ class StandaloneChatAgent:
     
     async def _handle_tool_calls_parallel(self, tool_calls: List[Dict[str, Any]]):
         """并行执行工具调用"""
-        # 创建并行任务
         tasks = []
         for tool_call in tool_calls:
             task = asyncio.create_task(self._execute_single_tool_call(tool_call))
             tasks.append(task)
         
-        # 等待所有任务完成
         await asyncio.gather(*tasks)
     
     async def _execute_single_tool_call(self, tool_call: Dict[str, Any]):
@@ -548,15 +521,11 @@ class StandaloneChatAgent:
             # 解析参数
             arguments = json.loads(arguments_str) if arguments_str else {}
             
-            # LLM有时会生成双重编码的JSON，特别是对于嵌套的'params'。
-            # 在这里增加一层健壮性检查。
             if 'params' in arguments and isinstance(arguments['params'], str):
                 console.print("⚠️ 'params' is a string, trying to decode again...", style="yellow")
                 try:
                     arguments['params'] = json.loads(arguments['params'])
                 except json.JSONDecodeError as e:
-                    # 如果解码失败，说明LLM生成的JSON格式不正确。
-                    # 这是无法恢复的错误，我们应该抛出异常，让上层捕获并通知LLM。
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
             
             # 执行工具
@@ -567,10 +536,8 @@ class StandaloneChatAgent:
             console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
             
 
-            # 过滤工具结果，移除冗余信息以保持对话历史精炼
             filtered_result = self._filter_tool_result(function_name, result)
             
-            # 将过滤后的工具结果添加到对话历史（使用锁保护并行访问）
             tool_message = Message(
                 role="tool",
                 content=json.dumps(filtered_result, ensure_ascii=False),
@@ -695,7 +662,7 @@ class StandaloneChatAgent:
 
         return False
 
-    async def _maybe_strategy_ping(self, assistant_text: str):
+    async def _async_strategy_detection(self, assistant_text: str):
         """若检测到策略性内容，则向 ENV 上报 strategy_ping（节流）。"""
         import time
         # 节流：至少每2秒最多1次
@@ -730,63 +697,47 @@ class StandaloneChatAgent:
         if not isinstance(result, dict):
             return result
         
-        # 深拷贝结果以避免修改原始数据
         import copy
         filtered_result = copy.deepcopy(result)
         
-        # 针对不同的工具类型进行过滤
         if function_name == "perform_action":
-            # 根据结果结构判断动作类型
             if "visible_environment" in filtered_result and "unit_info" in filtered_result:
-                # observation 结果
                 filtered_result = self._filter_observation_result(filtered_result)
             elif "faction" in filtered_result and "units" in filtered_result and "total_units" in filtered_result:
-                # faction_state 结果
                 filtered_result = self._filter_faction_state_result(filtered_result)
             elif "message" in filtered_result and ("moved successfully" in str(filtered_result.get("message", "")) or 
                                                   "failure_reason" in filtered_result):
-                # move 结果
                 filtered_result = self._filter_move_result(filtered_result)
             elif "battle_summary" in filtered_result and "casualties_inflicted" in filtered_result:
-                # attack 结果
                 filtered_result = self._filter_attack_result(filtered_result)
         
         return filtered_result
     
     def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 observation 结果，移除冗余字段"""
-        # 创建结果的深拷贝以避免修改原始数据
         import copy
         filtered_result = copy.deepcopy(result)
         
-        # 过滤 unit_info 字段，移除无用的噪声关键字
         if "unit_info" in filtered_result and isinstance(filtered_result["unit_info"], dict):
             unit_info = filtered_result["unit_info"]
             
-            # 过滤 status 字段中的噪声关键字
             if "status" in unit_info and isinstance(unit_info["status"], dict):
                 status = unit_info["status"]
-                # 移除 morale 和 fatigue 字段
                 status.pop("morale", None)
                 status.pop("fatigue", None)
             
-            # 过滤 capabilities 字段中的噪声关键字
             if "capabilities" in unit_info and isinstance(unit_info["capabilities"], dict):
                 capabilities = unit_info["capabilities"]
-                # 移除无用的能力字段
                 noise_capabilities = ["attack_points", "construction_points", "skill_points"]
                 for noise_key in noise_capabilities:
                     capabilities.pop(noise_key, None)
             
-            # 移除 available_skills 字段
             unit_info.pop("available_skills", None)
         
-        # 过滤 visible_environment 字段
         if "visible_environment" in filtered_result and isinstance(filtered_result["visible_environment"], list):
             filtered_env = []
             for tile in filtered_result["visible_environment"]:
                 if isinstance(tile, dict):
-                    # 保留核心信息，移除噪声字段
                     filtered_tile = {
                         "position": tile.get("position"),
                         "terrain": tile.get("terrain"),
@@ -816,15 +767,12 @@ class StandaloneChatAgent:
     
     def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 faction_state 结果"""
-        # faction_state 结果通常已经比较精炼，暂时不做额外过滤
         return result
     
     def _filter_move_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 move 结果，保留关键错误信息或成功信息"""
         if not result.get("success", True):
-            # 移动失败时，保留关键错误信息但简化建议
             if "suggested_action" in result:
-                # 保留建议动作但移除详细的调试信息
                 essential_keys = {
                     "success", "message", "failure_reason", 
                     "current_movement_points", "required_movement_points",
@@ -838,14 +786,12 @@ class StandaloneChatAgent:
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """过滤 attack 结果"""
         if result.get("success", True):
-            # 攻击成功时，保留核心战斗信息
             essential_keys = {
                 "success", "message", "battle_summary", 
                 "remaining_resources", "tactical_info"
             }
             filtered_result = {k: v for k, v in result.items() if k in essential_keys}
             
-            # 进一步精简 battle_summary
             if "battle_summary" in filtered_result and isinstance(filtered_result["battle_summary"], dict):
                 battle_summary = filtered_result["battle_summary"]
                 essential_battle_keys = {
@@ -876,7 +822,6 @@ class StandaloneChatAgent:
     async def _register_agent_info(self):
         """注册Agent信息到环境"""
         try:
-            # 从配置中获取信息
             config = self.llm_client.config
             
             registration_params = {
@@ -887,8 +832,7 @@ class StandaloneChatAgent:
                 "agent_id": getattr(self, 'agent_id', 'unknown'),
                 "version": "1.0.0",  # Agent版本
                 "note": f"Agent using {config.provider}"
-            }        
-            # 调用注册
+            }
             result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
@@ -1371,7 +1315,7 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
     import time
     
     start_time = time.time()
-    console.print(f"⏳ 等待响应 ID: {request_id}，超时设置: {timeout_seconds}s", style="cyan")
+    console.print(f"⏳ 等待 ENV 响应 ID: {request_id}，超时设置: {timeout_seconds}s", style="cyan")
     
     while True:
         # 检查是否有响应
@@ -1380,15 +1324,15 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
             # 从映射中移除响应
             RemoteContext.get_id_map().pop(request_id, None)
             elapsed = time.time() - start_time
-            console.print(f"✅ 收到响应 ID: {request_id}，耗时: {elapsed:.2f}s", style="green")
+            console.print(f"✅ 收到 ENV 响应 ID: {request_id}，耗时: {elapsed:.2f}s", style="green")
             return response
         
         # 检查超时
         elapsed = time.time() - start_time
         if elapsed >= timeout_seconds:
-            console.print(f"⏰ 响应超时 ID: {request_id}，已等待: {elapsed:.2f}s", style="red")
+            console.print(f"⏰ ENV 响应超时 ID: {request_id}，已等待: {elapsed:.2f}s", style="red")
             console.print(f"🔍 当前ID映射状态: {dict(RemoteContext.get_id_map())}", style="yellow")
-            timeout_error = TimeoutError(f"等待响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
+            timeout_error = TimeoutError(f"等待 ENV 响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
             # 添加额外的上下文信息到异常对象中
             timeout_error.request_id = request_id
             timeout_error.elapsed_time = elapsed
@@ -1403,12 +1347,12 @@ async def perform_action(action: str, params: Any):
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
-        response = await get_env_response(request_id, timeout_seconds=15.0)
+        response = await get_env_response(request_id, timeout_seconds=1.0)
         
         # 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
         delay_time = _calculate_action_delay(action, params, response)
         if delay_time > 0:
-            console.print(f"⏳ 等待 {delay_time}s 让动作完成...", style="cyan")
+            console.print(f"⏳ 等待了 {delay_time}s 让动作完成...", style="cyan")
             await asyncio.sleep(delay_time)
 
         return response
