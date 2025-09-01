@@ -293,6 +293,14 @@ class World:
 
     def reset(self) -> None:
         """重置世界状态"""
+        # 🆕 优雅关闭：在销毁前，调用所有系统的清理方法
+        for system in self.systems:
+            if hasattr(system, 'cleanup'):
+                try:
+                    system.cleanup()
+                except Exception as e:
+                    print(f"Error during system cleanup for {system.__class__.__name__}: {e}")
+
         self.entities.clear()
         self._component_to_entities.clear()
         self._singleton_components.clear()
