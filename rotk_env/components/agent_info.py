@@ -20,6 +20,8 @@ class AgentInfo:
     version: Optional[str] = None  # Agent版本
     note: Optional[str] = None  # 备注信息
     registration_time: Optional[str] = None  # 注册时间
+    # 添加 enable_thinking 字段
+    enable_thinking: Optional[bool] = None  # 是否启用思考模式
 
 
 @dataclass 

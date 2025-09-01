@@ -29,22 +29,16 @@ class SettlementReport(SingletonComponent):
     # 游戏进度（回合制用）
     total_turns: int = 0  # 总回合数（回合制模式）
     
-    # 单位信息
     units_info: Dict[str, Any] = field(default_factory=dict)  # 单位详细信息
     
-    # 模型信息（已实现）
     model_info: Dict[str, str] = field(default_factory=dict)  # 各阵营使用的模型信息
     
-    # Agent端点信息（已实现）
     agent_endpoints: Dict[str, str] = field(default_factory=dict)  # 各阵营Agent的服务端点
     
-    # 策略评分（占位，待实现）
     strategy_scores: Dict[str, float] = field(default_factory=dict)  # 各阵营的策略推理分数
     
-    # 思考模式（占位，待实现）
-    enable_thinking: Optional[bool] = None  # 是否开启思考
+    enable_thinking: Dict[str, Optional[bool]] = field(default_factory=dict)  # 各阵营是否开启思考模式
     
-    # 响应时间（占位，待实现）
     response_times: Dict[str, int] = field(default_factory=dict)  # 各阵营的响应次数
     
     # 🆕 LLM API 统计

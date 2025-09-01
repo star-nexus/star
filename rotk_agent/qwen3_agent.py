@@ -108,6 +108,9 @@ class LLMClient:
 
         self.config_thinking = False
 
+        self.config.base_url = self.base_url
+        self.config.enable_thinking = config.enable_thinking and self.config_thinking
+
         console.print("=======================================", style="yellow")
         console.print(self.config, style="yellow") 
         console.print("=======================================", style="yellow")
@@ -885,17 +888,20 @@ class RoTKChatAgent:
                 "base_url": config.base_url or "unknown",
                 "agent_id": getattr(self, 'agent_id', 'unknown'),
                 "version": "1.0.0",  # Agent version
-                "note": f"Agent using {config.provider}"
+                "note": f"Agent using {config.provider}",
+                # 添加 enable_thinking 字段
+                "enable_thinking": config.enable_thinking
             }
+            
             result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
             })
             if result.get("success"):
-                console.print(f"✅ Agent information registered successfully: {self.faction} faction - {config.provider}:{config.model_id}", style="cyan")
+                console.print(f"✅ Agent information registered successfully: {self.faction} faction - {config.provider}:{config.model_id} (thinking: {config.enable_thinking})", style="cyan")
             else:
                 console.print(f"⚠️ Agent information registration failed: {result.get('message', 'unknown error')}", style="red")
-        
+            
         except Exception as e:
             console.print(f"❌ Agent information registration error: {e}", style="red")
 

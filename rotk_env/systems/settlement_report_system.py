@@ -422,6 +422,8 @@ class SettlementReportSystem(System):
 
         model_info = {}
         agent_endpoints = {}
+        # 🆕 添加 enable_thinking 收集
+        enable_thinking_by_faction = {}
         response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
 
         if registry:
@@ -432,10 +434,14 @@ class SettlementReportSystem(System):
                 if agent_info:
                     model_info[faction] = agent_info.model_id
                     agent_endpoints[faction] = agent_info.base_url
-                    print(f"[SettlementReport] ✅ {faction}阵营: {agent_info.provider}:{agent_info.model_id}")
+                    # 🆕 收集 enable_thinking 信息
+                    enable_thinking_by_faction[faction] = agent_info.enable_thinking
+                    print(f"[SettlementReport] ✅ {faction}阵营: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
                 else:
                     model_info[faction] = "placeholder_model"
                     agent_endpoints[faction] = "unknown"
+                    # 🆕 未注册的阵营使用默认值
+                    enable_thinking_by_faction[faction] = None
                     print(f"[SettlementReport] ⚠️ {faction}阵营: 未注册Agent信息，使用占位符")
         else:
             print(f"[SettlementReport] ⚠️ 未发现Agent注册表，使用占位符")
@@ -443,6 +449,8 @@ class SettlementReportSystem(System):
             for faction in ["wei", "shu", "wu"]:
                 model_info[faction] = "placeholder_model"
                 agent_endpoints[faction] = "unknown"
+                # 🆕 未注册的阵营使用默认值
+                enable_thinking_by_faction[faction] = None
 
         # 🆕 读取交互次数（按阵营聚合）
         try:
@@ -494,7 +502,8 @@ class SettlementReportSystem(System):
             "strategy_scores": {
                 **strategy_scores
             },
-            "enable_thinking": None,  # 占位，待实现
+            # 🆕 返回 enable_thinking 信息
+            "enable_thinking": enable_thinking_by_faction,
             "response_times": response_times,
             "llm_api_stats": llm_api_stats  # 🆕 LLM API 统计数据
         }
