@@ -511,14 +511,18 @@ class RoTKChatAgent:
 
     # ==================== Strategy keyword detection and reporting ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
-        """Detects basic strategy thinking, defined by the presence of keywords and structure words."""
+        """Detects basic strategy thinking: keywords + structure words within proximity, without negation."""
         if not text:
             return False
+        
+        import re
         t = text.lower()
+        
+        # Strategy keywords
         zh_keys = [
             "策略", "战略", "战术", "推进", "收缩", "防守", "进攻", "包抄", "侧翼", "伏击", "牵制",
             "佯攻", "撤退", "补给", "集结", "兵力部署", "路线", "优先级", "据点", "卡位", "占领",
-            "固守", "视野", "地形优势", "补给线", "防线", "桥头堡", "绕后", "夹击", "高地", " chokepoint",
+            "固守", "视野", "地形优势", "补给线", "防线", "桥头堡", "绕后", "夹击", "高地", "chokepoint",
             "协同", "集火", "分兵"
         ]
         en_keys = [
@@ -527,88 +531,187 @@ class RoTKChatAgent:
             "pin down", "fix-in-place", "regroup", "supply", "chokepoint", "terrain advantage",
             "strongpoint", "encircle"
         ]
-        # 1. Must contain strategy keywords
-        key_hit = any(k in text for k in zh_keys) or any(k in t for k in en_keys)
-        if not key_hit:
-            return False
-            
-        # 2. Must also contain structure words to be considered as basic strategy thinking
+        
+        # Structure words
         structure_terms = ["先", "然后", "再", "首先", "优先", "目标", "步骤", "顺序", "选择", "方案", "计划",
                            "first", "then", "next", "priority", "goal", "objective", "step", "order"]
-        structure_hit = any(term in text for term in structure_terms) or any(term in t for term in structure_terms)
         
-        return structure_hit
+        # Negation words (to avoid false positives)
+        negation_zh = ["不", "不要", "不能", "不可", "停止", "禁止", "避免", "取消"]
+        negation_en = ["not", "don't", "can't", "won't", "avoid", "stop", "cancel", "never"]
+        
+        # Find all keyword positions
+        keyword_positions = []
+        for kw in zh_keys:
+            if kw in text:
+                for match in re.finditer(re.escape(kw), text):
+                    keyword_positions.append((match.start(), match.end(), kw))
+        for kw in en_keys:
+            if kw in t:
+                for match in re.finditer(re.escape(kw), t):
+                    keyword_positions.append((match.start(), match.end(), kw))
+        
+        if not keyword_positions:
+            return False
+        
+        # Find all structure word positions
+        structure_positions = []
+        for sw in structure_terms:
+            search_text = text if any(c >= '\u4e00' for c in sw) else t  # Chinese or English
+            if sw in search_text:
+                for match in re.finditer(re.escape(sw), search_text):
+                    structure_positions.append((match.start(), match.end(), sw))
+        
+        if not structure_positions:
+            return False
+        
+        # Check proximity (within 50 characters) and no negation
+        proximity_window = 50
+        for kw_start, kw_end, kw_text in keyword_positions:
+            # Check for negation near keyword (±20 chars)
+            negation_window = 20
+            context_start = max(0, kw_start - negation_window)
+            context_end = min(len(text), kw_end + negation_window)
+            context = text[context_start:context_end].lower()
+            
+            # Skip if negation found near keyword
+            if any(neg in context for neg in negation_zh + negation_en):
+                continue
+            
+            # Check proximity with structure words
+            for st_start, st_end, st_text in structure_positions:
+                distance = min(abs(kw_start - st_end), abs(st_start - kw_end))
+                if distance <= proximity_window:
+                    return True
+        
+        return False
 
     def _contains_strategy_sequence(self, text: str) -> bool:
-        """Detect sequence-based strategy phrases, such as "position/move -> attack" or "attack -> move"."""
+        """Detect sequence-based strategy phrases with improved flexibility and negation handling."""
         if not text:
             return False
         import re
         t = text.lower()
 
-        # Chinese sequence regular expression (limited to≤20 characters)
+        # Negation words
+        negation_zh = ["不", "不要", "不能", "不可", "停止", "禁止", "避免", "取消"]
+        negation_en = ["not", "don't", "can't", "won't", "avoid", "stop", "cancel", "never"]
+
+        # Helper function to check for negation near a match
+        def has_negation_near(match_obj, source_text):
+            start, end = match_obj.span()
+            context_start = max(0, start - 15)
+            context_end = min(len(source_text), end + 15)
+            context = source_text[context_start:context_end].lower()
+            return any(neg in context for neg in negation_zh + negation_en)
+
+        # Expanded regex patterns (20 -> 40 characters window)
         zh_patterns = [
-            r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,20}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
-            r"(位置|坐标).{0,20}(攻击|开火|打击|交战)",
-            r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,20}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
+            r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,40}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
+            r"(位置|坐标).{0,40}(攻击|开火|打击|交战)",
+            r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,40}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
         ]
-        # English sequence regular expression (match in lowercase text)
         en_patterns = [
-            r"(move|advance|relocate|close in|position).{0,20}(attack|engage|fire|strike|assault)",
-            r"(attack|engage|fire|strike|assault).{0,20}(move|advance|relocate|retreat|position)",
+            r"(move|advance|relocate|close in|position).{0,40}(attack|engage|fire|strike|assault)",
+            r"(attack|engage|fire|strike|assault).{0,40}(move|advance|relocate|retreat|position)",
         ]
 
+        # Check regex patterns with negation filtering
         for pat in zh_patterns:
-            if re.search(pat, text):
-                return True
+            for match in re.finditer(pat, text):
+                if not has_negation_near(match, text):
+                    return True
         for pat in en_patterns:
-            if re.search(pat, t):
-                return True
+            for match in re.finditer(pat, t):
+                if not has_negation_near(match, t):
+                    return True
 
-        # Sentence sequence detection: previous sentence contains move/position, next sentence contains attack; or vice versa
+        # Extended sentence sequence detection (check up to 2 sentences ahead)
         move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达", "位置", "坐标", "观察", "侦查"]
         attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同", "集中火力"]
         move_terms_en = ["move", "advance", "relocate", "close in", "position", "coordinate", "retreat"]
         attack_terms_en = ["attack", "engage", "fire", "strike", "assault", "charge", "suppress"]
 
-        segments = re.split(r"[。；;\.!?\n]+", text)
-        def has_any(seg: str, terms_zh: list[str], terms_en: list[str]) -> bool:
+        def has_terms_without_negation(seg: str, terms_zh: list[str], terms_en: list[str]) -> bool:
             s = seg.lower()
-            if any(k in seg for k in terms_zh):
-                return True
-            if any(k in s for k in terms_en):
-                return True
+            # Check for terms
+            found_terms = []
+            for term in terms_zh:
+                if term in seg:
+                    found_terms.append(term)
+            for term in terms_en:
+                if term in s:
+                    found_terms.append(term)
+            
+            if not found_terms:
+                return False
+            
+            # Check for negation near found terms
+            for term in found_terms:
+                term_pos = seg.find(term) if term in seg else s.find(term)
+                if term_pos != -1:
+                    context_start = max(0, term_pos - 15)
+                    context_end = min(len(seg), term_pos + len(term) + 15)
+                    context = seg[context_start:context_end].lower()
+                    if not any(neg in context for neg in negation_zh + negation_en):
+                        return True
             return False
 
-        for i in range(len(segments) - 1):
-            a = segments[i].strip()
-            b = segments[i + 1].strip()
-            if not a or not b:
+        segments = re.split(r"[。；;\.!?\n]+", text)
+        segments = [seg.strip() for seg in segments if seg.strip()]
+        
+        # Check current and next 2 sentences
+        for i in range(len(segments)):
+            if not segments[i]:
                 continue
-            # Move/position -> attack
-            if has_any(a, move_terms_zh, move_terms_en) and has_any(b, attack_terms_zh, attack_terms_en):
-                return True
-            # Attack -> move
-            if has_any(a, attack_terms_zh, attack_terms_en) and has_any(b, move_terms_zh, move_terms_en):
-                return True
+            
+            # Check within next 2 sentences (more flexible)
+            for j in range(i + 1, min(i + 3, len(segments))):
+                if not segments[j]:
+                    continue
+                
+                a, b = segments[i], segments[j]
+                # Move/position -> attack
+                if (has_terms_without_negation(a, move_terms_zh, move_terms_en) and 
+                    has_terms_without_negation(b, attack_terms_zh, attack_terms_en)):
+                    return True
+                # Attack -> move
+                if (has_terms_without_negation(a, attack_terms_zh, attack_terms_en) and 
+                    has_terms_without_negation(b, move_terms_zh, move_terms_en)):
+                    return True
 
-        # Same sentence index order detection (relaxed threshold)
-        # First appear any move/position word, then appear any attack word, or vice versa
-        def first_index(seg: str, terms: list[str]) -> int:
-            idxs = []
-            ls = seg.lower()
+        # Same sentence detection with adaptive threshold
+        def find_terms_positions(text_input: str, terms: list[str]) -> list:
+            positions = []
+            search_text = text_input.lower()
             for term in terms:
-                pos = seg.find(term)
-                if pos == -1:
-                    pos = ls.find(term)
-                if pos != -1:
-                    idxs.append(pos)
-            return min(idxs) if idxs else -1
+                term_lower = term.lower()
+                start = 0
+                while True:
+                    pos = search_text.find(term_lower, start)
+                    if pos == -1:
+                        break
+                    # Check for negation around this position
+                    context_start = max(0, pos - 15)
+                    context_end = min(len(search_text), pos + len(term_lower) + 15)
+                    context = search_text[context_start:context_end]
+                    if not any(neg in context for neg in negation_zh + negation_en):
+                        positions.append(pos)
+                    start = pos + 1
+            return positions
 
-        move_idx = first_index(text, move_terms_zh + move_terms_en)
-        attack_idx = first_index(text, attack_terms_zh + attack_terms_en)
-        if move_idx != -1 and attack_idx != -1 and abs(attack_idx - move_idx) <= 80:
-            return True
+        move_positions = find_terms_positions(text, move_terms_zh + move_terms_en)
+        attack_positions = find_terms_positions(text, attack_terms_zh + attack_terms_en)
+        
+        # Adaptive threshold based on text length
+        base_threshold = 80
+        text_length_factor = min(len(text) / 200, 2.0)  # Scale with text length, max 2x
+        adaptive_threshold = int(base_threshold * text_length_factor)
+        
+        for move_pos in move_positions:
+            for attack_pos in attack_positions:
+                if abs(move_pos - attack_pos) <= adaptive_threshold:
+                    return True
 
         return False
 
