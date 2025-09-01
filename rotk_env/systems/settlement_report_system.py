@@ -35,9 +35,8 @@ class SettlementReportSystem(System):
     def __init__(self):
         super().__init__(priority=200)  # 高优先级，在游戏结束后执行
         self.report_generated = False
-        # 🆕 等待Agent上报LLM统计的延迟时间（秒）
-        self.wait_for_agent_stats_delay = 3.0
-        self.game_end_detected_time = None
+        self.game_end_time = None
+        self.timeout_seconds = 3.0  # 3秒超时
         
     def initialize(self, world: World) -> None:
         self.world = world
@@ -48,29 +47,32 @@ class SettlementReportSystem(System):
         
     def update(self, delta_time: float) -> None:
         """更新系统"""
-        # 检查游戏是否结束，如果结束且未生成报告，则等待Agent上报统计后再生成报告
+        # 🆕 极简方案：检查游戏结束和标志位
         if not self.report_generated:
             game_state = self.world.get_singleton_component(GameState)
+            game_stats = self.world.get_singleton_component(GameStats)
+            
             if game_state and game_state.game_over:
-                # 🆕 首次检测到游戏结束，记录时间
-                if self.game_end_detected_time is None:
+                # 首次检测到游戏结束，记录时间
+                if self.game_end_time is None:
                     import time
-                    self.game_end_detected_time = time.time()
-                    print(f"[SettlementReport] 🏁 检测到游戏结束，等待 {self.wait_for_agent_stats_delay}s 收集Agent LLM统计...")
+                    self.game_end_time = time.time()
+                    print(f"[SettlementReport] 🏁 检测到游戏结束，等待LLM统计或超时...")
                     return
                 
-                # 🆕 检查是否已等待足够时间
-                import time
-                elapsed_time = time.time() - self.game_end_detected_time
-                if elapsed_time >= self.wait_for_agent_stats_delay:
-                    print(f"[SettlementReport] ⏰ 等待时间结束 ({elapsed_time:.1f}s)，开始生成结算报告...")
+                # 检查是否收到LLM统计数据
+                if game_stats and game_stats.can_generate_settlement_report:
+                    print(f"[SettlementReport] 🎯 收到LLM统计数据，立即生成结算报告...")
                     self._generate_settlement_report()
                     self.report_generated = True
-                else:
-                    # 还未到等待时间，继续等待
-                    remaining_time = self.wait_for_agent_stats_delay - elapsed_time
-                    if int(remaining_time) != int(remaining_time + delta_time):  # 每秒输出一次
-                        print(f"[SettlementReport] ⏳ 等待Agent上报统计，剩余 {remaining_time:.1f}s...")
+                    return
+                
+                # 检查是否超时（超时后强制生成报告）
+                import time
+                if time.time() - self.game_end_time >= self.timeout_seconds:
+                    print(f"[SettlementReport] ⏰ 等待LLM统计超时，强制生成结算报告...")
+                    self._generate_settlement_report()
+                    self.report_generated = True
     
     def _generate_settlement_report(self) -> None:
         """生成结算报告"""

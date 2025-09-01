@@ -132,3 +132,6 @@ class GameStats(SingletonComponent):
     # - provider: str - LLM 提供商
     # - model_id: str - 模型ID
     # - timestamp: float - 最后更新时间戳
+    
+    # 🆕 结算报告生成标志
+    can_generate_settlement_report: bool = False  # 是否可以生成结算报告

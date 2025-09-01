@@ -379,6 +379,10 @@ class LLMSystem(System):
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
             
+            # 🆕 设置可以生成结算报告的标志
+            stats.can_generate_settlement_report = True
+            print(f"[LLMSystem] 🎯 已设置结算报告生成标志")
+            
             return {
                 "success": True,
                 "message": "LLM stats received",

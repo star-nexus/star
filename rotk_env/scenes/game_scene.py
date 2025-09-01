@@ -37,6 +37,7 @@ from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
+from ..components.settlement_report import SettlementReport
 from ..components import (
     GameState,
     UIState,
@@ -88,6 +89,10 @@ class GameScene(Scene):
 
         # 初始化标志
         self.initialized = False
+        
+        # 🆕 游戏结束等待状态
+        self.game_end_wait_start = None
+        self.game_end_wait_timeout = 5.0  # 最多等待5秒
 
     def enter(self, **kwargs):
         """进入场景时调用"""
@@ -127,7 +132,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1, 0, 1], [1, 0, 0], [0, 0, 0]])
+        self._initialize_units([[0, 1, 1], [0, 0, 1], [0, 0, 0]])
 
         # 初始化游戏统计
         self._initialize_stats()
@@ -515,22 +520,50 @@ class GameScene(Scene):
             with profiler.time_system("world_update"):
                 self.world.update(delta_time)
 
-            # 检查游戏结束
+            # 🆕 检查游戏结束 - 等待结算报告完成后再切换场景
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                # 收集统计数据
-                statistics = self._collect_game_statistics()
-
-                # 切换到游戏结束场景，传递统计数据
-                if self.headless:
-                    # 在无头模式下打印统计数据
-                    print(
-                        f"游戏结束，胜利者：{game_state.winner}，\n统计数据：{statistics}"
-                    )
+                # 记录等待开始时间
+                if self.game_end_wait_start is None:
+                    import time
+                    self.game_end_wait_start = time.time()
+                    print("[GameScene] 🏁 游戏结束，等待结算报告完成...")
+                
+                # 检查结算报告是否已完成
+                settlement_report = self.world.get_singleton_component(SettlementReport)
+                if settlement_report:
+                    # 结算报告已生成，可以切换场景
+                    print("[GameScene] ✅ 结算报告已生成，切换到游戏结束场景")
+                    self._switch_to_game_over(game_state)
                 else:
-                    SMS.switch_to(
-                        "game_over", winner=game_state.winner, statistics=statistics
-                    )
+                    # 检查是否超时
+                    import time
+                    elapsed = time.time() - self.game_end_wait_start
+                    if elapsed >= self.game_end_wait_timeout:
+                        print(f"[GameScene] ⏰ 等待结算报告超时 ({elapsed:.1f}s)，强制切换场景")
+                        self._switch_to_game_over(game_state)
+                    else:
+                        # 等待结算报告生成（每秒输出一次进度）
+                        if int(elapsed) != getattr(self, '_last_wait_second', -1):
+                            remaining = self.game_end_wait_timeout - elapsed
+                            print(f"[GameScene] ⏳ 等待结算报告生成... {elapsed:.1f}s / {self.game_end_wait_timeout}s (剩余 {remaining:.1f}s)")
+                            self._last_wait_second = int(elapsed)
+    
+    def _switch_to_game_over(self, game_state):
+        """切换到游戏结束场景"""
+        # 收集统计数据
+        statistics = self._collect_game_statistics()
+
+        # 切换到游戏结束场景，传递统计数据
+        if self.headless:
+            # 在无头模式下打印统计数据
+            print(
+                f"游戏结束，胜利者：{game_state.winner}，\n统计数据：{statistics}"
+            )
+        else:
+            SMS.switch_to(
+                "game_over", winner=game_state.winner, statistics=statistics
+            )
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """收集游戏统计数据"""
