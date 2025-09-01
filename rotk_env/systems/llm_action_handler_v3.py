@@ -2778,6 +2778,8 @@ class LLMActionHandlerV3:
             provider = params["provider"]
             model_id = params["model_id"]
             base_url = params["base_url"]
+            # 获取 enable_thinking 参数
+            enable_thinking = params.get("enable_thinking", False)
 
             # 创建Agent信息对象
             from ..components.agent_info import AgentInfo, AgentInfoRegistry
@@ -2789,6 +2791,8 @@ class LLMActionHandlerV3:
                 agent_id=params.get("agent_id"),
                 version=params.get("version"),
                 note=params.get("note"),
+                # 添加 enable_thinking 字段
+                enable_thinking=enable_thinking
             )
 
             # 获取或创建注册表
@@ -2809,6 +2813,8 @@ class LLMActionHandlerV3:
                         "provider": provider,
                         "model_id": model_id,
                         "base_url_sanitized": agent_info.base_url,
+                        # 添加 enable_thinking 到返回信息
+                        "enable_thinking": enable_thinking
                     },
                 }
             else:
