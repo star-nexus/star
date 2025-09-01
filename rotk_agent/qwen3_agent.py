@@ -272,6 +272,8 @@ class LLMClient:
     async def close(self):
         """Close client"""
         await self.client.aclose()
+        import sys
+        sys.exit(0)
 
 
 class RemoteContext:
@@ -855,8 +857,8 @@ class RoTKChatAgent:
                 if "game_ended" in status:
                     console.print(f"🔍 Status check (iteration {iterations}): {status}", style="dim cyan")
                 if status.get("game_ended", False):
-                    console.print("🏁 Game ended, preparing to report LLM stats and exit", style="yellow bold")
-                    await self._report_llm_stats()
+                    console.print(f"🏁 Game ended @iteration {iterations}, preparing to report LLM stats and exit", style="yellow bold")
+                    await self.stop()
                     return {
                         "success": True,
                         "message": "Game ended, LLM stats reported",
@@ -877,7 +879,7 @@ class RoTKChatAgent:
                 message = choice["message"]
                 finish_reason = choice["finish_reason"]
                 
-                console.print(f"╭─────────────────────────────────────────────────────── LLM response: ────────────────────────────────────────────────────────╮", style="yellow")
+                console.print(f"╭─────────────────────────────────────────────────────── LLM response @iteration {iterations}: ────────────────────────────────────────────────────────╮", style="yellow")
                 console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
                 console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
@@ -890,7 +892,7 @@ class RoTKChatAgent:
                 self.conversation_history.append(assistant_message)
 
                 # 🆕 Attempt strategy keyword detection and report after receiving LLM response
-                console.print("🔍 Attempting strategy detection", style="cyan")
+                console.print("🔍 Attempting strategy detection @iteration {iterations}", style="cyan")
                 asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
                 console.print("🔍 Strategy detection completed", style="cyan")
 
@@ -898,10 +900,10 @@ class RoTKChatAgent:
                 # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
                 tool_calls_to_use = message.get("tool_calls", [])
                 if not tool_calls_to_use and message.get("content"):
-                    console.print(f"🔧 Detecting text-based tool calls in content: {message['content']}", style="cyan")
+                    console.print(f"🔧 Detecting text-based tool calls in content @iteration {iterations}: {message['content']}", style="cyan")
                     parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
                     if parsed_tool_calls:
-                        console.print("🔧 Detected text-based tool calls, converting to standard format", style="cyan")
+                        console.print("🔧 Detected text-based tool calls, converting to standard format @iteration {iterations}", style="cyan")
                         self.conversation_history.append(
                             Message(
                                 role="user", 
@@ -909,11 +911,11 @@ class RoTKChatAgent:
                         )
                         continue  # Only continue if tool calls are detected
                     else:
-                        console.print("🔧 Undetected text-based tool calls.", style="cyan")
+                        console.print("🔧 Undetected text-based tool calls. @iteration {iterations}", style="cyan")
 
                 # 1) If there are tool calls, handle them — no matter the finish_reason
                 if message.get("tool_calls"):
-                    console.print(f"🔧 Handling tool calls: {message['tool_calls']}", style="cyan")
+                    console.print(f"🔧 Handling tool calls @iteration {iterations}: {message['tool_calls']}", style="cyan")
                     await self._handle_tool_calls(message["tool_calls"])
                     if iterations == 10 or iterations == 70:
                         self.conversation_history.append(Message(role="user", content="After getting the enemy coordinates, move all your units to the enemy's position and attack them once they are in range."))
@@ -944,7 +946,7 @@ class RoTKChatAgent:
                     break
 
                 # 5) an unexpected finish reason
-                console.print(f"Unexpected finish reason: {finish_reason}", style="red")
+                console.print(f"Unexpected finish reason @iteration {iterations}: {finish_reason}", style="red")
                 return {
                     "success": False,
                     "error": f"Unexpected finish reason: {finish_reason}",
