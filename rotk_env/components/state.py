@@ -135,3 +135,7 @@ class GameStats(SingletonComponent):
     
     # 🆕 结算报告生成标志
     can_generate_settlement_report: bool = False  # 是否可以生成结算报告
+    
+    # 🆕 LLM统计收集计数器 (用于多Agent)
+    expected_llm_stats_count: int = 0
+    received_llm_stats_count: int = 0
