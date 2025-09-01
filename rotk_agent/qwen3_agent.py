@@ -73,14 +73,11 @@ class ToolManager:
             raise ValueError(f"Tool {tool_name} does not exist")
         
         tool = self.tools[tool_name]
-        try:
-            # If it is an asynchronous function
-            if asyncio.iscoroutinefunction(tool.function):
-                return await tool.function(**arguments)
-            else:
-                return tool.function(**arguments)
-        except Exception as e:
-            return {"error": f"Tool execution error: {str(e)}"}
+        # If it is an asynchronous function
+        if asyncio.iscoroutinefunction(tool.function):
+            return await tool.function(**arguments)
+        else:
+            return tool.function(**arguments)
 
 
 class LLMClient:
@@ -420,9 +417,11 @@ class RoTKChatAgent:
                 except json.JSONDecodeError as e:
                     console.print(f"⚠️ Found text-based tool call with content", style="red")
                     console.print(f"⚠️ Failed to parse tool call JSON: {json_str} - {e}", style="red")
-                    self.conversation_history.append(Message(role="user", content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format. Please try again."))
-                    continue
-                    
+                    return True
+                except Exception as e:
+                    console.print(f"⚠️ Error parsing text-based tool calls: {e}", style="red")
+                    return True
+                
         except Exception as e:
             console.print(f"⚠️ Error parsing text-based tool calls: {e}", style="red")
         
@@ -465,9 +464,9 @@ class RoTKChatAgent:
         function_name = tool_call["function"]["name"]
         arguments_str = tool_call["function"]["arguments"]
         
-        console.print(f"╭──────────────────────────────────────── Executing tool '{function_name}' with arguments ────────────────────────────────────────╮", style="green")
+        console.print(f"╭───────────────────────────────── Executing tool '{function_name}' with arguments ───────────────────────────────────╮", style="green")
         console.print(f"│ {arguments_str}", style="green", highlight=False)
-        console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        console.print(f"╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
         
         try:
             # Parse parameters
@@ -483,9 +482,9 @@ class RoTKChatAgent:
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
             
-            console.print(f"╭──────────────────────────────────────── Tool '{function_name}' Result ────────────────────────────────────────╮", style="yellow")
+            console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="yellow")
             console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
             
 
             filtered_result = self._filter_tool_result(function_name, result)
@@ -499,13 +498,14 @@ class RoTKChatAgent:
                 self.conversation_history.append(tool_message)
             
         except Exception as e:
-            console.print(f"Tool execution error: {e}", style="red")
+            console.print(f"Tool execution error during tool call: {e}", style="red")
             # Add error information to conversation history (using lock to protect parallel access)
             error_message = Message(
                 role="tool",
                 content=json.dumps({"error": str(e)}, ensure_ascii=False),
                 tool_call_id=tool_call_id
             )
+            # continue chat with LLM even if there is an error
             async with self._history_lock:
                 self.conversation_history.append(error_message)
 
@@ -907,7 +907,7 @@ class RoTKChatAgent:
                         self.conversation_history.append(
                             Message(
                                 role="user", 
-                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
+                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format. Please try again.")
                         )
                         continue  # Only continue if tool calls are detected
                     else:
@@ -1389,7 +1389,7 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
     
     start_time = time.time()
     console.print(f"⏳ Waiting for ENV response ID: {request_id}, timeout set to: {timeout_seconds}s", style="cyan")
-    
+    raise TimeoutError("test")
     while True:
         # Check if there is a response
         response = RemoteContext.get_id_map().get(request_id, None)
@@ -1420,7 +1420,7 @@ async def perform_action(action: str, params: Any):
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
-        response = await get_env_response(request_id, timeout_seconds=1.0)
+        response = await get_env_response(request_id, timeout_seconds=0.001)
         
         # Smart delay logic: add appropriate waiting time based on action type and result
         delay_time = _calculate_action_delay(action, params, response)
@@ -1432,7 +1432,7 @@ async def perform_action(action: str, params: Any):
         
     except TimeoutError as e:
         console.print(f"⏰ Action execution timeout: {e}", style="red")
-        return handle_error_with_logging(
+        handle_error_with_logging(
             e, 
             function_name="perform_action",
             action=action,
@@ -1441,14 +1441,16 @@ async def perform_action(action: str, params: Any):
             elapsed_time=getattr(e, 'elapsed_time', 'unknown'),
             timeout_seconds=getattr(e, 'timeout_seconds', 'unknown')
         )
+        raise e
     except Exception as e:
         console.print(f"❌ Action execution error: {e}", style="red")
-        return handle_error_with_logging(
+        handle_error_with_logging(
             e, 
             function_name="perform_action",
             action=action,
             params=params
         )
+        raise e
 
 
 async def get_available_actions() -> list[Dict[str, Any]]:
