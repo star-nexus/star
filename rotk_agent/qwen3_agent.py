@@ -157,9 +157,9 @@ class LLMClient:
             "Authorization": f"Bearer {self.config.api_key}",
         }
         
-        console.print("LLM client request payload start", style="purple")
-        print_json(data=payload, indent=2, ensure_ascii=False)
-        console.print("LLM client request payload end", style="purple")
+        console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
+        console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+        console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
@@ -464,9 +464,9 @@ class RoTKChatAgent:
         function_name = tool_call["function"]["name"]
         arguments_str = tool_call["function"]["arguments"]
         
-        console.print(f"╭───────────────────────────────── Executing tool '{function_name}' with arguments ───────────────────────────────────╮", style="green")
-        console.print(f"│ {arguments_str}", style="green", highlight=False)
-        console.print(f"╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        console.print(f"╭───────────────────────────────── Executing tool '{function_name}' with arguments ───────────────────────────────────╮", style="magenta")
+        console.print(f"│ {arguments_str}", style="magenta", highlight=False)
+        console.print(f"╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
         
         try:
             # Parse parameters
@@ -482,9 +482,9 @@ class RoTKChatAgent:
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
             
-            console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="yellow")
-            console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
+            console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="magenta")
+            console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
             
 
             filtered_result = self._filter_tool_result(function_name, result)
@@ -790,9 +790,9 @@ class RoTKChatAgent:
                 "params": registration_params
             })
             if result.get("success"):
-                console.print(f"✅ Agent information registered successfully: {self.faction} faction - {config.provider}:{config.model_id}", style="green")
+                console.print(f"✅ Agent information registered successfully: {self.faction} faction - {config.provider}:{config.model_id}", style="cyan")
             else:
-                console.print(f"⚠️ Agent information registration failed: {result.get('message', 'unknown error')}", style="yellow")
+                console.print(f"⚠️ Agent information registration failed: {result.get('message', 'unknown error')}", style="red")
         
         except Exception as e:
             console.print(f"❌ Agent information registration error: {e}", style="red")
@@ -815,9 +815,9 @@ class RoTKChatAgent:
             })
             
             if result.get("success"):
-                console.print("✅ LLM statistics reported successfully", style="green")
+                console.print("✅ LLM statistics reported successfully", style="cyan")
             else:
-                console.print(f"⚠️ LLM statistics reported failed: {result.get('message', 'unknown error')}", style="yellow")
+                console.print(f"⚠️ LLM statistics reported failed: {result.get('message', 'unknown error')}", style="red")
                 
         except Exception as e:
             console.print(f"❌ LLM statistics reported failed: {e}", style="red")
@@ -866,7 +866,7 @@ class RoTKChatAgent:
                         "reason": "game_ended"
                     }
             except Exception as status_error:
-                console.print(f"⚠️ Error checking game status: {status_error}", style="yellow")
+                console.print(f"⚠️ Error checking game status: {status_error}", style="red")
             
             try:
                 # Get LLM response
@@ -959,7 +959,7 @@ class RoTKChatAgent:
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
-                    console.print("🧹 Context overflow error detected, history has been trimmed and continued", style="yellow")
+                    console.print("🧹 Context overflow error detected, history has been trimmed and continued", style="cyan")
                     continue                
                 
                 # Record error log
@@ -1011,7 +1011,7 @@ class AgentDemo:
 
         def on_connect(data):
             message = f"✅ Agent connected successfully: {data}"
-            console.print(message, style="green")
+            console.print(message, style="cyan")
             self.messages.append(message)
 
         def on_message(data):
@@ -1059,7 +1059,7 @@ class AgentDemo:
             message = f"⚠️ Agent error: {data}"
             msg_data = data.get("payload", {})
             error = msg_data.get("error", "Unknown error")
-            console.print(message, style="yellow")
+            console.print(message, style="red")
             # Only update id_map when msg_data has the id field
             if "id" in msg_data:
                 RemoteContext.get_id_map().update({msg_data["id"]: error})
@@ -1080,10 +1080,10 @@ class AgentDemo:
         console.print("=" * 50)
 
         # Connect
-        console.print("🔗 Connecting to server...", style="yellow")
+        console.print("🔗 Connecting to server...", style="cyan")
         try:
             await self.agent_client.connect()
-            console.print("✅ Agent connected successfully!", style="bold green")
+            console.print("✅ Agent connected successfully!", style="bold cyan")
 
             # Wait for connection to stabilize
             await asyncio.sleep(1)
@@ -1177,7 +1177,7 @@ class AgentDemo:
         count = 0
         while True:
             count += 1
-            console.print(f"🔄 Launch {count}th expedition...", style="bold red")
+            console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
                 await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
                 await asyncio.sleep(0.1)  # Short delay to view results
@@ -1190,7 +1190,7 @@ class AgentDemo:
 
     def show_summary(self):
         """Show demo summary"""
-        console.print("\n📊 Agent demo summary", style="bold cyan")
+        console.print("\n📊 Agent demo summary", style="bold blue")
         console.print("=" * 25)
         console.print(f"📈 Total messages: {len(self.messages)}")
         console.print(f"🆔 Agent ID: {self.agent_id}")
@@ -1203,17 +1203,17 @@ class AgentDemo:
 
     async def cleanup(self):
         """Clean up resources"""
-        console.print("\n🧹 Cleaning up connection...", style="yellow")
+        console.print("\n🧹 Cleaning up connection...", style="cyan")
         try:
             if self.agent_client:
                 await self.agent_client.disconnect()
-                console.print("✅ Agent connection closed", style="green")
+                console.print("✅ Agent connection closed", style="cyan")
         except Exception as e:
-            console.print(f"⚠️ Error closing connection: {e}", style="yellow")
+            console.print(f"⚠️ Error closing connection: {e}", style="red")
 
     async def run_interactive_demo(self):
         """Run interactive demo"""
-        console.print(f"🎮 Agent interactive demo", style="bold cyan")
+        console.print(f"🎮 Agent interactive demo", style="bold blue")
         console.print("🎯 You can manually control the Agent to perform various actions", style="cyan")
         console.print("=" * 50)
 
@@ -1389,7 +1389,7 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
     
     start_time = time.time()
     console.print(f"⏳ Waiting for ENV response ID: {request_id}, timeout set to: {timeout_seconds}s", style="cyan")
-    raise TimeoutError("test")
+    # raise TimeoutError("test")
     while True:
         # Check if there is a response
         response = RemoteContext.get_id_map().get(request_id, None)
@@ -1397,14 +1397,14 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
             # Remove the response from the mapping
             RemoteContext.get_id_map().pop(request_id, None)
             elapsed = time.time() - start_time
-            console.print(f"✅ Received ENV response ID: {request_id}, elapsed time: {elapsed:.2f}s", style="green")
+            console.print(f"✅ Received ENV response ID: {request_id}, elapsed time: {elapsed:.2f}s", style="cyan")
             return response
         
         # Check timeout
         elapsed = time.time() - start_time
         if elapsed >= timeout_seconds:
             console.print(f"⏰ ENV response timeout ID: {request_id}, elapsed time: {elapsed:.2f}s", style="red")
-            console.print(f"🔍 Current ID mapping state: {dict(RemoteContext.get_id_map())}", style="yellow")
+            console.print(f"🔍 Current ID mapping state: {dict(RemoteContext.get_id_map())}", style="red")
             timeout_error = TimeoutError(f"ENV response timeout: ID {request_id}, timeout time: {timeout_seconds}s")
             # Add additional context information to the exception object
             timeout_error.request_id = request_id
@@ -1431,7 +1431,7 @@ async def perform_action(action: str, params: Any):
         return response
         
     except TimeoutError as e:
-        console.print(f"⏰ Action execution timeout: {e}", style="red")
+        console.print(f"⏰ [perform_action] Action execution timeout: {e}", style="red")
         handle_error_with_logging(
             e, 
             function_name="perform_action",
@@ -1443,7 +1443,7 @@ async def perform_action(action: str, params: Any):
         )
         raise e
     except Exception as e:
-        console.print(f"❌ Action execution error: {e}", style="red")
+        console.print(f"❌ [perform_action] Action execution error: {e}", style="red")
         handle_error_with_logging(
             e, 
             function_name="perform_action",
@@ -1670,7 +1670,7 @@ async def main():
 
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
-    console.print("🎮 Interactive mode", style="bold cyan")
+    console.print("🎮 Interactive mode", style="bold blue")
     await demo.run_interactive_demo()
 
 
