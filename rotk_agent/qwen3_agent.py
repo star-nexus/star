@@ -109,6 +109,8 @@ class LLMClient:
         else:
             self.base_url = config.base_url or "https://api.openai.com/v1"
 
+        self.config_thinking = False
+
         console.print("=======================================", style="yellow")
         console.print(self.config, style="yellow") 
         console.print("=======================================", style="yellow")
@@ -140,12 +142,13 @@ class LLMClient:
             "stream": False,
         }
         
-        if self.config.provider == "siliconflow":
-            payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        elif self.config.provider.startswith("vllm"):
-            payload["chat_template_kwargs"] = {
-                    "enable_thinking": bool(self.config.enable_thinking)
-                }
+        if self.config_thinking:
+            if self.config.provider == "siliconflow":
+                payload["enable_thinking"] = bool(self.config.enable_thinking)    
+            elif self.config.provider.startswith("vllm"):
+                payload["chat_template_kwargs"] = {
+                        "enable_thinking": bool(self.config.enable_thinking)
+                    }
             
         if tools:
             payload["tools"] = self._format_tools(tools)
