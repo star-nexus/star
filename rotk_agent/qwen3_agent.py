@@ -74,13 +74,13 @@ class ToolManager:
         
         tool = self.tools[tool_name]
         try:
-            # 如果是异步函数
+            # If it is an asynchronous function
             if asyncio.iscoroutinefunction(tool.function):
                 return await tool.function(**arguments)
             else:
                 return tool.function(**arguments)
         except Exception as e:
-            return {"error": f"工具执行错误: {str(e)}"}
+            return {"error": f"Tool execution error: {str(e)}"}
 
 
 class LLMClient:
@@ -123,7 +123,6 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """Send chat completion request"""
         
-        # 转换消息格式
         formatted_messages = []
         for msg in messages:
             message_dict = {"role": msg.role, "content": msg.content}
@@ -133,7 +132,6 @@ class LLMClient:
                 message_dict["tool_call_id"] = msg.tool_call_id
             formatted_messages.append(message_dict)
         
-        # 构建请求payload
         payload = {
             "model": self.config.model_id,
             "messages": formatted_messages,
@@ -155,10 +153,8 @@ class LLMClient:
             payload["tool_choice"] = "auto"
             payload["parallel_tool_calls"] = True
             
-        # 添加额外参数
         payload.update(kwargs)
         
-        # 设置请求头
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.api_key}",
@@ -201,12 +197,12 @@ class LLMClient:
                     error_details["response_text"] = response.text
                     error_message = response.text
                 
-                console.print("🚨 LLM API 错误详情:", style="red bold")
-                console.print(f"状态码: {error_details['status_code']}", style="red")
+                console.print("🚨 LLM API error details:", style="red bold")
+                console.print(f"Status code: {error_details['status_code']}", style="red")
                 console.print(f"URL: {error_details['url']}", style="red")
-                console.print(f"提供商: {error_details['config']['provider']}", style="red")
-                console.print(f"模型: {error_details['config']['model_id']}", style="red")
-                console.print("响应内容:", style="red")
+                console.print(f"Provider: {error_details['config']['provider']}", style="red")
+                console.print(f"Model: {error_details['config']['model_id']}", style="red")
+                console.print("Response content:", style="red")
                 print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
                 
                 # Count failed API calls
@@ -221,33 +217,33 @@ class LLMClient:
         except httpx.ConnectError as e:
             # Count failed API calls
             self.api_error_count += 1
-            error_msg = f"无法连接到 {self.config.provider} API 服务器: {self.base_url}"
-            console.print(f"🔌 连接错误: {error_msg}", style="red")
-            console.print(f"请检查网络连接和API服务器状态", style="yellow")
+            error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
+            console.print(f"🔌 Connection error: {error_msg}", style="red")
+            console.print(f"Please check network connection and API server status", style="yellow")
             raise Exception(error_msg) from e
             
         except httpx.TimeoutException as e:
             # Count failed API calls
             self.api_error_count += 1
-            error_msg = f"{self.config.provider} API 请求超时 (>180秒)"
-            console.print(f"⏱️ 超时错误: {error_msg}", style="red")
-            console.print(f"请检查网络状况或尝试重新请求", style="yellow")
+            error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
+            console.print(f"⏱️ Timeout error: {error_msg}", style="red")
+            console.print(f"Please check network status or try again", style="yellow")
             raise Exception(error_msg) from e
             
         except httpx.HTTPStatusError as e:
             # Count failed API calls
             self.api_error_count += 1
-            error_msg = f"{self.config.provider} API HTTP错误: {e.response.status_code}"
-            console.print(f"🌐 HTTP错误: {error_msg}", style="red")
+            error_msg = f"{self.config.provider} API HTTP error: {e.response.status_code}"
+            console.print(f"🌐 HTTP error: {error_msg}", style="red")
             raise Exception(error_msg) from e
             
         except Exception as e:
             # Count failed API calls
             self.api_error_count += 1
-            error_msg = f"发送API请求时发生未知错误: {str(e)}"
-            console.print(f"❌ 未知错误: {error_msg}", style="red")
-            console.print(f"请求URL: {self.base_url}/chat/completions", style="yellow")
-            console.print(f"提供商: {self.config.provider}", style="yellow")
+            error_msg = f"Unknown error occurred while sending API request: {str(e)}"
+            console.print(f"❌ Unknown error: {error_msg}", style="red")
+            console.print(f"Request URL: {self.base_url}/chat/completions", style="yellow")
+            console.print(f"Provider: {self.config.provider}", style="yellow")
             raise Exception(error_msg) from e
     
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
@@ -265,7 +261,7 @@ class LLMClient:
         return formatted_tools
     
     def get_api_stats(self) -> Dict[str, int]:
-        """获取 API 调用统计"""
+        """Get API call statistics"""
         return {
             "total_calls": self.api_call_count,
             "successful_calls": self.api_success_count,
@@ -432,28 +428,28 @@ class RoTKChatAgent:
 
     async def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]]):
         """Handle tool calls"""
-        console.print(f"🔧 处理 {len(tool_calls)} 个工具调用", style="cyan")
+        console.print(f"🔧 Handling {len(tool_calls)} tool calls", style="cyan")
         
-        # 支持并行执行多个工具调用
+        # Support parallel execution of multiple tool calls
         parallel_execution = len(tool_calls) > 1 and all(
             tool_call["function"]["name"] == "perform_action" 
             for tool_call in tool_calls
         )
         
         if parallel_execution:
-            console.print("⚡ 检测到多个perform_action调用，使用并行执行模式", style="cyan")
+            console.print("⚡ Multiple perform_action calls detected, using parallel execution mode", style="cyan")
             await self._handle_tool_calls_parallel(tool_calls)
         else:
-            console.print("🔄 使用顺序执行模式", style="cyan")
+            console.print("🔄 Using sequential execution mode", style="cyan")
             await self._handle_tool_calls_sequential(tool_calls)
     
     async def _handle_tool_calls_sequential(self, tool_calls: List[Dict[str, Any]]):
-        """顺序执行工具调用"""
+        """Sequential execution of tool calls"""
         for tool_call in tool_calls:
             await self._execute_single_tool_call(tool_call)
     
     async def _handle_tool_calls_parallel(self, tool_calls: List[Dict[str, Any]]):
-        """并行执行工具调用"""
+        """Parallel execution of tool calls"""
         tasks = []
         for tool_call in tool_calls:
             task = asyncio.create_task(self._execute_single_tool_call(tool_call))
@@ -462,7 +458,7 @@ class RoTKChatAgent:
         await asyncio.gather(*tasks)
     
     async def _execute_single_tool_call(self, tool_call: Dict[str, Any]):
-        """执行单个工具调用"""
+        """Execute single tool call"""
         tool_call_id = tool_call["id"]
         function_name = tool_call["function"]["name"]
         arguments_str = tool_call["function"]["arguments"]
@@ -472,7 +468,7 @@ class RoTKChatAgent:
         console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
         
         try:
-            # 解析参数
+            # Parse parameters
             arguments = json.loads(arguments_str) if arguments_str else {}
             
             if 'params' in arguments and isinstance(arguments['params'], str):
@@ -482,7 +478,7 @@ class RoTKChatAgent:
                 except json.JSONDecodeError as e:
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
             
-            # 执行工具
+            # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
             
             console.print(f"╭──────────────────────────────────────── Tool '{function_name}' Result ────────────────────────────────────────╮", style="yellow")
@@ -502,7 +498,7 @@ class RoTKChatAgent:
             
         except Exception as e:
             console.print(f"Tool execution error: {e}", style="red")
-            # 添加错误信息到对话历史（使用锁保护并行访问）
+            # Add error information to conversation history (using lock to protect parallel access)
             error_message = Message(
                 role="tool",
                 content=json.dumps({"error": str(e)}, ensure_ascii=False),
@@ -511,9 +507,9 @@ class RoTKChatAgent:
             async with self._history_lock:
                 self.conversation_history.append(error_message)
 
-    # ==================== 策略关键词检测与上报 ====================
+    # ==================== Strategy keyword detection and reporting ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
-        """简易关键词+结构判定为策略性思考。"""
+        """Simple keyword + structure to be considered as strategy thinking."""
         if not text:
             return False
         t = text.lower()
@@ -529,34 +525,34 @@ class RoTKChatAgent:
             "pin down", "fix-in-place", "regroup", "supply", "chokepoint", "terrain advantage",
             "strongpoint", "encircle"
         ]
-        # 命中关键词
+        # Key hit
         key_hit = any(k in text for k in zh_keys) or any(k in t for k in en_keys)
         if not key_hit:
             return False
-        # 要求出现动作/目标/次序类词组之一，降低误报
+        # Require action/target/order type phrases to reduce false positives
         structure_terms = ["先", "然后", "再", "首先", "优先", "目标", "步骤", "顺序", "选择", "方案", "计划",
                            "first", "then", "next", "priority", "goal", "objective", "step", "order"]
-        # 结构词命中或序列判定命中即可视为策略思考
+        # Structure word hit or sequence hit can be considered as strategy thinking
         structure_hit = any(term in text for term in structure_terms) or any(term in t for term in structure_terms)
         if structure_hit:
             return True
-        # 尝试序列模式（移动/位置 -> 攻击 或 攻击 -> 移动）
+        # Try sequence mode (move/position -> attack or attack -> move)
         return self._contains_strategy_sequence(text)
 
     def _contains_strategy_sequence(self, text: str) -> bool:
-        """检测序列式策略句式，如"位置/移动 -> 攻击"或"攻击 -> 移动"。"""
+        """Detect sequence-based strategy phrases, such as "position/move -> attack" or "attack -> move"."""
         if not text:
             return False
         import re
         t = text.lower()
 
-        # 中文序列正则（限定跨距≤20字符）
+        # Chinese sequence regular expression (limited to≤20 characters)
         zh_patterns = [
             r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,20}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
             r"(位置|坐标).{0,20}(攻击|开火|打击|交战)",
             r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,20}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
         ]
-        # 英文序列正则（在小写文本上匹配）
+        # English sequence regular expression (match in lowercase text)
         en_patterns = [
             r"(move|advance|relocate|close in|position).{0,20}(attack|engage|fire|strike|assault)",
             r"(attack|engage|fire|strike|assault).{0,20}(move|advance|relocate|retreat|position)",
@@ -569,7 +565,7 @@ class RoTKChatAgent:
             if re.search(pat, t):
                 return True
 
-        # 分句序列检测：前一句含移动/位置，后一句含攻击；或反之
+        # Sentence sequence detection: previous sentence contains move/position, next sentence contains attack; or vice versa
         move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达", "位置", "坐标", "观察", "侦查"]
         attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同", "集中火力"]
         move_terms_en = ["move", "advance", "relocate", "close in", "position", "coordinate", "retreat"]
@@ -589,15 +585,15 @@ class RoTKChatAgent:
             b = segments[i + 1].strip()
             if not a or not b:
                 continue
-            # 移动/位置 -> 攻击
+            # Move/position -> attack
             if has_any(a, move_terms_zh, move_terms_en) and has_any(b, attack_terms_zh, attack_terms_en):
                 return True
-            # 攻击 -> 移动
+            # Attack -> move
             if has_any(a, attack_terms_zh, attack_terms_en) and has_any(b, move_terms_zh, move_terms_en):
                 return True
 
-        # 同句索引顺序检测（宽松阈值）
-        # 先出现任一移动/位置词，再出现任一攻击词，或反之
+        # Same sentence index order detection (relaxed threshold)
+        # First appear any move/position word, then appear any attack word, or vice versa
         def first_index(seg: str, terms: list[str]) -> int:
             idxs = []
             ls = seg.lower()
@@ -617,18 +613,18 @@ class RoTKChatAgent:
         return False
 
     async def _async_strategy_detection(self, assistant_text: str):
-        """若检测到策略性内容，则向 ENV 上报 strategy_ping（节流）。"""
+        """If strategy content is detected, report strategy_ping (throttling) to ENV."""
         import time
-        # 节流：至少每2秒最多1次
+        # Throttling: at least 1 time per 2 seconds
         now = time.time()
         if (now - getattr(self, "_strategy_last_ping_ts", 0.0)) < 2.0:
             return
-        # 关键词或序列命中即判定为策略
+        # Keyword or sequence hit determines strategy
         hit_keywords = self._contains_strategy_keywords(assistant_text)
         hit_sequence = self._contains_strategy_sequence(assistant_text)
         if not (hit_keywords or hit_sequence):
             return
-        # 通过后更新节流时间
+        # Update throttling time after passing
         self._strategy_last_ping_ts = now
         evidence = assistant_text.strip()
         if len(evidence) > 120:
@@ -638,7 +634,7 @@ class RoTKChatAgent:
                 "action": "strategy_ping",
                 "params": {
                     "faction": self.faction,
-                    # 序列命中则提到1.0分，否则0.5分
+                    # Sequence hit gives 1.0 points, otherwise 0.5 points
                     "score": 1.0 if hit_sequence else 0.5,
                     "evidence": evidence
                 }
@@ -668,7 +664,7 @@ class RoTKChatAgent:
         return filtered_result
     
     def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """过滤 observation 结果，移除冗余字段"""
+        """Filter observation result, remove redundant fields"""
         import copy
         filtered_result = copy.deepcopy(result)
         
@@ -697,16 +693,16 @@ class RoTKChatAgent:
                         "terrain": tile.get("terrain"),
                     }
                     
-                    # 始终包含 units 字段
+                    # Always include units field
                     units = tile.get("units", [])
                     filtered_tile["units"] = units
                     
-                    # 简化 movement_accessibility - 只保留是否可达
+                    # Simplify movement_accessibility - only keep if reachable
                     movement_access = tile.get("movement_accessibility", {})
                     if isinstance(movement_access, dict) and "reachable" in movement_access:
                         filtered_tile["reachable"] = movement_access["reachable"]
                     
-                    # 简化 attack_range_info - 只保留是否在攻击范围内
+                    # Simplify attack_range_info - only keep if in attack range
                     attack_info = tile.get("attack_range_info")
                     if isinstance(attack_info, dict) and "in_attack_range" in attack_info:
                         filtered_tile["attackable"] = attack_info["in_attack_range"]
@@ -720,11 +716,11 @@ class RoTKChatAgent:
         return filtered_result
     
     def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """过滤 faction_state 结果"""
+        """Filter faction_state result"""
         return result
     
     def _filter_move_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """过滤 move 结果，保留关键错误信息或成功信息"""
+        """Filter move result, keep critical error or success information"""
         if not result.get("success", True):
             if "suggested_action" in result:
                 essential_keys = {
@@ -738,7 +734,7 @@ class RoTKChatAgent:
         return result
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """过滤 attack 结果"""
+        """Filter attack result"""
         if result.get("success", True):
             essential_keys = {
                 "success", "message", "battle_summary", 
@@ -774,7 +770,7 @@ class RoTKChatAgent:
 
 
     async def _register_agent_info(self):
-        """注册Agent信息到环境"""
+        """Register agent information to environment"""
         try:
             config = self.llm_client.config
             
@@ -784,7 +780,7 @@ class RoTKChatAgent:
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
                 "agent_id": getattr(self, 'agent_id', 'unknown'),
-                "version": "1.0.0",  # Agent版本
+                "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}"
             }
             result = await self.tool_manager.execute_tool("perform_action", {
@@ -792,12 +788,12 @@ class RoTKChatAgent:
                 "params": registration_params
             })
             if result.get("success"):
-                console.print(f"✅ Agent信息注册成功: {self.faction}阵营 - {config.provider}:{config.model_id}", style="green")
+                console.print(f"✅ Agent information registered successfully: {self.faction} faction - {config.provider}:{config.model_id}", style="green")
             else:
-                console.print(f"⚠️ Agent信息注册失败: {result.get('message', 'unknown error')}", style="yellow")
+                console.print(f"⚠️ Agent information registration failed: {result.get('message', 'unknown error')}", style="yellow")
         
         except Exception as e:
-            console.print(f"❌ Agent信息注册出错: {e}", style="red")
+            console.print(f"❌ Agent information registration error: {e}", style="red")
 
 
     async def _report_llm_stats(self):
@@ -840,7 +836,7 @@ class RoTKChatAgent:
             await self._register_agent_info()
             self._agent_registered = True
         
-        # 初始化对话
+        # Initialize conversation
         self.conversation_history = [
             Message(role="system", content=self.system_prompt)
         ]
@@ -852,14 +848,14 @@ class RoTKChatAgent:
         while iterations < self.max_iterations:
             iterations += 1
             
-            # 🆕 检查游戏是否结束
+            # 🆕 Check if the game has ended
             try:
                 status = RemoteContext.get_status() or {}
-                # 🆕 只在状态包含game_ended字段或出现异常时显示调试信息
+                # 🆕 Only display debug information when the status contains the game_ended field or an exception occurs
                 if "game_ended" in status:
-                    console.print(f"🔍 状态检查 (第{iterations}次): {status}", style="dim cyan")
+                    console.print(f"🔍 Status check (iteration {iterations}): {status}", style="dim cyan")
                 if status.get("game_ended", False):
-                    console.print("🏁 检测到游戏结束，准备上报LLM统计并退出", style="yellow bold")
+                    console.print("🏁 Game ended, preparing to report LLM stats and exit", style="yellow bold")
                     await self._report_llm_stats()
                     return {
                         "success": True,
@@ -868,10 +864,10 @@ class RoTKChatAgent:
                         "reason": "game_ended"
                     }
             except Exception as status_error:
-                console.print(f"⚠️ 检查游戏状态时出错: {status_error}", style="yellow")
+                console.print(f"⚠️ Error checking game status: {status_error}", style="yellow")
             
             try:
-                # 获取 LLM 响应
+                # Get LLM response
                 response = await self.llm_client.chat_completion(
                     messages=self.conversation_history,
                     tools=self.tool_manager.get_tool_definitions()
@@ -885,7 +881,7 @@ class RoTKChatAgent:
                 console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
                 console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
-                # 将助手响应添加到历史
+                # Add assistant response to history
                 assistant_message = Message(
                     role="assistant",
                     content=message.get("content", ""),
@@ -893,7 +889,7 @@ class RoTKChatAgent:
                 )
                 self.conversation_history.append(assistant_message)
 
-                # 🆕 在收到LLM响应后尝试策略关键词检测并上报
+                # 🆕 Attempt strategy keyword detection and report after receiving LLM response
                 console.print("🔍 Attempting strategy detection", style="cyan")
                 asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
                 console.print("🔍 Strategy detection completed", style="cyan")
@@ -911,7 +907,7 @@ class RoTKChatAgent:
                                 role="user", 
                                 content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format.")
                         )
-                        continue  # 只有检测到工具调用时才continue
+                        continue  # Only continue if tool calls are detected
                     else:
                         console.print("🔧 Undetected text-based tool calls.", style="cyan")
 
@@ -920,12 +916,12 @@ class RoTKChatAgent:
                     console.print(f"🔧 Handling tool calls: {message['tool_calls']}", style="cyan")
                     await self._handle_tool_calls(message["tool_calls"])
                     if iterations == 10 or iterations == 70:
-                        self.conversation_history.append(Message(role="user", content="你在获取敌方坐标之后，操作自己的所有单位向敌方移动，进入到攻击范围内后攻击敌人。"))
+                        self.conversation_history.append(Message(role="user", content="After getting the enemy coordinates, move all your units to the enemy's position and attack them once they are in range."))
                     continue  # keep the loop going
 
                 # 2) Hit max length? Ask model to continue (or just continue loop)
                 if finish_reason == "length":
-                    # Option A: push a tiny user nudge
+                    # Option A: push a tiny user nudge to continue
                     self.conversation_history.append(
                         Message(
                             role="user", 
@@ -955,16 +951,16 @@ class RoTKChatAgent:
                     "iterations": iterations
                 }
             except Exception as e:
-                # 使用全局错误日志功能
+                # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
-                # 检查是否为上下文溢出错误
+                # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
-                    console.print("🧹 检测到上下文超限，已裁剪历史并继续", style="yellow")
+                    console.print("🧹 Context overflow error detected, history has been trimmed and continued", style="yellow")
                     continue                
                 
-                # 记录错误日志
+                # Record error log
                 log_file = log_error_to_file(error_details, display_console=True)
                 
                 return {
@@ -1012,12 +1008,12 @@ class AgentDemo:
         """Set event listeners"""
 
         def on_connect(data):
-            message = f"✅ Agent 连接成功: {data}"
+            message = f"✅ Agent connected successfully: {data}"
             console.print(message, style="green")
             self.messages.append(message)
 
         def on_message(data):
-            message = f"📨 Agent 收到消息: {data}"
+            message = f"📨 Agent received message: {data}"
             # print(message)
             msg_data = data.get("payload")
             msg_type = msg_data.get("type")
@@ -1029,44 +1025,44 @@ class AgentDemo:
                 outcome_type = msg_data.get("outcome_type")
                 outcome = msg_data.get("outcome")
                 RemoteContext.get_id_map().update({msg_data["id"]: outcome})
-                # 🔧 修复：更新状态而不是替换，保留已有的状态字段
+                # 🔧 Fix: Update state instead of replace, preserve existing state fields
                 try:
                     current_status = RemoteContext.get_status() or {}
                 except:
                     current_status = {}
-                current_status.update({"self_status": {f"任务{msg_data['id']}": outcome}})
+                current_status.update({"self_status": {f"Task{msg_data['id']}": outcome}})
                 RemoteContext.set_status(current_status)
                 message += f"\n   结果: {outcome}, 结果类型: {outcome_type}"
             elif msg_type == "game_end_notification":
-                # 🆕 处理游戏结束通知
-                console.print("🏁 收到游戏结束通知，准备上报LLM统计并退出", style="yellow bold")
-                # 🔧 修复：更新状态而不是替换，保留已有的状态字段
+                # 🆕 Handle game end notification
+                console.print("🏁 Received game end notification, preparing to report LLM stats and exit", style="yellow bold")
+                # 🔧 Fix: update status instead of replace, keep existing status fields
                 try:
                     current_status = RemoteContext.get_status() or {}
                 except:
                     current_status = {}
                 current_status.update({"game_ended": True})
                 RemoteContext.set_status(current_status)
-                console.print(f"🔧 状态已更新: {current_status}", style="cyan")  # 🆕 调试信息
-                message += f"\n   游戏结束通知: {msg_data}"
+                console.print(f"🔧 State updated: {current_status}", style="cyan")  # 🆕 Debug information
+                message += f"\n    Game end notification: {msg_data}"
             # console.print(message, style="blue")
             self.messages.append(message)
 
         def on_disconnect(data):
-            message = f"❌ Agent 连接断开: {data}"
+            message = f"❌ Agent disconnected: {data}"
             console.print(message, style="red")
             self.messages.append(message)
 
         def on_error(data):
-            message = f"⚠️ Agent 错误: {data}"
+            message = f"⚠️ Agent error: {data}"
             msg_data = data.get("payload", {})
-            error = msg_data.get("error", "未知错误")
+            error = msg_data.get("error", "Unknown error")
             console.print(message, style="yellow")
-            # 只有当msg_data有id字段时才更新id_map
+            # Only update id_map when msg_data has the id field
             if "id" in msg_data:
                 RemoteContext.get_id_map().update({msg_data["id"]: error})
             self.messages.append(message)
-            console.print("error 处理完毕", style="red")
+            console.print("error handled", style="red")
 
         self.agent_client.add_hub_listener("connect", on_connect)
         self.agent_client.add_hub_listener("message", on_message)
@@ -1074,32 +1070,32 @@ class AgentDemo:
         self.agent_client.add_hub_listener("error", on_error)
 
     async def connect(self):
-        """创建并连接 Agent 客户端"""
-        console.print("🤖 创建 Agent 客户端", style="bold blue")
-        console.print(f"📡 服务器: {self.hub_url}")
-        console.print(f"🌍 环境ID: {self.env_id}")
+        """Create and connect Agent client"""
+        console.print("🤖 Create Agent client", style="bold blue")
+        console.print(f"📡 Server: {self.hub_url}")
+        console.print(f"🌍 Environment ID: {self.env_id}")
         console.print(f"🆔 Agent ID: {self.agent_id}")
         console.print("=" * 50)
 
-        # 连接
-        console.print("🔗 正在连接到服务器...", style="yellow")
+        # Connect
+        console.print("🔗 Connecting to server...", style="yellow")
         try:
             await self.agent_client.connect()
-            console.print("✅ Agent 连接成功！", style="bold green")
+            console.print("✅ Agent connected successfully!", style="bold green")
 
-            # 等待连接稳定
+            # Wait for connection to stabilize
             await asyncio.sleep(1)
             return True
         except Exception as e:
-            console.print(f"❌ 连接失败: {e}", style="bold red")
+            console.print(f"❌ Connection failed: {e}", style="bold red")
             return False
 
     def get_faction_from_env(self) -> str:
-        """从环境变量获取势力，默认为wei"""
+        """Get faction from environment variable, default to wei"""
         return os.environ.get("AGENT_FACTION", "wei").lower()
 
     def get_faction_info(self, faction: str) -> dict:
-        """获取势力基本信息"""
+        """Get faction basic information"""
         faction_configs = {
             "wei": {"name": "魏", "enemy": "蜀 (shu)"},
             "shu": {"name": "蜀", "enemy": "魏 (wei)"},
@@ -1108,7 +1104,7 @@ class AgentDemo:
         return faction_configs.get(faction, faction_configs["wei"])
 
     async def interactive_demo(self):
-        # 从环境变量获取势力信息
+        # Get faction information from environment variable
         faction = self.get_faction_from_env()
         faction_info = self.get_faction_info(faction)
         
@@ -1237,18 +1233,18 @@ class AgentDemo:
             await self.cleanup()
 
 
-# ==================== 全局错误日志功能 ====================
+# ==================== Global error logging functionality ====================
 
 def create_error_details(exception: Exception, **extra_context) -> Dict[str, Any]:
     """
-    创建详细的错误信息字典
+    Create detailed error information dictionary
     
     Args:
-        exception: 异常对象
-        **extra_context: 额外的上下文信息（如 iteration, function_name 等）
+        exception: Exception object
+        **extra_context: Additional context information (such as iteration, function_name, etc.)
     
     Returns:
-        包含详细错误信息的字典
+        Dictionary containing detailed error information
     """
     import traceback
     import httpx
@@ -1259,118 +1255,118 @@ def create_error_details(exception: Exception, **extra_context) -> Dict[str, Any
         "timestamp": datetime.now().isoformat()
     }
     
-    # 添加额外的上下文信息
+    # Add additional context information
     error_details.update(extra_context)
     
-    # 获取完整的堆栈跟踪
+    # Get the complete stack trace
     tb_lines = traceback.format_exception(type(exception), exception, exception.__traceback__)
     error_details["full_traceback"] = "".join(tb_lines)
     
-    # 针对不同类型的异常添加特定信息
+    # Add specific information for different types of exceptions
     if isinstance(exception, httpx.HTTPStatusError):
         error_details["http_status_code"] = exception.response.status_code
         error_details["response_headers"] = dict(exception.response.headers)
         try:
             error_details["response_body"] = exception.response.text
         except:
-            error_details["response_body"] = "无法读取响应体"
+            error_details["response_body"] = "Cannot read response body"
             
     elif isinstance(exception, httpx.ConnectError):
-        error_details["connection_error"] = "无法连接到服务器"
+        error_details["connection_error"] = "Cannot connect to server"
         error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
         
     elif isinstance(exception, httpx.TimeoutException):
-        error_details["timeout_error"] = "请求超时"
+        error_details["timeout_error"] = "Request timeout"
         error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
         
     elif isinstance(exception, httpx.RequestError):
-        error_details["request_error"] = "请求错误"
+        error_details["request_error"] = "Request error"
         error_details["request_url"] = str(exception.request.url) if hasattr(exception, 'request') and exception.request else "未知"
         
     elif isinstance(exception, TimeoutError):
-        error_details["timeout_error"] = "操作超时"
+        error_details["timeout_error"] = "Operation timeout"
         
     elif "JSON" in str(exception) or "json" in str(exception):
-        error_details["json_error"] = "JSON解析错误，可能是API返回格式不正确"
+        error_details["json_error"] = "JSON parsing error, maybe the API return format is incorrect"
     
     return error_details
 
 
 def log_error_to_file(error_details: Dict[str, Any], display_console: bool = True) -> Optional[str]:
     """
-    将错误详情保存到文件并可选择性地在控制台显示
+    Save error details to file and optionally display on console
     
     Args:
-        error_details: 错误详情字典
-        display_console: 是否在控制台显示错误信息
+        error_details: Error details dictionary
+        display_console: Whether to display error information on console
         
     Returns:
-        错误日志文件路径，如果保存失败则返回None
+        Error log file path, if saving fails then return None
     """
     # 在控制台显示详细错误信息
     if display_console:
         console.print("=" * 80, style="red")
-        console.print("🚨 详细错误信息", style="red bold")
+        console.print("🚨 Detailed error information", style="red bold")
         console.print("=" * 80, style="red")
-        console.print(f"📍 异常类型: {error_details.get('exception_type', 'Unknown')}", style="red")
-        console.print(f"📝 错误消息: {error_details.get('exception_message', 'Unknown')}", style="red") 
-        console.print(f"⏰ 发生时间: {error_details.get('timestamp', 'Unknown')}", style="red")
+        console.print(f"📍 Exception type: {error_details.get('exception_type', 'Unknown')}", style="red")
+        console.print(f"📝 Error message: {error_details.get('exception_message', 'Unknown')}", style="red") 
+        console.print(f"⏰ Occurrence time: {error_details.get('timestamp', 'Unknown')}", style="red")
         
-        # 显示函数/迭代信息（如果有）
+        # Display function/iteration information (if available)
         if "function_name" in error_details:
-            console.print(f"🔧 发生函数: {error_details['function_name']}", style="red")
+            console.print(f"🔧 Occurred function: {error_details['function_name']}", style="red")
         if "iteration" in error_details:
-            console.print(f"🔄 当前迭代: {error_details['iteration']}", style="red")
+            console.print(f"🔄 Current iteration: {error_details['iteration']}", style="red")
         
-        # 根据异常类型显示特定信息
+        # Display specific information based on exception type
         if "http_status_code" in error_details:
-            console.print(f"🌐 HTTP状态码: {error_details['http_status_code']}", style="red")
-            console.print(f"📤 响应头: {error_details['response_headers']}", style="yellow")
-            console.print(f"📥 响应体: {error_details['response_body'][:500]}...", style="yellow")
+            console.print(f"🌐 HTTP status code: {error_details['http_status_code']}", style="red")
+            console.print(f"📤 Response headers: {error_details['response_headers']}", style="yellow")
+            console.print(f"📥 Response body: {error_details['response_body'][:500]}...", style="yellow")
             
         if "connection_error" in error_details:
-            console.print(f"🔌 连接错误: {error_details['connection_error']}", style="red")
-            console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+            console.print(f"🔌 Connection error: {error_details['connection_error']}", style="red")
+            console.print(f"🎯 Request URL: {error_details['request_url']}", style="yellow")
             
         if "timeout_error" in error_details:
-            console.print(f"⏱️ 超时错误: {error_details['timeout_error']}", style="red")
+            console.print(f"⏱️ Timeout error: {error_details['timeout_error']}", style="red")
             if "request_url" in error_details:
-                console.print(f"🎯 请求URL: {error_details['request_url']}", style="yellow")
+                console.print(f"🎯 Request URL: {error_details['request_url']}", style="yellow")
             
         if "json_error" in error_details:
-            console.print(f"📋 JSON错误: {error_details['json_error']}", style="red")
+            console.print(f"📋 JSON error: {error_details['json_error']}", style="red")
         
-        # 显示堆栈跟踪（可选择性显示）
-        console.print("\n🔍 完整堆栈跟踪:", style="red")
+        # Display stack trace (optional)
+        console.print("\n🔍 Complete stack trace:", style="red")
         console.print(error_details.get("full_traceback", ""), style="dim red")
     
-    # 保存错误信息到文件
+    # Save error information to file
     try:
         error_log_file = f"error_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(error_log_file, 'w', encoding='utf-8') as f:
             json.dump(error_details, f, ensure_ascii=False, indent=2)
         
         if display_console:
-            console.print(f"💾 错误详情已保存到: {error_log_file}", style="blue")
+            console.print(f"💾 Error details saved to: {error_log_file}", style="blue")
             console.print("=" * 80, style="red")
         
         return error_log_file
     except Exception as log_error:
         if display_console:
-            console.print(f"⚠️ 无法保存错误日志: {log_error}", style="yellow")
+            console.print(f"⚠️ Cannot save error log: {log_error}", style="yellow")
         return None
 
 
 def handle_error_with_logging(exception: Exception, **extra_context) -> Dict[str, Any]:
     """
-    处理异常并生成错误日志的便捷函数
+    Function to handle exceptions and generate error logs
     
     Args:
-        exception: 异常对象
-        **extra_context: 额外的上下文信息
+        exception: Exception object
+        **extra_context: Additional context information
         
     Returns:
-        包含错误信息的响应字典
+        Dictionary containing error information
     """
     error_details = create_error_details(exception, **extra_context)
     log_file = log_error_to_file(error_details, display_console=True)
@@ -1383,57 +1379,57 @@ def handle_error_with_logging(exception: Exception, **extra_context) -> Dict[str
     }
 
 
-# ==================== 工具函数实现 ====================
+# ==================== Tool function implementation ====================
 
 async def get_env_response(request_id, timeout_seconds: float =60.0):
-    """获取动作执行的响应，带超时和ID冲突检测"""
+    """Get the response of the action execution, with timeout and ID conflict detection"""
     import time
     
     start_time = time.time()
-    console.print(f"⏳ 等待 ENV 响应 ID: {request_id}，超时设置: {timeout_seconds}s", style="cyan")
+    console.print(f"⏳ Waiting for ENV response ID: {request_id}, timeout set to: {timeout_seconds}s", style="cyan")
     
     while True:
-        # 检查是否有响应
+        # Check if there is a response
         response = RemoteContext.get_id_map().get(request_id, None)
         if response is not None:
-            # 从映射中移除响应
+            # Remove the response from the mapping
             RemoteContext.get_id_map().pop(request_id, None)
             elapsed = time.time() - start_time
-            console.print(f"✅ 收到 ENV 响应 ID: {request_id}，耗时: {elapsed:.2f}s", style="green")
+            console.print(f"✅ Received ENV response ID: {request_id}, elapsed time: {elapsed:.2f}s", style="green")
             return response
         
-        # 检查超时
+        # Check timeout
         elapsed = time.time() - start_time
         if elapsed >= timeout_seconds:
-            console.print(f"⏰ ENV 响应超时 ID: {request_id}，已等待: {elapsed:.2f}s", style="red")
-            console.print(f"🔍 当前ID映射状态: {dict(RemoteContext.get_id_map())}", style="yellow")
-            timeout_error = TimeoutError(f"等待 ENV 响应超时: ID {request_id}，超时时间: {timeout_seconds}s")
-            # 添加额外的上下文信息到异常对象中
+            console.print(f"⏰ ENV response timeout ID: {request_id}, elapsed time: {elapsed:.2f}s", style="red")
+            console.print(f"🔍 Current ID mapping state: {dict(RemoteContext.get_id_map())}", style="yellow")
+            timeout_error = TimeoutError(f"ENV response timeout: ID {request_id}, timeout time: {timeout_seconds}s")
+            # Add additional context information to the exception object
             timeout_error.request_id = request_id
             timeout_error.elapsed_time = elapsed
             timeout_error.timeout_seconds = timeout_seconds
             raise timeout_error
         
-        await asyncio.sleep(0.1)  # 等待响应
+        await asyncio.sleep(0.1)  # Waiting for response
 
 
 async def perform_action(action: str, params: Any):
-    """执行动作"""
+    """Execute action"""
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
         response = await get_env_response(request_id, timeout_seconds=1.0)
         
-        # 智能延迟逻辑：根据动作类型和结果添加适当的等待时间
+        # Smart delay logic: add appropriate waiting time based on action type and result
         delay_time = _calculate_action_delay(action, params, response)
         if delay_time > 0:
-            console.print(f"⏳ 等待了 {delay_time}s 让动作完成...", style="cyan")
+            console.print(f"⏳ Waiting for {delay_time}s to complete the action...", style="cyan")
             await asyncio.sleep(delay_time)
 
         return response
         
     except TimeoutError as e:
-        console.print(f"⏰ 动作执行超时: {e}", style="red")
+        console.print(f"⏰ Action execution timeout: {e}", style="red")
         return handle_error_with_logging(
             e, 
             function_name="perform_action",
@@ -1444,7 +1440,7 @@ async def perform_action(action: str, params: Any):
             timeout_seconds=getattr(e, 'timeout_seconds', 'unknown')
         )
     except Exception as e:
-        console.print(f"❌ 动作执行错误: {e}", style="red")
+        console.print(f"❌ Action execution error: {e}", style="red")
         return handle_error_with_logging(
             e, 
             function_name="perform_action",
@@ -1454,26 +1450,26 @@ async def perform_action(action: str, params: Any):
 
 
 async def get_available_actions() -> list[Dict[str, Any]]:
-    """获取当前可用的动作"""
+    """Get the current available actions"""
     result = await perform_action("get_action_list", {})
     return result
 
 
-# ==================== 命令处理函数 ====================
+# ==================== Command processing function ====================
 
 async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
-    # 加载配置并创建独立的聊天代理
+    # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
-        console.print(f"在当前工作目录找到配置文件: {config_path}")
-        console.print("尝试加载配置文件")
+        console.print(f"Found configuration file in current working directory: {config_path}")
+        console.print("Attempting to load configuration file")
         console.print(config_path)
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
-        # 注册工具
+        # Register tools
         agent.register_tool(
             name="get_available_actions",
             function=get_available_actions,
@@ -1505,7 +1501,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         )
         
         async def stop_running():
-            """检测到游戏结束时停止运行"""
+            """Game over detected, agent should stop"""
             return {"message": "You chose to stop running. Take a reset and start again."}
         
         agent.register_tool(
@@ -1515,15 +1511,15 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             parameters={"type": "object", "properties": {}, "required": []},
         )
 
-        # 执行聊天任务
+        # Execute chat task
         result = await agent.chat(user_prompt)
-        console.print(f"聊天任务完成: {result}")
+        console.print(f"Chat task completed: {result}")
         
-        # 清理资源
+        # Clean up resources
         await agent.stop()
         
     except Exception as e:
-        console.print(f"聊天过程中发生错误: {e}", style="red")
+        console.print(f"Chat process error: {e}", style="red")
         import traceback
         traceback.print_exc()
 
@@ -1532,66 +1528,65 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
 
 def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
     """
-    根据动作类型、参数和响应结果计算智能延迟时间
+    Calculate smart delay time based on action type, parameters and response result
     
     Args:
-        action: 动作类型 (如 "move", "attack" 等)
-        params: 动作参数
-        response: 服务器响应结果
+        action: Action type (e.g. "move", "attack" etc.)
+        params: Action parameters
+        response: Server response result
     
     Returns:
-        float: 延迟秒数，0表示无需延迟
+        float: Delay seconds, 0 means no delay
     """
     if not isinstance(response, dict) or not response.get("success", False):
-        # 动作失败时无需延迟
+        # No delay when action fails
         return 0.0
     
     if action == "move":
-        # 移动动作：根据路径长度和距离估算延迟
+        # Move action: estimate delay based on path length and distance
         return _calculate_move_delay(params, response)
     elif action == "attack":
-        # 攻击动作：固定延迟以等待攻击动画
-        return 0.2  # 攻击动画通常较短
+        # Attack action: fixed delay to wait for attack animation
+        return 0.2  # Attack animation usually takes less than 0.2 seconds
     elif action in ["get_faction_state", "observation", "get_action_list"]:
-        # 查询类动作：无需延迟
+        # Query action: no delay
         return 0.0
     else:
-        # 其他动作：保守的默认延迟
+        # Other action: conservative default delay
         return 0.1
 
 
 def _calculate_move_delay(params: Any, response: Any) -> float:
-    """计算移动动作的延迟时间"""
+    """Calculate the delay time for move action"""
     try:
-        # 方法1：从响应中的 movement_details 获取预估时间
+        # Method 1: get estimated time from movement_details in response
         if isinstance(response, dict) and "movement_details" in response:
             estimated_duration = response["movement_details"].get("estimated_duration_seconds", 0)
             if estimated_duration > 0:
-                # 增加10%的缓冲时间，确保动画完成
+                # Add 10% buffer time to ensure animation completion
                 return estimated_duration * 1.1
         
-        # 方法2：根据路径长度估算（备用方案）
+        # Method 2: estimate delay based on path length (backup)
         if isinstance(response, dict) and "movement_details" in response:
             path_length = response["movement_details"].get("path_length", 0)
             if path_length > 0:
-                # 假设动画速度为2格/秒，增加缓冲
+                # Assuming animation speed is 2 squares/second, add buffer
                 return path_length / 2.0 + 0.2
         
-        # 方法3：根据起始和目标位置计算曼哈顿距离（最后备选）
+        # Method 3: calculate Manhattan distance based on start and target position (last fallback)
         if isinstance(params, dict) and "target_position" in params:
-            # 这里无法获取起始位置，使用保守估计
-            return 1.0  # 保守的1秒延迟
+            # Here we cannot get the start position, use conservative estimate
+            return 1.0  #  1 second delay
         
-        # 默认延迟
+        # Default delay
         return 1.0
     
     except Exception as e:
-        console.print(f"⚠️ 计算移动延迟时出错: {e}", style="yellow")
-        return 1.0  # 出错时使用保守延迟
-    
+        console.print(f"⚠️ Error calculating move delay: {e}", style="yellow")
+        return 1.0
 
 def _is_context_overflow_error(exc: Exception, error_details: dict | None = None) -> bool:
-    """检测是否为上下文/token超限错误（兼容多提供商常见文案）"""
+    """Check if it is a context/token overflow error (compatible with common error messages from multiple providers)"""
     import json
     txt = str(exc) if exc else ""
     blob = txt
@@ -1602,7 +1597,7 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
             pass
     s = blob.lower()
 
-    # 常见触发词（OpenAI/兼容栈/vLLM/SiliconFlow等常见报错文案）
+    # Common trigger words (OpenAI/compatible stack/vLLM/SiliconFlow etc.)
     triggers = [
         "maximum context length",
         "max context length",
@@ -1611,13 +1606,13 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
         "prompt is too long",
         "too many tokens",
         "exceeds the maximum",
-        "requested",  # 搭配 tokens
-        "tokens"      # 搭配 requested
+        "requested",  # with tokens
+        "tokens"      # with requested
     ]
     if any(k in s for k in triggers):
         return True
 
-    # 进一步从响应JSON中抽取（若已保存到 error_details）
+    # extracted from the response (if saved to error_details)
     try:
         rsp = (error_details or {}).get("response_json") or {}
         msg = (rsp.get("error") or {}).get("message", "")
@@ -1630,9 +1625,9 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
 
 
 async def main():
-    """主函数"""
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description="Agent 演示程序")
+    """Main function"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Agent demo program")
 
     parser.add_argument(
         "--hub-url",
@@ -1653,7 +1648,7 @@ async def main():
         type=str, 
         default="wei", 
         choices=["wei", "shu", "wu"],
-        help="控制的势力 (default: wei)"
+        help="faction to control (default: wei)"
     )
 
     args = parser.parse_args()
@@ -1662,7 +1657,7 @@ async def main():
     console.print(f"🌍 Environment ID: {args.env_id}")
     console.print(f"🆔 Agent ID: {args.agent_id}")
     console.print(f"🔧 Provider: {args.provider}")
-    console.print(f"⚔️ Faction: {args.faction}")
+    console.print(f"⚔️ Faction: {args.faction}", style="bold red")
     console.print("=" * 60)
 
     # Set environment variables
