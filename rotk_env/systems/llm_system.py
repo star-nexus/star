@@ -379,9 +379,15 @@ class LLMSystem(System):
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
             
-            # 🆕 设置可以生成结算报告的标志
-            stats.can_generate_settlement_report = True
-            print(f"[LLMSystem] 🎯 已设置结算报告生成标志")
+            # 🆕 增加已接收计数，并检查是否所有Agent都已报告
+            if not stats.can_generate_settlement_report: # 防止重复设置
+                stats.received_llm_stats_count += 1
+                print(f"[LLMSystem] 📊 统计进度: {stats.received_llm_stats_count}/{stats.expected_llm_stats_count}")
+
+                # 检查是否所有预期的统计都已收到
+                if stats.received_llm_stats_count >= stats.expected_llm_stats_count:
+                    stats.can_generate_settlement_report = True
+                    print(f"[LLMSystem] 🎯 所有LLM统计已收齐，已设置结算报告生成标志")
             
             return {
                 "success": True,
@@ -417,6 +423,18 @@ class LLMSystem(System):
                 "message": "Game has ended. Please report your LLM statistics."
             }
             
+            # 🆕 设置期望收到的Agent统计数量
+            stats = self.world.get_singleton_component(GameStats)
+            if stats:
+                stats.expected_llm_stats_count = len(self.client.connected_agents)
+                stats.received_llm_stats_count = 0  # 重置计数器
+                print(f"[LLMSystem] ℹ️ 期望收到 {stats.expected_llm_stats_count} 个Agent的LLM统计")
+
+                # 🆕 如果没有Agent，直接设置标志
+                if stats.expected_llm_stats_count == 0:
+                    stats.can_generate_settlement_report = True
+                    print("[LLMSystem] ℹ️ 没有连接的Agent，直接允许生成报告")
+
             # 向所有连接的Agent发送通知
             agent_count = 0
             for agent_id, agent_info in self.client.connected_agents.items():
