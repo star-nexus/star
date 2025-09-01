@@ -511,7 +511,7 @@ class RoTKChatAgent:
 
     # ==================== Strategy keyword detection and reporting ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
-        """Simple keyword + structure to be considered as strategy thinking."""
+        """Detects basic strategy thinking, defined by the presence of keywords and structure words."""
         if not text:
             return False
         t = text.lower()
@@ -527,19 +527,17 @@ class RoTKChatAgent:
             "pin down", "fix-in-place", "regroup", "supply", "chokepoint", "terrain advantage",
             "strongpoint", "encircle"
         ]
-        # Key hit
+        # 1. Must contain strategy keywords
         key_hit = any(k in text for k in zh_keys) or any(k in t for k in en_keys)
         if not key_hit:
             return False
-        # Require action/target/order type phrases to reduce false positives
+            
+        # 2. Must also contain structure words to be considered as basic strategy thinking
         structure_terms = ["先", "然后", "再", "首先", "优先", "目标", "步骤", "顺序", "选择", "方案", "计划",
                            "first", "then", "next", "priority", "goal", "objective", "step", "order"]
-        # Structure word hit or sequence hit can be considered as strategy thinking
         structure_hit = any(term in text for term in structure_terms) or any(term in t for term in structure_terms)
-        if structure_hit:
-            return True
-        # Try sequence mode (move/position -> attack or attack -> move)
-        return self._contains_strategy_sequence(text)
+        
+        return structure_hit
 
     def _contains_strategy_sequence(self, text: str) -> bool:
         """Detect sequence-based strategy phrases, such as "position/move -> attack" or "attack -> move"."""
@@ -622,6 +620,7 @@ class RoTKChatAgent:
         if (now - getattr(self, "_strategy_last_ping_ts", 0.0)) < 2.0:
             return
         # Keyword or sequence hit determines strategy
+        # The two detection functions are now independent and orthogonal
         hit_keywords = self._contains_strategy_keywords(assistant_text)
         hit_sequence = self._contains_strategy_sequence(assistant_text)
         if not (hit_keywords or hit_sequence):
