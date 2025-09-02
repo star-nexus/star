@@ -562,22 +562,34 @@ class LLMSystem(System):
                     self.client.response_to_agent(agent_id, action_id, error_result, "str")
                     return
 
-                # 🆕 校验 agent_id 映射与上报阵营一致性
+                # 🆕 Check consistency between agent_id mapping and registered faction
                 if isinstance(params, dict) and "faction" in params:
-                    try:
-                        from ..prefabs.config import Faction as _Faction
-                        reported_faction = _Faction(params["faction"])
-                        if mapped_faction != reported_faction:
-                            error_result = self._create_system_error_response(
-                                action,
-                                f"Agent {agent_id} is registered to {mapped_faction.value} faction, but action specifies {reported_faction.value}. Please use your registered faction or re-register.",
-                                2005,
-                            )
-                            print(f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}")
-                            self.client.response_to_agent(agent_id, action_id, error_result, "str")
-                            return
-                    except Exception as _e:
-                        print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
+                    # 🆕 Special exemption: get_faction_state action allows querying other faction intelligence
+                    if action == "get_faction_state":
+                        # Allow querying any faction, but log the query
+                        try:
+                            from ..prefabs.config import Faction as _Faction
+                            reported_faction = _Faction(params["faction"])
+                            if mapped_faction != reported_faction:
+                                print(f"[LLMSystem] ℹ️ Intelligence gathering: agent_id={agent_id} (registered={mapped_faction.value}) queries {reported_faction.value} faction info")
+                        except Exception as _e:
+                            print(f"[LLMSystem] ⚠️ Faction parsing failed in get_faction_state: {_e}")
+                    else:
+                        # Other actions must have consistent factions
+                        try:
+                            from ..prefabs.config import Faction as _Faction
+                            reported_faction = _Faction(params["faction"])
+                            if mapped_faction != reported_faction:
+                                error_result = self._create_system_error_response(
+                                    action,
+                                    f"Agent {agent_id} is registered to {mapped_faction.value} faction, but action specifies {reported_faction.value}. Please use your registered faction or re-register.",
+                                    2005,
+                                )
+                                print(f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}")
+                                self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                                return
+                        except Exception as _e:
+                            print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
             
             # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
             self._record_interaction(agent_id, params)
