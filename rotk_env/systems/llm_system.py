@@ -527,8 +527,6 @@ class LLMSystem(System):
         action = payload.get("action")
         params = payload.get("parameters", {})
         
-        # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
-        self._record_interaction(agent_id, params)
         
         if isinstance(params, dict):
             params = params
@@ -546,40 +544,27 @@ class LLMSystem(System):
         start_time = time.time()
 
         try:
-            # 🆕 统一注册校验：除注册外的动作必须先完成注册
-            from ..components.agent_info import AgentInfoRegistry
+            # 🆕 统一注册校验（按 agent_id 强约束）：除注册外的动作必须先完成注册绑定
             stats = self.world.get_singleton_component(GameStats)
             if stats is None:
                 stats = GameStats()
                 self.world.add_singleton_component(stats)
 
-            # 推断阵营：优先使用已记录映射；其次读参数
-            faction_key = None
-            if agent_id and agent_id in stats.agent_id_to_faction:
-                try:
-                    faction_key = stats.agent_id_to_faction[agent_id].value
-                except Exception:
-                    faction_key = None
-            if not faction_key and isinstance(params, dict):
-                faction_key = params.get("faction")
-
-            # 查询是否已注册
-            registry = self.world.get_singleton_component(AgentInfoRegistry)
-            is_registered = False
-            if faction_key and registry and registry.has_agent(faction_key):
-                is_registered = True
-
-            # 拦截未注册的非注册动作
-            if action != "register_agent_info" and not is_registered:
-                error_result = self._create_system_error_response(
-                    action,
-                    "Agent not registered. Please call register_agent_info first.",
-                    2005,
-                )
-                print(f"[LLMSystem] ❌ 拒绝未注册Agent的动作: action={action}, agent_id={agent_id}, faction={faction_key}")
-                self.client.response_to_agent(agent_id, action_id, error_result, "str")
-                return
-
+            if action != "register_agent_info":
+                mapped_faction = stats.agent_id_to_faction.get(agent_id)
+                if mapped_faction is None:
+                    error_result = self._create_system_error_response(
+                        action,
+                        "Agent not registered. Please call register_agent_info first.",
+                        2005,
+                    )
+                    print(f"[LLMSystem] ❌ 拒绝未注册agent_id的动作: action={action}, agent_id={agent_id}")
+                    self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                    return
+            
+            # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
+            self._record_interaction(agent_id, params)
+            
             # 1. 检查是否为系统级动作
             if action in self.system_actions:
                 result = self.system_actions[action](params)
