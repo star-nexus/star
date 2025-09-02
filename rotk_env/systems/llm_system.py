@@ -558,9 +558,26 @@ class LLMSystem(System):
                         "Agent not registered. Please call register_agent_info first.",
                         2005,
                     )
-                    print(f"[LLMSystem] ❌ 拒绝未注册agent_id的动作: action={action}, agent_id={agent_id}")
+                    print(f"[LLMSystem] ❌ Action rejected due to unregistered Agent_ID: action={action}, agent_id={agent_id}")
                     self.client.response_to_agent(agent_id, action_id, error_result, "str")
                     return
+
+                # 🆕 校验 agent_id 映射与上报阵营一致性
+                if isinstance(params, dict) and "faction" in params:
+                    try:
+                        from ..prefabs.config import Faction as _Faction
+                        reported_faction = _Faction(params["faction"])
+                        if mapped_faction != reported_faction:
+                            error_result = self._create_system_error_response(
+                                action,
+                                f"Agent {agent_id} is registered to {mapped_faction.value} faction, but action specifies {reported_faction.value}. Please use your registered faction or re-register.",
+                                2005,
+                            )
+                            print(f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}")
+                            self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                            return
+                    except Exception as _e:
+                        print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
             
             # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
             self._record_interaction(agent_id, params)
