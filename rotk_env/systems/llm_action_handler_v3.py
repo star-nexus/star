@@ -2804,6 +2804,19 @@ class LLMActionHandlerV3:
             # 注册Agent信息
             success = registry.register_agent(faction, agent_info)
 
+            # 🆕 维护 GameStats 中的已注册集合
+            try:
+                from ..components.state import GameStats
+                stats = self.world.get_singleton_component(GameStats)
+                if stats is None:
+                    stats = GameStats()
+                    self.world.add_singleton_component(stats)
+                from ..prefabs.config import Faction as _Faction
+                reg_faction = _Faction(faction)
+                stats.registered_factions.add(reg_faction)
+            except Exception as _e:
+                print(f"[LLMActionHandlerV3] ⚠️ 注册后维护registered_factions失败: {_e}")
+
             if success:
                 return {
                     "success": True,

@@ -139,3 +139,7 @@ class GameStats(SingletonComponent):
     # 🆕 LLM统计收集计数器 (用于多Agent)
     expected_llm_stats_count: int = 0
     received_llm_stats_count: int = 0
+
+    # 🆕 已注册与已统计集合（以集合替代纯计数，解决竞态问题）
+    registered_factions: Set[Faction] = field(default_factory=set)
+    received_llm_stats_factions: Set[Faction] = field(default_factory=set)

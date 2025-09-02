@@ -362,6 +362,15 @@ class LLMSystem(System):
                 stats = GameStats()
                 self.world.add_singleton_component(stats)
             
+            # 🆕 未注册直接拒绝统计
+            try:
+                from ..components.agent_info import AgentInfoRegistry
+                registry = self.world.get_singleton_component(AgentInfoRegistry)
+                if not registry or not registry.has_agent(faction_key):
+                    return {"success": False, "message": "Agent not registered. Please register before reporting LLM stats."}
+            except Exception:
+                return {"success": False, "message": "Registration status unavailable"}
+
             # 确保 llm_api_stats 字段存在
             if not hasattr(stats, 'llm_api_stats'):
                 stats.llm_api_stats = {}
@@ -378,16 +387,21 @@ class LLMSystem(System):
             }
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
-            
-            # 🆕 增加已接收计数，并检查是否所有Agent都已报告
-            if not stats.can_generate_settlement_report: # 防止重复设置
-                stats.received_llm_stats_count += 1
-                print(f"[LLMSystem] 📊 统计进度: {stats.received_llm_stats_count}/{stats.expected_llm_stats_count}")
 
-                # 检查是否所有预期的统计都已收到
-                if stats.received_llm_stats_count >= stats.expected_llm_stats_count:
+            # 🆕 基于集合的收齐判断
+            try:
+                stats.received_llm_stats_factions.add(faction)
+                registered = stats.registered_factions if hasattr(stats, 'registered_factions') else set()
+                received = stats.received_llm_stats_factions
+                print(f"[LLMSystem] 📊 统计进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]}, registered={[f.value for f in registered]}")
+                if not stats.can_generate_settlement_report and len(received) >= len(registered) and len(registered) > 0:
                     stats.can_generate_settlement_report = True
                     print(f"[LLMSystem] 🎯 所有LLM统计已收齐，已设置结算报告生成标志")
+                # 同步传统计数，保持兼容
+                stats.received_llm_stats_count = len(received)
+                stats.expected_llm_stats_count = len(registered)
+            except Exception as _e:
+                print(f"[LLMSystem] ⚠️ 集合统计进度更新失败: {_e}")
             
             return {
                 "success": True,
@@ -433,7 +447,8 @@ class LLMSystem(System):
                 # 🆕 如果没有Agent，直接设置标志
                 if stats.expected_llm_stats_count == 0:
                     stats.can_generate_settlement_report = True
-                    print("[LLMSystem] ℹ️ 没有连接的Agent，直接允许生成报告")
+                    raise Exception("[LLMSystem] ⚠️ 没有连接的Agent，直接允许生成报告")
+
 
             # 向所有连接的Agent发送通知
             agent_count = 0
@@ -511,6 +526,40 @@ class LLMSystem(System):
         start_time = time.time()
 
         try:
+            # 🆕 统一注册校验：除注册外的动作必须先完成注册
+            from ..components.agent_info import AgentInfoRegistry
+            stats = self.world.get_singleton_component(GameStats)
+            if stats is None:
+                stats = GameStats()
+                self.world.add_singleton_component(stats)
+
+            # 推断阵营：优先使用已记录映射；其次读参数
+            faction_key = None
+            if agent_id and agent_id in stats.agent_id_to_faction:
+                try:
+                    faction_key = stats.agent_id_to_faction[agent_id].value
+                except Exception:
+                    faction_key = None
+            if not faction_key and isinstance(params, dict):
+                faction_key = params.get("faction")
+
+            # 查询是否已注册
+            registry = self.world.get_singleton_component(AgentInfoRegistry)
+            is_registered = False
+            if faction_key and registry and registry.has_agent(faction_key):
+                is_registered = True
+
+            # 拦截未注册的非注册动作
+            if action != "register_agent_info" and not is_registered:
+                error_result = self._create_system_error_response(
+                    action,
+                    "Agent not registered. Please call register_agent_info first.",
+                    2005,
+                )
+                print(f"[LLMSystem] ❌ 拒绝未注册Agent的动作: action={action}, agent_id={agent_id}, faction={faction_key}")
+                self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                return
+
             # 1. 检查是否为系统级动作
             if action in self.system_actions:
                 result = self.system_actions[action](params)
@@ -532,6 +581,24 @@ class LLMSystem(System):
             # 标准化响应格式
             execution_time = time.time() - start_time
             standardized_result = result
+
+            # 🆕 若是注册动作成功，补充登记集合与映射
+            if action == "register_agent_info" and isinstance(result, dict) and result.get("success"):
+                try:
+                    reg_faction_key = params.get("faction")
+                    if reg_faction_key:
+                        from ..prefabs.config import Faction as _Faction
+                        reg_faction = _Faction(reg_faction_key)
+                        # 记录映射
+                        if agent_id:
+                            stats.agent_id_to_faction[agent_id] = reg_faction
+                        # 记录已注册集合
+                        stats.registered_factions.add(reg_faction)
+                        # 同步期望数量（以注册集合为准）
+                        stats.expected_llm_stats_count = len(stats.registered_factions)
+                        print(f"[LLMSystem] 📝 已注册阵营集合: {[f.value for f in stats.registered_factions]} (期望统计数={stats.expected_llm_stats_count})")
+                except Exception as _e:
+                    print(f"[LLMSystem] ⚠️ 注册后维护集合失败: {_e}")
 
             print(f"{action} response: {standardized_result}")
             self.client.response_to_agent(
