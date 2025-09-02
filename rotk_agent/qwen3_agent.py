@@ -1528,7 +1528,7 @@ async def perform_action(action: str, params: Any):
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
-        response = await get_env_response(request_id, timeout_seconds=0.001)
+        response = await get_env_response(request_id, timeout_seconds=5)
         
         # Smart delay logic: add appropriate waiting time based on action type and result
         delay_time = _calculate_action_delay(action, params, response)
