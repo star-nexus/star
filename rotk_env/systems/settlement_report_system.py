@@ -36,7 +36,7 @@ class SettlementReportSystem(System):
         super().__init__(priority=200)  # 高优先级，在游戏结束后执行
         self.report_generated = False
         self.game_end_time = None
-        self.timeout_seconds = 3.0  # 3秒超时
+        self.timeout_seconds = 10.0  # 10秒超时
         
     def initialize(self, world: World) -> None:
         self.world = world

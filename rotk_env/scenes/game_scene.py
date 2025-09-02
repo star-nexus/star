@@ -92,7 +92,7 @@ class GameScene(Scene):
         
         # 🆕 游戏结束等待状态
         self.game_end_wait_start = None
-        self.game_end_wait_timeout = 5.0  # 最多等待5秒
+        self.game_end_wait_timeout = 15.0  # 最多等待5秒
 
     def enter(self, **kwargs):
         """进入场景时调用"""
@@ -132,7 +132,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[0, 1, 1], [0, 0, 1], [0, 0, 0]])
+        self._initialize_units([[1, 3, 1], [1, 3, 1], [0, 0, 0]])
 
         # 初始化游戏统计
         self._initialize_stats()
