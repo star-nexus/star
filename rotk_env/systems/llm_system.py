@@ -437,33 +437,53 @@ class LLMSystem(System):
                 "message": "Game has ended. Please report your LLM statistics."
             }
             
-            # 🆕 设置期望收到的Agent统计数量
+            # 🆕 设置期望收到的Agent统计数量（优先以已注册阵营集合为准）
             stats = self.world.get_singleton_component(GameStats)
             if stats:
-                stats.expected_llm_stats_count = len(self.client.connected_agents)
-                stats.received_llm_stats_count = 0  # 重置计数器
-                print(f"[LLMSystem] ℹ️ 期望收到 {stats.expected_llm_stats_count} 个Agent的LLM统计")
-
-                # 🆕 如果没有Agent，直接设置标志
-                if stats.expected_llm_stats_count == 0:
-                    stats.can_generate_settlement_report = True
-                    raise Exception("[LLMSystem] ⚠️ 没有连接的Agent，直接允许生成报告")
-
-
-            # 向所有连接的Agent发送通知
-            agent_count = 0
-            for agent_id, agent_info in self.client.connected_agents.items():
                 try:
-                    self.send_message(
-                        game_end_notification,
-                        target={"type": "agent", "id": agent_id}
-                    )
-                    agent_count += 1
-                    print(f"[LLMSystem] ✅ 已向Agent {agent_id} 发送游戏结束通知")
-                except Exception as e:
-                    print(f"[LLMSystem] ❌ 向Agent {agent_id} 发送游戏结束通知失败: {e}")
-            
-            print(f"[LLMSystem] 📢 游戏结束通知已发送给 {agent_count} 个Agent")
+                    registered_count = len(getattr(stats, 'registered_factions', set()))
+                except Exception:
+                    registered_count = 0
+                connected_count = len(self.client.connected_agents)
+                expected = registered_count if registered_count > 0 else connected_count
+                # 同步集合到计数以保持兼容
+                stats.expected_llm_stats_count = expected
+                stats.received_llm_stats_count = len(getattr(stats, 'received_llm_stats_factions', set())) if registered_count > 0 else 0
+                print(f"[LLMSystem] ℹ️ 期望统计={expected}（已注册={registered_count}，已连接={connected_count}）")
+
+                # 🆕 若期望为0，则直接允许生成报告
+                if expected == 0:
+                    stats.can_generate_settlement_report = True
+                    raise Exception("[LLMSystem] ⚠️ 当前无期望统计，直接允许生成报告")
+
+
+            # 🆕 仅向已注册阵营对应的Agent发送通知
+            agent_count = 0
+            try:
+                stats = self.world.get_singleton_component(GameStats)
+                registered = getattr(stats, 'registered_factions', set()) if stats else set()
+                id_to_faction = getattr(stats, 'agent_id_to_faction', {}) if stats else {}
+
+                # 基于映射过滤：仅通知阵营在已注册集合中的Agent
+                for agent_id, agent_info in self.client.connected_agents.items():
+                    mapped_faction = id_to_faction.get(agent_id)
+                    if mapped_faction not in registered:
+                        print(f"[LLMSystem] ⏭️ 跳过未注册或未映射阵营的Agent: {agent_id}")
+                        continue
+                    try:
+                        self.send_message(
+                            game_end_notification,
+                            target={"type": "agent", "id": agent_id}
+                        )
+                        agent_count += 1
+                        print(f"[LLMSystem] ✅ 已向Agent {agent_id} 发送游戏结束通知 (faction={mapped_faction.value})")
+                    except Exception as e:
+                        print(f"[LLMSystem] ❌ 向Agent {agent_id} 发送游戏结束通知失败: {e}")
+
+                print(f"[LLMSystem] 📢 游戏结束通知已发送给 {agent_count} 个已注册Agent (registered={[f.value for f in registered]})")
+            except Exception as _e:
+                print(f"[LLMSystem] ⚠️ 过滤已注册Agent发送通知失败，降级为不发送: {_e}")
+                agent_count = 0
             return agent_count
             
         except Exception as e:
