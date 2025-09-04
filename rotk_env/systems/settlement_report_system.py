@@ -46,51 +46,55 @@ class SettlementReportSystem(System):
         pass
         
     def update(self, delta_time: float) -> None:
-        """更新系统"""
-        # 🆕 极简方案：检查游戏结束和标志位
-        if not self.report_generated:
-            game_state = self.world.get_singleton_component(GameState)
-            game_stats = self.world.get_singleton_component(GameStats)
+        """更新系统 - 倒计时优先，结构更简洁"""
+        if self.report_generated:
+            return
+
+        game_state = self.world.get_singleton_component(GameState)
+        if not (game_state and game_state.game_over):
+            return
+
+        game_stats = self.world.get_singleton_component(GameStats)
+
+        # First time seeing game over, print the current collection progress once, and start the real countdown from the next frame
+        if self.game_end_time is None:
+            import time
+            self.game_end_time = time.time()
+            try:
+                registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
+                received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
+                print(f"[SettlementReport] 🏁 检测到游戏结束，等待LLM统计或超时... 进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
+            except Exception as _e:
+                print(f"[SettlementReport] ℹ️ 无法读取注册/统计集合: {_e}")
+            return
+
+        # 统一时间计算
+        import time
+        elapsed = time.time() - self.game_end_time
+        remaining = max(0.0, self.timeout_seconds - elapsed)
+
+        # 标志已就绪：提示将在剩余倒计时后生成（不立刻生成），并做节流打印
+        if game_stats and getattr(game_stats, 'can_generate_settlement_report', False):
+            if int(elapsed) != getattr(self, '_last_ready_second', -1):
+                try:
+                    registered = list(getattr(game_stats, 'registered_factions', set()))
+                    received = list(getattr(game_stats, 'received_llm_stats_factions', set()))
+                    print(f"[SettlementReport] 🎯 LLM统计已就绪 (进度: {len(received)}/{len(registered)})，将在倒计时结束后生成 (剩余 {remaining:.1f}s)")
+                except Exception:
+                    print(f"[SettlementReport] 🎯 LLM统计已就绪，将在倒计时结束后生成 (剩余 {remaining:.1f}s)")
+                self._last_ready_second = int(elapsed)
+
+        # 倒计时结束：生成报告（无论标志是否就绪）
+        if elapsed >= self.timeout_seconds:
+            try:
+                registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
+                received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
+                print(f"[SettlementReport] ⏰ 等待LLM统计超时，生成结算报告... 最终进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
+            except Exception as _e:
+                print(f"[SettlementReport] ⏰ 等待LLM统计超时，生成结算报告... (读取集合失败: {_e})")
+            self._generate_settlement_report()
+            self.report_generated = True
             
-            if game_state and game_state.game_over:
-                # 首次检测到游戏结束，记录时间
-                if self.game_end_time is None:
-                    import time
-                    self.game_end_time = time.time()
-                    # 🆕 打印当前注册/统计进度
-                    try:
-                        registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
-                        received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
-                        print(f"[SettlementReport] 🏁 检测到游戏结束，等待LLM统计或超时... 进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
-                    except Exception as _e:
-                        print(f"[SettlementReport] ℹ️ 无法读取注册/统计集合: {_e}")
-                    return
-                
-                # 检查是否收到LLM统计数据
-                if game_stats and game_stats.can_generate_settlement_report:
-                    # 🆕 打印最终统计状态
-                    try:
-                        registered = list(getattr(game_stats, 'registered_factions', set()))
-                        received = list(getattr(game_stats, 'received_llm_stats_factions', set()))
-                        print(f"[SettlementReport] 🎯 收到LLM统计数据，立即生成结算报告... 最终进度: {len(received)}/{len(registered)}")
-                    except Exception:
-                        print(f"[SettlementReport] 🎯 收到LLM统计数据，立即生成结算报告...")
-                    self._generate_settlement_report()
-                    self.report_generated = True
-                    return
-                
-                # 检查是否超时（超时后强制生成报告）
-                import time
-                if time.time() - self.game_end_time >= self.timeout_seconds:
-                    # 🆕 打印超时前的统计状态
-                    try:
-                        registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
-                        received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
-                        print(f"[SettlementReport] ⏰ 等待LLM统计超时，强制生成结算报告... 超时进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
-                    except Exception as _e:
-                        print(f"[SettlementReport] ⏰ 等待LLM统计超时，强制生成结算报告... (读取集合失败: {_e})")
-                    self._generate_settlement_report()
-                    self.report_generated = True
     
     def _generate_settlement_report(self) -> None:
         """生成结算报告"""
