@@ -106,7 +106,7 @@ class LLMClient:
         else:
             self.base_url = config.base_url or "https://api.openai.com/v1"
 
-        self.config_thinking = False
+        self.config_thinking = True
 
         self.config.base_url = self.base_url
         self.config.enable_thinking = config.enable_thinking and self.config_thinking
@@ -137,6 +137,8 @@ class LLMClient:
             "messages": formatted_messages,
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
+            "top_p": 0.8,
+            "top_k": 20,
             "stream": False,
         }
         
@@ -356,7 +358,7 @@ class RoTKChatAgent:
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
-        self.max_iterations = 100
+        self.max_iterations = 1000
         self.faction = faction
         
         self._history_lock = asyncio.Lock()
@@ -864,14 +866,23 @@ class RoTKChatAgent:
         return result
 
 
-    async def _shrink_history(self, window: int = 40):
+    async def _shrink_history(self, window: int = 5):
         # save the first system message
         system_msgs = [m for m in self.conversation_history if m.role == "system"][:1]
         # Hardcode: keep the first user message
         user_msgs = [m for m in self.conversation_history if m.role == "user"][:1]
         # get the last window messages from non-system messages
         non_system_msgs = [m for m in self.conversation_history if m.role != "system"]
-        tail = non_system_msgs[-window:]
+        # 修改：找到最后一次 assistant 的消息，保留该消息及之后的所有消息；若不存在则退回窗口截取
+        last_assistant_idx = None
+        for i in range(len(non_system_msgs) - 1, -1, -1):
+            if getattr(non_system_msgs[i], "role", None) == "assistant":
+                last_assistant_idx = i
+                break
+        if last_assistant_idx is not None:
+            tail = non_system_msgs[last_assistant_idx:]
+        else:
+            tail = non_system_msgs[-window:]
         
         self.conversation_history = system_msgs + user_msgs + tail
 
@@ -977,6 +988,12 @@ class RoTKChatAgent:
                 console.print(f"⚠️ Error checking game status: {status_error}", style="red")
             
             try:
+
+                # Check if the conversation_history is too long, trim it if necessary
+                if len(self.conversation_history) > 50:
+                    await self._shrink_history(window=10)
+                    console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
+
                 # Get LLM response
                 response = await self.llm_client.chat_completion(
                     messages=self.conversation_history,
@@ -1035,7 +1052,7 @@ class RoTKChatAgent:
                     self.conversation_history.append(
                         Message(
                             role="user", 
-                            content="Note: If you need to call tools, please call them directly or with only critical explanation.")
+                            content="Note: The game is real time, you should think quickly and give only the critical information of your strategy.")
                     )
                     continue
 
@@ -1223,7 +1240,7 @@ class AgentDemo:
 
         ## 1. 目标与阵营
         - 你是 **{faction_info["name"]} ({faction})** 阵营的指挥官，目标是指挥己方单位消灭所有 **{faction_info["enemy"]}** 敌军。  
-        - 游戏为 **即时制**：双方可同时操作，需要快速反应。
+        - 游戏为 **即时制**：双方可同时操作，你需要**快速思考**，给出行动策略。
 
         ## 2. 地图与坐标
         - 地图：15×15 六边形格，**flat-topped even-q offset** 坐标 `(col,row)`。  
@@ -1246,9 +1263,9 @@ class AgentDemo:
         ### 工具列表
         - **get_available_actions**: 获取当前可执行动作，参数 `{{}}`。  
         - **perform_action**: 执行动作，参数体：
+        - `{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}`  
         - `{{"action":"move","params":{{"unit_id":<ID>,"target_position":{{"col":X,"row":Y}}}}}}`  
         - `{{"action":"attack","params":{{"unit_id":<ID>,"target_id":<ENEMY_ID>}}}}`  
-        - `{{"action":"get_faction_state","params":{{"faction":"{faction}"|"shu"|"wu"}}}}`  
         - `{{"action":"observation","params":{{"unit_id":<ID>,"observation_level":"basic"}}}}`  
         - **stop_running**: 暂停一回合恢复 AP，参数 `{{}}`。
 
@@ -1279,7 +1296,7 @@ class AgentDemo:
     - **势力**: {faction_info["name"]} ({faction}) - 我方
     - **主要敌人**: {faction_info["enemy"]}
     - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-    - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前态势，然后调动所有单位积极进攻，消灭敌人。
+    - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
         """
     
         count = 0
@@ -1627,8 +1644,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         result = await agent.chat(user_prompt)
         console.print(f"Chat task completed: {result}")
         
-        # Clean up resources
-        await agent.stop()
+        # # Clean up resources
+        # await agent.stop()
         
     except Exception as e:
         console.print(f"Chat process error: {e}", style="red")
