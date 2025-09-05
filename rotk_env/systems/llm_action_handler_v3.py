@@ -1360,7 +1360,7 @@ class LLMActionHandlerV3:
                     },
                 },
                 "get_faction_state": {
-                    "description": "获取阵营整体状态信息，包括总单位数量、存活单位数量、单位详细信息列表",
+                    "description": "获取指定阵营的状态信息:当前存活unit的位置, 剩余生命值",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1370,7 +1370,7 @@ class LLMActionHandlerV3:
                     },
                 },
                 "end_turn": {
-                    "description": "结束当前回合，可结束当前阵营的回合，如果当前阵营没有行动点，则结束回合，并结束当前任务",
+                    "description": "结束当前回合，恢复行动点",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1384,24 +1384,6 @@ class LLMActionHandlerV3:
                             "default": False,
                         },
                     },
-                },
-            },
-            "usage_examples": {
-                "move_unit": {
-                    "action": "move",
-                    "params": {"unit_id": 123, "target_position": {"col": 5, "row": 8}},
-                },
-                "attack_enemy": {
-                    "action": "attack",
-                    "params": {"unit_id": 123, "target_id": 456},
-                },
-                "observe_surroundings": {
-                    "action": "observation",
-                    "params": {"unit_id": 123, "observation_level": "detailed"},
-                },
-                "get_faction_overview": {
-                    "action": "get_faction_state",
-                    "params": {"faction": "wei"},
                 },
             },
         }
