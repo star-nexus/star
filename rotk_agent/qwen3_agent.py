@@ -21,7 +21,9 @@ from rich.console import Console
 from rich import print_json
 
 console = Console()
-
+console_system = Console()
+# Replace console.print with an "empty" function to avoid printing to console
+console.print = lambda *a, **k: None
 
 @dataclass
 class LLMConfig:
@@ -30,8 +32,10 @@ class LLMConfig:
     model_id: str
     api_key: str
     base_url: Optional[str] = None
-    temperature: float = 0.2
+    temperature: float = 0.7
     max_tokens: Optional[int] = None
+    top_p: float = 0.8
+    top_k: int = 20
     enable_thinking: bool = False
 
 
@@ -94,26 +98,26 @@ class LLMClient:
         self.api_error_count = 0  # Number of failed calls
         
         if config.provider == "openai":
-            self.base_url = config.base_url or "https://api.openai.com/v1"
+            self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
         elif config.provider == "deepseek":
             self.base_url = "https://api.deepseek.com"
         elif config.provider == "infinigence":
-            self.base_url = "https://cloud.infini-ai.com/maas/v1"
+            self.base_url = "https://cloud.infini-ai.com/maas/v1/chat/completions"
         elif config.provider == "siliconflow":
-            self.base_url = "https://api.siliconflow.cn/v1"
+            self.base_url = "https://api.siliconflow.cn/v1/chat/completions"
         elif config.provider == "vllm":
-            self.base_url = config.base_url or "http://172.16.75.202:10000/v1"
+            self.base_url = config.base_url or "http://172.16.75.202:10000/v1/chat/completions"
         else:
-            self.base_url = config.base_url or "https://api.openai.com/v1"
+            self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
 
         self.config_thinking = True
 
         self.config.base_url = self.base_url
         self.config.enable_thinking = config.enable_thinking and self.config_thinking
 
-        console.print("=======================================", style="yellow")
-        console.print(self.config, style="yellow") 
-        console.print("=======================================", style="yellow")
+        console_system.print("=======================================", style="yellow")
+        console_system.print(self.config, style="yellow") 
+        console_system.print("=======================================", style="yellow")
 
     async def chat_completion(
         self, 
@@ -137,8 +141,8 @@ class LLMClient:
             "messages": formatted_messages,
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
-            "top_p": 0.8,
-            "top_k": 20,
+            "top_p": self.config.top_p,
+            "top_k": self.config.top_k,
             "stream": False,
         }
         
@@ -169,10 +173,11 @@ class LLMClient:
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
         self.api_call_count += 1
+        print(f"🔍 API call count: {self.api_call_count}")
         
         try:
             response = await self.client.post(
-                f"{self.base_url}/chat/completions",
+                self.base_url,
                 json=payload,
                 headers=headers,
                 timeout=180.0
@@ -337,9 +342,11 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 1000)
+    max_tokens = provider_config.get("max_tokens", 1500)
     enable_thinking = provider_config.get("enable_thinking", False)
-    
+    top_p = provider_config.get("top_p", 0.8)
+    top_k = provider_config.get("top_k", 20)
+
     return LLMConfig(
         provider=provider,
         model_id=model_id,
@@ -347,6 +354,8 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
         base_url=base_url,
         temperature=temperature,
         max_tokens=max_tokens,
+        top_p=top_p,
+        top_k=top_k,
         enable_thinking=enable_thinking
     )
 
@@ -990,7 +999,8 @@ class RoTKChatAgent:
             try:
 
                 # Check if the conversation_history is too long, trim it if necessary
-                if len(self.conversation_history) > 50:
+                console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
+                if len(self.conversation_history) > 80:
                     await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
@@ -1198,23 +1208,23 @@ class AgentDemo:
 
     async def connect(self):
         """Create and connect Agent client"""
-        console.print("🤖 Create Agent client", style="bold blue")
-        console.print(f"📡 Server: {self.hub_url}")
-        console.print(f"🌍 Environment ID: {self.env_id}")
-        console.print(f"🆔 Agent ID: {self.agent_id}")
-        console.print("=" * 50)
+        console_system.print("🤖 Create Agent client", style="bold blue")
+        console_system.print(f"📡 Server: {self.hub_url}")
+        console_system.print(f"🌍 Environment ID: {self.env_id}")
+        console_system.print(f"🆔 Agent ID: {self.agent_id}")
+        console_system.print("=" * 50)
 
         # Connect
-        console.print("🔗 Connecting to server...", style="cyan")
+        console_system.print("🔗 Connecting to server...", style="cyan")
         try:
             await self.agent_client.connect()
-            console.print("✅ Agent connected successfully!", style="bold cyan")
+            console_system.print("✅ Agent connected successfully!", style="bold cyan")
 
             # Wait for connection to stabilize
             await asyncio.sleep(1)
             return True
         except Exception as e:
-            console.print(f"❌ Connection failed: {e}", style="bold red")
+            console_system.print(f"❌ Connection failed: {e}", style="bold red")
             return False
 
     def get_faction_from_env(self) -> str:
@@ -1224,81 +1234,35 @@ class AgentDemo:
     def get_faction_info(self, faction: str) -> dict:
         """Get faction basic information"""
         faction_configs = {
-            "wei": {"name": "魏", "enemy": "蜀 (shu)"},
-            "shu": {"name": "蜀", "enemy": "魏 (wei)"},
-            "wu": {"name": "吴", "enemy": "魏 (wei)"}
+            "wei": {"name": "魏", "enemy": "shu"},
+            "shu": {"name": "蜀", "enemy": "wei"},
+            "wu": {"name": "吴", "enemy": "wei"}
         }
         return faction_configs.get(faction, faction_configs["wei"])
+
+    def load_prompt(self, name: str, base_dir: str = "rotk_agent/prompts") -> str:
+        import pathlib
+        path = pathlib.Path(base_dir) / f"{name}.md"
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
     async def interactive_demo(self):
         # Get faction information from environment variable
         faction = self.get_faction_from_env()
         faction_info = self.get_faction_info(faction)
-        
-        system_prompt = f"""
-        # 核心规则
+        opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        ## 1. 目标与阵营
-        - 你是 **{faction_info["name"]} ({faction})** 阵营的指挥官，目标是指挥己方单位消灭所有 **{faction_info["enemy"]}** 敌军。  
-        - 游戏为 **即时制**：双方可同时操作，你需要**快速思考**，给出行动策略。
-
-        ## 2. 地图与坐标
-        - 地图：15×15 六边形格，**flat-topped even-q offset** 坐标 `(col,row)`。  
-        - 轴向规则：`col` 右正、左负；`row` 上正、下负。  
-        - 邻居坐标：
-        - 若 `col` 偶数: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`  
-        - 若 `col` 奇数: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`  
-        - 距离：offset→axial (`q=c`, `r=r-floor(c/2)`)，再计算  
-        `d = (|dq|+|dr|+|d(q+r)|)/2`。  
-        - **禁止** 使用欧式/曼哈顿/切比雪夫距离。攻击/移动必须用 hex 距离验证。
-
-        ## 3. 工具调用规范
-        - **必须**使用 `tool_calls`，不得把 JSON 写在 `content`。  
-        - **参数格式**：`function.arguments` 是单层 JSON 对象，绝不能带反斜杠或外层引号。  
-        - **禁止**：
-        - 在 `perform_action` 内调用 `get_available_actions`。  
-        - 在 `content` 输出 JSON/工具调用。  
-        - 臆造 `unit_id`、`target_id`、坐标等数据。必须先通过工具获取。  
-
-        ### 工具列表
-        - **get_available_actions**: 获取当前可执行动作，参数 `{{}}`。  
-        - **perform_action**: 执行动作，参数体：
-        - `{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}`  
-        - `{{"action":"move","params":{{"unit_id":<ID>,"target_position":{{"col":X,"row":Y}}}}}}`  
-        - `{{"action":"attack","params":{{"unit_id":<ID>,"target_id":<ENEMY_ID>}}}}`  
-        - `{{"action":"observation","params":{{"unit_id":<ID>,"observation_level":"basic"}}}}`  
-        - **stop_running**: 暂停一回合恢复 AP，参数 `{{}}`。
-
-        ### 并行调用
-        - 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 observation/move/attack）。  
-        - 遇到独立操作时，**合并到同一轮**。  
-        - 串行仅用于前一步结果必须依赖时。  
-
-        ## 4. 前置检查清单（执行顺序）
-        1. `get_available_actions`  
-        2. `perform_action` → `{{"action":"get_faction_state","params":{{"faction":"{faction}"}}}}`  
-        3. `perform_action` → `{{"action":"get_faction_state","params":{{"faction":"shu"}}}}`（如果敌军）  
-        4. 针对每个己方单位：`perform_action` → `{{"action":"observation","params":{{"unit_id":<ID>,"observation_level":"basic"}}}}`
-
-        ## 5. 推荐 OODA 流程
-        1. **观察 (Observe)**：执行前置检查，持续更新状态。  
-        2. **判断 (Orient)**：确定威胁/机会，精炼描述即可。  
-        3. **决策 (Decide)**：规划行动（先攻后移或先移后攻），简洁表述。  
-        4. **行动 (Act)**：调用 `perform_action` 完成操作。  
-        5. **评估 (Assess)**：若失败（AP不足/超距/ID错误等），立刻回到观察阶段并修正。
-
-        ## 6. 行动点 (AP)
-        - move / attack 消耗 AP；AP 会自动恢复。行动规划需考虑 AP。  
-        """
+        raw_prompt = self.load_prompt(name="system_prompt_cn")
+        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
 
         user_prompt = f"""
-    **当前配置**:
-    - **势力**: {faction_info["name"]} ({faction}) - 我方
-    - **主要敌人**: {faction_info["enemy"]}
-    - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-    - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
+**当前配置**:
+- **我方势力**: {faction_info["name"]} ({faction})
+- **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
+- 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
+- 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
         """
-    
+
         count = 0
         while True:
             count += 1
@@ -1315,11 +1279,11 @@ class AgentDemo:
 
     def show_summary(self):
         """Show demo summary"""
-        console.print("\n📊 Agent demo summary", style="bold blue")
-        console.print("=" * 25)
-        console.print(f"📈 Total messages: {len(self.messages)}")
-        console.print(f"🆔 Agent ID: {self.agent_id}")
-        console.print(f"🌍 Environment ID: {self.env_id}")
+        console_system.print("\n📊 Agent demo summary", style="bold blue")
+        console_system.print("=" * 25)
+        console_system.print(f"📈 Total messages: {len(self.messages)}")
+        console_system.print(f"🆔 Agent ID: {self.agent_id}")
+        console_system.print(f"🌍 Environment ID: {self.env_id}")
 
         if self.messages:
             console.print("\n📝 Message history (last 10):")
@@ -1328,19 +1292,19 @@ class AgentDemo:
 
     async def cleanup(self):
         """Clean up resources"""
-        console.print("\n🧹 Cleaning up connection...", style="cyan")
+        console_system.print("\n🧹 Cleaning up connection...", style="cyan")
         try:
             if self.agent_client:
                 await self.agent_client.disconnect()
-                console.print("✅ Agent connection closed", style="cyan")
+                console_system.print("✅ Agent connection closed", style="cyan")
         except Exception as e:
-            console.print(f"⚠️ Error closing connection: {e}", style="red")
+            console_system.print(f"⚠️ Error closing connection: {e}", style="red")
 
     async def run_interactive_demo(self):
         """Run interactive demo"""
-        console.print(f"🎮 Agent interactive demo", style="bold blue")
-        console.print("🎯 You can manually control the Agent to perform various actions", style="cyan")
-        console.print("=" * 50)
+        console_system.print(f"🎮 Agent interactive demo", style="bold blue")
+        console_system.print("🎯 You can manually control the Agent to perform various actions", style="cyan")
+        console_system.print("=" * 50)
 
         try:
             # Connect
@@ -1590,9 +1554,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
-        console.print(f"Found configuration file in current working directory: {config_path}")
-        console.print("Attempting to load configuration file")
-        console.print(config_path)
+        console_system.print(f"Found configuration file in current working directory: {config_path}")
+        console_system.print("Attempting to load configuration file")
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
@@ -1642,13 +1605,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
 
         # Execute chat task
         result = await agent.chat(user_prompt)
-        console.print(f"Chat task completed: {result}")
+        console_system.print(f"Chat task completed: {result}")
         
         # # Clean up resources
         # await agent.stop()
         
     except Exception as e:
-        console.print(f"Chat process error: {e}", style="red")
+        console_system.print(f"Chat process error: {e}", style="red")
         import traceback
         traceback.print_exc()
 
@@ -1782,12 +1745,12 @@ async def main():
 
     args = parser.parse_args()
 
-    console.print(f"📡 Hub: {args.hub_url}")
-    console.print(f"🌍 Environment ID: {args.env_id}")
-    console.print(f"🆔 Agent ID: {args.agent_id}")
-    console.print(f"🔧 Provider: {args.provider}")
-    console.print(f"⚔️ Faction: {args.faction}", style="bold red")
-    console.print("=" * 60)
+    console_system.print(f"📡 Hub: {args.hub_url}")
+    console_system.print(f"🌍 Environment ID: {args.env_id}")
+    console_system.print(f"🆔 Agent ID: {args.agent_id}")
+    console_system.print(f"🔧 Provider: {args.provider}")
+    console_system.print(f"⚔️ Faction: {args.faction}", style="bold red")
+    console_system.print("=" * 60)
 
     # Set environment variables
     os.environ["LLM_PROVIDER"] = args.provider
@@ -1795,7 +1758,7 @@ async def main():
 
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
-    console.print("🎮 Interactive mode", style="bold blue")
+    console_system.print("🎮 Interactive mode", style="bold blue")
     await demo.run_interactive_demo()
 
 
