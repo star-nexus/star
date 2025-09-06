@@ -1342,23 +1342,6 @@ class LLMActionHandlerV3:
                         },
                     },
                 },
-                "observation": {
-                    "description": "获取单位周围的观测信息",
-                    "parameters": {
-                        "unit_id": {
-                            "type": "int",
-                            "required": True,
-                            "description": "单位ID，必须是存活",
-                        },
-                        "observation_level": {
-                            "type": "string",
-                            "required": False,
-                            "description": "观测级别",
-                            "default": "basic",
-                            "options": ["basic", "detailed", "tactical"],
-                        },
-                    },
-                },
                 "get_faction_state": {
                     "description": "获取指定阵营的状态信息:当前存活unit的位置, 剩余生命值",
                     "parameters": {
@@ -1750,7 +1733,7 @@ class LLMActionHandlerV3:
                     "unit_type": "unknown",
                     "faction": "unknown",
                     "position": {"col": 0, "row": 0},
-                    "status": {
+                    "unit_status": {
                         "current_count": 0,
                         "max_count": 0,
                         "health_percentage": 0.0,
@@ -1792,7 +1775,7 @@ class LLMActionHandlerV3:
                     "unit_type": "unknown",
                     "faction": "unknown",
                     "position": {"col": 0, "row": 0},
-                    "status": {
+                    "unit_status": {
                         "current_count": 0,
                         "max_count": 0,
                         "health_percentage": 0.0,
@@ -1991,7 +1974,7 @@ class LLMActionHandlerV3:
                 "unit_type": unit_type_value,
                 "faction": faction_value,
                 "position": position_info,
-                "status": status_info,
+                "unit_status": status_info,
                 "capabilities": capabilities_info,
                 "available_skills": available_skills,
             }
@@ -2004,7 +1987,7 @@ class LLMActionHandlerV3:
                 "unit_type": "unknown",
                 "faction": "unknown",
                 "position": {"col": 0, "row": 0},
-                "status": {
+                "unit_status": {
                     "current_count": 0,
                     "max_count": 0,
                     "health_percentage": 0.0,
