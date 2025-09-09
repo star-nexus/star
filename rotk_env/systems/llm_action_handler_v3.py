@@ -1352,22 +1352,6 @@ class LLMActionHandlerV3:
                         }
                     },
                 },
-                "end_turn": {
-                    "description": "结束当前回合，恢复行动点",
-                    "parameters": {
-                        "faction": {
-                            "type": "string",
-                            "required": True,
-                            "description": "自己当前阵营名称(wei | shu | wu)",
-                        },
-                        "force": {
-                            "type": "bool",
-                            "required": False,
-                            "description": "是否强制结束，如果为True，则无论当前阵营是否有行动点，都结束回合",
-                            "default": False,
-                        },
-                    },
-                },
             },
         }
 
