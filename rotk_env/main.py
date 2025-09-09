@@ -1,15 +1,14 @@
 """
-三国策略游戏主启动文件
 Romance of the Three Kingdoms Strategy Game
 
-使用方法:
-    python main.py [选项]
+Usage:
+    python main.py [Options]
 
-选项:
-    --mode [turn_based|real_time]  游戏模式（默认: turn_based）
-    --scenario [default|chibi|three_kingdoms]  游戏场景（默认: default）
-    --players [human_vs_ai|ai_vs_ai|three_kingdoms]  玩家配置（默认: human_vs_ai）
-    --help  显示帮助信息
+Options:
+    --mode [turn_based|real_time]  Game mode (default: turn_based)
+    --scenario [default|chibi|three_kingdoms]  Game scenario (default: default)
+    --players [human_vs_ai|ai_vs_ai|three_kingdoms]  Player configuration (default: human_vs_ai)
+    --help  Show help information   
 """
 
 import sys
@@ -20,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# 添加framework到路径
+# Add framework to path
 sys.path.append(str(Path(__file__).parent.parent / "framework"))
 
 from framework.engine.game_engine import GameEngine
@@ -30,26 +29,26 @@ from rotk_env.prefabs.config import Faction, PlayerType
 
 
 def parse_arguments():
-    """解析命令行参数"""
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="三国策略游戏 - Romance of the Three Kingdoms Strategy Game",
+        description="Romance of the Three Kingdoms Strategy Game",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-游戏说明:
-  这是一个基于六边形地图的回合制策略游戏，支持人类玩家和AI对战。
-  游戏中有不同的地形类型，会对单位产生不同的效果。
-  
-控制说明:
-  鼠标左键: 选择单位/移动/攻击
-  鼠标右键: 取消选择
-  WASD/方向键: 移动摄像机
-  空格键: 结束回合
-  Tab键: 显示/隐藏统计
-  F1键: 显示/隐藏帮助
-  ESC键: 取消选择
+Game description:
+  This is a turn-based strategy game set on a hexagonal map, supporting both human and AI opponents. The game features a variety of terrain types, each affecting units in unique ways to add strategic depth.
 
-获胜条件:
-  消灭所有敌方单位，或在回合结束时获得最高积分
+Controls:
+  Left Mouse Button: Select unit / Move / Attack
+  Right Mouse Button: Deselect
+  WASD or Arrow Keys: Move camera
+  V: Toggle coordinate display
+  Spacebar: End turn
+  Tab: Show/Hide statistics
+  F1: Show/Hide help
+  ESC: Cancel selection
+
+Victory Conditions:
+  Eliminate all enemy units, or achieve the highest score by the end of the game.
         """,
     )
 
@@ -57,35 +56,35 @@ def parse_arguments():
         "--headless",
         action="store_true",
         default=False,
-        help="跳过开始场景，直接进入游戏,自动结束，适用于自动化测试或服务器环境",
+        help="Skip start scene, enter game directly, auto end, suitable for automation testing or server environment",
     )
 
     parser.add_argument(
         "--mode",
         choices=["turn_based", "real_time"],
         default="turn_based",
-        help="游戏模式 (默认: turn_based)",
+        help="Game mode (default: turn_based)",
     )
 
     parser.add_argument(
         "--scenario",
         choices=["default", "chibi", "three_kingdoms"],
         default="default",
-        help="游戏场景 (默认: default)",
+        help="Game scenario (default: default)",
     )
 
     parser.add_argument(
         "--players",
         choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms"],
         default="human_vs_ai",
-        help="玩家配置 (默认: human_vs_ai)",
+        help="Player configuration (default: human_vs_ai)",
     )
 
     return parser.parse_args()
 
 
 def create_game_from_args(args):
-    """根据参数创建游戏"""
+    """Create game from arguments"""
     players_config = {
         "human_vs_ai": {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
         "ai_vs_ai": {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
@@ -102,80 +101,79 @@ def create_game_from_args(args):
 
 
 def print_welcome():
-    """显示欢迎信息"""
+    """Display welcome message"""
     print("\n" + "=" * 60)
-    print("  三国策略游戏")
     print("  Romance of the Three Kingdoms Strategy Game")
     print("=" * 60)
-    print("\n基于framework的六边形回合制策略游戏")
-    print("\n游戏特色:")
-    print("  ✓ 六边形地图系统")
-    print("  ✓ 多种地形效果")
-    print("  ✓ 战争迷雾系统")
-    print("  ✓ AI和人类玩家")
-    print("  ✓ 详细游戏统计")
-    print("  ✓ 回合制策略")
-    print("\n正在启动游戏...")
+    print("\nA hex-based turn-based strategy game powered by a modern framework.")
+    print("\nGame Features:")
+    print("  ✓ Hexagonal map system for deep tactical play")
+    print("  ✓ Diverse terrain effects influencing strategy")
+    print("  ✓ Fog of war for realistic battlefield uncertainty")
+    print("  ✓ Play as AI or human, or both")
+    print("  ✓ Detailed game statistics and analytics")
+    print("  ✓ Classic turn-based strategy mechanics")
+    print("\nLaunching the game, please wait...")
 
 
 def main():
-    """游戏主函数"""
+    """Main game function"""
     try:
-        # 解析命令行参数
+        # Parse command line arguments
         args = parse_arguments()
 
-        # 显示欢迎信息
+        # Display welcome message
         print_welcome()
 
-        # 创建游戏引擎
+        # Create game engine
         engine = GameEngine(
-            title="三国策略游戏 - Romance of the Three Kingdoms",
+            title="Romance of the Three Kingdoms Strategy Game",
             width=1200,
             height=800,
             fps=60,
         )
 
-        # 注册游戏场景
+        # Register game scenes
         engine.scene_manager.register_scene("start", StartScene)
         engine.scene_manager.register_scene("game", GameScene)
         engine.scene_manager.register_scene("game_over", GameOverScene)
 
-        # 根据命令行参数决定初始场景
+        # Determine initial scene based on command line arguments
         if args.headless:
-            # 如果跳过开始场景，直接进入游戏场景
+            # If start scene is skipped, enter game scene directly
             os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-            # 获取玩家配置
+            # Get player configuration
             players_config = create_game_from_args(args)
 
-            # 设置初始场景，传递参数
+            # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
                 "game", players=players_config, game_mode=args.mode, headless=True
             )
 
-            print(f"游戏模式: {args.mode}")
-            print(f"玩家配置: {args.players}")
-            print(f"游戏场景: {args.scenario}")
+            print(f"Game mode: {args.mode}")
+            print(f"Player configuration: {args.players}")
+            print(f"Game scenario: {args.scenario}")
         else:
-            # 默认进入开始场景
+            # Default to start scene
             engine.scene_manager.switch_to("start")
-            print("进入游戏配置界面...")
+            print("Enter game configuration interface...")
 
-        print("游戏已启动! 在开始界面配置游戏，然后点击开始游戏。")
+        print("Game started! Configure the game in the start interface, then click start game.")
 
-        # 启动游戏
+        # Start game
         engine.start()
 
     except KeyboardInterrupt:
-        print("\n游戏被用户中断")
+        print("\nGame interrupted by user")
     except Exception as e:
-        print(f"\n游戏运行出错: {e}")
+        print(f"\nGame running error: {e}")
         import traceback
 
         traceback.print_exc()
     finally:
         pygame.quit()
-        print("游戏结束")
+        print("Game Over")
 
 
 if __name__ == "__main__":
