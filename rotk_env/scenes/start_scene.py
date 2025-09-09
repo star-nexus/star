@@ -42,7 +42,7 @@ class StartScene(Scene):
         # 定义按钮
         buttons = {
             "start_game": {
-                "text": "开始游戏",
+                "text": "Start Game",
                 "rect": pygame.Rect(
                     screen_width // 2 - 100, screen_height - 150, 200, 50
                 ),
@@ -52,7 +52,7 @@ class StartScene(Scene):
                 "action": self._start_game,
             },
             "quit": {
-                "text": "退出游戏",
+                "text": "Quit",
                 "rect": pygame.Rect(
                     screen_width // 2 - 100, screen_height - 80, 200, 50
                 ),
@@ -176,7 +176,8 @@ class StartScene(Scene):
         # 检查游戏模式选项点击
         mode_y = panel_y + 30 + 60  # panel_y + 30 (y_offset) + 60 (option_y offset)
         for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
-            option_rect = pygame.Rect(panel_x + 50 + i * 150, mode_y, 120, 30)
+            # 修改为垂直排列，与渲染系统保持一致
+            option_rect = pygame.Rect(panel_x + 50, mode_y + i * 45, 300, 30)
             print(f"模式选项 {i} ({mode.value}) 区域: {option_rect}")  # 调试信息
             if option_rect.collidepoint(pos):
                 config.selected_mode = mode
@@ -184,7 +185,7 @@ class StartScene(Scene):
                 return
 
         # 检查玩家配置选项点击
-        player_y = panel_y + 130 + 60  # panel_y + 130 (y_offset) + 60 (option_y offset)
+        player_y = panel_y + 190 + 60  # panel_y + 190 (y_offset + 160) + 60 (option_y offset)
         player_configs = [
             {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
             {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
@@ -196,7 +197,8 @@ class StartScene(Scene):
         ]
 
         for i, player_config in enumerate(player_configs):
-            option_rect = pygame.Rect(panel_x + 50, player_y + i * 30, 200, 30)
+            # 修改为45像素间隔，与渲染系统保持一致
+            option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 400, 30)
             config_name = ["人机对战", "AI对战", "三国模式"][i]
             print(f"玩家配置 {i} ({config_name}) 区域: {option_rect}")  # 调试信息
             if option_rect.collidepoint(pos):
