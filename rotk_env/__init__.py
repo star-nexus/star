@@ -1,13 +1,12 @@
 """
-Three Kingdoms Strategy Game (ROTK)
-基于 framework 的三国策略游戏
+Romance of the Three Kingdoms Strategy Game (ROTK)
 
-主要功能：
-- 回合制和实时制两种游戏模式
-- 六边形地图系统
-- 地形系统和战争迷雾
-- AI和人类玩家控制
-- 详细的游戏统计界面
+Main Features:
+- Turn-based and real-time game modes
+- Hexagonal map system
+- Terrain system and fog of war
+- AI and human player control
+- Detailed game statistics interface
 """
 
 from .prefabs.config import GameConfig
