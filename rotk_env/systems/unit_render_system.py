@@ -848,9 +848,9 @@ class UnitRenderSystem(System):
     def _render_unit_icon(self, screen_x, screen_y, unit, zoom, scale=1.0):
         """渲染单位类型图标 - v0版实现"""
         unit_symbols = {
-            UnitType.INFANTRY: "兵",
-            UnitType.CAVALRY: "骑",
-            UnitType.ARCHER: "弓",
+            UnitType.INFANTRY: "Infantry",
+            UnitType.CAVALRY: "Cavalry",
+            UnitType.ARCHER: "Archer",
         }
 
         symbol = unit_symbols.get(unit.unit_type, "？")
