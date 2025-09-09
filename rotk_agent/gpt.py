@@ -1,5 +1,7 @@
 from openai import OpenAI
 import json
+from rich.console import Console
+console = Console()
 
 client = OpenAI(base_url="http://172.16.75.203:10000/v1", api_key="EMPTY")
 
@@ -87,7 +89,8 @@ print(response.model_dump_json(indent=2))
 # Save function call outputs for subsequent requests
 input_list += response.output
 
-
+console.print("Input list:")
+console.print(input_list)
 
 for item in response.output:
     if item.type == "function_call":
@@ -105,7 +108,7 @@ for item in response.output:
             })
 
 print("Final input:")
-print(input_list)
+console.print(input_list)
 
 response = client.responses.create(
     model="/home/Assets/models/gpt-oss-20b",
