@@ -132,7 +132,7 @@ class GameScene(Scene):
 
         # 初始化单位
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1, 3, 1], [1, 3, 1], [0, 0, 0]])
+        self._initialize_units([[1, 3, 1], [1, 3, 1], [1, 3, 1]])
 
         # 初始化游戏统计
         self._initialize_stats()
