@@ -74,7 +74,7 @@ class GameOverScene(Scene):
         buttons = {
             "restart": {
                 "rect": pygame.Rect(start_x, button_y, button_width, button_height),
-                "text": "重新开始",
+                "text": "Restart",
                 "hover": False,
                 "default_color": (60, 60, 80),
                 "hover_color": (80, 80, 100),
@@ -82,7 +82,7 @@ class GameOverScene(Scene):
             },
             "view_report": {
                 "rect": pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height),
-                "text": "查看报告",
+                "text": "View Report",
                 "hover": False,
                 "default_color": (60, 80, 60),
                 "hover_color": (80, 100, 80),
@@ -90,7 +90,7 @@ class GameOverScene(Scene):
             },
             "quit": {
                 "rect": pygame.Rect(start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height),
-                "text": "退出游戏",
+                "text": "Quit",
                 "hover": False,
                 "default_color": (80, 60, 60),
                 "hover_color": (100, 80, 80),
