@@ -108,25 +108,25 @@ class CombatRoll(Component):
     crit_roll: Optional[int] = None  # 暴击投掷
 
     hit_threshold: int = 2  # 命中阈值
-    crit_threshold: int = 6  # 暴击阈值
+    crit_threshold: int = 19  # 暴击阈值
 
     def roll_hit(self) -> bool:
         """投掷命中"""
         import random
 
-        self.hit_roll = random.randint(1, 6)
+        self.hit_roll = random.randint(1, 20)
         return self.hit_roll >= self.hit_threshold
 
     def roll_crit(self) -> bool:
         """投掷暴击"""
         import random
 
-        self.crit_roll = random.randint(1, 6)
+        self.crit_roll = random.randint(1, 20)
         return self.crit_roll >= self.crit_threshold
 
     def apply_forest_penalty(self):
         """应用森林命中率惩罚"""
-        # 森林中远程命中率-20%，相当于提高阈值
+        # 森林中远程命中率-5%，相当于提高阈值
         if self.hit_roll is not None:
-            # 模拟20%惩罚，大约相当于+1阈值
-            self.hit_threshold = min(6, self.hit_threshold + 1)
+            # 模拟5%惩罚，大约相当于+1阈值
+            self.hit_threshold = min(20, self.hit_threshold + 1)

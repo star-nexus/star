@@ -426,7 +426,7 @@ class CombatSystem(System):
         attacker_pos: HexPosition,
         target_pos: HexPosition,
     ) -> bool:
-        """Roll to hit (1D6 ≥ 2)"""
+        """Roll to hit (1D20 ≥ 2)"""
         # Check terrain effects (forest -20% hit rate)
         target_terrain = self._get_terrain_at_position((target_pos.col, target_pos.row))
         if target_terrain == TerrainType.FOREST:
@@ -640,7 +640,9 @@ class CombatSystem(System):
         if killer_entity:
             killer_unit = self.world.get_component(killer_entity, Unit)
             killer_faction = killer_unit.faction.value if killer_unit else "unknown"
-            print(f"💀 {unit.faction.value} unit {pos_str} was killed by {killer_faction}!")
+            print(
+                f"💀 {unit.faction.value} unit {pos_str} was killed by {killer_faction}!"
+            )
         else:
             print(f"💀 {unit.faction.value} unit {pos_str} died!")
 
