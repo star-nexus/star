@@ -1,6 +1,6 @@
 """
-统计系统 - 负责游戏数据统计和记录
-严格遵守ECS规范：只处理业务逻辑，不存储数据
+Statistics System - Responsible for game data statistics and recording
+Strictly follows ECS specification: only handles business logic, does not store data
 """
 
 import time
@@ -30,50 +30,50 @@ from ..prefabs.config import Faction, TerrainType
 
 
 class StatisticsSystem(System):
-    """统计系统 - 管理游戏统计和数据记录"""
+    """Statistics system - manages game statistics and data recording"""
 
     def __init__(self):
         super().__init__(priority=15)
         self.last_update_time = 0.0
-        self.observation_interval = 1.0  # 每秒记录一次观测数据
+        self.observation_interval = 1.0  # Record observation data every second
 
     def initialize(self, world: World) -> None:
-        """初始化统计系统"""
+        """Initialize statistics system"""
         self.world = world
 
-        # 初始化统计组件
+        # Initialize statistics components
         self._initialize_statistics_components()
 
     def subscribe_events(self) -> None:
-        """订阅事件"""
+        """Subscribe to events"""
         pass
 
     def _initialize_statistics_components(self) -> None:
-        """初始化所有统计相关组件"""
-        # 游戏统计
+        """Initialize all statistics-related components"""
+        # Game statistics
         if not self.world.get_singleton_component(GameStats):
             stats = GameStats()
             stats.game_start_time = time.time()
             self.world.add_singleton_component(stats)
 
-        # 游戏模式统计
+        # Game mode statistics
         if not self.world.get_singleton_component(GameModeStatistics):
             mode_stats = GameModeStatistics()
             self.world.add_singleton_component(mode_stats)
 
-        # 可见性追踪器
+        # Visibility tracker
         if not self.world.get_singleton_component(VisibilityTracker):
             visibility_tracker = VisibilityTracker()
             self.world.add_singleton_component(visibility_tracker)
 
     def update(self, delta_time: float) -> None:
-        """更新统计系统"""
+        """Update statistics system"""
         current_time = time.time()
 
-        # 更新游戏时间
+        # Update game time
         self._update_game_time(delta_time)
 
-        # 定期记录单位观测数据
+        # Periodically record unit observation data
         if current_time - self.last_update_time >= self.observation_interval:
             self._record_unit_observations()
             self._update_visibility_tracking()
@@ -81,7 +81,7 @@ class StatisticsSystem(System):
             self.last_update_time = current_time
 
     def _update_game_time(self, dt: float) -> None:
-        """更新游戏时间"""
+        """Update game time"""
         stats = self.world.get_singleton_component(GameStats)
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
 
@@ -92,14 +92,14 @@ class StatisticsSystem(System):
             mode_stats.realtime_stats["total_game_time"] += dt
 
     def _record_unit_observations(self) -> None:
-        """记录单位观测数据"""
+        """Record unit observation data"""
         stats = self.world.get_singleton_component(GameStats)
         if not stats:
             return
 
         current_time = time.time()
 
-        # 为每个单位记录观测数据
+        # Record observation data for each unit
         for entity in (
             self.world.query().with_all(Unit, UnitCount, HexPosition).entities()
         ):
@@ -112,13 +112,13 @@ class StatisticsSystem(System):
             if not all([unit, unit_count, position]):
                 continue
 
-            # 获取或创建观测组件
+            # Get or create observation component
             observation = self.world.get_component(entity, UnitObservation)
             if not observation:
                 observation = UnitObservation()
                 self.world.add_component(entity, observation)
 
-            # 更新观测数据
+            # Update observation data
             observation.previous_position = observation.current_position
             observation.current_position = (position.col, position.row)
             observation.health_percentage = (
@@ -129,12 +129,12 @@ class StatisticsSystem(System):
                 observation.movement_remaining = movement.current_mp
                 observation.has_acted_this_turn = movement.has_moved
 
-                # 计算移动距离
+                # Calculate movement distance
                 if observation.previous_position != observation.current_position:
                     observation.total_distance_moved += 1
                     observation.movement_path.append(observation.current_position)
 
-                    # 限制路径长度
+                    # Limit path length
                     if len(observation.movement_path) > 50:
                         observation.movement_path = observation.movement_path[-50:]
 
@@ -143,11 +143,11 @@ class StatisticsSystem(System):
                 if combat.has_attacked:
                     observation.last_combat_time = current_time
 
-            # 获取地形信息
+            # Get terrain information
             terrain_type = self._get_terrain_at_position(position.col, position.row)
             observation.current_terrain_type = terrain_type
 
-            # 记录到历史数据
+            # Record to historical data
             observation_data = {
                 "entity": entity,
                 "faction": unit.faction.value,
@@ -160,17 +160,17 @@ class StatisticsSystem(System):
                 "timestamp": stats.total_game_time,
             }
 
-            # 添加观测记录
+            # Add observation record
             stats.unit_observation_history.append(observation_data)
 
-            # 限制历史记录数量
+            # Limit historical record count
             if len(stats.unit_observation_history) > 10000:
                 stats.unit_observation_history = stats.unit_observation_history[-5000:]
 
     def _get_terrain_at_position(self, col: int, row: int) -> str:
-        """获取指定位置的地形类型"""
+        """Get terrain type at specified position"""
         try:
-            # 尝试从地图数据中获取地形信息
+            # Try to get terrain information from map data
             from ..components import MapData
 
             map_data = self.world.get_singleton_component(MapData)
@@ -181,21 +181,21 @@ class StatisticsSystem(System):
                     return terrain.terrain_type.value
         except:
             pass
-        return "plains"  # 默认地形
+        return "plains"  # Default terrain
 
     def _update_visibility_tracking(self) -> None:
-        """更新可见性追踪"""
+        """Update visibility tracking"""
         visibility_tracker = self.world.get_singleton_component(VisibilityTracker)
         fog_of_war = self.world.get_singleton_component(FogOfWar)
 
         if not visibility_tracker or not fog_of_war:
             return
 
-        # 清空当前可见单位
+        # Clear current visible units
         for faction in visibility_tracker.faction_visible_units:
             visibility_tracker.faction_visible_units[faction].clear()
 
-        # 更新每个单位的可见性
+        # Update visibility for each unit
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
             unit = self.world.get_component(entity, Unit)
             position = self.world.get_component(entity, HexPosition)
@@ -206,15 +206,15 @@ class StatisticsSystem(System):
             visible_to = set()
             unit_pos = (position.col, position.row)
 
-            # 检查哪些阵营能看到这个单位
+            # Check which factions can see this unit
             for faction, vision_tiles in fog_of_war.faction_vision.items():
                 if unit_pos in vision_tiles and faction != unit.faction:
                     visible_to.add(faction)
 
-            # 单位自己的阵营总是能看到
+            # Unit's own faction can always see it
             visible_to.add(unit.faction)
 
-            # 更新可见性数据
+            # Update visibility data
             self._update_unit_visibility(entity, visible_to, visibility_tracker)
 
     def _update_unit_visibility(
@@ -223,16 +223,16 @@ class StatisticsSystem(System):
         visible_to: Set[Faction],
         visibility_tracker: VisibilityTracker,
     ) -> None:
-        """更新单位可见性数据"""
+        """Update unit visibility data"""
         current_time = time.time()
 
-        # 更新可见单位映射
+        # Update visible units mapping
         for faction in visible_to:
             if faction not in visibility_tracker.faction_visible_units:
                 visibility_tracker.faction_visible_units[faction] = set()
             visibility_tracker.faction_visible_units[faction].add(unit_entity)
 
-        # 记录可见性历史
+        # Record visibility history
         if unit_entity not in visibility_tracker.visibility_history:
             visibility_tracker.visibility_history[unit_entity] = []
 
@@ -245,28 +245,28 @@ class StatisticsSystem(System):
 
         visibility_tracker.visibility_history[unit_entity].append(visibility_record)
 
-        # 限制历史记录数量
+        # Limit historical record count
         if len(visibility_tracker.visibility_history[unit_entity]) > 100:
             visibility_tracker.visibility_history[unit_entity] = (
                 visibility_tracker.visibility_history[unit_entity][-100:]
             )
 
-        # 更新单位观测组件
+        # Update unit observation component
         observation = self.world.get_component(unit_entity, UnitObservation)
         if observation:
             observation.is_visible_to = visible_to
             observation.last_seen_time = current_time
 
     def _update_faction_statistics(self) -> None:
-        """更新阵营统计"""
+        """Update faction statistics"""
         stats = self.world.get_singleton_component(GameStats)
         if not stats:
             return
 
-        # 为每个阵营统计领土控制
+        # Count territory control for each faction
         faction_territories = {}
 
-        # 统计每个阵营控制的单位和位置
+        # Count units and positions controlled by each faction
         for entity in (
             self.world.query().with_all(Unit, HexPosition, UnitCount).entities()
         ):
@@ -278,19 +278,19 @@ class StatisticsSystem(System):
 
             faction = unit.faction
 
-            # 初始化阵营统计
+            # Initialize faction statistics
             self._initialize_faction_stats(faction, stats)
 
-            # 统计领土（简化：每个活着的单位控制1个领土）
+            # Count territory (simplified: each living unit controls 1 territory)
             faction_territories[faction] = faction_territories.get(faction, 0) + 1
 
-        # 更新领土控制统计
+        # Update territory control statistics
         for faction, territory_count in faction_territories.items():
             if faction in stats.faction_stats:
                 stats.faction_stats[faction]["territory_controlled"] = territory_count
 
     def _initialize_faction_stats(self, faction: Faction, stats: GameStats) -> None:
-        """初始化阵营统计数据"""
+        """Initialize faction statistics data"""
         if faction not in stats.faction_stats:
             stats.faction_stats[faction] = {
                 "kills": 0,
@@ -306,12 +306,12 @@ class StatisticsSystem(System):
                 "battles_lost": 0,
             }
 
-    # === 公共接口方法 - 供其他系统调用 ===
+    # === Public interface methods - called by other systems ===
 
     def record_combat_action(
         self, attacker_entity: int, target_entity: int, damage: int, result: str
     ) -> None:
-        """记录战斗行动"""
+        """Record combat action"""
         stats = self.world.get_singleton_component(GameStats)
         battle_log = self.world.get_singleton_component(BattleLog)
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
@@ -322,10 +322,10 @@ class StatisticsSystem(System):
         if not attacker_unit or not target_unit:
             return
 
-        # 更新单位统计
+        # Update unit statistics
         self._update_unit_combat_stats(attacker_entity, target_entity, damage, result)
 
-        # 更新阵营统计
+        # Update faction statistics
         if stats:
             self._initialize_faction_stats(attacker_unit.faction, stats)
             self._initialize_faction_stats(target_unit.faction, stats)
@@ -337,7 +337,7 @@ class StatisticsSystem(System):
                 stats.faction_stats[attacker_unit.faction]["kills"] += 1
                 stats.faction_stats[target_unit.faction]["losses"] += 1
 
-            # 记录战斗历史
+            # Record battle history
             battle_record = {
                 "attacker_faction": attacker_unit.faction.value,
                 "target_faction": target_unit.faction.value,
@@ -349,21 +349,21 @@ class StatisticsSystem(System):
             }
             stats.battle_history.append(battle_record)
 
-        # 记录到战况日志
+        # Record to battle log
         if battle_log:
             self._add_battle_log_entry(
                 battle_log, attacker_unit, target_unit, damage, result
             )
 
-        # 记录游戏模式统计
+        # Record game mode statistics
         if mode_stats:
             self._record_mode_action(mode_stats, attacker_unit.faction, "combat")
 
     def _update_unit_combat_stats(
         self, attacker_entity: int, target_entity: int, damage: int, result: str
     ) -> None:
-        """更新单位战斗统计"""
-        # 攻击者统计
+        """Update unit combat statistics"""
+        # Attacker statistics
         attacker_stats = self.world.get_component(attacker_entity, UnitStatistics)
         if not attacker_stats:
             attacker_stats = UnitStatistics()
@@ -373,7 +373,7 @@ class StatisticsSystem(System):
         attacker_stats.damage_dealt += damage
         attacker_stats.battles_participated += 1
 
-        # 目标统计
+        # Target statistics
         target_stats = self.world.get_component(target_entity, UnitStatistics)
         if not target_stats:
             target_stats = UnitStatistics()
@@ -382,7 +382,7 @@ class StatisticsSystem(System):
         target_stats.damage_taken += damage
         target_stats.battles_participated += 1
 
-        # 如果目标死亡
+        # If target dies
         if result == "kill":
             attacker_stats.kills += 1
             attacker_stats.battles_won += 1
@@ -390,12 +390,12 @@ class StatisticsSystem(System):
             target_stats.battles_lost += 1
 
     def _get_current_time_info(self) -> tuple[str, Optional[int]]:
-        """获取当前时间信息（游戏时间显示和回合数）"""
+        """Get current time information (game time display and turn number)"""
         game_time = self.world.get_singleton_component(GameTime)
         if game_time:
             return game_time.get_current_time_display(), game_time.get_turn_number()
 
-        # 兼容性：如果没有游戏时间系统，使用旧逻辑
+        # Compatibility: if no game time system, use old logic
         game_mode = self.world.get_singleton_component(GameModeComponent)
         if game_mode and game_mode.is_turn_based():
             game_state = self.world.get_singleton_component(GameState)
@@ -405,7 +405,7 @@ class StatisticsSystem(System):
             return "00:00", None
 
     def _get_current_turn_number(self) -> Optional[int]:
-        """获取当前回合数（仅在回合制模式下）"""
+        """Get current turn number (only in turn-based mode)"""
         _, turn_number = self._get_current_time_info()
         return turn_number
 
@@ -417,13 +417,13 @@ class StatisticsSystem(System):
         damage: int,
         result: str,
     ) -> None:
-        """添加战斗日志条目"""
+        """Add battle log entry"""
         if result == "kill":
-            message = f"{attacker_unit.faction.value}击败了{target_unit.faction.value}的{target_unit.unit_type.value}"
+            message = f"{attacker_unit.faction.value} defeated {target_unit.faction.value}'s {target_unit.unit_type.value}"
             log_type = "combat"
             color = (255, 100, 100)
         else:
-            message = f"{attacker_unit.faction.value}对{target_unit.faction.value}造成{damage}点伤害"
+            message = f"{attacker_unit.faction.value} dealt {damage} damage to {target_unit.faction.value}"
             log_type = "combat"
             color = (255, 200, 100)
 
@@ -444,10 +444,10 @@ class StatisticsSystem(System):
         from_pos: Tuple[int, int],
         to_pos: Tuple[int, int],
     ) -> None:
-        """添加移动日志条目"""
-        message = f"{unit.faction.value}的{unit.unit_type.value}从({from_pos[0]},{from_pos[1]})移动到({to_pos[0]},{to_pos[1]})"
+        """Add movement log entry"""
+        message = f"{unit.faction.value}'s {unit.unit_type.value} moved ({from_pos[0]},{from_pos[1]})->({to_pos[0]},{to_pos[1]})"
         log_type = "movement"
-        color = (100, 200, 255)  # 蓝色
+        color = (100, 200, 255)  # Blue
         time_display, turn_number = self._get_current_time_info()
         battle_log.add_entry(
             message, log_type, unit.faction.value, color, time_display, turn_number
@@ -459,13 +459,13 @@ class StatisticsSystem(System):
         previous_faction: Optional[Faction],
         new_faction: Faction,
     ) -> None:
-        """添加回合变化日志条目"""
+        """Add turn change log entry"""
         if previous_faction:
-            message = f"{previous_faction.value}回合结束，{new_faction.value}回合开始"
+            message = f"{previous_faction.value} turn ended, {new_faction.value} turn started"
         else:
-            message = f"{new_faction.value}回合开始"
+            message = f"{new_faction.value} turn started"
         log_type = "turn"
-        color = (255, 255, 100)  # 黄色
+        color = (255, 255, 100)  # Yellow
         time_display, turn_number = self._get_current_time_info()
         battle_log.add_entry(
             message, log_type, new_faction.value, color, time_display, turn_number
@@ -474,12 +474,12 @@ class StatisticsSystem(System):
     def record_movement_action(
         self, entity: int, from_pos: Tuple[int, int], to_pos: Tuple[int, int]
     ) -> None:
-        """记录移动行动"""
+        """Record movement action"""
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
 
-        # 更新单位统计
+        # Update unit statistics
         unit_stats = self.world.get_component(entity, UnitStatistics)
         if not unit_stats:
             unit_stats = UnitStatistics()
@@ -487,19 +487,19 @@ class StatisticsSystem(System):
 
         unit_stats.moves_made += 1
 
-        # 更新游戏统计
+        # Update game statistics
         stats = self.world.get_singleton_component(GameStats)
         if stats:
             self._initialize_faction_stats(unit.faction, stats)
             stats.faction_stats[unit.faction]["actions_taken"] += 1
             stats.faction_stats[unit.faction]["movement_distance"] += 1
 
-        # 记录游戏模式统计
+        # Record game mode statistics
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
         if mode_stats:
             self._record_mode_action(mode_stats, unit.faction, "movement")
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             self._add_movement_log_entry(battle_log, unit, from_pos, to_pos)
@@ -507,7 +507,7 @@ class StatisticsSystem(System):
     def record_turn_change(
         self, previous_faction: Optional[Faction], new_faction: Faction
     ) -> None:
-        """记录回合变化"""
+        """Record turn change"""
         stats = self.world.get_singleton_component(GameStats)
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
         game_state = self.world.get_singleton_component(GameState)
@@ -515,7 +515,7 @@ class StatisticsSystem(System):
         if not game_state:
             return
 
-        # 记录回合历史
+        # Record turn history
         if stats:
             turn_record = {
                 "turn_number": game_state.turn_number,
@@ -528,38 +528,38 @@ class StatisticsSystem(System):
             }
             stats.turn_history.append(turn_record)
 
-        # 更新游戏模式统计
+        # Update game mode statistics
         if mode_stats:
             self._handle_turn_change(mode_stats, previous_faction, new_faction)
 
-        # 更新阵营回合统计
+        # Update faction turn statistics
         if stats:
             self._initialize_faction_stats(new_faction, stats)
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             self._add_turn_change_log_entry(battle_log, previous_faction, new_faction)
 
-        # 更新回合统计
+        # Update turn statistics
         if stats:
             stats.faction_stats[new_faction]["turns_played"] += 1
 
     def _record_mode_action(
         self, mode_stats: GameModeStatistics, faction: Faction, action_type: str
     ) -> None:
-        """记录游戏模式行动"""
+        """Record game mode action"""
         current_time = time.time()
 
         if mode_stats.current_mode == "turn_based":
             mode_stats.actions_this_turn += 1
         else:  # realtime
-            # 更新每分钟行动数
+            # Update actions per minute
             if current_time - mode_stats.last_action_time > 60:
                 mode_stats.actions_this_minute = 0
             mode_stats.actions_this_minute += 1
 
-            # 更新实时统计
+            # Update real-time statistics
             if faction not in mode_stats.realtime_stats["faction_activity"]:
                 mode_stats.realtime_stats["faction_activity"][faction] = 0
             mode_stats.realtime_stats["faction_activity"][faction] += 1
@@ -580,13 +580,13 @@ class StatisticsSystem(System):
         previous_faction: Optional[Faction],
         new_faction: Faction,
     ) -> None:
-        """处理回合变化的统计"""
+        """Handle turn change statistics"""
         if mode_stats.current_mode == "turn_based":
-            # 结束前一个回合
+            # End previous turn
             if previous_faction and mode_stats.current_turn_start_time > 0:
                 turn_duration = time.time() - mode_stats.current_turn_start_time
 
-                # 更新统计
+                # Update statistics
                 mode_stats.turn_based_stats["total_turns"] += 1
                 mode_stats.turn_based_stats["turn_durations"].append(turn_duration)
 
@@ -601,7 +601,7 @@ class StatisticsSystem(System):
                     previous_faction
                 ].append(turn_duration)
 
-                # 更新平均值
+                # Update averages
                 durations = mode_stats.turn_based_stats["turn_durations"]
                 mode_stats.turn_based_stats["average_turn_duration"] = sum(
                     durations
@@ -609,29 +609,29 @@ class StatisticsSystem(System):
                 mode_stats.turn_based_stats["longest_turn"] = max(durations)
                 mode_stats.turn_based_stats["shortest_turn"] = min(durations)
 
-                # 记录本回合行动数
+                # Record actions this turn
                 turn_num = mode_stats.turn_based_stats["total_turns"]
                 mode_stats.turn_based_stats["actions_per_turn"][
                     turn_num
                 ] = mode_stats.actions_this_turn
 
-            # 开始新回合
+            # Start new turn
             mode_stats.current_turn_start_time = time.time()
             mode_stats.actions_this_turn = 0
 
             if new_faction not in mode_stats.turn_based_stats["faction_turn_times"]:
                 mode_stats.turn_based_stats["faction_turn_times"][new_faction] = []
 
-    # === 新增事件记录方法 ===
+    # === New event recording methods ===
 
     def record_defense_action(self, entity: int, attacker_entity: int) -> None:
-        """记录防御行动"""
+        """Record defense action"""
         unit = self.world.get_component(entity, Unit)
         attacker_unit = self.world.get_component(attacker_entity, Unit)
         if not unit or not attacker_unit:
             return
 
-        # 更新单位统计
+        # Update unit statistics
         unit_stats = self.world.get_component(entity, UnitStatistics)
         if not unit_stats:
             unit_stats = UnitStatistics()
@@ -639,10 +639,10 @@ class StatisticsSystem(System):
 
         unit_stats.defenses_made += 1
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            message = f"{unit.faction.value}的{unit.unit_type.value}防御来自{attacker_unit.faction.value}的攻击"
+            message = f"{unit.faction.value}'s {unit.unit_type.value} defended against attack from {attacker_unit.faction.value}"
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
                 message,
@@ -654,16 +654,16 @@ class StatisticsSystem(System):
             )
 
     def record_skill_action(self, entity: int, skill_name: str) -> None:
-        """记录技能使用"""
+        """Record skill usage"""
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             message = (
-                f"{unit.faction.value}的{unit.unit_type.value}使用了技能: {skill_name}"
+                f"{unit.faction.value}'s {unit.unit_type.value} used skill: {skill_name}"
             )
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
@@ -671,30 +671,30 @@ class StatisticsSystem(System):
             )
 
     def record_garrison_action(self, entity: int) -> None:
-        """记录驻扎行动"""
+        """Record garrison action"""
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            message = f"{unit.faction.value}的{unit.unit_type.value}进入驻扎状态"
+            message = f"{unit.faction.value}'s {unit.unit_type.value} entered garrison status"
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
                 message, "garrison", unit.faction.value, (128, 255, 128), turn_number
             )
 
     def record_wait_action(self, entity: int) -> None:
-        """记录待命行动"""
+        """Record wait action"""
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
 
-        # 记录到战况日志
+        # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            message = f"{unit.faction.value}的{unit.unit_type.value}选择了待命"
+            message = f"{unit.faction.value}'s {unit.unit_type.value} chose to wait"
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
                 message, "wait", unit.faction.value, (192, 192, 192), turn_number
@@ -703,7 +703,7 @@ class StatisticsSystem(System):
     def record_death_action(
         self, entity: int, killer_entity: Optional[int] = None
     ) -> None:
-        """记录单位死亡"""
+        """Record unit death"""
         unit = self.world.get_component(entity, Unit)
         if not unit:
             return
@@ -713,11 +713,11 @@ class StatisticsSystem(System):
             if killer_entity:
                 killer_unit = self.world.get_component(killer_entity, Unit)
                 if killer_unit:
-                    message = f"{unit.faction.value}的{unit.unit_type.value}被{killer_unit.faction.value}击败"
+                    message = f"{unit.faction.value}'s {unit.unit_type.value} was defeated by {killer_unit.faction.value}"
                 else:
-                    message = f"{unit.faction.value}的{unit.unit_type.value}阵亡"
+                    message = f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
             else:
-                message = f"{unit.faction.value}的{unit.unit_type.value}阵亡"
+                message = f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
 
             battle_log.add_entry(
                 message,
@@ -734,7 +734,7 @@ class StatisticsSystem(System):
         faction: str = "",
         color: tuple = (255, 255, 255),
     ) -> None:
-        """记录通用游戏事件"""
+        """Record general game event"""
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
             time_display, turn_number = self._get_current_time_info()
@@ -742,10 +742,10 @@ class StatisticsSystem(System):
                 message, event_type, faction, color, time_display, turn_number
             )
 
-    # === 数据查询方法 ===
+    # === Data query methods ===
 
     def get_detailed_statistics(self) -> Dict:
-        """获取详细统计信息"""
+        """Get detailed statistics information"""
         stats = self.world.get_singleton_component(GameStats)
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
         visibility_tracker = self.world.get_singleton_component(VisibilityTracker)
@@ -781,13 +781,13 @@ class StatisticsSystem(System):
                 },
             }
 
-        # 收集单位统计
+        # Collect unit statistics
         result["unit_stats"] = self._collect_unit_statistics()
 
         return result
 
     def _get_faction_summary(self, faction: Faction, stats: GameStats) -> Dict:
-        """获取阵营统计摘要"""
+        """Get faction statistics summary"""
         if faction not in stats.faction_stats:
             return {}
 
@@ -804,7 +804,7 @@ class StatisticsSystem(System):
         return faction_stats
 
     def _get_performance_metrics(self, mode_stats: GameModeStatistics) -> Dict:
-        """获取性能指标"""
+        """Get performance metrics"""
         if mode_stats.current_mode == "turn_based":
             return {
                 "mode": "turn_based",
@@ -832,7 +832,7 @@ class StatisticsSystem(System):
             }
 
     def _collect_unit_statistics(self) -> Dict:
-        """收集单位统计信息"""
+        """Collect unit statistics information"""
         unit_stats_summary = {}
         for entity in self.world.query().with_all(Unit, UnitStatistics).entities():
             unit = self.world.get_component(entity, Unit)
@@ -859,7 +859,7 @@ class StatisticsSystem(System):
         return unit_stats_summary
 
     def get_unit_visibility_summary(self, unit_entity: int) -> Dict:
-        """获取单位可见性摘要"""
+        """Get unit visibility summary"""
         visibility_tracker = self.world.get_singleton_component(VisibilityTracker)
         if (
             not visibility_tracker

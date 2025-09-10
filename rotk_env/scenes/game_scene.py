@@ -1,5 +1,5 @@
 """
-主游戏场景
+Main game scene
 """
 
 import pygame
@@ -76,29 +76,29 @@ from performance_profiler import profiler
 
 
 class GameScene(Scene):
-    """主游戏场景"""
+    """Main game scene"""
 
     def __init__(self, engine):
         super().__init__(engine)
         self.name = "game"
         self.world = World()
 
-        # 默认配置，将在enter中被覆盖
+        # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
-        self.game_mode = GameMode.TURN_BASED  # 默认游戏模式
+        self.game_mode = GameMode.TURN_BASED  # Default game mode
 
-        # 初始化标志
+        # Initialization flag
         self.initialized = False
         
-        # 🆕 游戏结束等待状态
+        # 🆕 Game end waiting state
         self.game_end_wait_start = None
-        self.game_end_wait_timeout = 15.0  # 最多等待5秒
+        self.game_end_wait_timeout = 15.0  # Maximum wait time for 5 seconds
 
     def enter(self, **kwargs):
-        """进入场景时调用"""
+        """Called when entering the scene"""
         super().enter(**kwargs)
 
-        # 从kwargs获取配置
+        # Get configuration from kwargs
         self.players = kwargs.get(
             "players", {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         )
@@ -109,7 +109,7 @@ class GameScene(Scene):
         headless = kwargs.get("headless", False)
         self.headless = headless
 
-        # 获取场景参数（可选）
+        # Get scene parameters (optional)
         self.scenario = kwargs.get("scenario", "default")
 
         if not self.initialized:
@@ -117,57 +117,57 @@ class GameScene(Scene):
             self.initialized = True
 
     def _initialize_game(self):
-        """初始化游戏"""
-        # 首先初始化游戏模式组件
+        """Initialize game"""
+        # First initialize game mode component
         self._initialize_game_mode()
 
-        # 🆕 初始化Agent信息注册表
+        # 🆕 Initialize Agent info registry
         self._initialize_agent_registry()
 
-        # 初始化系统
+        # Initialize systems
         self._initialize_systems()
 
-        # 初始化玩家
+        # Initialize players
         self._initialize_players()
 
-        # 初始化单位
+        # Initialize units
         # for wei, shu, wu: infantry, archer, cavalry
         self._initialize_units([[1, 3, 1], [1, 3, 1], [1, 3, 1]])
 
-        # 初始化游戏统计
+        # Initialize game statistics
         self._initialize_stats()
         
-        # 初始化小地图
+        # Initialize minimap
         self._initialize_minimap()
 
     def _initialize_systems(self):
-        """初始化所有游戏系统"""
-        # 按优先级顺序添加系统
+        """Initialize all game systems"""
+        # Add systems in order of priority
 
         systems = [
-            GameTimeSystem(),  # 游戏时间系统 (优先级10) - 最早执行
-            MapSystem(),  # 地图系统 (优先级100)
-            VisionSystem(),  # 视野系统
-            ActionSystem(),  # 行动系统
-            MovementSystem(),  # 移动系统
-            CombatSystem(),  # 战斗系统
-            TerritorySystem(),  # 领土系统 (处理占领和工事)
-            ResourceRecoverySystem(),  # 资源恢复系统
-            # AISystem(),  # 仅当有AI玩家时添加AI系统 - 暂时禁用待修复
-            LLMSystem(),  # LLM系统 (优先级5)
-            StatisticsSystem(),  # 统计系统
-            AnimationSystem(),  # 动画系统 (优先级15)
-            InputHandlingSystem(),  # 输入系统 (优先级10)
-            UnitActionButtonSystem(),  # 单位动作按钮系统 (优先级4)
-            # 渲染系统拆分为多个独立系统（从底层到顶层）
-            MapRenderSystem(),  # 地图渲染系统 (最底层)
-            UnitRenderSystem(),  # 单位渲染系统 (在地图之上)
-            EffectRenderSystem(),  # 效果渲染系统 (在单位之上)
-            PanelRenderSystem(),  # 面板渲染系统 (在效果之上)
-            UIButtonSystem(),  # 改进的UI按钮系统 (优先级2)
-            UIRenderSystem(),  # 改进的UI渲染系统 (最顶层)
-            MiniMapSystem(),  # 小地图系统 (优先级5)
-            SettlementReportSystem(),  # 结算报告系统 (优先级200，在游戏结束后执行)
+            GameTimeSystem(),  # Game time system (priority 10) - earliest execution
+            MapSystem(),  # Map system (priority 100)
+            VisionSystem(),  # Vision system
+            ActionSystem(),  # Action system
+            MovementSystem(),  # Movement system
+            CombatSystem(),  # Combat system
+            TerritorySystem(),  # Territory system
+            ResourceRecoverySystem(),  # Resource recovery system
+            # AISystem(),  # Add AI system when there are AI players - temporarily disabled for repair
+            LLMSystem(),  # LLM system (priority 5)
+            StatisticsSystem(),  # Statistics system
+            AnimationSystem(),  # Animation system (priority 15)
+            InputHandlingSystem(),  # Input system (priority 10)
+            UnitActionButtonSystem(),  # Unit action button system (priority 4)
+            # Render systems are split into multiple independent systems (from lowest to highest layer)
+            MapRenderSystem(),  # Map render system (lowest layer)
+            UnitRenderSystem(),  # Unit render system (above map)
+            EffectRenderSystem(),  # Effect render system (above unit)
+            PanelRenderSystem(),  # Panel render system (above effect)
+            UIButtonSystem(),  # Improved UI button system (priority 2)
+            UIRenderSystem(),  # Improved UI render system (top layer)
+            MiniMapSystem(),  # MiniMap system (priority 5)
+            SettlementReportSystem(),  # Settlement report system (priority 200, executed after game ends)
         ]
         if self.game_mode == GameMode.REAL_TIME:
             systems.append(RealtimeSystem())
@@ -178,22 +178,22 @@ class GameScene(Scene):
             self.world.add_system(system)
 
     def _initialize_game_mode(self):
-        """初始化游戏模式组件"""
+        """Initialize game mode component"""
         game_mode = GameModeComponent(mode=self.game_mode)
         self.world.add_singleton_component(game_mode)
 
     def _initialize_players(self):
-        """初始化玩家"""
+        """Initialize players"""
 
-        # 初始化回合管理器
+        # Initialize turn manager
         turn_manager = TurnManager()
         self.world.add_singleton_component(turn_manager)
 
         for faction, player_type in self.players.items():
-            # 创建玩家实体
+            # Create player entity
             player_entity = self.world.create_entity()
 
-            # 添加玩家组件
+            # Add player component
             player_comp = Player(
                 faction=faction,
                 player_type=player_type,
@@ -202,24 +202,24 @@ class GameScene(Scene):
             )
             self.world.add_component(player_entity, player_comp)
 
-            # 如果是AI玩家，添加AI控制组件
+            # If AI player, add AI control component
             if player_type == PlayerType.AI:
                 self.world.add_component(player_entity, AIControlled())
 
-            # 将玩家添加到回合管理器
+            # Add player to turn manager
             turn_manager.add_player(player_entity)
 
     def _initialize_units(self, unit_assignments: list[list[int]]):
-        """初始化单位 - 根据数量自动生成单位和位置"""
+        """Initialize units - automatically generate units and positions based on quantity"""
 
-        # 定义每个阵营的起始区域中心
+        # Define the starting area center for each faction
         faction_centers = {
-            Faction.WEI: (3, 3),  # 右上区域
-            Faction.SHU: (-3, -3),  # 左下区域
-            Faction.WU: (3, -3),  # 右下区域
+            Faction.WEI: (3, 3),  
+            Faction.SHU: (-3, -3), 
+            Faction.WU: (3, -3), 
         }
 
-        # 定义单位数量（只处理参与游戏的阵营）
+        # Define unit quantity (only process factions participating in the game)
         unit_counts = {}
         for faction in self.players.keys():
             if faction == Faction.WEI:
@@ -229,19 +229,19 @@ class GameScene(Scene):
             elif faction == Faction.WU:
                 unit_counts[faction] = unit_assignments[2]
 
-        # 🆕 记录初始单位数到GameStats（确保GameStats已存在）
+        # 🆕 Record initial unit count to GameStats (ensure GameStats exists)
         game_stats = self.world.get_singleton_component(GameStats)
         if not game_stats:
-            # 如果GameStats不存在，先创建一个临时的，等_initialize_stats时会正确初始化
-            print("[GameScene] ⚠️ GameStats组件不存在，等待后续初始化...")
+            # If GameStats does not exist, create a temporary one, it will be correctly initialized when _initialize_stats is called
+            print("[GameScene] ⚠️ GameStats component does not exist, waiting for subsequent initialization...")
             pass
 
-        # 将初始单位数暂存，在_initialize_stats中再写入GameStats
+        # Temporarily store the initial unit count, write it to GameStats in _initialize_stats
         self._temp_initial_unit_counts = {}
         for faction, count in unit_counts.items():
             total_units = sum(count)
             self._temp_initial_unit_counts[faction] = total_units
-            print(f"[GameScene] 准备记录 {faction.value} 阵营初始单位数: {total_units}")
+            print(f"[GameScene] Preparing to record {faction.value} faction initial unit count: {total_units}")
 
         for faction, count in unit_counts.items():
             if sum(count) == 0:
@@ -254,10 +254,10 @@ class GameScene(Scene):
             player = self.world.get_component(player_entity, Player)
             center_q, center_r = faction_centers[faction]
 
-            # 生成该阵营的所有单位位置
+            # Generate all unit positions for this faction
             positions = self._generate_unit_positions(center_q, center_r, sum(count))
 
-            # 生成多样化的单位类型
+            # Generate diverse unit types
             unit_types = self._generate_unit_types(count)
 
             for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
@@ -272,32 +272,32 @@ class GameScene(Scene):
     def _generate_unit_positions(
         self, center_q: int, center_r: int, count: int
     ) -> list:
-        """生成单位位置 - 以中心点为基础，螺旋式分布"""
+        """Generate unit positions - based on the center point, spiral distribution"""
         positions = []
 
         if count == 1:
             return [(center_q, center_r)]
 
-        # 第一个单位放在中心
+        # The first unit is placed in the center
         positions.append((center_q, center_r))
         remaining = count - 1
 
-        # 六边形的六个方向偏移量 (flat-top orientation)
+        # Six hexagon directions (flat-top orientation)
         hex_directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
 
         radius = 1
-        while remaining > 0 and radius <= 5:  # 限制最大半径
-            # 当前环的位置数量
+        while remaining > 0 and radius <= 5:  # Limit maximum radius
+            # Current ring position count
             positions_in_ring = min(remaining, 6 * radius)
 
-            # 在当前环上均匀分布位置
+            # Uniformly distribute positions on the current ring
             for i in range(positions_in_ring):
-                if i < 6:  # 第一层（6个方向各一个）
+                if i < 6:  # First layer (6 directions each)
                     dq, dr = hex_directions[i]
                     q = center_q + dq * radius
                     r = center_r + dr * radius
-                else:  # 填充边
-                    # 在六边形的边上添加额外位置
+                else:  # Fill edges
+                    # Add extra positions on the hexagon edges
                     side = (i - 6) // radius
                     pos_on_side = (i - 6) % radius
 
@@ -305,7 +305,7 @@ class GameScene(Scene):
                         dq1, dr1 = hex_directions[side]
                         dq2, dr2 = hex_directions[(side + 1) % 6]
 
-                        # 在边上插值
+                        # Interpolate on the edges
                         t = (pos_on_side + 1) / (radius + 1)
                         q = center_q + int(dq1 * radius * (1 - t) + dq2 * radius * t)
                         r = center_r + int(dr1 * radius * (1 - t) + dr2 * radius * t)
@@ -323,39 +323,38 @@ class GameScene(Scene):
         return positions[:count]
 
     def _generate_unit_types(self, count: int | list) -> list:
-        """生成多样化的单位类型组合"""
+        """Generate diverse unit type combinations"""
 
         unit_types = []
 
         if isinstance(count, list) and len(count) == 3:
-            # count是一个3元素列表 [步兵数, 弓兵数, 骑兵数]
+            # count is a 3 element list [infantry count, archer count, cavalry count]
             infantry_count, archer_count, cavalry_count = count
             unit_types = []
 
-            # 添加指定数量的各类型单位
+            # Add specified number of each type of unit
             unit_types.extend([UnitType.INFANTRY] * infantry_count)
             unit_types.extend([UnitType.ARCHER] * archer_count)
             unit_types.extend([UnitType.CAVALRY] * cavalry_count)
 
             return unit_types
 
-        # 基础配比：步兵40%，骑兵30%，弓兵25%，攻城5%
         base_ratios = {
             UnitType.INFANTRY: 0.50,
             UnitType.CAVALRY: 0.30,
             UnitType.ARCHER: 0.20,
         }
 
-        # 根据数量计算各类型单位数
+        # Calculate the number of each type of unit based on the quantity
         for unit_type, ratio in base_ratios.items():
             type_count = max(1, int(count * ratio)) if count >= 4 else 1
             unit_types.extend([unit_type] * type_count)
 
-        # 如果总数不够，用步兵补充
+        # If the total is not enough, use infantry to supplement
         while len(unit_types) < count:
             unit_types.append(UnitType.INFANTRY)
 
-        # 如果超了，移除多余的（优先移除弓兵）
+        # If it exceeds, remove the extra (remove archers first)
         while len(unit_types) > count:
             for remove_type in [UnitType.ARCHER, UnitType.CAVALRY]:
                 if remove_type in unit_types:
@@ -364,18 +363,18 @@ class GameScene(Scene):
             else:
                 unit_types.pop()
 
-        # 打乱顺序
+        # Shuffle the order
         # random.shuffle(unit_types)
         return unit_types
 
     def _create_unit(
         self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
     ) -> int:
-        """创建单位"""
+        """Create unit"""
 
         unit_entity = self.world.create_entity()
 
-        # 根据单位类型设置属性
+        # Set attributes based on unit type
         unit_stats = GameConfig.UNIT_STATS[unit_type]
 
         self.world.add_component(
@@ -400,28 +399,28 @@ class GameScene(Scene):
         self.world.add_component(
             unit_entity,
             ActionPoints(
-                current_ap=2,  # 默认行动点
+                current_ap=2,  # Default action points
                 max_ap=2,
             ),
         )
         self.world.add_component(
             unit_entity,
             AttackPoints(
-                normal_attacks=1,  # 默认攻击次数
+                normal_attacks=1,  # Default attack times
                 max_normal_attacks=1,
             ),
         )
         self.world.add_component(
             unit_entity,
             ConstructionPoints(
-                current_cp=1,  # 默认建造点
+                current_cp=1,  # Default construction points
                 max_cp=1,
             ),
         )
         self.world.add_component(
             unit_entity,
             SkillPoints(
-                current_sp=1,  # 默认技能点
+                current_sp=1,  # Default skill points
                 max_sp=1,
             ),
         )
@@ -436,16 +435,16 @@ class GameScene(Scene):
         self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
         self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
 
-        # 添加行动力组件
+        # Add movement points component
         self.world.add_component(unit_entity, ActionPoints(current_ap=2, max_ap=2))
 
-        # 添加技能组件
+        # Add skill component
         self.world.add_component(unit_entity, UnitSkills())
 
         return unit_entity
 
     def _get_player_entity(self, faction: Faction) -> int:
-        """获取指定阵营的玩家实体"""
+        """Get the player entity for the specified faction"""
 
         for entity in self.world.query().with_component(Player).entities():
             player = self.world.get_component(entity, Player)
@@ -454,38 +453,38 @@ class GameScene(Scene):
         return None
 
     def _initialize_stats(self):
-        """初始化游戏统计组件 - 纯数据初始化"""
+        """Initialize game statistics component - pure data initialization"""
 
-        # 初始化游戏统计组件
+        # Initialize game statistics component
         stats = GameStats()
         stats.game_start_time = time.time()
 
-        # 🆕 将之前记录的初始单位数写入GameStats
+        # 🆕 Write the previously recorded initial unit count to GameStats
         if hasattr(self, "_temp_initial_unit_counts"):
             stats.initial_unit_counts = self._temp_initial_unit_counts.copy()
             print(
-                f"[GameScene] ✅ 已将初始单位数写入GameStats: {stats.initial_unit_counts}"
+                f"[GameScene] ✅ The initial unit count has been written to GameStats: {stats.initial_unit_counts}"
             )
         else:
-            print("[GameScene] ⚠️ 未找到临时的初始单位数记录")
+            print("[GameScene] ⚠️ The temporary initial unit count record was not found")
 
         self.world.add_singleton_component(stats)
 
-        # 初始化战斗日志
+        # Initialize battle log
         battle_log = BattleLog()
-        battle_log.add_entry("游戏开始", "turn", "", (0, 255, 0))
-        battle_log.add_entry("魏国回合开始", "turn", "wei", (255, 100, 100))
+        battle_log.add_entry("Game Start", "turn", "", (0, 255, 0))
+        battle_log.add_entry("Wei Faction Turn Start", "turn", "wei", (255, 100, 100))
         self.world.add_singleton_component(battle_log)
 
-        # 初始化可见性追踪器
+        # Initialize visibility tracker
         visibility_tracker = VisibilityTracker()
         self.world.add_singleton_component(visibility_tracker)
 
-        # 初始化游戏模式统计
+        # Initialize game mode statistics
         game_mode_stats = GameModeStatistics(current_mode=self.game_mode.value)
         self.world.add_singleton_component(game_mode_stats)
 
-        # 初始化游戏状态
+        # Initialize game state
         from ..prefabs.config import GameMode
 
         first_faction = list(self.players.keys())[0] if self.players else Faction.WEI
@@ -499,66 +498,66 @@ class GameScene(Scene):
         )
         self.world.add_singleton_component(game_state)
 
-        # 初始化其他单例组件
+        # Initialize other singleton components
         self.world.add_singleton_component(UIState())
         self.world.add_singleton_component(InputState())
         self.world.add_singleton_component(FogOfWar())
 
-        # 初始化战争迷雾
+        # Initialize fog of war
         self.world.add_singleton_component(FogOfWar())
 
     def update(self, delta_time: float) -> None:
-        """更新场景"""
+        """Update scene"""
         if self.is_active:
-            # 检查退出事件
+            # Check exit event
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.engine.quit()
                     return
 
-            # 更新世界
+            # Update world
             with profiler.time_system("world_update"):
                 self.world.update(delta_time)
 
-            # 🆕 检查游戏结束 - 等待结算报告完成后再切换场景
+            # 🆕 Check game end - wait for settlement report to complete before switching scene
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                # 记录等待开始时间
+                # Record wait start time
                 if self.game_end_wait_start is None:
                     import time
                     self.game_end_wait_start = time.time()
-                    print("[GameScene] 🏁 游戏结束，等待结算报告完成...")
+                    print("[GameScene] 🏁 Game End, waiting for settlement report...")
                 
-                # 检查结算报告是否已完成
+                # Check if the settlement report has been completed
                 settlement_report = self.world.get_singleton_component(SettlementReport)
                 if settlement_report:
-                    # 结算报告已生成，可以切换场景
-                    print("[GameScene] ✅ 结算报告已生成，切换到游戏结束场景")
+                    # Settlement report generated, can switch scene
+                    print("[GameScene] ✅ Settlement report generated, switching to game over scene")
                     self._switch_to_game_over(game_state)
                 else:
-                    # 检查是否超时
+                    # Check if it is timeout
                     import time
                     elapsed = time.time() - self.game_end_wait_start
                     if elapsed >= self.game_end_wait_timeout:
-                        print(f"[GameScene] ⏰ 等待结算报告超时 ({elapsed:.1f}s)，强制切换场景")
+                        print(f"[GameScene] ⏰ Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene")
                         self._switch_to_game_over(game_state)
                     else:
-                        # 等待结算报告生成（每秒输出一次进度）
+                        # Wait for settlement report generation (output progress once per second)
                         if int(elapsed) != getattr(self, '_last_wait_second', -1):
                             remaining = self.game_end_wait_timeout - elapsed
-                            print(f"[GameScene] ⏳ 等待结算报告生成... {elapsed:.1f}s / {self.game_end_wait_timeout}s (剩余 {remaining:.1f}s)")
+                            print(f"[GameScene] ⏳ Waiting for settlement report generation... {elapsed:.1f}s / {self.game_end_wait_timeout}s (remaining {remaining:.1f}s)")
                             self._last_wait_second = int(elapsed)
     
     def _switch_to_game_over(self, game_state):
-        """切换到游戏结束场景"""
-        # 收集统计数据
+        """Switch to game over scene"""
+        # Collect statistics data
         statistics = self._collect_game_statistics()
 
-        # 切换到游戏结束场景，传递统计数据
+        # Switch to game over scene, pass statistics data
         if self.headless:
-            # 在无头模式下打印统计数据
+            # Print statistics data in headless mode
             print(
-                f"游戏结束，胜利者：{game_state.winner}，\n统计数据：{statistics}"
+                f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}"
             )
         else:
             SMS.switch_to(
@@ -566,14 +565,14 @@ class GameScene(Scene):
             )
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
-        """收集游戏统计数据"""
+        """Collect game statistics data"""
         from ..components import Unit, UnitCount, GameTime, GameState
 
         total_units = 0
         surviving_units = 0
         faction_stats = {}
 
-        # 统计所有单位
+        # Count all units
         for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
             faction_total = 0
             faction_surviving = 0
@@ -590,13 +589,13 @@ class GameScene(Scene):
                         faction_surviving += 1
                         surviving_units += 1
 
-            if faction_total > 0:  # 只记录有单位的阵营
+            if faction_total > 0:  # Only record factions with units
                 faction_stats[faction] = {
                     "total_units": faction_total,
                     "surviving_units": faction_surviving,
                 }
 
-        # 获取游戏状态信息
+        # Get game state information
         total_turns = 0
         game_duration = 0.0
 
@@ -608,7 +607,7 @@ class GameScene(Scene):
             game_duration = game_time.get_game_elapsed_seconds()
 
         except Exception as e:
-            print(f"获取游戏状态时出错: {e}")
+            print(f"Error occurred while retrieving game state: {e}")
 
         return {
             "total_turns": total_turns,
@@ -619,7 +618,7 @@ class GameScene(Scene):
         }
 
     def _initialize_minimap(self):
-        """初始化小地图"""
+        """Initialize minimap"""
         minimap = MiniMap(
             visible=True,
             width=200,
@@ -629,23 +628,23 @@ class GameScene(Scene):
             center_on_camera=True,
             show_units=True,
             show_terrain=True,
-            show_fog_of_war=False,  # 小地图不显示迷雾，可以看到全局
+            show_fog_of_war=False,  # Minimap does not show fog, can see the global
             show_camera_viewport=True,
             clickable=True,
         )
         self.world.add_singleton_component(minimap)
 
     def exit(self):
-        """退出场景时调用"""
+        """Called when exiting scene"""
         super().exit()
 
-        # 清理世界
+        # Clean up world
         self.world.reset()
 
     def _initialize_agent_registry(self):
-        """初始化Agent信息注册表"""
+        """Initialize Agent info registry"""
         from ..components.agent_info import AgentInfoRegistry
 
         registry = AgentInfoRegistry()
         self.world.add_singleton_component(registry)
-        print("[GameScene] Agent信息注册表已初始化")
+        print("[GameScene] Agent info registry initialized")
