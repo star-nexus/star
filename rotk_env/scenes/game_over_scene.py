@@ -1,6 +1,7 @@
 """
-游戏结束统计场景
-Game Over Statistics Scene
+Game Over Statistics Scene.
+Builds a lightweight world with winner info, statistics, and buttons,
+and wires up render systems and mouse interactions.
 """
 
 import pygame
@@ -24,32 +25,32 @@ from ..prefabs.config import Faction, GameConfig
 
 
 class GameOverScene(Scene):
-    """游戏结束统计场景"""
+    """Game over/statistics scene."""
 
     def __init__(self, engine):
         super().__init__(engine)
 
     def enter(self, **kwargs) -> None:
-        """进入场景时调用，接收传递的参数"""
+        """Enter scene with provided kwargs (winner, statistics)."""
         super().enter(**kwargs)
         self.world = World()
 
-        # 从参数中获取数据并创建组件
+        # Extract data from kwargs
         winner = kwargs.get("winner", None)
         statistics = kwargs.get("statistics", {})
 
-        # 添加获胜者组件
+        # Winner component
         winner_component = Winner(faction=winner)
         self.world.add_singleton_component(winner_component)
 
-        # 添加统计数据组件
+        # Statistics component
         stats_component = GameStatistics(data=statistics)
         self.world.add_singleton_component(stats_component)
 
-        # 创建按钮
+        # Create buttons
         self._create_buttons()
 
-        # 添加渲染系统
+        # Add render systems
         game_over_system = GameOverRenderSystem()
         settlement_report_system = SettlementReportRenderSystem()
         
@@ -59,15 +60,15 @@ class GameOverScene(Scene):
         self.subscribe_events()
 
     def _create_buttons(self) -> None:
-        """创建按钮"""
-        # 获取屏幕尺寸
+        """Create buttons for the Game Over screen."""
+        # Screen size
         screen_width = GameConfig.WINDOW_WIDTH
         screen_height = GameConfig.WINDOW_HEIGHT
 
         button_width = 150
         button_height = 40
         button_spacing = 20
-        total_width = 3 * button_width + 2 * button_spacing  # 3个按钮
+        total_width = 3 * button_width + 2 * button_spacing  # 3 buttons
         start_x = (screen_width - total_width) // 2
         button_y = screen_height - 150
 
@@ -98,26 +99,26 @@ class GameOverScene(Scene):
             },
         }
 
-        # 添加按钮组件
+        # Add buttons component
         button_component = GameOverButtons(buttons=buttons)
         self.world.add_singleton_component(button_component)
 
     def subscribe_events(self) -> None:
-        """订阅事件"""
-        # 订阅鼠标点击和移动事件
+        """Subscribe mouse events for click/hover/wheel."""
+        # Mouse click and move events
         EBS.subscribe(MouseButtonDownEvent, self.handle_event)
         EBS.subscribe(MouseMotionEvent, self.handle_event)
         EBS.subscribe(MouseWheelEvent, self.handle_event)
 
     def update(self, dt: float) -> None:
-        """更新场景"""
+        """Update scene world."""
         if self.world:
             self.world.update(dt)
 
     def handle_event(self, event: Event) -> None:
-        """处理事件"""
+        """Handle mouse input events."""
         if isinstance(event, MouseButtonDownEvent):
-            if event.button == 1:  # 左键点击
+            if event.button == 1:  # left click
                 self._handle_mouse_click(event.pos)
         elif isinstance(event, MouseMotionEvent):
             self._handle_mouse_motion(event.pos)
@@ -125,7 +126,7 @@ class GameOverScene(Scene):
             self._handle_mouse_wheel(event.y)
 
     def _handle_mouse_click(self, pos: tuple) -> None:
-        """处理鼠标点击"""
+        """Handle mouse click on buttons."""
         button_component = self.world.get_singleton_component(GameOverButtons)
         if not button_component:
             return
@@ -135,7 +136,7 @@ class GameOverScene(Scene):
                 button["action"]()
 
     def _handle_mouse_motion(self, pos: tuple) -> None:
-        """处理鼠标移动（悬停效果）"""
+        """Handle hover effects for buttons."""
         button_component = self.world.get_singleton_component(GameOverButtons)
         if not button_component:
             return
@@ -147,8 +148,8 @@ class GameOverScene(Scene):
                 button["hover"] = False
 
     def _handle_mouse_wheel(self, y: int) -> None:
-        """处理鼠标滚轮事件"""
-        # 查找结算报告渲染系统并处理滚动
+        """Handle mouse wheel: forward to settlement report system."""
+        # Forward to settlement report render system
         for system in self.world.systems:
             if isinstance(system, SettlementReportRenderSystem):
                 system.handle_scroll(y)
@@ -158,21 +159,19 @@ class GameOverScene(Scene):
         return super().exit()
 
     def _restart_game(self) -> None:
-        """重新开始游戏"""
+        """Restart the game by switching to start scene."""
         SMS.switch_to("start")
 
     def _toggle_report_view(self) -> None:
-        """切换报告视图"""
-        # 这里可以添加切换逻辑，比如显示/隐藏详细报告
-        print("[GameOverScene] 📊 查看详细结算报告")
-        # 可以在这里添加报告视图的切换逻辑
+        """Toggle report view (placeholder for extended logic)."""
+        print("[GameOverScene] 📊 View detailed settlement report")
 
     def _quit_game(self) -> None:
-        """退出游戏"""
+        """Quit game via event bus."""
         EBS.publish(QuitEvent(sender=__name__, timestamp=pygame.time.get_ticks()))
 
     def cleanup(self) -> None:
-        """清理场景"""
+        """Cleanup scene and unsubscribe events."""
         if self.world:
             self.world.reset()
         EBS.unsubscribe(MouseButtonDownEvent, self.handle_event)

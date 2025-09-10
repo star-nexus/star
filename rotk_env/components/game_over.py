@@ -1,6 +1,5 @@
 """
-游戏结束相关组件
-Game Over Components
+Game Over related components.
 """
 
 import pygame
@@ -12,20 +11,20 @@ from framework import SingletonComponent
 
 @dataclass
 class Winner(SingletonComponent):
-    """获胜者组件"""
+    """Winner component holding the winning faction (if any)."""
 
     faction: Optional[Faction] = None
 
 
 @dataclass
 class GameStatistics(SingletonComponent):
-    """游戏统计数据组件"""
+    """Game statistics component (aggregated data)."""
 
     data: Dict[str, Any]
 
 
 @dataclass
 class GameOverButtons(SingletonComponent):
-    """游戏结束按钮组件"""
+    """Game Over screen buttons component."""
 
     buttons: Dict[str, Dict[str, Any]]
