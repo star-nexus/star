@@ -1,6 +1,11 @@
 """
-单位渲染系统
-Unit rendering system
+Unit Render System - High-performance, feature-complete unit rendering
+- Texture caching and zoom-aware scaling
+- Visibility checks with fog-of-war integration
+- Group layouts inside hex tiles (single/multi-faction)
+- Health bars, type icons, status indicators, and animation offsets
+
+Designed to minimize per-frame cost while keeping visuals informative.
 """
 
 import pygame
@@ -42,35 +47,35 @@ except ImportError:
 
 
 class UnitRenderSystem(System):
-    """整合高性能与完整功能的单位渲染系统 - 带可控性能分析"""
+    """Integrated unit renderer with optional performance profiling."""
 
     def __init__(self):
-        super().__init__(priority=2)  # 在地图之上渲染单位
+        super().__init__(priority=2)  # Render above the map layer
         self.hex_converter = HexConverter(
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
         self.font = None
         self.small_font = None
 
-        # **保留高性能版的预缓存贴图系统**
+        # Pre-cached textures for performance
         self.unit_textures: Dict[str, pygame.Surface] = {}
         self.scaled_texture_cache: Dict[Tuple[str, int], pygame.Surface] = {}
         self.textures_loaded = False
 
-        # 保留高性能版的可见区域缓存
+        # Visible units cache based on camera
         self.visible_units_cache: List[int] = []
         self.last_camera_hash = 0
 
-        # 性能统计
+        # Stats
         self.render_count = 0
         self.cache_hits = 0
         self.cache_misses = 0
 
-        # 🔥 性能分析开关 - 默认关闭
+        # Profiling switch (off by default)
         self.enable_profiler = False
-        self.profiler_interval = 60  # 每60帧打印一次统计（约1秒）
+        self.profiler_interval = 60  # print stats every N frames (~1s at 60fps)
 
-        # 详细的性能分析统计
+        # Detailed profiling buckets
         self.step_times = {
             "get_visible_units": [],
             "render_decision": [],
@@ -86,7 +91,7 @@ class UnitRenderSystem(System):
             "ecs_queries": [],
         }
 
-        # 初始化字体
+        # Fonts
         self.font_cache: Dict[int, pygame.font.Font] = {}
         file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font = pygame.font.Font(file_path, 24)
@@ -94,57 +99,51 @@ class UnitRenderSystem(System):
         self.font_cache[24] = self.font
         self.font_cache[16] = self.small_font
 
-        print("[整合版] 单位渲染系统初始化 - 高性能+完整功能")
+        print("[Integrated] Unit Render System initialized - performance + features")
 
     def enable_performance_profiler(self, enabled: bool = True, interval: int = 60):
-        """
-        启用/禁用性能分析器
-
-        Args:
-            enabled: 是否启用性能分析
-            interval: 打印统计的间隔帧数（默认60帧≈1秒）
-        """
+        """Enable/disable the profiler and configure print interval (frames)."""
         self.enable_profiler = enabled
         self.profiler_interval = interval
 
         if enabled:
-            print(f"[UnitRenderSystem] 性能分析器已启用，每{interval}帧打印一次统计")
+            print(f"[UnitRenderSystem] Profiler enabled, prints every {interval} frames")
         else:
-            print("[UnitRenderSystem] 性能分析器已禁用")
+            print("[UnitRenderSystem] Profiler disabled")
 
     def _get_font(self, size: int) -> Optional[pygame.font.Font]:
-        """获取指定大小的字体，如果不存在则创建并缓存"""
+        """Get cached font for requested size; create and cache on demand."""
         if size not in self.font_cache:
             try:
-                # 限制最小字体大小，避免错误
+                # Clamp minimal font size to avoid errors
                 font_size = max(size, 6)
                 self.font_cache[size] = pygame.font.Font(
                     Path("rotk_env/assets/fonts/sh.otf"), font_size
                 )
             except pygame.error as e:
-                print(f"警告：无法加载字体大小 {size}: {e}")
+                print(f"Warning: failed to load font size {size}: {e}")
                 self.font_cache[size] = None
         return self.font_cache[size]
 
     def initialize(self, world) -> None:
-        """初始化单位渲染系统"""
+        """Initialize unit renderer and load textures."""
         self.world = world
         self._load_unit_textures()
 
     def _load_unit_textures(self) -> None:
-        """加载单位贴图 - 整合预加载多尺寸与完整功能"""
+        """Load unit textures and pre-scale common sizes for performance."""
         assets_path = os.path.join(
             os.path.dirname(__file__), "..", "assets", "texture", "units"
         )
 
         if not os.path.exists(assets_path):
-            print(f"警告：单位贴图目录不存在: {assets_path}")
+            print(f"Warning: unit textures directory not found: {assets_path}")
             return
 
-        # **高性能版：预定义常用尺寸避免实时缩放**
+        # Pre-define common sizes to avoid runtime scaling
         common_sizes = [32, 40, 50, 64, 80, 100]
 
-        # **v0版：遍历所有阵营和兵种组合**
+        # Iterate over factions and unit types
         for faction in Faction:
             faction_dir = os.path.join(assets_path, faction.value)
             if not os.path.exists(faction_dir):
@@ -156,12 +155,12 @@ class UnitRenderSystem(System):
 
                 if os.path.exists(texture_path):
                     try:
-                        # 加载原始贴图
+                        # Load original
                         original_texture = pygame.image.load(
                             texture_path
                         ).convert_alpha()
 
-                        # **高性能版：为每个常用尺寸预缩放**
+                        # Pre-scale for each common size
                         key = f"{faction.value}_{unit_type.value}"
                         for size in common_sizes:
                             scaled_texture = pygame.transform.scale(
@@ -170,22 +169,22 @@ class UnitRenderSystem(System):
                             cache_key = (key, size)
                             self.scaled_texture_cache[cache_key] = scaled_texture
 
-                        # 保存原始贴图引用
+                        # Store original
                         self.unit_textures[key] = original_texture
 
                     except pygame.error as e:
-                        print(f"警告：无法加载贴图 {texture_path}: {e}")
+                        print(f"Warning: failed to load unit texture {texture_path}: {e}")
 
         if len(self.unit_textures) > 0:
             self.textures_loaded = True
             print(
-                f"[整合版] 成功加载 {len(self.unit_textures)} 个单位贴图，预缓存 {len(self.scaled_texture_cache)} 个尺寸变体"
+                f"[DEBUG] Loaded {len(self.unit_textures)} unit textures, pre-cached {len(self.scaled_texture_cache)} variants"
             )
         else:
-            print("警告：没有加载到任何单位贴图，将使用默认圆形渲染")
+            print("Warning: no unit textures loaded; falling back to circle rendering")
 
     def _add_step_time(self, step_name: str, elapsed_time: float):
-        """添加步骤耗时 - 只在启用profiler时记录"""
+        """Add timing sample to a step bucket (only when profiling)."""
         if not self.enable_profiler:
             return
 
@@ -198,7 +197,7 @@ class UnitRenderSystem(System):
     def _get_cached_texture(
         self, faction: Faction, unit_type: UnitType, size: int
     ) -> Optional[pygame.Surface]:
-        """获取缓存的指定尺寸贴图 - 保留高性能版实现"""
+        """Get cached texture of exact size; create near-size on miss (with cap)."""
         key = f"{faction.value}_{unit_type.value}"
         cache_key = (key, size)
 
@@ -206,13 +205,13 @@ class UnitRenderSystem(System):
             self.cache_hits += 1
             return self.scaled_texture_cache[cache_key]
 
-        # 缓存未命中，寻找最接近的尺寸
+        # Cache miss: scale from original to requested size
         if key in self.unit_textures:
             self.cache_misses += 1
             original = self.unit_textures[key]
             scaled = pygame.transform.scale(original, (size, size))
 
-            # 缓存新尺寸（但限制缓存大小）
+            # Cache new size (bounded cache size)
             if len(self.scaled_texture_cache) < 200:
                 self.scaled_texture_cache[cache_key] = scaled
 
@@ -223,17 +222,17 @@ class UnitRenderSystem(System):
     def _get_unit_texture(
         self, faction: Faction, unit_type: UnitType
     ) -> Optional[pygame.Surface]:
-        """获取指定阵营和兵种的贴图 - v0版接口兼容"""
+        """Get original texture for a faction/unit_type combo (compat)."""
         key = f"{faction.value}_{unit_type.value}"
         return self.unit_textures.get(key)
 
     def subscribe_events(self):
-        """订阅事件"""
+        """Subscribe to engine events (none needed for rendering)."""
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新单位渲染 - 带可控性能分析"""
-        # 🔥 只在启用profiler时进行详细计时
+        """Render units; optionally collect fine-grained profiling metrics."""
+        # Detailed timings only when profiling
         update_start = time.time() if self.enable_profiler else None
 
         camera = self.world.get_singleton_component(Camera)
@@ -242,25 +241,25 @@ class UnitRenderSystem(System):
 
         self.render_count += 1
 
-        # 计算摄像机偏移
+        # Camera offset & zoom
         camera_offset = [camera.offset_x, camera.offset_y]
         zoom = getattr(camera, "zoom", 1.0)
 
-        # 步骤1：获取可见单位
+        # Step 1: compute visible units
         step1_start = time.time() if self.enable_profiler else None
         visible_units = self._get_visible_units(camera_offset, zoom)
         if self.enable_profiler:
             step1_time = time.time() - step1_start
             self._add_step_time("get_visible_units", step1_time)
 
-        # 步骤2：渲染策略决策
+        # Step 2: choose rendering strategy
         step2_start = time.time() if self.enable_profiler else None
         render_strategy = "full_featured" if len(visible_units) <= 20 else "batch"
         if self.enable_profiler:
             step2_time = time.time() - step2_start
             self._add_step_time("render_decision", step2_time)
 
-        # 步骤3：执行渲染
+        # Step 3: render
         if render_strategy == "full_featured":
             step3_start = time.time() if self.enable_profiler else None
             self._render_units_full_featured(visible_units, camera_offset, zoom)
@@ -274,7 +273,7 @@ class UnitRenderSystem(System):
                 step3_time = time.time() - step3_start
                 self._add_step_time("batch_render", step3_time)
 
-        # 步骤4：动画渲染
+        # Step 4: animation overlays
         step4_start = time.time() if self.enable_profiler else None
         animation_system = self._get_animation_system()
         if animation_system:
@@ -283,27 +282,27 @@ class UnitRenderSystem(System):
             step4_time = time.time() - step4_start
             self._add_step_time("animation_render", step4_time)
 
-        # 性能统计打印
+        # Profiler print
         if self.enable_profiler and update_start:
             total_time = time.time() - update_start
-            # 按设定间隔打印统计
+            # Print at configured interval
             if self.render_count % self.profiler_interval == 0:
                 self._print_detailed_performance_stats(
                     len(visible_units), render_strategy, total_time
                 )
 
     def _get_visible_units(self, camera_offset: List[float], zoom: float) -> List[int]:
-        """获取屏幕可见的单位 - 保留高性能版实现"""
+        """Compute units visible on screen bounds (keeps existing perf approach)."""
         visible_units = []
 
-        # 计算屏幕边界
+        # Screen bounds (with margin)
         margin = 100
         screen_left = (-camera_offset[0] - margin) / zoom
         screen_right = (GameConfig.WINDOW_WIDTH - camera_offset[0] + margin) / zoom
         screen_top = (-camera_offset[1] - margin) / zoom
         screen_bottom = (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom
 
-        # ECS查询计时（仅在启用profiler时）
+        # ECS query timing (if profiling)
         ecs_start = time.time() if self.enable_profiler else None
         entities = list(
             self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
@@ -313,14 +312,14 @@ class UnitRenderSystem(System):
             self._add_step_time("ecs_queries", ecs_time)
 
         for entity in entities:
-            # 可见性检查计时（仅在启用profiler时）
+            # Visibility timing (if profiling)
             visibility_start = time.time() if self.enable_profiler else None
 
             position = self.world.get_component(entity, HexPosition)
             if not position:
                 continue
 
-            # 检查单位是否可见
+            # Check unit-level visibility
             if not self._is_unit_visible(entity):
                 continue
 
@@ -328,12 +327,12 @@ class UnitRenderSystem(System):
                 visibility_time = time.time() - visibility_start
                 self._add_step_time("visibility_check", visibility_time)
 
-            # 计算单位世界坐标
+            # Compute unit world position
             world_x, world_y = self.hex_converter.hex_to_pixel(
                 position.col, position.row
             )
 
-            # 屏幕边界检查
+            # Screen bounds check
             if (
                 screen_left <= world_x <= screen_right
                 and screen_top <= world_y <= screen_bottom
@@ -345,14 +344,14 @@ class UnitRenderSystem(System):
     def _render_units_full_featured(
         self, visible_units: List[int], camera_offset: List[float], zoom: float
     ):
-        """完整功能的单位渲染"""
+        """Full-featured unit rendering for a small visible set."""
         if not visible_units:
             return
 
-        # 获取动画系统
+        # Animation system
         animation_system = self._get_animation_system()
 
-        # 位置分组计时（仅在启用profiler时）
+        # Group by position (profiled)
         grouping_start = time.time() if self.enable_profiler else None
         units_by_position = {}
         for entity in visible_units:
@@ -369,7 +368,7 @@ class UnitRenderSystem(System):
             grouping_time = time.time() - grouping_start
             self._add_step_time("position_grouping", grouping_time)
 
-        # 渲染每个位置的单位组
+        # Render unit groups per tile
         for pos_key, units in units_by_position.items():
             group_start = time.time() if self.enable_profiler else None
             self._render_unit_group_full(
@@ -382,11 +381,11 @@ class UnitRenderSystem(System):
     def _render_units_batch(
         self, visible_units: List[int], camera_offset: List[float], zoom: float
     ):
-        """高性能批量渲染 - 使用高性能版实现"""
+        """High-performance batch rendering for large visible sets."""
         if not visible_units:
             return
 
-        # 按位置分组
+        # Group by tile position
         units_by_position = {}
         for entity in visible_units:
             position = self.world.get_component(entity, HexPosition)
@@ -396,15 +395,15 @@ class UnitRenderSystem(System):
                     units_by_position[pos_key] = []
                 units_by_position[pos_key].append(entity)
 
-        # 渲染每个位置的单位组
+        # Render per tile
         for pos_key, units in units_by_position.items():
             self._render_unit_group_optimized(pos_key, units, camera_offset, zoom)
 
     def _render_unit_group_full(
         self, pos_key, units, camera_offset, zoom, animation_system
     ):
-        """完整功能的单位组渲染"""
-        # 阵营分组计时（仅在启用profiler时）
+        """Render a unit group with full visuals (multi/single faction layouts)."""
+        # Group by faction (profiled)
         faction_start = time.time() if self.enable_profiler else None
         units_by_faction = {}
         for entity in units:
@@ -418,7 +417,7 @@ class UnitRenderSystem(System):
             faction_time = time.time() - faction_start
             self._add_step_time("faction_grouping", faction_time)
 
-        # 获取基础位置
+        # Base screen position of the hex
         base_world_x, base_world_y = self.hex_converter.hex_to_pixel(
             pos_key[0], pos_key[1]
         )
@@ -429,28 +428,28 @@ class UnitRenderSystem(System):
         total_factions = len(factions)
 
         if total_factions == 1:
-            # 同一阵营：在六边形内等分排列
+            # Same faction: distribute evenly within the hex
             faction = factions[0]
             faction_units = units_by_faction[faction]
             self._render_same_faction_units(
                 faction_units, base_screen_x, base_screen_y, zoom, animation_system
             )
         else:
-            # 多个阵营：分两半，每半各自等分排列
+            # Multiple factions: split into halves and distribute
             self._render_multi_faction_units(
                 units_by_faction, base_screen_x, base_screen_y, zoom, animation_system
             )
 
     def _render_same_faction_units(self, units, base_x, base_y, zoom, animation_system):
-        """渲染同一阵营的多个单位"""
+        """Render multiple units of the same faction inside a single hex."""
         unit_count = len(units)
         if unit_count == 1:
-            # 只有一个单位，正常渲染在中心
+            # Single unit: center
             self._render_single_unit_full(
                 units[0], base_x, base_y, zoom, animation_system
             )
         else:
-            # 布局计算计时（仅在启用profiler时）
+            # Layout calculation (profiled)
             layout_start = time.time() if self.enable_profiler else None
             positions = self._calculate_unit_positions_in_hex(
                 unit_count, base_x, base_y, zoom
@@ -467,25 +466,25 @@ class UnitRenderSystem(System):
     def _render_multi_faction_units(
         self, units_by_faction, base_x, base_y, zoom, animation_system
     ):
-        """渲染多个阵营的单位 - v0版实现"""
+        """Render units of multiple factions inside a single hex."""
         factions = list(units_by_faction.keys())
 
-        # 计算每个阵营的区域
+        # Compute area for each faction
         hex_radius = GameConfig.HEX_SIZE * zoom * 0.8
 
         if len(factions) == 2:
-            # 两个阵营：左右分布
+            # Two factions: left/right split
             faction1, faction2 = factions
 
-            # 左侧区域中心
+            # Left center
             left_x = base_x - hex_radius * 0.3
             left_y = base_y
 
-            # 右侧区域中心
+            # Right center
             right_x = base_x + hex_radius * 0.3
             right_y = base_y
 
-            # 渲染第一个阵营（左侧）
+            # Render faction 1 (left)
             units1 = units_by_faction[faction1]
             positions1 = self._calculate_unit_positions_in_area(
                 len(units1), left_x, left_y, hex_radius * 0.6, zoom
@@ -495,7 +494,7 @@ class UnitRenderSystem(System):
                     x, y = positions1[i]
                     self._render_single_unit_full(entity, x, y, zoom, animation_system)
 
-            # 渲染第二个阵营（右侧）
+            # Render faction 2 (right)
             units2 = units_by_faction[faction2]
             positions2 = self._calculate_unit_positions_in_area(
                 len(units2), right_x, right_y, hex_radius * 0.6, zoom
@@ -505,7 +504,7 @@ class UnitRenderSystem(System):
                     x, y = positions2[i]
                     self._render_single_unit_full(entity, x, y, zoom, animation_system)
         else:
-            # 三个或更多阵营：环形分布
+            # 3+ factions: circular arrangement
             for i, faction in enumerate(factions):
                 angle = (2 * math.pi * i) / len(factions)
                 area_x = base_x + hex_radius * 0.4 * math.cos(angle)
@@ -529,20 +528,20 @@ class UnitRenderSystem(System):
         camera_offset: List[float],
         zoom: float,
     ):
-        """优化的单位组渲染 - 高性能版实现"""
+        """Optimized unit-group rendering (fast path)."""
         if not units:
             return
 
-        # 计算基础屏幕位置
+        # Base screen position
         world_x, world_y = self.hex_converter.hex_to_pixel(pos_key[0], pos_key[1])
         base_screen_x = (world_x * zoom) + camera_offset[0]
         base_screen_y = (world_y * zoom) + camera_offset[1]
 
-        # 简化布局：如果只有一个单位，直接渲染在中心
+        # Simple layout: single unit centered
         if len(units) == 1:
             self._render_single_unit_fast(units[0], base_screen_x, base_screen_y, zoom)
         else:
-            # 多个单位：简单的环形布局
+            # Multiple units: simple ring layout
             radius = GameConfig.HEX_SIZE * zoom * 0.3
             for i, entity in enumerate(units):
                 if i < 6:  # 最多显示6个单位
@@ -553,13 +552,13 @@ class UnitRenderSystem(System):
                         entity,
                         base_screen_x + offset_x,
                         base_screen_y + offset_y,
-                        zoom * 0.8,  # 稍微缩小
+                        zoom * 0.8,  # slightly smaller
                     )
 
     def _render_single_unit_full(
         self, entity, screen_x, screen_y, zoom, animation_system
     ):
-        """完整功能的单个单位渲染"""
+        """Render a single unit with textures, health bar, icon, and status."""
         position = self.world.get_component(entity, HexPosition)
         unit = self.world.get_component(entity, Unit)
         unit_count = self.world.get_component(entity, UnitCount)
@@ -567,7 +566,7 @@ class UnitRenderSystem(System):
         if not position or not unit or not unit_count:
             return
 
-        # 检查是否使用动画位置
+        # Use interpolated animation position if significantly different
         use_animation_pos = False
         if animation_system:
             render_pos = animation_system.get_unit_render_position(entity)
@@ -585,7 +584,7 @@ class UnitRenderSystem(System):
                     screen_y = (world_y * zoom) + camera.offset_y
                     use_animation_pos = True
 
-        # 动态调整单位大小
+        # Dynamic scale by crowding
         base_radius = GameConfig.HEX_SIZE // 3
         if use_animation_pos:
             scale_factor = 1.0
@@ -602,18 +601,18 @@ class UnitRenderSystem(System):
             else:
                 scale_factor = 0.6
 
-        # 渲染单位本体
+        # Render unit itself (texture or fallback circle)
         texture_size = int(GameConfig.HEX_SIZE * zoom * scale_factor)
-        # 纹理操作计时（仅在启用profiler时）
+        # Texture op timing (if profiling)
         texture_start = time.time() if self.enable_profiler else None
         texture = self._get_cached_texture(unit.faction, unit.unit_type, texture_size)
 
         if texture and self.textures_loaded:
-            # 使用贴图渲染
+            # Texture path
             texture_rect = texture.get_rect(center=(int(screen_x), int(screen_y)))
             RMS.draw(texture, texture_rect.topleft)
         else:
-            # 回退到圆形渲染
+            # Fallback: circle rendering
             unit_radius = int(base_radius * zoom)
             color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
             RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
@@ -623,16 +622,16 @@ class UnitRenderSystem(System):
             texture_time = time.time() - texture_start
             self._add_step_time("texture_operations", texture_time)
 
-        # 绘制人数条
+        # Count/health bar
         unit_radius = int(base_radius * zoom)
         self._render_unit_count_bar(
             screen_x, screen_y, unit_count, unit_radius, zoom, scale=scale_factor
         )
 
-        # 绘制单位类型图标
+        # Type icon
         self._render_unit_icon(screen_x, screen_y, unit, zoom, scale=scale_factor)
 
-        # 绘制单位状态指示器
+        # Status indicator
         status = self.world.get_component(entity, UnitStatus)
         if status:
             self._render_unit_status(screen_x, screen_y, status, unit_radius, zoom)
@@ -640,51 +639,51 @@ class UnitRenderSystem(System):
     def _render_single_unit_fast(
         self, entity: int, screen_x: float, screen_y: float, zoom: float
     ):
-        """高性能单个单位渲染 - 高性能版实现"""
+        """Fast-path single unit rendering with pre-cached textures."""
         unit = self.world.get_component(entity, Unit)
         unit_count = self.world.get_component(entity, UnitCount)
 
         if not unit or not unit_count:
             return
 
-        # 计算单位尺寸
+        # Compute base size
         base_size = int(GameConfig.HEX_SIZE * zoom)
 
-        # **使用预缓存贴图**
+        # Use pre-cached texture if available
         texture = self._get_cached_texture(unit.faction, unit.unit_type, base_size)
 
         if texture and self.textures_loaded:
-            # 使用贴图渲染（已经是正确尺寸，无需再缩放）
+            # Already at requested size; no extra scaling
             texture_rect = texture.get_rect(center=(int(screen_x), int(screen_y)))
             RMS.draw(texture, texture_rect.topleft)
         else:
-            # 回退到圆形渲染
+            # Fallback: circle
             unit_radius = int(base_size // 2)
             color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
             RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
             RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
 
-        # 简化的血条渲染
+        # Simple health bar
         if unit_count.current_count < unit_count.max_count:
             self._render_simple_health_bar(screen_x, screen_y, unit_count, base_size)
 
     def _render_simple_health_bar(
         self, screen_x: float, screen_y: float, unit_count: UnitCount, unit_size: int
     ):
-        """简化的血条渲染 - 高性能版实现"""
+        """Simple health bar (fast path)."""
         bar_width = unit_size
         bar_height = 4
         bar_x = screen_x - bar_width // 2
         bar_y = screen_y - unit_size // 2 - 8
 
-        # 计算血量比例
+        # Compute ratio
         health_ratio = unit_count.current_count / unit_count.max_count
         fill_width = int(bar_width * health_ratio)
 
-        # 绘制血条背景
+        # Background
         RMS.rect((100, 100, 100), (int(bar_x), int(bar_y), bar_width, bar_height))
 
-        # 绘制血条填充
+        # Fill
         if fill_width > 0:
             color = (
                 (0, 255, 0)
@@ -693,15 +692,15 @@ class UnitRenderSystem(System):
             )
             RMS.rect(color, (int(bar_x), int(bar_y), fill_width, bar_height))
 
-        # 绘制边框
+        # Outline
         RMS.rect((255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 1)
 
     def _calculate_unit_positions_in_hex(self, unit_count, center_x, center_y, zoom):
-        """计算六边形内单位的等分位置，确保不重叠 - v0版实现"""
+        """Evenly distribute positions inside a flat-top hex; avoid overlap."""
         positions = []
-        # 基础单位半径
+        # Base unit radius
         unit_radius = GameConfig.HEX_SIZE // 3 * zoom * 0.8
-        # 六边形可用半径（留出边界）
+        # Usable hex radius (leave margin)
         hex_radius = GameConfig.HEX_SIZE * zoom * 0.8
 
         if unit_count == 1:
@@ -738,7 +737,7 @@ class UnitRenderSystem(System):
                 y = center_y + radius * math.sin(angle)
                 positions.append((x, y))
         else:
-            # 更多单位：双层环形排列
+            # More units: dual-ring layouts
             if unit_count <= 12:
                 radius = max(unit_radius * 1.1, hex_radius * 0.5)
                 for i in range(unit_count):
@@ -747,7 +746,7 @@ class UnitRenderSystem(System):
                     y = center_y + radius * math.sin(angle)
                     positions.append((x, y))
             else:
-                # 双层环形：内层6个，外层其余
+                # Inner ring 6, outer ring remaining
                 inner_radius = max(unit_radius * 1.0, hex_radius * 0.3)
                 for i in range(6):
                     angle = (2 * math.pi * i) / 6
@@ -768,7 +767,7 @@ class UnitRenderSystem(System):
     def _calculate_unit_positions_in_area(
         self, unit_count, center_x, center_y, area_radius, zoom
     ):
-        """计算指定区域内单位的等分位置，确保不重叠 - v0版实现"""
+        """Evenly distribute positions within a circular area; avoid overlap."""
         positions = []
         unit_radius = GameConfig.HEX_SIZE // 3 * zoom * 0.8
 
@@ -796,7 +795,7 @@ class UnitRenderSystem(System):
                     y = center_y + radius * math.sin(angle)
                     positions.append((x, y))
             else:
-                # 紧凑的网格排列
+                # Compact grid as fallback
                 cols = int(math.ceil(math.sqrt(unit_count)))
                 rows = int(math.ceil(unit_count / cols))
 
@@ -816,7 +815,7 @@ class UnitRenderSystem(System):
     def _render_unit_count_bar(
         self, screen_x, screen_y, unit_count, unit_radius, zoom, scale=1.0
     ):
-        """渲染单位人数条 - v0版实现"""
+        """Render unit count bar (health/strength proxy)."""
         if unit_count.current_count <= 1:
             return
 
@@ -828,32 +827,32 @@ class UnitRenderSystem(System):
         fill_ratio = unit_count.current_count / unit_count.max_count
         fill_width = int(bar_width * fill_ratio)
 
-        # 绘制背景条
+        # Background
         RMS.rect((100, 100, 100), (bar_x, bar_y, bar_width, bar_height))
 
-        # 绘制填充条
+        # Fill
         if fill_ratio > 0.7:
-            fill_color = (0, 255, 0)  # 绿色
+            fill_color = (0, 255, 0)  # green
         elif fill_ratio > 0.3:
-            fill_color = (255, 255, 0)  # 黄色
+            fill_color = (255, 255, 0)  # yellow
         else:
-            fill_color = (255, 0, 0)  # 红色
+            fill_color = (255, 0, 0)  # red
 
         if fill_width > 0:
             RMS.rect(fill_color, (bar_x, bar_y, fill_width, bar_height))
 
-        # 绘制边框
+        # Outline
         RMS.rect((255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 1)
 
     def _render_unit_icon(self, screen_x, screen_y, unit, zoom, scale=1.0):
-        """渲染单位类型图标 - v0版实现"""
+        """Render unit type icon label."""
         unit_symbols = {
             UnitType.INFANTRY: "Infantry",
             UnitType.CAVALRY: "Cavalry",
             UnitType.ARCHER: "Archer",
         }
 
-        symbol = unit_symbols.get(unit.unit_type, "？")
+        symbol = unit_symbols.get(unit.unit_type, "?")
         font_size = int(14 * zoom * scale)
 
         if font_size < 8:
@@ -876,7 +875,7 @@ class UnitRenderSystem(System):
         unit_radius: int,
         zoom: float = 1.0,
     ):
-        """渲染单位状态指示器 - v0版实现"""
+        """Render unit status indicator dot near the token."""
         if not status:
             return
 
@@ -900,7 +899,7 @@ class UnitRenderSystem(System):
             )
 
     def _is_unit_visible(self, unit_entity: int) -> bool:
-        """检查单位是否可见 - 简化但保持功能性"""
+        """Check if a unit is visible considering fog-of-war and view faction."""
         game_state = self.world.get_singleton_component(GameState)
         fog_of_war = self.world.get_singleton_component(FogOfWar)
         ui_state = self.world.get_singleton_component(UIState)
@@ -910,27 +909,27 @@ class UnitRenderSystem(System):
         if not game_state or not fog_of_war or not position or not unit or not ui_state:
             return True
 
-        # 上帝视角模式：所有单位都可见
+        # God view: show all
         if ui_state.god_mode:
             return True
 
-        # 确定当前查看的阵营
+        # Determine current viewing faction
         view_faction = (
             ui_state.view_faction
             if ui_state.view_faction
             else game_state.current_player
         )
 
-        # 自己阵营的单位总是可见
+        # Own faction always visible
         if unit.faction == view_faction:
             return True
 
-        # 检查是否在查看阵营的视野内
+        # Check tile in viewing faction vision
         current_vision = fog_of_war.faction_vision.get(view_faction, set())
         return (position.col, position.row) in current_vision
 
     def _get_units_in_same_hex(self, target_entity):
-        """获取与目标单位在同一六边形格子内的所有单位"""
+        """Get all units located in the same hex as the target entity (visible only)."""
         target_position = self.world.get_component(target_entity, HexPosition)
         if not target_position:
             return [target_entity]
@@ -953,14 +952,14 @@ class UnitRenderSystem(System):
         return units_in_hex
 
     def _get_animation_system(self):
-        """获取动画系统"""
+        """Get AnimationSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "AnimationSystem":
                 return system
         return None
 
     def get_performance_stats(self) -> dict:
-        """获取性能统计"""
+        """Return snapshot of render/cache stats."""
         cache_ratio = (
             self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100
         )
@@ -975,34 +974,34 @@ class UnitRenderSystem(System):
     def _print_detailed_performance_stats(
         self, visible_count: int, strategy: str, total_time: float
     ):
-        """打印详细的性能统计"""
+        """Print detailed profiling statistics in a readable format."""
         print("\n" + "=" * 80)
         print(
-            f"[UnitRenderSystem] 详细性能分析 - 可见单位: {visible_count}, 策略: {strategy}"
+            f"[UnitRenderSystem] Detailed Profiling - visible: {visible_count}, strategy: {strategy}"
         )
-        print(f"总耗时: {total_time*1000:.2f}ms")
+        print(f"Total time: {total_time*1000:.2f}ms")
         print("=" * 80)
 
-        # 计算各步骤平均耗时
+        # Average per-step times
         step_averages = {}
         for step_name, times in self.step_times.items():
             if times:
                 avg_time = sum(times) / len(times)
                 step_averages[step_name] = avg_time
 
-        # 按耗时排序
+        # Sort by cost
         sorted_steps = sorted(step_averages.items(), key=lambda x: x[1], reverse=True)
 
-        print("步骤耗时排序:")
+        print("Step cost ranking:")
         for step_name, avg_time in sorted_steps:
             percentage = (avg_time / total_time * 100) if total_time > 0 else 0
             print(f"  {step_name:25} {avg_time*1000:8.2f}ms ({percentage:5.1f}%)")
 
-        # 缓存统计
+        # Cache stats
         cache_ratio = (
             self.cache_hits / max(1, self.cache_hits + self.cache_misses) * 100
         )
         print(
-            f"\n缓存命中率: {cache_ratio:.1f}% (命中:{self.cache_hits}, 未命中:{self.cache_misses})"
+            f"\nCache hit ratio: {cache_ratio:.1f}% (hits:{self.cache_hits}, misses:{self.cache_misses})"
         )
         print("=" * 80)
