@@ -1,5 +1,5 @@
 """
-随机事件系统 - 处理地形事件和技能事件（按规则手册v1.2）
+Random Event System - Handles terrain events and skill events (according to rulebook v1.2)
 """
 
 import random
@@ -22,7 +22,7 @@ from ..prefabs.config import GameConfig, TerrainType, UnitType, UnitState
 
 
 class RandomEventSystem(System):
-    """随机事件系统"""
+    """Random event system"""
 
     def __init__(self):
         super().__init__(priority=400)
@@ -30,7 +30,7 @@ class RandomEventSystem(System):
     def initialize(self, world: World) -> None:
         self.world = world
 
-        # 确保有随机事件队列
+        # Ensure random event queue exists
         if not self.world.get_singleton_component(RandomEventQueue):
             self.world.add_singleton_component(RandomEventQueue())
 
@@ -38,12 +38,12 @@ class RandomEventSystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """处理事件队列"""
+        """Process event queue"""
         event_queue = self.world.get_singleton_component(RandomEventQueue)
         if not event_queue:
             return
 
-        # 处理所有待处理事件
+        # Process all pending events
         while True:
             event = event_queue.process_next_event()
             if not event:
@@ -52,7 +52,7 @@ class RandomEventSystem(System):
             self._handle_event(event)
 
     def trigger_terrain_event(self, entity: int, action: str) -> bool:
-        """触发地形事件"""
+        """Trigger terrain event"""
         position = self.world.get_component(entity, HexPosition)
         unit = self.world.get_component(entity, Unit)
 
@@ -63,7 +63,7 @@ class RandomEventSystem(System):
         event_result = self._check_terrain_event(terrain_type, unit.unit_type, action)
 
         if event_result:
-            # 添加到事件队列
+            # Add to event queue
             event_queue = self.world.get_singleton_component(RandomEventQueue)
             if event_queue:
                 event_queue.add_event("terrain", entity, event_result)
@@ -72,7 +72,7 @@ class RandomEventSystem(System):
         return False
 
     def trigger_skill_event(self, entity: int, skill_name: str) -> bool:
-        """触发技能事件"""
+        """Trigger skill event"""
         unit = self.world.get_component(entity, Unit)
         unit_count = self.world.get_component(entity, UnitCount)
         unit_skills = self.world.get_component(entity, UnitSkills)
@@ -80,17 +80,17 @@ class RandomEventSystem(System):
         if not all([unit, unit_count, unit_skills]):
             return False
 
-        # 检查技能是否可用
+        # Check if skill is available
         if not unit_skills.can_use_skill(skill_name):
             return False
 
-        # 检查人数要求并执行骰子判定
+        # Check unit count requirements and execute dice roll
         skill_result = self._check_skill_requirements(
             unit.unit_type, unit_count, skill_name
         )
 
         if skill_result is not None:
-            # 添加到事件队列
+            # Add to event queue
             event_queue = self.world.get_singleton_component(RandomEventQueue)
             if event_queue:
                 event_queue.add_event("skill", entity, skill_result)
@@ -101,43 +101,43 @@ class RandomEventSystem(System):
     def _check_terrain_event(
         self, terrain_type: TerrainType, unit_type: UnitType, action: str
     ) -> Optional[Dict]:
-        """检查地形事件"""
-        # 地形事件定义（按规则手册v1.2）
+        """Check terrain event"""
+        # Terrain event definitions (according to rulebook v1.2)
         terrain_events = {
             TerrainType.PLAIN: {
-                "name": "扬尘",
+                "name": "Dust Cloud",
                 "trigger": {"cavalry": ["move_end"]},
                 "threshold": 5,
-                "success": "自身获得「隐蔽」1回合",
-                "failure": "无",
+                "success": "Unit gains 'Hidden' status for 1 turn",
+                "failure": "No effect",
             },
             TerrainType.MOUNTAIN: {
-                "name": "落石",
+                "name": "Rockfall",
                 "trigger": {"any": ["enter"]},
                 "threshold": 6,
-                "success": "对该单位造成2点真实伤害",
-                "failure": "无",
+                "success": "Unit takes 2 true damage",
+                "failure": "No effect",
             },
             TerrainType.URBAN: {
-                "name": "守城器械",
+                "name": "City Defense",
                 "trigger": {"archer": ["garrison"]},
                 "threshold": 4,
-                "success": "下次射击伤害+50%",
-                "failure": "器械卡壳，无加成",
+                "success": "Next shot deals +50% damage",
+                "failure": "Equipment malfunction, no bonus",
             },
             TerrainType.FOREST: {
-                "name": "迷途",
+                "name": "Lost Path",
                 "trigger": {"any": ["enter"]},
                 "threshold": 6,
-                "success": "随机方向多移动1格",
-                "failure": "无",
+                "success": "Unit moves 1 extra tile in random direction",
+                "failure": "No effect",
             },
             TerrainType.HILL: {
-                "name": "高地风势",
+                "name": "Highland Winds",
                 "trigger": {"archer": ["attack"]},
                 "threshold": 4,
-                "success": "射程再+1",
-                "failure": "射程-1",
+                "success": "Archer range increased by 1",
+                "failure": "Archer range decreased by 1",
             },
         }
 
@@ -145,7 +145,7 @@ class RandomEventSystem(System):
         if not event_data:
             return None
 
-        # 检查触发条件
+        # Check trigger conditions
         triggers = event_data["trigger"]
         unit_triggers = triggers.get(unit_type.value, [])
         any_triggers = triggers.get("any", [])
@@ -153,7 +153,7 @@ class RandomEventSystem(System):
         if action not in unit_triggers and action not in any_triggers:
             return None
 
-        # 执行骰子判定
+        # Execute dice roll
         dice_roll = random.randint(1, 6)
         success = dice_roll >= event_data["threshold"]
 
@@ -168,49 +168,49 @@ class RandomEventSystem(System):
     def _check_skill_requirements(
         self, unit_type: UnitType, unit_count: UnitCount, skill_name: str
     ) -> Optional[Dict]:
-        """检查技能要求并执行判定"""
-        # 技能定义（按规则手册v1.2）
+        """Check skill requirements and execute judgment"""
+        # Skill definitions (according to rulebook v1.2)
         skill_definitions = {
             UnitType.INFANTRY: {
-                "盾墙·反射": {
+                "Shield Wall: Reflect": {
                     "count_req": 0.5,
                     "threshold": 5,
-                    "success": "远程伤害再-25%",
-                    "failure": "仅基础盾墙加成",
+                    "success": "Ranged damage reduced by 25%",
+                    "failure": "Basic shield wall bonus only",
                 },
-                "密集方阵": {
+                "Dense Formation": {
                     "count_req": 0.3,
                     "threshold": 4,
-                    "success": "自身及相邻1格友军步兵D+30%",
-                    "failure": "仅自身D+15%",
+                    "success": "Self and adjacent friendly infantry defense +30%",
+                    "failure": "Self defense +15% only",
                 },
             },
             UnitType.CAVALRY: {
-                "冲锋·致命一击": {
+                "Charge: Critical Strike": {
                     "count_req": 0.4,
                     "threshold": 5,
-                    "success": "冲势增伤每层+30%",
-                    "failure": "保持原每层+20%",
+                    "success": "Charge damage increased by 30% per stack",
+                    "failure": "Maintain original 20% per stack",
                 },
-                "奔袭·踩踏": {
+                "Raid: Trample": {
                     "count_req": 0.4,
                     "threshold": 4,
-                    "success": "造成正常碰撞伤害",
-                    "failure": "该格无伤害",
+                    "success": "Deals normal collision damage",
+                    "failure": "No damage dealt to this tile",
                 },
             },
             UnitType.ARCHER: {
-                "狙击·暴击": {
+                "Snipe: Critical": {
                     "count_req": 0.7,
                     "threshold": 4,
-                    "success": "首次射击暴击×1.5",
-                    "failure": "正常伤害",
+                    "success": "First shot deals 1.5× critical damage",
+                    "failure": "Normal damage",
                 },
-                "火力压制·混乱": {
+                "Suppression: Chaos": {
                     "count_req": 0.5,
                     "threshold": 5,
-                    "success": "区域目标强制混乱1回合",
-                    "failure": "仅造成伤害",
+                    "success": "Area targets enter chaos for 1 turn",
+                    "failure": "Damage only",
                 },
             },
         }
@@ -221,11 +221,11 @@ class RandomEventSystem(System):
         if not skill_data:
             return None
 
-        # 检查人数要求
+        # Check unit count requirements
         if unit_count.ratio < skill_data["count_req"]:
             return None
 
-        # 执行骰子判定
+        # Execute dice roll
         dice_roll = random.randint(1, 6)
         success = dice_roll >= skill_data["threshold"]
 
@@ -238,7 +238,7 @@ class RandomEventSystem(System):
         }
 
     def _handle_event(self, event: Dict[str, Any]):
-        """处理事件"""
+        """Handle event"""
         event_type = event["type"]
         entity = event["entity"]
         data = event["data"]
@@ -249,61 +249,61 @@ class RandomEventSystem(System):
             self._apply_skill_effect(entity, data)
 
     def _apply_terrain_effect(self, entity: int, data: Dict[str, Any]):
-        """应用地形事件效果"""
+        """Apply terrain event effect"""
         effect = data["effect"]
 
-        if "隐蔽" in effect:
-            # 获得隐蔽状态
+        if "Hidden" in effect:
+            # Gain hidden status
             unit_status = self.world.get_component(entity, UnitStatus)
             if unit_status:
                 unit_status.current_status = UnitState.HIDDEN
                 unit_status.status_duration = 1
 
-        elif "真实伤害" in effect:
-            # 造成真实伤害
+        elif "true damage" in effect:
+            # Deal true damage
             unit_count = self.world.get_component(entity, UnitCount)
             if unit_count:
-                damage = 2  # 2点真实伤害
+                damage = 2  # 2 points true damage
                 unit_count.current_count = max(0, unit_count.current_count - damage)
 
-        elif "射击伤害" in effect:
-            # 下次射击伤害加成（需要添加临时效果组件）
+        elif "shot damage" in effect:
+            # Next shot damage bonus (requires temporary effect component)
             pass
 
-        elif "多移动" in effect:
-            # 随机方向多移动1格（需要移动系统配合）
+        elif "extra move" in effect:
+            # Move 1 extra tile in random direction (requires movement system coordination)
             pass
 
     def _apply_skill_effect(self, entity: int, data: Dict[str, Any]):
-        """应用技能效果"""
+        """Apply skill effect"""
         skill_name = data["skill_name"]
         effect = data["effect"]
         success = data["success"]
 
-        # 设置技能冷却
+        # Set skill cooldown
         unit_skills = self.world.get_component(entity, UnitSkills)
         if unit_skills:
-            cooldown = 3 if success else 1  # 成功冷却3回合，失败1回合
+            cooldown = 3 if success else 1  # Success cooldown 3 turns, failure 1 turn
             unit_skills.use_skill(skill_name, cooldown)
 
-        # 应用效果
-        if "混乱" in effect and success:
-            # 找到目标并施加混乱状态（需要目标选择逻辑）
+        # Apply effects
+        if "chaos" in effect and success:
+            # Find targets and apply chaos status (requires target selection logic)
             pass
 
-        elif "暴击" in effect and success:
-            # 下次攻击必定暴击（需要添加临时效果组件）
+        elif "critical" in effect and success:
+            # Next attack guaranteed critical (requires temporary effect component)
             pass
 
-        elif "冲势增伤" in effect:
+        elif "charge damage" in effect:
             unit_status = self.world.get_component(entity, UnitStatus)
             if unit_status:
-                # 更新冲锋效果
+                # Update charge effect
                 if success:
                     unit_status.charge_stacks = min(3, unit_status.charge_stacks + 1)
 
     def _get_terrain_at_position(self, position: tuple) -> TerrainType:
-        """获取位置的地形类型"""
+        """Get terrain type at position"""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return TerrainType.PLAIN

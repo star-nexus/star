@@ -1,5 +1,12 @@
 """
-移动系统 - 处理单位移动（按规则手册v1.2）
+Movement System - Handles unit movement end-to-end:
+- pathfinding and terrain-aware cost calculation
+- resource spending (action points, movement points)
+- animation kickoff and fallback instant move
+- tile occupancy bookkeeping
+- terrain-triggered events on arrival
+
+Designed to be deterministic and side-effect scoped to movement concerns.
 """
 
 from typing import Set, Tuple
@@ -21,7 +28,7 @@ from ..utils.hex_utils import HexMath, PathFinding
 
 
 class MovementSystem(System):
-    """移动系统 - 处理单位移动"""
+    """System responsible for executing unit movement."""
 
     def __init__(self):
         super().__init__(required_components={HexPosition, MovementPoints, Unit})
@@ -33,11 +40,11 @@ class MovementSystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新移动系统"""
+        """Update movement system (no-op; movement is event/command driven)."""
         pass
 
     def move_unit(self, entity: int, target_pos: Tuple[int, int]) -> bool:
-        """移动单位到目标位置"""
+        """Move a unit to target position (q, r)."""
         position = self.world.get_component(entity, HexPosition)
         movement_points = self.world.get_component(entity, MovementPoints)
         unit_count = self.world.get_component(entity, UnitCount)
@@ -46,15 +53,15 @@ class MovementSystem(System):
         if not all([position, movement_points, unit_count, action_points]):
             return False
 
-        # 检查是否正在移动
+        # Prevent concurrent movement for this entity
         anim = self.world.get_component(entity, MovementAnimation)
         if anim and anim.is_moving:
             return False
 
-        # 获取有效移动力（考虑人数影响）
+        # Compute effective movement capacity (affected by unit count)
         effective_movement = movement_points.get_effective_movement(unit_count)
 
-        # 检查路径是否可行
+        # Find a valid path within movement capacity
         obstacles = self._get_obstacles()
         path = PathFinding.find_path(
             (position.col, position.row),
@@ -66,51 +73,51 @@ class MovementSystem(System):
         if not path or len(path) < 2:
             return False
 
-        # 计算移动消耗（考虑地形）
+        # Calculate total movement cost along path (terrain-aware)
         total_cost = self._calculate_total_movement_cost(path)
 
         if total_cost > effective_movement:
             return False
 
-        # 检查行动力
+        # Check action points
         if not action_points.can_perform_action(ActionType.MOVE):
             return False
 
-        print(f"✓ 单位 {entity} 移动到 {target_pos}")
+        print(f"✓ Unit {entity} moves to {target_pos}")
 
-        # === 消耗资源按多层次系统 ===
-        # 1. 消耗行动点（决策层级）：固定1点启动移动决策
+        # === Spend resources (multi-layer model) ===
+        # 1) Spend action point (decision layer): fixed 1 AP to initiate movement
         action_points.current_ap -= 1
 
-        # 2. 消耗移动力（执行层级）：根据路径和地形消耗
-        # 消耗移动点数（移除has_moved限制，允许多次移动）
+        # 2) Spend movement points (execution layer): terrain-based path cost
+        # allow multiple moves per turn if MP/AP remain
         movement_points.current_mp -= total_cost
         # movement_points.has_moved = True  # 移除单次移动限制
 
-        # 记录移动行动到统计系统
+        # Record movement to statistics system
         statistics_system = self._get_statistics_system()
         if statistics_system:
             from_pos = (position.col, position.row)
             statistics_system.record_movement_action(entity, from_pos, target_pos)
 
-        # 启动移动动画
+        # Start movement animation if available
         animation_system = self._get_animation_system()
         if animation_system:
             animation_system.start_unit_movement(entity, path)
         else:
-            # 如果没有动画系统，直接移动到目标位置
+            # No animation system: instantly move to target
             position.col, position.row = target_pos
 
-        # 更新地块占用信息
+        # Update tile occupation info
         self._update_tile_occupation(entity, target_pos)
 
-        # 触发地形事件
+        # Trigger terrain events on arrival
         self._trigger_terrain_events(entity, "move_end")
 
         return True
 
     def _calculate_total_movement_cost(self, path: list) -> int:
-        """计算路径的总移动消耗"""
+        """Sum terrain movement costs along the path."""
         total_cost = 0
         for i in range(1, len(path)):
             terrain_cost = self._get_terrain_movement_cost(path[i])
@@ -118,7 +125,7 @@ class MovementSystem(System):
         return total_cost
 
     def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
-        """获取地形移动消耗"""
+        """Get movement cost for the terrain at position (q, r)."""
         from ..prefabs.config import GameConfig
 
         terrain_type = self._get_terrain_at_position(position)
@@ -126,7 +133,7 @@ class MovementSystem(System):
         return terrain_effect.movement_cost if terrain_effect else 1
 
     def _get_terrain_at_position(self, position: Tuple[int, int]) -> TerrainType:
-        """获取位置的地形类型"""
+        """Get terrain type at position (q, r)."""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return TerrainType.PLAIN
@@ -139,16 +146,16 @@ class MovementSystem(System):
         return terrain.terrain_type if terrain else TerrainType.PLAIN
 
     def _get_obstacles(self) -> Set[Tuple[int, int]]:
-        """获取所有障碍物位置"""
+        """Collect coordinates that are currently blocked (units, impassable terrain)."""
         obstacles = set()
 
-        # 添加其他单位的位置
+        # Add positions of other units
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             if pos:
                 obstacles.add((pos.col, pos.row))
 
-        # 添加不可通过的地形
+        # Add impassable terrain
         map_data = self.world.get_singleton_component(MapData)
         if map_data:
             for (q, r), tile_entity in map_data.tiles.items():
@@ -159,40 +166,40 @@ class MovementSystem(System):
         return obstacles
 
     def _trigger_terrain_events(self, entity: int, action: str):
-        """触发地形事件"""
-        # 获取随机事件系统
+        """Trigger terrain events in RandomEventSystem for a given action."""
+        # Retrieve random event system
         for system in self.world.systems:
             if system.__class__.__name__ == "RandomEventSystem":
                 system.trigger_terrain_event(entity, action)
                 break
 
     def _get_statistics_system(self):
-        """获取统计系统"""
+        """Get StatisticsSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "StatisticsSystem":
                 return system
         return None
 
     def _get_animation_system(self):
-        """获取动画系统"""
+        """Get AnimationSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "AnimationSystem":
                 return system
         return None
 
     def _update_tile_occupation(self, entity: int, position: Tuple[int, int]):
-        """更新地块占用信息"""
+        """Update tile occupancy to reflect the unit's new location."""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return
 
-        # 清除之前的占用
+        # Clear previous occupancy by this entity
         for tile_entity in map_data.tiles.values():
             tile = self.world.get_component(tile_entity, Tile)
             if tile and tile.occupied_by == entity:
                 tile.occupied_by = None
 
-        # 设置新的占用
+        # Set new occupancy
         tile_entity = map_data.tiles.get(position)
         if tile_entity:
             tile = self.world.get_component(tile_entity, Tile)

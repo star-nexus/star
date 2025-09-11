@@ -12,7 +12,7 @@ from .engine_event import QuitEvent
 
 
 class AsyncGameEngine:
-    """异步游戏引擎 - 支持pygbag的Web部署"""
+    """Asynchronous game engine - supports pygbag Web deployment."""
 
     _instance = None
 
@@ -24,11 +24,11 @@ class AsyncGameEngine:
     def __init__(
         self, title: str = "Game", width: int = 800, height: int = 600, fps: int = 60
     ):
-        """初始化异步游戏引擎"""
+        """Initialize the async engine (idempotent for singleton)."""
         if hasattr(self, "_initialized"):
             return
 
-        # 基础配置
+        # Basic configuration
         self.title = title
         self.width = width
         self.height = height
@@ -37,7 +37,7 @@ class AsyncGameEngine:
         self.delta_time = 0.0
         self.frame_duration = 1.0 / self.fps
 
-        # 初始化 Pygame
+        # Initialize Pygame
         self._init_pygame()
         self._init_world()
         self._init_managers()
@@ -45,18 +45,18 @@ class AsyncGameEngine:
         self._initialized = True
 
     def _init_pygame(self) -> None:
-        """初始化 Pygame"""
+        """Initialize Pygame context and screen."""
         pygame.init()
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption(self.title)
         self.clock = pygame.time.Clock()
 
     def _init_world(self) -> None:
-        """初始化世界"""
+        """Initialize ECS world."""
         self.world = World()
 
     def _init_managers(self) -> None:
-        """初始化管理器"""
+        """Initialize managers and subscriptions."""
         self.event_manager = EventBus()
         self.scene_manager = SceneManager(self)
         self.render_manager = RenderEngine(self.screen)
@@ -64,124 +64,123 @@ class AsyncGameEngine:
         self.subscribe_events()
 
     async def start(self) -> None:
-        """启动异步游戏引擎"""
+        """Start the async engine."""
         await self.run()
 
     async def run(self) -> None:
-        """异步游戏主循环"""
+        """Run the asynchronous main loop."""
         self.running = True
         last_time = time.time()
 
         try:
             while self.running:
-                # 计算 delta time
+                # Compute delta time
                 current_time = time.time()
                 self.delta_time = current_time - last_time
                 last_time = current_time
 
-                # 主循环更新
+                # Main async update
                 await self._async_update()
 
-                # 控制帧率 - 重要：为pygbag提供异步等待点
+                # Frame limiting (important for pygbag)
                 frame_time = time.time() - current_time
                 if frame_time < self.frame_duration:
                     await asyncio.sleep(self.frame_duration - frame_time)
 
         except KeyboardInterrupt:
-            print("游戏被用户中断")
+            print("Game interrupted by user")
         finally:
             await self.quit()
 
     def subscribe_events(self) -> None:
-        """订阅事件"""
+        """Subscribe event handlers."""
         self.event_manager.subscribe(QuitEvent, self.stop)
 
     async def _async_update(self) -> None:
-        """异步更新游戏逻辑"""
-        # 清屏
+        """Update one async frame of game logic and rendering."""
+        # Clear screen
         self.screen.fill((0, 0, 0))
 
-        # 更新输入系统
+        # Input update
         self.input_manager.update()
 
-        # 异步更新场景
+        # Scene update (async if supported)
         await self._async_scene_update()
 
-        # 更新渲染
+        # Render
         self.render_manager.update()
 
-        # 刷新显示
+        # Flip display
         pygame.display.flip()
 
     async def _async_scene_update(self) -> None:
-        """异步更新场景"""
+        """Async scene update if available; otherwise run sync with await point."""
         if hasattr(self.scene_manager, "async_update"):
             await self.scene_manager.async_update(self.delta_time)
         else:
-            # 兼容同步场景管理器
+            # Fallback to sync scene manager
             self.scene_manager.update(self.delta_time)
-            # 提供异步等待点
+            # Yield control to event loop
             await asyncio.sleep(0)
 
     def stop(self, event: Any) -> None:
-        """停止游戏循环"""
+        """Stop the main loop."""
         self.running = False
 
     async def quit(self) -> None:
-        """异步退出游戏"""
-        # 清理场景管理器
+        """Quit the game asynchronously and cleanup managers."""
+        # Cleanup scene manager
         if self.scene_manager:
             if hasattr(self.scene_manager, "async_shutdown"):
                 await self.scene_manager.async_shutdown()
             else:
                 self.scene_manager.shutdown()
 
-        # 清理渲染管理器
+        # Cleanup render manager
         if self.render_manager:
             self.render_manager.clear()
 
-        # 退出 Pygame
+        # Quit Pygame
         pygame.quit()
-        print("游戏已退出")
+        print("Game exited")
 
     @property
     def current_scene(self):
-        """获取当前场景"""
+        """Get current scene instance."""
         return self.scene_manager.current_scene if self.scene_manager else None
 
     @property
     def current_scene_name(self) -> Optional[str]:
-        """获取当前场景名称"""
+        """Get current scene name."""
         return self.scene_manager.current_scene_name if self.scene_manager else None
 
     def get_fps(self) -> float:
-        """获取当前 FPS"""
+        """Get current FPS reported by clock."""
         return self.clock.get_fps()
 
     def get_delta_time(self) -> float:
-        """获取 delta time"""
+        """Get last frame's delta time in seconds."""
         return self.delta_time
 
-    # pygbag专用方法
+    # pygbag-specific entrypoints
     async def pygbag_main(self) -> None:
-        """pygbag主函数入口"""
-
-        # 初始化完成后开始游戏循环
+        """pygbag main entrypoint."""
+        # Start loop after initialization
         await self.start()
 
 
 def async_game_engine() -> AsyncGameEngine:
-    """获取异步游戏引擎单例"""
+    """Get async game engine singleton."""
     return AsyncGameEngine()
 
 
-# pygbag兼容性函数
+# pygbag compatibility
 async def main():
-    """pygbag入口函数"""
+    """pygbag entry function."""
     engine = async_game_engine()
     await engine.pygbag_main()
 
 
 if __name__ == "__main__":
-    # 本地运行
+    # Local run
     asyncio.run(main())

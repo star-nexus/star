@@ -13,7 +13,7 @@ from performance_profiler import profiler
 
 
 class GameEngine:
-    """游戏引擎 - 负责游戏的主循环和核心管理"""
+    """Game engine - runs the main loop and core managers."""
 
     _instance = None
 
@@ -25,11 +25,11 @@ class GameEngine:
     def __init__(
         self, title: str = "Game", width: int = 1200, height: int = 800, fps: int = 60
     ):
-        """初始化游戏引擎"""
+        """Initialize the game engine (idempotent for singleton)."""
         if hasattr(self, "_initialized"):
             return
 
-        # 基础配置
+        # Basic configuration
         self.title = title
         self.width = width
         self.height = height
@@ -37,18 +37,18 @@ class GameEngine:
         self.running = False
         self.delta_time = 0.0
 
-        # 初始化 Pygame
+        # Initialize Pygame
         self._init_pygame()
 
         # self._init_world()
 
-        # 初始化管理器
+        # Initialize managers
         self._init_managers()
 
         self._initialized = True
 
     def _init_pygame(self) -> None:
-        """初始化 Pygame"""
+        """Initialize Pygame context and screen."""
         pygame.init()
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption(self.title)
@@ -60,55 +60,55 @@ class GameEngine:
     #     self.world = World()
 
     def _init_managers(self) -> None:
-        """初始化管理器"""
-        # 获取单例管理器
+        """Initialize manager singletons and wire them up."""
+        # Get singletons
         self.event_manager = EventBus()
         self.scene_manager = SceneManager()
         self.scene_manager.set_engine(self)
         self.render_manager = RenderEngine()
-        self.render_manager.screen = self.screen  # 设置渲染屏幕
+        self.render_manager.screen = self.screen  # set render target
         self.input_manager = InputSystem()
 
         self.subscribe_events()
 
     def start(self) -> None:
-        """启动游戏引擎"""
+        """Start the engine (blocking)."""
         self.run()
 
     def run(self) -> None:
-        """启动游戏主循环"""
+        """Run the main game loop."""
         self.running = True
         last_time = time.time()
 
         try:
             while self.running:
-                # 计算 delta time
+                # Compute delta time
                 current_time = time.time()
                 self.delta_time = current_time - last_time
                 last_time = current_time
 
-                # 主循环
+                # Main update
                 self._update()
 
-                # 控制帧率
+                # Frame limiting
                 self.clock.tick(self.fps)
 
         except KeyboardInterrupt:
-            print("游戏被用户中断")
+            print("Game interrupted by user")
         finally:
             self.quit()
 
     def subscribe_events(self) -> None:
-        """处理事件"""
+        """Subscribe event handlers."""
 
         self.event_manager.subscribe(QuitEvent, self.stop)
 
     def _update(self) -> None:
-        """更新游戏逻辑"""
+        """Update one frame of game logic and rendering."""
         profiler.start_frame()
 
         with profiler.time_system("screen_fill"):
-            self.screen.fill((135, 141, 106))  # 清屏
+            self.screen.fill((135, 141, 106))  # clear screen
 
         with profiler.time_system("input_system"):
             self.input_manager.update()
@@ -122,7 +122,7 @@ class GameEngine:
         with profiler.time_system("display_flip"):
             pygame.display.flip()
 
-        # 每5秒打印一次统计
+        # Print profiling stats every ~5 seconds
         if hasattr(self, '_last_stats_time'):
             if time.time() - self._last_stats_time > 5.0:
                 profiler.print_stats()
@@ -131,39 +131,39 @@ class GameEngine:
             self._last_stats_time = time.time()
 
     def stop(self, event: Any) -> None:
-        """停止游戏循环"""
+        """Stop the main loop."""
         self.running = False
 
     def quit(self) -> None:
-        """退出游戏"""
-        # 清理场景管理器
+        """Quit the game and cleanup managers."""
+        # Cleanup scene manager
         if self.scene_manager:
             self.scene_manager.shutdown()
 
-        # 清理渲染管理器
+        # Cleanup render manager
         if self.render_manager:
             self.render_manager.clear()
 
-        # 退出 Pygame
+        # Quit Pygame
         pygame.quit()
-        print("游戏已退出")
+        print("Game exited")
 
     @property
     def current_scene(self):
-        """获取当前场景"""
+        """Get current scene instance."""
         return self.scene_manager.current_scene if self.scene_manager else None
 
     @property
     def current_scene_name(self) -> Optional[str]:
-        """获取当前场景名称"""
+        """Get current scene name."""
         return self.scene_manager.current_scene_name if self.scene_manager else None
 
     def get_fps(self) -> float:
-        """获取当前 FPS"""
+        """Get current FPS reported by clock."""
         return self.clock.get_fps()
 
     def get_delta_time(self) -> float:
-        """获取 delta time"""
+        """Get last frame's delta time in seconds."""
         return self.delta_time
 
 

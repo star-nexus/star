@@ -1,6 +1,7 @@
 """
-结算报告生成器系统
-Settlement Report Generator System
+Settlement Report Generator System.
+Collects end-of-game data, builds a `SettlementReport`, writes JSON/CSV,
+and prints an English summary. Waits briefly for LLM stats before finalizing.
 """
 
 import os
@@ -30,23 +31,23 @@ from ..components.agent_info import AgentInfo, AgentInfoRegistry
 
 
 class SettlementReportSystem(System):
-    """结算报告生成器系统"""
+    """Generates the settlement report after game over."""
     
     def __init__(self):
-        super().__init__(priority=200)  # 高优先级，在游戏结束后执行
+        super().__init__(priority=200)  # run late after game over
         self.report_generated = False
         self.game_end_time = None
-        self.timeout_seconds = 10.0  # 10秒超时
+        self.timeout_seconds = 10.0  # timeout seconds
         
     def initialize(self, world: World) -> None:
         self.world = world
         
     def subscribe_events(self):
-        """订阅事件"""
+        """No subscriptions; polled in update()."""
         pass
         
     def update(self, delta_time: float) -> None:
-        """更新系统 - 倒计时优先，结构更简洁"""
+        """Update: countdown gate then generate report."""
         if self.report_generated:
             return
 
@@ -63,86 +64,86 @@ class SettlementReportSystem(System):
             try:
                 registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
                 received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
-                print(f"[SettlementReport] 🏁 检测到游戏结束，等待LLM统计或超时... 进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
+                print(f"[SettlementReport] 🏁 Game over detected, waiting for LLM stats or timeout... Progress: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
             except Exception as _e:
-                print(f"[SettlementReport] ℹ️ 无法读取注册/统计集合: {_e}")
+                print(f"[SettlementReport] ℹ️ Unable to read registered/received sets: {_e}")
             return
 
-        # 统一时间计算
+        # Time accounting
         import time
         elapsed = time.time() - self.game_end_time
         remaining = max(0.0, self.timeout_seconds - elapsed)
 
-        # 标志已就绪：提示将在剩余倒计时后生成（不立刻生成），并做节流打印
+        # Ready flag: throttle logging; still wait until countdown ends
         if game_stats and getattr(game_stats, 'can_generate_settlement_report', False):
             if int(elapsed) != getattr(self, '_last_ready_second', -1):
                 try:
                     registered = list(getattr(game_stats, 'registered_factions', set()))
                     received = list(getattr(game_stats, 'received_llm_stats_factions', set()))
-                    print(f"[SettlementReport] 🎯 LLM统计已就绪 (进度: {len(received)}/{len(registered)})，将在倒计时结束后生成 (剩余 {remaining:.1f}s)")
+                    print(f"[SettlementReport] 🎯 LLM stats ready (progress: {len(received)}/{len(registered)}), will generate after countdown (remaining {remaining:.1f}s)")
                 except Exception:
-                    print(f"[SettlementReport] 🎯 LLM统计已就绪，将在倒计时结束后生成 (剩余 {remaining:.1f}s)")
+                    print(f"[SettlementReport] 🎯 LLM stats ready, will generate after countdown (remaining {remaining:.1f}s)")
                 self._last_ready_second = int(elapsed)
 
-        # 倒计时结束：生成报告（无论标志是否就绪）
+        # Countdown over: generate report (regardless of readiness)
         if elapsed >= self.timeout_seconds:
             try:
                 registered = list(getattr(game_stats, 'registered_factions', set())) if game_stats else []
                 received = list(getattr(game_stats, 'received_llm_stats_factions', set())) if game_stats else []
-                print(f"[SettlementReport] ⏰ 等待LLM统计超时，生成结算报告... 最终进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
+                print(f"[SettlementReport] ⏰ Timeout waiting for LLM stats, generating report... Final progress: {len(received)}/{len(registered)} -> received={[f.value for f in received]} registered={[f.value for f in registered]}")
             except Exception as _e:
-                print(f"[SettlementReport] ⏰ 等待LLM统计超时，生成结算报告... (读取集合失败: {_e})")
+                print(f"[SettlementReport] ⏰ Timeout waiting for LLM stats, generating report... (failed to read sets: {_e})")
             self._generate_settlement_report()
             self.report_generated = True
             
     
     def _generate_settlement_report(self) -> None:
-        """生成结算报告"""
-        print("[SettlementReport] 🎯 开始生成结算报告...")
+        """Generate and persist the settlement report."""
+        print("[SettlementReport] 🎯 Begin generating settlement report...")
         
         try:
-            # 收集所有统计数据
+            # Collect all statistics
             report_data = self._collect_comprehensive_statistics()
             
-            # 创建结算报告组件
+            # Create settlement report component
             settlement_report = SettlementReport(**report_data)
             self.world.add_singleton_component(settlement_report)
             
-            # 保存报告到文件
+            # Persist to files
             self._save_report_to_files(report_data)
             
-            # 输出到控制台
+            # Print to console
             self._print_report_summary(report_data)
             
-            print("[SettlementReport] ✅ 结算报告生成完成!")
+            print("[SettlementReport] ✅ Settlement report generated!")
             
         except Exception as e:
-            print(f"[SettlementReport] ❌ 生成结算报告时出错: {e}")
+            print(f"[SettlementReport] ❌ Error while generating settlement report: {e}")
             import traceback
             traceback.print_exc()
     
     def _collect_comprehensive_statistics(self) -> Dict[str, Any]:
-        """收集综合统计数据"""
-        # 获取当前时间作为实验ID
+        """Collect comprehensive statistics across subsystems."""
+        # Use current time as experiment id
         timestamp = datetime.datetime.now()
         experiment_id = timestamp.strftime("%Y%m%d_%H%M%S")
         
-        # 收集基础游戏数据
+        # Base game data
         game_data = self._collect_game_data()
         
-        # 收集单位信息
+        # Units info
         units_info = self._collect_units_info()
         
-        # 收集战斗统计（传入units_info以修正casualties数据）
+        # Battle stats (uses units_info to correct casualties)
         battle_stats = self._collect_battle_statistics(units_info)
         
-        # 收集地图统计
+        # Map stats
         map_stats = self._collect_map_statistics()
         
-        # 收集性能统计
+        # Performance stats
         performance_stats = self._collect_performance_statistics()
         
-        # 收集占位数据（待实现功能）
+        # Placeholder/agent/model info
         placeholder_data = self._collect_placeholder_data()
         
         return {
@@ -156,18 +157,31 @@ class SettlementReportSystem(System):
             "performance_statistics": performance_stats,
             **placeholder_data
         }
+
+    def _format_symmetry(self, symmetry: str) -> str:
+        """Return a human-friendly description for symmetry type."""
+        mapping = {
+            "moba": "MOBA-style (three-lane)",
+            "river_split": "River-split diagonal",
+            "diagonal": "Diagonal symmetry",
+            "square": "Square symmetry",
+            "horizontal": "Horizontal symmetry",
+            "unknown": "Unknown",
+            "": "Unknown",
+        }
+        return mapping.get(symmetry, f"Custom ({symmetry})")
     
     def _collect_game_data(self) -> Dict[str, Any]:
-        """收集游戏基础数据"""
+        """Collect basic game data."""
         game_state = self.world.get_singleton_component(GameState)
         game_time = self.world.get_singleton_component(GameTime)
         
-        # 计算游戏时长
+        # Duration
         game_duration = 0.0
         if game_time:
             game_duration = game_time.get_game_elapsed_seconds()
         
-        # 判断胜利类型
+        # Victory type
         is_tie = False
         winner_faction = None
         is_half_win = False
@@ -175,15 +189,15 @@ class SettlementReportSystem(System):
         if game_state:
             winner_faction = game_state.winner
             if winner_faction:
-                # 检查是否为半歼胜利（存活单位数量较多）
+                # Check if it is a half-win (more surviving units)
                 is_half_win = self._check_half_win_condition(winner_faction)
             else:
                 is_tie = True
         
-        # 检测游戏模式
+        # Detect game mode
         game_mode = self._detect_game_mode()
         
-        # 收集游戏进度数据
+        # Collect progress
         game_progress = self._collect_game_progress(game_state, game_mode)
         
         return {
@@ -191,14 +205,14 @@ class SettlementReportSystem(System):
             "winner_faction": winner_faction,
             "is_half_win": is_half_win,
             "game_duration_seconds": game_duration,
-            "game_duration_formatted": f"{game_duration:.2f}秒",
+            "game_duration_formatted": f"{game_duration:.2f}s",
             "game_mode": game_mode,
             **game_progress
         }
     
     def _detect_game_mode(self) -> str:
-        """检测游戏模式"""
-        # 检查是否有回合系统
+        """Detect game mode (turn_based/real_time/unknown)."""
+        # Check if there is a turn system
         turn_system_exists = False
         realtime_system_exists = False
         
@@ -213,7 +227,7 @@ class SettlementReportSystem(System):
         elif realtime_system_exists:
             return "real_time"
         else:
-            # 默认检测：检查GameState组件
+            # Fallback: read from GameState component
             game_state = self.world.get_singleton_component(GameState)
             if game_state and hasattr(game_state, 'game_mode'):
                 return game_state.game_mode.value
@@ -221,44 +235,44 @@ class SettlementReportSystem(System):
                 return "unknown"
     
     def _collect_game_progress(self, game_state, game_mode: str) -> Dict[str, Any]:
-        """收集游戏进度数据"""
+        """Collect game progress (turns for turn-based; zero otherwise)."""
         if game_mode == "turn_based":
-            # 回合制模式：收集回合数
+            # Turn-based: total turns
             total_turns = game_state.turn_number if game_state else 0
             return {
                 "total_turns": total_turns
             }
         else:
-            # 即时制模式：没有回合概念，返回0
+            # Real-time: no turns
             return {
                 "total_turns": 0
             }
     
     def _collect_units_info(self) -> Dict[str, Any]:
-        """收集单位信息"""
+        """Collect unit info by faction, with corrected losses."""
         units_info = {}
         
-        # 🆕 获取初始单位数记录
+        # Initial unit counts snapshot
         game_stats = self.world.get_singleton_component(GameStats)
         initial_counts = game_stats.initial_unit_counts if game_stats else {}
         
-        # 🔍 添加调试信息
-        print(f"[SettlementReport] 📊 调试信息:")
-        print(f"  GameStats组件存在: {game_stats is not None}")
+        # Debug information
+        print(f"[SettlementReport] 📊 Debug:")
+        print(f"  GameStats exists: {game_stats is not None}")
         if game_stats:
-            print(f"  初始单位数记录: {initial_counts}")
+            print(f"  Initial unit counts: {initial_counts}")
         else:
-            print("  ❌ GameStats组件不存在!")
+            print("  ❌ GameStats is missing!")
         
         for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
             faction_units = []
             surviving_units = 0
             total_health = 0
             
-            # 🆕 使用记录的初始单位数，而不是当前存活的单位数
+            # Use initial unit counts snapshot instead of live counts
             total_units = initial_counts.get(faction, 0)
             
-            # 只统计当前存活的单位
+            # Count surviving units currently in world
             for entity in self.world.query().with_component(Unit).entities():
                 unit = self.world.get_component(entity, Unit)
                 unit_count = self.world.get_component(entity, UnitCount)
@@ -270,7 +284,7 @@ class SettlementReportSystem(System):
                         surviving_units += 1
                         total_health += current_count
                     
-                    # 记录单位详细信息（包括死亡单位，如果仍在世界中）
+                    # Record unit details (including dead units if still present)
                     unit_info = {
                         "unit_id": entity,
                         "unit_type": unit.unit_type.value,
@@ -281,30 +295,30 @@ class SettlementReportSystem(System):
                     }
                     faction_units.append(unit_info)
             
-            # 🔍 添加更多调试信息
-            print(f"  {faction.value}阵营:")
-            print(f"    初始单位数: {total_units}")
-            print(f"    存活单位数: {surviving_units}")
-            print(f"    单位详情数量: {len(faction_units)}")
+            # Extra debug lines
+            print(f"  {faction.value}:")
+            print(f"    initial units: {total_units}")
+            print(f"    surviving units: {surviving_units}")
+            print(f"    unit detail records: {len(faction_units)}")
             
-            if total_units > 0:  # 🆕 只要有初始单位就记录统计信息
-                destroyed_units = total_units - surviving_units  # 🆕 正确计算损失单位数
+            if total_units > 0: 
+                destroyed_units = total_units - surviving_units
                 units_info[faction.value] = {
-                    "total_units": total_units,  # 🆕 使用初始单位数
-                    "current_units": surviving_units,  # 🆕 明确标识当前存活单位数
+                    "total_units": total_units,
+                    "current_units": surviving_units,
                     "surviving_units": surviving_units,
-                    "destroyed_units": destroyed_units,  # 🆕 正确的损失单位数
+                    "destroyed_units": destroyed_units,
                     "total_health": total_health,
                     "units": faction_units
                 }
-                print(f"    ✅ 添加到结算报告")
+                print(f"    ✅ added to settlement report")
             else:
-                print(f"    ❌ 初始单位数为0，跳过")
+                print(f"    ❌ initial units is 0, skip")
         
         return units_info
     
     def _collect_battle_statistics(self, units_info: Dict[str, Any] = None) -> Dict[str, Any]:
-        """收集战斗统计"""
+        """Collect battle statistics and correct losses from units_info."""
         game_stats = self.world.get_singleton_component(GameStats)
         
         battle_stats = {
@@ -316,36 +330,35 @@ class SettlementReportSystem(System):
         }
         
         if game_stats:
-            # 从GameStats获取战斗历史
+            # History and totals from GameStats
             battle_stats["battle_history"] = game_stats.battle_history
             battle_stats["total_battles"] = len(game_stats.battle_history)
             
-            # 统计各阵营伤亡
+            # Per-faction casualties
             for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
                 faction_stats = game_stats.faction_stats.get(faction, {})
                 
-                # 🆕 修正faction_battle_stats中的losses字段
+                # Correct losses in faction_battle_stats
                 if units_info and faction.value in units_info:
                     corrected_losses = units_info[faction.value].get("destroyed_units", 0)
-                    # 创建修正后的faction_stats副本
+                    # Copy and override losses
                     corrected_faction_stats = faction_stats.copy()
                     corrected_faction_stats["losses"] = corrected_losses
                     battle_stats["faction_battle_stats"][faction.value] = corrected_faction_stats
-                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营faction_battle_stats.losses: {faction_stats.get('losses', 0)} -> {corrected_losses}")
+                    print(f"[SettlementReport] 🔧 corrected {faction.value} faction_battle_stats.losses: {faction_stats.get('losses', 0)} -> {corrected_losses}")
                 else:
                     battle_stats["faction_battle_stats"][faction.value] = faction_stats
                 
-                # 🆕 修正伤亡统计 - 使用units_info中的正确数据
+                # Correct casualties using units_info
                 if units_info and faction.value in units_info:
-                    # 使用units_info中已正确计算的destroyed_units作为units_lost
                     corrected_units_lost = units_info[faction.value].get("destroyed_units", 0)
-                    print(f"[SettlementReport] 🔧 修正{faction.value}阵营casualties.units_lost: {faction_stats.get('units_lost', 0)} -> {corrected_units_lost}")
+                    print(f"[SettlementReport] 🔧 corrected {faction.value} casualties.units_lost: {faction_stats.get('units_lost', 0)} -> {corrected_units_lost}")
                 else:
-                    # 回退到原有逻辑
+                    # Fallback
                     corrected_units_lost = faction_stats.get("units_lost", 0)
                 
                 casualties = {
-                    "units_lost": corrected_units_lost,  # 🆕 使用修正后的值
+                    "units_lost": corrected_units_lost,
                     "damage_dealt": faction_stats.get("damage_dealt", 0),
                     "damage_taken": faction_stats.get("damage_taken", 0)
                 }
@@ -354,7 +367,7 @@ class SettlementReportSystem(System):
         return battle_stats
     
     def _collect_map_statistics(self) -> Dict[str, Any]:
-        """收集地图统计"""
+        """Collect map statistics"""
         map_data = self.world.get_singleton_component(MapData)
         
         map_stats = {
@@ -372,7 +385,7 @@ class SettlementReportSystem(System):
             map_stats["map_height"] = map_data.height
             map_stats["total_tiles"] = len(map_data.tiles)
             
-            # 统计地形分布
+            # Terrain distribution
             terrain_counts = {}
             for tile_entity in map_data.tiles.values():
                 terrain = self.world.get_component(tile_entity, Terrain)
@@ -382,7 +395,7 @@ class SettlementReportSystem(System):
             
             map_stats["terrain_distribution"] = terrain_counts
             
-            # 统计领土控制
+            # Territory control per faction
             for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
                 controlled_tiles = 0
                 fortified_tiles = 0
@@ -400,7 +413,7 @@ class SettlementReportSystem(System):
                         "fortified_tiles": fortified_tiles
                     }
             
-            # 获取地图对称类型（从MapSystem）
+            # Map symmetry type from MapSystem if present
             map_system = None
             for system in self.world.systems:
                 if system.__class__.__name__ == "MapSystem":
@@ -413,79 +426,77 @@ class SettlementReportSystem(System):
         return map_stats
     
     def _collect_performance_statistics(self) -> Dict[str, Any]:
-        """收集性能统计"""
-        # 这里可以收集帧率、内存使用等性能数据
-        # 目前先返回占位数据
+        """Collect performance statistics (placeholder values)."""
         return {
             "fps_statistics": {
-                "average_fps": 60.0,  # 占位数据
+                "average_fps": 60.0,
                 "min_fps": 45.0,
                 "max_fps": 75.0
             },
             "memory_usage": {
-                "total_memory": "128MB",  # 占位数据
+                "total_memory": "128MB",
                 "peak_memory": "150MB"
             },
             "rendering_performance": {
-                "render_calls_per_frame": 100,  # 占位数据
+                "render_calls_per_frame": 100,
                 "texture_memory": "64MB"
             },
             "system_performance": {
-                "cpu_usage": "15%",  # 占位数据
+                "cpu_usage": "15%",
                 "gpu_usage": "25%"
             }
         }
     
     def _collect_placeholder_data(self) -> Dict[str, Any]:
-        """收集Agent和模型信息（原占位数据方法）"""
-        # 获取Agent信息注册表
+        """Collect agent/model metadata and auxiliary stats."""
+        # Agent registry
         registry = self.world.get_singleton_component(AgentInfoRegistry)
         game_stats = self.world.get_singleton_component(GameStats)
 
         model_info = {}
         agent_endpoints = {}
-        # 🆕 添加 enable_thinking 收集
+        # enable_thinking capture
         enable_thinking_by_faction = {}
         response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
 
         if registry:
-            print(f"[SettlementReport] 📋 发现Agent注册表，已注册阵营: {list(registry.agents.keys())}")
+            print(f"[SettlementReport] 📋 Agent registry found, registered factions: {list(registry.agents.keys())}")
             
             for faction in ["wei", "shu", "wu"]:
                 agent_info = registry.get_agent_info(faction)
                 if agent_info:
                     model_info[faction] = agent_info.model_id
                     agent_endpoints[faction] = agent_info.base_url
-                    # 🆕 收集 enable_thinking 信息
+                    # capture enable_thinking flag
                     enable_thinking_by_faction[faction] = agent_info.enable_thinking
-                    print(f"[SettlementReport] ✅ {faction}阵营: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
+                    print(f"[SettlementReport] ✅ {faction}: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
                 else:
                     model_info[faction] = "placeholder_model"
                     agent_endpoints[faction] = "unknown"
-                    # 🆕 未注册的阵营使用默认值
+                    # default for unregistered faction
                     enable_thinking_by_faction[faction] = None
-                    print(f"[SettlementReport] ⚠️ {faction}阵营: 未注册Agent信息，使用占位符")
+                    print(f"[SettlementReport] ⚠️ {faction}: Agent info not registered, using placeholder")
         else:
-            print(f"[SettlementReport] ⚠️ 未发现Agent注册表，使用占位符")
-            # 使用占位符
+            print(f"[SettlementReport] ⚠️ Agent registry not found, using placeholders")
+            # placeholders
             for faction in ["wei", "shu", "wu"]:
                 model_info[faction] = "placeholder_model"
                 agent_endpoints[faction] = "unknown"
-                # 🆕 未注册的阵营使用默认值
+                # default
                 enable_thinking_by_faction[faction] = None
 
-        # 🆕 读取交互次数（按阵营聚合）
+        # Aggregate response count per faction
         try:
             if game_stats:
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     response_times[f.value] = game_stats.response_times_by_faction.get(f, 0)
             else:
-                print("[SettlementReport] ⚠️ GameStats组件不存在，response_times 使用默认0")
+                print("[SettlementReport] ⚠️ GameStats missing, response_times default to 0")
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ 读取response_times失败: {e}")
+            print(f"[SettlementReport] ⚠️ Failed to read response_times: {e}")
 
-        # 🆕 读取策略评分
+        # Strategy scores
         strategy_scores: Dict[str, float] = {"wei": 0.0, "shu": 0.0, "wu": 0.0}
         try:
             if game_stats and hasattr(game_stats, "strategy_scores_by_faction"):
@@ -493,17 +504,17 @@ class SettlementReportSystem(System):
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     strategy_scores[f.value] = float(game_stats.strategy_scores_by_faction.get(f, 0.0))
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ 读取strategy_scores失败: {e}")
+            print(f"[SettlementReport] ⚠️ Failed to read strategy_scores: {e}")
 
-        # 🆕 读取 LLM API 统计数据
-        llm_api_stats: Dict[str, Dict[str, any]] = {"wei": {}, "shu": {}, "wu": {}}
+        # LLM API statistics
+        llm_api_stats: Dict[str, Dict[str, Any]] = {"wei": {}, "shu": {}, "wu": {}}
         try:
             if game_stats and hasattr(game_stats, "llm_api_stats"):
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     if f in game_stats.llm_api_stats:
                         llm_api_stats[f.value] = game_stats.llm_api_stats[f]
-                        print(f"[SettlementReport] ✅ {f.value}阵营 LLM API 统计: {game_stats.llm_api_stats[f]}")
+                        print(f"[SettlementReport] ✅ {f.value} LLM API stats: {game_stats.llm_api_stats[f]}")
                     else:
                         llm_api_stats[f.value] = {
                             "total_calls": 0,
@@ -514,20 +525,17 @@ class SettlementReportSystem(System):
                             "model_id": "unknown"
                         }
             else:
-                print("[SettlementReport] ⚠️ GameStats中未找到llm_api_stats字段")
+                print("[SettlementReport] ⚠️ llm_api_stats not found in GameStats")
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ 读取llm_api_stats失败: {e}")
+            print(f"[SettlementReport] ⚠️ Failed to read llm_api_stats: {e}")
 
         return {
             "model_info": model_info,
-            "agent_endpoints": agent_endpoints,  # 新增字段
-            "strategy_scores": {
-                **strategy_scores
-            },
-            # 🆕 返回 enable_thinking 信息
+            "agent_endpoints": agent_endpoints,
+            "strategy_scores": {**strategy_scores},
             "enable_thinking": enable_thinking_by_faction,
             "response_times": response_times,
-            "llm_api_stats": llm_api_stats  # 🆕 LLM API 统计数据
+            "llm_api_stats": llm_api_stats
         }
     
     def _get_map_type(self) -> str:
@@ -552,8 +560,8 @@ class SettlementReportSystem(System):
         return "标准随机地图"
     
     def _check_half_win_condition(self, winner_faction: Faction) -> bool:
-        """检查是否为半歼胜利"""
-        # 统计双方存活单位数量
+
+        # Count both sides' surviving units
         winner_surviving = 0
         loser_surviving = 0
         
@@ -567,11 +575,11 @@ class SettlementReportSystem(System):
                 else:
                     loser_surviving += 1
         
-        # 如果失败方仍有较多存活单位，则为半歼胜利
-        return loser_surviving > winner_surviving * 0.3  # 失败方存活超过30%算半歼
+        # If the loser has more surviving units, it is a partial victory
+        return loser_surviving > winner_surviving * 0.3  # If the loser has more surviving units, it is a partial victory
     
     def _get_unit_position(self, entity: int) -> Optional[Dict[str, int]]:
-        """获取单位位置"""
+
         from ..components import HexPosition
         position = self.world.get_component(entity, HexPosition)
         if position:
@@ -579,43 +587,43 @@ class SettlementReportSystem(System):
         return None
     
     def _save_report_to_files(self, report_data: Dict[str, Any]) -> None:
-        """保存报告到文件"""
+
         try:
-            # 创建报告目录
+            # Create report directory
             report_dir = "settlement_reports"
             os.makedirs(report_dir, exist_ok=True)
             
-            # 预处理数据，确保JSON可序列化
+            # Preprocess data, ensure JSON serializable
             json_safe_data = self._prepare_json_safe_data(report_data)
             
-            # 验证预处理后的数据
+            # Validate preprocessed data
             if not self._validate_json_data(json_safe_data):
-                print("[SettlementReport] ⚠️ JSON数据验证失败，尝试修复...")
-                # 如果验证失败，尝试更激进的清理
+                print("[SettlementReport] ⚠️ JSON data validation failed, trying to fix...")
+                # If validation fails, try more aggressive cleanup
                 json_safe_data = self._force_clean_data(report_data)
             
-            # 保存为JSON文件
+            # Save to JSON file
             json_file = os.path.join(report_dir, f"settlement_{report_data['experiment_id']}.json")
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(json_safe_data, f, ensure_ascii=False, indent=2)
             
-            # 保存到CSV文件便于统计分析
+            # Save to CSV file for statistical analysis
             csv_file = os.path.join(report_dir, "settlement_results.csv")
             csv_exists = os.path.exists(csv_file)
             
             with open(csv_file, "a", encoding="utf-8", newline="") as f:
                 if not csv_exists:
-                    # 🆕 更新CSV头部，添加 current_units 字段
+                    # CSV header including current_units fields
                     headers = [
                         "experiment_id", "timestamp", "map_type", "game_mode", "is_tie", "winner_faction",
                         "is_half_win", "game_duration_seconds", "total_turns",
                         "wei_total_units", "wei_current_units", "wei_surviving_units", "wei_destroyed_units",
                         "shu_total_units", "shu_current_units", "shu_surviving_units", "shu_destroyed_units",
-                        "total_battles", "symmetry_type"
+                        "total_battles", "symmetry"
                     ]
                     f.write(",".join(headers) + "\n")
                 
-                # 🆕 更新数据行，添加 current_units 数据
+                # Data row
                 row_data = [
                     report_data["experiment_id"],
                     report_data["timestamp"],
@@ -635,61 +643,58 @@ class SettlementReportSystem(System):
                     str(report_data["units_info"].get("shu", {}).get("surviving_units", 0)),
                     str(report_data["units_info"].get("shu", {}).get("destroyed_units", 0)),
                     str(report_data["battle_statistics"]["total_battles"]),
-                    report_data["map_statistics"]["symmetry_type"]
+                    self._format_symmetry(report_data["map_statistics"].get("symmetry_type", "unknown"))
                 ]
                 f.write(",".join(row_data) + "\n")
             
-            print(f"[SettlementReport] 📁 报告已保存到: {json_file}")
-            print(f"[SettlementReport] 📊 CSV数据已追加到: {csv_file}")
+            print(f"[SettlementReport] 📁 report saved to: {json_file}")
+            print(f"[SettlementReport] 📊 CSV data appended to: {csv_file}")
             
         except Exception as e:
-            print(f"[SettlementReport] ❌ 保存报告文件时出错: {e}")
+            print(f"[SettlementReport] ❌ error saving report file: {e}")
             import traceback
             traceback.print_exc()
     
     def _prepare_json_safe_data(self, data: Any) -> Any:
-        """准备JSON安全的数据，处理不可序列化的对象"""
+        """Prepare JSON-safe data by converting non-serializable objects."""
         try:
             if isinstance(data, dict):
                 return {key: self._prepare_json_safe_data(value) for key, value in data.items()}
             elif isinstance(data, list):
                 return [self._prepare_json_safe_data(item) for item in data]
-            elif hasattr(data, 'value'):  # 处理枚举对象（如Faction）
+            elif hasattr(data, 'value'):  # Enum-like (e.g., Faction)
                 return data.value
-            elif hasattr(data, '__dict__'):  # 处理其他对象
+            elif hasattr(data, '__dict__'):
                 return str(data)
             elif isinstance(data, (int, float, str, bool, type(None))):
-                # 基本类型直接返回
                 return data
             else:
-                # 其他类型转换为字符串
                 return str(data)
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ 数据预处理警告: {type(data)} -> {e}")
-            return f"<无法序列化: {type(data).__name__}>"
+            print(f"[SettlementReport] ⚠️ Preprocess warning: {type(data)} -> {e}")
+            return f"<unserializable: {type(data).__name__}>"
     
     def _validate_json_data(self, data: Any) -> bool:
-        """验证数据是否可以安全地序列化为JSON"""
+        """Validate that data can be serialized to JSON."""
         try:
-            # 尝试序列化一小部分数据来验证
             json.dumps(data, ensure_ascii=False)
             return True
         except (TypeError, ValueError) as e:
-            print(f"[SettlementReport] ❌ JSON验证失败: {e}")
+            print(f"[SettlementReport] ❌ JSON validation failed: {e}")
             return False
     
     def _force_clean_data(self, data: Any) -> Any:
-        """强制清理数据，移除所有可能导致JSON序列化失败的内容"""
+        """Force-clean data to remove/convert problematic values."""
         try:
             if isinstance(data, dict):
                 cleaned_dict = {}
                 for key, value in data.items():
-                    # 确保键是字符串
+                    # Ensure keys are strings
                     safe_key = str(key) if not isinstance(key, str) else key
                     try:
                         cleaned_dict[safe_key] = self._force_clean_data(value)
                     except Exception:
-                        # 如果某个值无法处理，跳过它
+                        # Drop unprocessable values
                         continue
                 return cleaned_dict
             elif isinstance(data, list):
@@ -698,68 +703,66 @@ class SettlementReportSystem(System):
                     try:
                         cleaned_list.append(self._force_clean_data(item))
                     except Exception:
-                        # 如果某个项目无法处理，跳过它
+                        # Drop unprocessable items
                         continue
                 return cleaned_list
             elif isinstance(data, (int, float, str, bool, type(None))):
                 return data
             elif hasattr(data, 'value'):
-                # 枚举对象
                 return data.value
             else:
-                # 其他所有类型都转换为字符串
                 return str(data)
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ 强制清理警告: {type(data)} -> {e}")
-            return f"<清理失败: {type(data).__name__}>"
+            print(f"[SettlementReport] ⚠️ Force-clean warning: {type(data)} -> {e}")
+            return f"<clean_failed: {type(data).__name__}>"
     
     def _print_report_summary(self, report_data: Dict[str, Any]) -> None:
-        """打印报告摘要到控制台"""
+        """Print report summary to console"""
         print("\n" + "=" * 80)
-        print("🎯 游戏结算报告")
+        print("🎯 Game Settlement Report")
         print("=" * 80)
-        print(f"📅 实验ID: {report_data['experiment_id']}")
-        print(f"⏰ 生成时间: {report_data['timestamp']}")
-        print(f"🗺️ 地图类型: {report_data['map_type']}")
-        print(f"🎮 游戏模式: {report_data.get('game_mode', 'unknown')}")
-        print(f"🔄 地图对称性: {report_data['map_statistics']['symmetry_type']}")
+        print(f"📅 Experiment ID: {report_data['experiment_id']}")
+        print(f"⏰ Generated at: {report_data['timestamp']}")
+        print(f"🗺️ Map type: {report_data['map_type']}")
+        print(f"🎮 Game mode: {report_data.get('game_mode', 'unknown')}")
+        print(f"🔄 Symmetry: {self._format_symmetry(report_data['map_statistics']['symmetry_type'])}")
         
-        print(f"\n🏆 游戏结果:")
+        print(f"\n🏆 Game result:")
         if report_data["is_tie"]:
-            print("   结果: 平局")
+            print("   Result: Draw")
         else:
             winner = report_data["winner_faction"]
-            victory_type = "半歼胜利" if report_data["is_half_win"] else "全歼胜利"
-            print(f"   结果: {winner.value}阵营{victory_type}")
+            victory_type = "Partial Victory" if report_data["is_half_win"] else "Decisive Victory"
+            print(f"   Result: {winner.value} faction — {victory_type}")
         
-        print(f"⏱️ 游戏时长: {report_data['game_duration_formatted']}")
+        print(f"⏱️ Game duration: {report_data['game_duration_formatted']}")
         
-        # 根据游戏模式显示不同信息
+        # Mode-specific info
         if report_data.get("game_mode") == "turn_based":
-            print(f"🔄 总回合数: {report_data.get('total_turns', 0)}")
+            print(f"🔄 Total turns: {report_data.get('total_turns', 0)}")
         else:
-            print(f"⚡ 实时模式: 无回合限制")
+            print(f"⚡ Real-time: no turn limit")
         
-        print(f"\n⚔️ 战斗统计:")
-        print(f"   总战斗次数: {report_data['battle_statistics']['total_battles']}")
+        print(f"\n⚔️ Battle statistics:")
+        print(f"   Total battles: {report_data['battle_statistics']['total_battles']}")
         
-        print(f"\n👥 单位统计:")
+        print(f"\n👥 Unit statistics:")
         for faction_key in ["wei", "shu"]:
             if faction_key in report_data["units_info"]:
                 faction_data = report_data["units_info"][faction_key]
-                print(f"   {faction_key.upper()}阵营:")
-                print(f"     总单位数: {faction_data['total_units']}")
-                print(f"     存活单位: {faction_data['surviving_units']}")
-                print(f"     损失单位: {faction_data['destroyed_units']}")
+                print(f"   {faction_key.upper()} Faction:")
+                print(f"     Total units: {faction_data['total_units']}")
+                print(f"     Surviving units: {faction_data['surviving_units']}")
+                print(f"     Destroyed units: {faction_data['destroyed_units']}")
         
-        print(f"\n🗺️ 地图统计:")
+        print(f"\n🗺️ Map statistics:")
         map_stats = report_data["map_statistics"]
-        print(f"   地图尺寸: {map_stats['map_width']}x{map_stats['map_height']}")
-        print(f"   总地块数: {map_stats['total_tiles']}")
+        print(f"   Map size: {map_stats['map_width']}x{map_stats['map_height']}")
+        print(f"   Total tiles: {map_stats['total_tiles']}")
         
-        print(f"   地形分布:")
+        print(f"   Terrain distribution:")
         for terrain, count in map_stats["terrain_distribution"].items():
             percentage = count / map_stats["total_tiles"] * 100
-            print(f"     {terrain}: {count}块 ({percentage:.1f}%)")
+            print(f"     {terrain}: {count} tiles ({percentage:.1f}%)")
         
         print("=" * 80)

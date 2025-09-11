@@ -89,6 +89,11 @@ class ToolManager:
 class LLMClient:
     """Independent LLM Client, directly call various LLM APIs"""
     
+    # global LLM API Call count
+    _global_api_call_count = 0
+    _global_api_success_count = 0
+    _global_api_error_count = 0
+    
     def __init__(self, config: LLMConfig):
         self.config = config
         
@@ -103,11 +108,6 @@ class LLMClient:
             base_url=base_url
         )
 
-        # LLM API interaction statistics
-        # Count the number of interactions at the beginning of the method to ensure all requests are recorded
-        self.api_call_count = 0  # Total number of calls
-        self.api_success_count = 0  # Number of successful calls
-        self.api_error_count = 0  # Number of failed calls
         
         # Store base_url for logging purposes
         self.base_url = base_url
@@ -151,7 +151,7 @@ class LLMClient:
             
         payload.update(kwargs)
         
-        # console.print(payload, style="green")
+        console.print(payload, style="green")
         
         # console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
         # console.print(f"│ {json.dumps(serializable_payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
@@ -159,23 +159,23 @@ class LLMClient:
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
-        self.api_call_count += 1
-        print(f"🔍 API call count: {self.api_call_count}")
+        LLMClient._global_api_call_count += 1
+        print(f"🔍 API call count: {LLMClient._global_api_call_count}")
         
         try:
             response = await self.client.responses.create(**payload)
             
-            # console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
-            # console.print(f"│ {json.dumps(response.model_dump(), indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
-            # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
+            console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
+            console.print(f"│ {json.dumps(response.model_dump(), indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
             
             # Count successful API calls
-            self.api_success_count += 1
+            LLMClient._global_api_success_count += 1
             return response
             
         except APIConnectionError as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
             console.print(f"Please check network connection and API server status", style="yellow")
@@ -183,7 +183,7 @@ class LLMClient:
             
         except APITimeoutError as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
@@ -191,7 +191,7 @@ class LLMClient:
             
         except APIStatusError as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"{self.config.provider} API HTTP error: {e.status_code}"
             console.print(f"🌐 HTTP error: {error_msg}", style="red")
             console.print(f"Error details: {e.message}", style="red")
@@ -199,7 +199,7 @@ class LLMClient:
             
         except Exception as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
             console.print(f"Request URL: {self.base_url}", style="yellow")
@@ -231,10 +231,10 @@ class LLMClient:
     def get_api_stats(self) -> Dict[str, int]:
         """Get API call statistics"""
         return {
-            "total_calls": self.api_call_count,
-            "successful_calls": self.api_success_count,
-            "failed_calls": self.api_error_count,
-            "success_rate": round(self.api_success_count / self.api_call_count * 100, 2) if self.api_call_count > 0 else 0.0
+            "total_calls": LLMClient._global_api_call_count,
+            "successful_calls": LLMClient._global_api_success_count,
+            "failed_calls": LLMClient._global_api_error_count,
+            "success_rate": round(LLMClient._global_api_success_count / LLMClient._global_api_call_count * 100, 2) if LLMClient._global_api_call_count > 0 else 0.0
         }
     
     async def close(self):
@@ -1116,11 +1116,23 @@ class RoTKChatAgent:
                 if assistant_texts and raw_calls:
                     continue
                 elif assistant_texts and not raw_calls:
+                    assistant_message_content = ""
+                    for it in response.output:
+                        if self._get(it, "type") == "message":
+                            for c in (self._get(it, "content") or []):
+                                if self._get(c, "type") == "output_text":
+                                    txt = self._get(c, "text", "")
+                                    if txt:
+                                        assistant_message_content += txt
+                    
+                    if assistant_message_content:
+                        input_items.append({"role": "assistant", "content": assistant_message_content})
+                    
                     input_items.append({"role": "user", "content": "You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them."})
+                    continue
                 elif not assistant_texts and raw_calls:
                     continue
                 else:
-                    
                     return {
                         "success": True,
                         "message": "LLM produced response without further tool calls",
