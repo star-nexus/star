@@ -1,8 +1,8 @@
 """
-Star Client SDK - 一个简洁高效的多角色 WebSocket 客户端 SDK
+Star Client SDK - A concise and efficient multi-role WebSocket client SDK.
 
-提供统一的接口来连接和管理 Agent、Environment 客户端
-支持同步和异步两种使用方式
+Provides a unified interface to connect and manage Agent and Environment clients.
+Supports both synchronous and asynchronous usage.
 """
 
 from .client import AgentClient, EnvironmentClient

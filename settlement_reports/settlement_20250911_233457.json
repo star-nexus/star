@@ -1,0 +1,810 @@
+{
+  "experiment_id": "20250911_233457",
+  "timestamp": "2025-09-11T23:34:57.661090",
+  "map_type": "自定义地图(river_split_offset)",
+  "is_tie": false,
+  "winner_faction": "shu",
+  "is_half_win": false,
+  "game_duration_seconds": 579.714143037796,
+  "game_duration_formatted": "579.71s",
+  "game_mode": "real_time",
+  "total_turns": 0,
+  "units_info": {
+    "wei": {
+      "total_units": 5,
+      "current_units": 0,
+      "surviving_units": 0,
+      "destroyed_units": 5,
+      "total_health": 0,
+      "units": []
+    },
+    "shu": {
+      "total_units": 5,
+      "current_units": 5,
+      "surviving_units": 5,
+      "destroyed_units": 0,
+      "total_health": 500,
+      "units": [
+        {
+          "unit_id": 240,
+          "unit_type": "cavalry",
+          "position": {
+            "col": 2,
+            "row": 3
+          },
+          "current_count": 100,
+          "max_count": 100,
+          "health_percentage": 1.0
+        },
+        {
+          "unit_id": 236,
+          "unit_type": "infantry",
+          "position": {
+            "col": 3,
+            "row": 2
+          },
+          "current_count": 100,
+          "max_count": 100,
+          "health_percentage": 1.0
+        },
+        {
+          "unit_id": 237,
+          "unit_type": "archer",
+          "position": {
+            "col": 1,
+            "row": 3
+          },
+          "current_count": 100,
+          "max_count": 100,
+          "health_percentage": 1.0
+        },
+        {
+          "unit_id": 238,
+          "unit_type": "archer",
+          "position": {
+            "col": 4,
+            "row": 1
+          },
+          "current_count": 100,
+          "max_count": 100,
+          "health_percentage": 1.0
+        },
+        {
+          "unit_id": 239,
+          "unit_type": "archer",
+          "position": {
+            "col": 3,
+            "row": 0
+          },
+          "current_count": 100,
+          "max_count": 100,
+          "health_percentage": 1.0
+        }
+      ]
+    }
+  },
+  "battle_statistics": {
+    "total_battles": 64,
+    "faction_battle_stats": {
+      "wei": {
+        "kills": 0,
+        "losses": 5,
+        "damage_dealt": 0,
+        "damage_taken": 529,
+        "units_created": 0,
+        "turns_played": 0,
+        "territory_controlled": 1,
+        "actions_taken": 0,
+        "movement_distance": 0,
+        "battles_won": 0,
+        "battles_lost": 0
+      },
+      "shu": {
+        "kills": 5,
+        "losses": 0,
+        "damage_dealt": 529,
+        "damage_taken": 0,
+        "units_created": 0,
+        "turns_played": 0,
+        "territory_controlled": 5,
+        "actions_taken": 27,
+        "movement_distance": 27,
+        "battles_won": 0,
+        "battles_lost": 0
+      },
+      "wu": {}
+    },
+    "battle_history": [
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 9,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 235,
+        "timestamp": 97.40502095222473
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 234,
+        "timestamp": 97.42164206504822
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 104.14043092727661
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 234,
+        "timestamp": 104.14043092727661
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 136.4350221157074
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 234,
+        "timestamp": 136.4350221157074
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 234,
+        "timestamp": 143.42983603477478
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 6,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 231,
+        "timestamp": 143.42983603477478
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 233,
+        "timestamp": 150.3481888771057
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 234,
+        "timestamp": 211.05478882789612
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 211.07172203063965
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 234,
+        "timestamp": 218.27839303016663
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 234,
+        "timestamp": 264.13355803489685
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 264.1505169868469
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 233,
+        "timestamp": 264.1505169868469
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 234,
+        "timestamp": 264.1505169868469
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 234,
+        "timestamp": 306.4369659423828
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 306.4537260532379
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 233,
+        "timestamp": 306.4537260532379
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 234,
+        "timestamp": 306.4537260532379
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 234,
+        "timestamp": 347.7552981376648
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 347.7552981376648
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 233,
+        "timestamp": 347.7552981376648
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "kill",
+        "attacker_entity": 239,
+        "target_entity": 234,
+        "timestamp": 347.7552981376648
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 353.7219841480255
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 371.6600420475006
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 233,
+        "timestamp": 371.6771249771118
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 371.6771249771118
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 231,
+        "timestamp": 406.5900528430939
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 406.5900528430939
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 406.5900528430939
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 406.5900528430939
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 414.04630994796753
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 414.04630994796753
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 421.3672368526459
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 421.3672368526459
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 428.456729888916
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 428.456729888916
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "kill",
+        "attacker_entity": 237,
+        "target_entity": 235,
+        "timestamp": 435.2796308994293
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 435.2955529689789
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "kill",
+        "attacker_entity": 240,
+        "target_entity": 233,
+        "timestamp": 441.3228280544281
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 231,
+        "timestamp": 459.41572618484497
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 231,
+        "timestamp": 459.4321641921997
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 459.4321641921997
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 459.4321641921997
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 231,
+        "timestamp": 491.37752199172974
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 231,
+        "timestamp": 491.37752199172974
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 491.37752199172974
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 491.37752199172974
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 231,
+        "timestamp": 521.2129511833191
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 231,
+        "timestamp": 521.2129511833191
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 521.2129511833191
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 521.2129511833191
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 231,
+        "timestamp": 521.2129511833191
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 236,
+        "target_entity": 231,
+        "timestamp": 532.514671087265
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 7,
+        "result": "damage",
+        "attacker_entity": 237,
+        "target_entity": 231,
+        "timestamp": 532.514671087265
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 532.514671087265
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 532.514671087265
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 240,
+        "target_entity": 231,
+        "timestamp": 532.5313310623169
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "kill",
+        "attacker_entity": 240,
+        "target_entity": 231,
+        "timestamp": 540.5401480197906
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 549.6670579910278
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 557.2973928451538
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 8,
+        "result": "damage",
+        "attacker_entity": 238,
+        "target_entity": 232,
+        "timestamp": 569.6872489452362
+      },
+      {
+        "attacker_faction": "shu",
+        "target_faction": "wei",
+        "damage": 12,
+        "result": "kill",
+        "attacker_entity": 239,
+        "target_entity": 232,
+        "timestamp": 569.6872489452362
+      }
+    ],
+    "casualties": {
+      "wei": {
+        "units_lost": 5,
+        "damage_dealt": 0,
+        "damage_taken": 529
+      },
+      "shu": {
+        "units_lost": 0,
+        "damage_dealt": 529,
+        "damage_taken": 0
+      },
+      "wu": {
+        "units_lost": 0,
+        "damage_dealt": 0,
+        "damage_taken": 0
+      }
+    },
+    "victory_types": {}
+  },
+  "map_statistics": {
+    "map_width": 15,
+    "map_height": 15,
+    "total_tiles": 225,
+    "terrain_distribution": {
+      "forest": 52,
+      "mountain": 26,
+      "plain": 115,
+      "water": 26,
+      "urban": 2,
+      "hill": 4
+    },
+    "territory_control": {
+      "wei": {
+        "controlled_tiles": 18,
+        "fortified_tiles": 0
+      },
+      "shu": {
+        "controlled_tiles": 18,
+        "fortified_tiles": 0
+      }
+    },
+    "symmetry_type": "river_split_offset",
+    "special_features": {}
+  },
+  "performance_statistics": {
+    "fps_statistics": {
+      "average_fps": 60.0,
+      "min_fps": 45.0,
+      "max_fps": 75.0
+    },
+    "memory_usage": {
+      "total_memory": "128MB",
+      "peak_memory": "150MB"
+    },
+    "rendering_performance": {
+      "render_calls_per_frame": 100,
+      "texture_memory": "64MB"
+    },
+    "system_performance": {
+      "cpu_usage": "15%",
+      "gpu_usage": "25%"
+    }
+  },
+  "model_info": {
+    "wei": "placeholder_model",
+    "shu": "deepseek-chat",
+    "wu": "placeholder_model"
+  },
+  "agent_endpoints": {
+    "wei": "unknown",
+    "shu": "https://api.deepseek.com/chat/completions",
+    "wu": "unknown"
+  },
+  "strategy_scores": {
+    "wei": 0.0,
+    "shu": 10.5,
+    "wu": 0.0
+  },
+  "enable_thinking": {
+    "wei": null,
+    "shu": false,
+    "wu": null
+  },
+  "response_times": {
+    "wei": 0,
+    "shu": 196,
+    "wu": 0
+  },
+  "llm_api_stats": {
+    "wei": {
+      "total_calls": 0,
+      "successful_calls": 0,
+      "failed_calls": 0,
+      "success_rate": 0.0,
+      "provider": "unknown",
+      "model_id": "unknown"
+    },
+    "shu": {
+      "total_calls": 70,
+      "successful_calls": 70,
+      "failed_calls": 0,
+      "success_rate": 100.0,
+      "provider": "deepseek",
+      "model_id": "deepseek-chat",
+      "timestamp": 1757604887.952502
+    },
+    "wu": {
+      "total_calls": 0,
+      "successful_calls": 0,
+      "failed_calls": 0,
+      "success_rate": 0.0,
+      "provider": "unknown",
+      "model_id": "unknown"
+    }
+  }
+}

@@ -1,16 +1,16 @@
 """
-类型定义模块
+Type definitions for the Star Client SDK
 """
 
 from datetime import datetime
-from typing import Dict, List, Any, Callable, Optional, Union
-from dataclasses import dataclass
+from typing import Dict, Any, Callable, Optional, Union
+from dataclasses import dataclass, field
 from enum import Enum
 
 
 @dataclass
 class ClientType(Enum):
-    """客户端类型枚举"""
+    """Client type enum."""
 
     AGENT = "agent"
     ENVIRONMENT = "env"
@@ -19,23 +19,21 @@ class ClientType(Enum):
 
 
 class MessageType(Enum):
-    """消息指令枚举"""
+    """Message instruction enum."""
 
     BROADCAST = "broadcast"
-    # 消息指令
+    # Message instruction
     MESSAGE = "message"
-    # 心跳指令
+    # Heartbeat instruction
     HEARTBEAT = "heartbeat"
-    # 连接状态
+    # Connection state
     CONNECT = "connect"
     DISCONNECT = "disconnect"
-    # 错误指令
+    # Error instruction
     ERROR = "error"
 
 
-# @dataclass
-# class ClientInfo:
-#     """客户端信息"""
+# Historical alternative ClientInfo commented out in legacy version
 
 #     role_type: str
 #     env_id: int
@@ -57,7 +55,7 @@ class MessageType(Enum):
 
 @dataclass
 class ClientInfo:
-    """客户端信息"""
+    """Client identity information for envelope addressing."""
 
     type: ClientType
     id: str
@@ -65,18 +63,19 @@ class ClientInfo:
 
 @dataclass
 class Envelope:
-    """消息数据结构"""
+    """Message envelope structure."""
 
     type: str
     sender: ClientInfo
     recipient: ClientInfo
     payload: Union[str, dict]
-    timestamp: float = datetime.now().timestamp()
+    # NOTE: default must be a factory to avoid evaluating at import time
+    timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
 
 
-# 事件处理器类型
+# Event handler types
 EventHandler = Callable[[Dict[str, Any]], Any]
 AsyncEventHandler = Callable[[Dict[str, Any]], Any]
 
-# 消息目标类型
+# Message target type
 MessageTarget = Union[str, Dict[str, Any], ClientInfo]
