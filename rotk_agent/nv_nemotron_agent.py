@@ -383,9 +383,10 @@ class RoTKChatAgent:
         # 强约束提示词（硬约束），可通过环境变量 SYSTEM_CONSTRAINTS 追加或覆盖
         default_constraints = (
             "[SYSTEM POLICY]\n"
-            "<think-policy>在 </think> 之前：最多两句、简短要点；禁止列点/分段；禁止复述问题；尽快闭合 </think>。</think-policy>\n"
+            "<think-policy>在 </think> 之前：最多两句、简短要点；禁止列点/分段；禁止复述问题；尽快闭合 </think>；Thinking level: low and fast.</think-policy>\n"
             "<tool-policy>优先使用工具获取事实；严格使用 tool_calls 字段，禁止在 content 中夹带工具信息。</tool-policy>\n"
             "<answer-policy>最终答案 ≤4 行；使用祈使句给出可执行策略；不道歉、不犹豫、不请求确认。</answer-policy>\n"
+            "<example-note>以下 JSON 仅为说明示例，请勿直接输出到 content；工具调用必须放入 tool_calls。</example-note>\n"
         )
         extra_constraints = os.environ.get("SYSTEM_CONSTRAINTS", "")
         self._system_constraints = f"{default_constraints}{extra_constraints}" if extra_constraints else default_constraints
@@ -1325,8 +1326,6 @@ class AgentDemo:
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
 - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
         """
-        thinking_level = "Thinking level: low and fast."
-        system_prompt = f"{thinking_level}\n{system_prompt}"
 
         count = 0
         while True:
