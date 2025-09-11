@@ -1,14 +1,13 @@
 """
-同步 WebSocket 客户端
-使用 websockets 库但提供同步接口
+Synchronous WebSocket client
+Built on top of the "websockets" library but exposes a synchronous API.
 """
 
 import asyncio
 import json
 import threading
 import time
-from typing import Dict, List, Any, Optional
-import concurrent.futures
+from typing import Dict, Any, Optional
 
 import websockets
 
@@ -18,65 +17,67 @@ from .exceptions import ConnectionError, MessageError
 
 
 class SyncWebSocketClient(BaseWebSocketClient):
-    """同步 WebSocket 客户端 - 使用 websockets 库但提供同步接口"""
+    """Synchronous WebSocket client - built on websockets with a sync interface."""
 
     def __init__(self, server_url: str, client_info: ClientInfo):
         super().__init__(server_url, client_info)
         self.websocket = None
         self._loop = None
         self._loop_thread = None
-        self._executor = None
         self._stop_event = None
+        self._loop_ready = None
         self.connected = False
 
     def connect(self) -> bool:
-        """连接到 WebSocket 服务器 - 同步接口"""
+        """Connect to the WebSocket server (synchronous)."""
         if self.connected:
             return True
 
         try:
-            # 创建新的事件循环在独立线程中运行
+            # Create a new event loop running in a dedicated thread
             self._stop_event = threading.Event()
+            self._loop_ready = threading.Event()
             self._loop_thread = threading.Thread(
                 target=self._run_event_loop, daemon=True
             )
             self._loop_thread.start()
 
-            # 等待事件循环启动
-            time.sleep(0.1)
+            # Wait for the event loop to be ready
+            if not self._loop_ready.wait(timeout=5):
+                raise ConnectionError("Event loop failed to start in time")
 
-            # 在事件循环中执行连接
+            # Run connect coroutine in the event loop
             future = asyncio.run_coroutine_threadsafe(self._async_connect(), self._loop)
-            result = future.result(timeout=10)  # 10秒超时
+            result = future.result(timeout=10)  # 10s timeout
 
             return result
 
         except Exception as e:
-            raise ConnectionError(f"连接失败: {e}")
+            raise ConnectionError(f"Connection failed: {e}")
 
     def disconnect(self):
-        """断开连接 - 同步接口"""
+        """Disconnect (synchronous)."""
         if not self.connected:
             return
 
         try:
-            # 在事件循环中执行断开连接
+            # Run disconnect coroutine in the event loop
             if self._loop and not self._loop.is_closed():
                 future = asyncio.run_coroutine_threadsafe(
                     self._async_disconnect(), self._loop
                 )
                 future.result(timeout=5)
 
-            # 停止事件循环
+            # Stop the event loop
             if self._stop_event:
                 self._stop_event.set()
 
-            # 等待线程结束
+            # Wait for the loop thread to finish
             if self._loop_thread and self._loop_thread.is_alive():
                 self._loop_thread.join(timeout=2)
 
         except Exception as e:
-            print(f"断开连接时出错: {e}")
+            print(f"Error while disconnecting: {e}")
         finally:
             self.connected = False
 
@@ -86,33 +87,35 @@ class SyncWebSocketClient(BaseWebSocketClient):
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
     ) -> bool:
-        """发送消息 - 同步接口"""
+        """Send a message (synchronous)."""
         if not self.connected or not self._loop:
-            raise ConnectionError("未连接到服务器")
+            raise ConnectionError("Not connected to the server")
 
         try:
-            # 在事件循环中执行发送消息
+            # Run send coroutine in the event loop
             future = asyncio.run_coroutine_threadsafe(
                 self._async_send_message(instruction, data, target), self._loop
             )
             return future.result(timeout=5)
 
         except Exception as e:
-            raise MessageError(f"发送消息失败: {e}")
+            raise MessageError(f"Failed to send message: {e}")
 
     def _run_event_loop(self):
-        """在独立线程中运行事件循环"""
+        """Run the event loop in a dedicated thread."""
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        if self._loop_ready is not None:
+            self._loop_ready.set()
 
         try:
-            # 运行事件循环直到停止
+            # Run the loop until a stop signal is received
             self._loop.run_until_complete(self._wait_for_stop())
         finally:
-            # 清理
+            # Cleanup
             try:
-                # 取消所有未完成的任务
-                pending = asyncio.all_tasks(self._loop)
+                # Cancel all pending tasks
+                pending = asyncio.all_tasks()
                 for task in pending:
                     task.cancel()
 
@@ -126,34 +129,34 @@ class SyncWebSocketClient(BaseWebSocketClient):
                 self._loop.close()
 
     async def _wait_for_stop(self):
-        """等待停止信号"""
+        """Wait for a stop signal."""
         while not self._stop_event.is_set():
             await asyncio.sleep(0.1)
 
     async def _async_connect(self) -> bool:
-        """异步连接方法"""
+        """Async connect implementation."""
         try:
             url = self.url()
             self.websocket = await websockets.connect(url)
             self.connected = True
 
-            # 启动消息监听和心跳任务
+            # Start message listener and heartbeat tasks
             asyncio.create_task(self._message_loop())
             asyncio.create_task(self._heartbeat_loop())
 
             return True
 
         except Exception as e:
-            raise ConnectionError(f"连接失败: {e}")
+            raise ConnectionError(f"Connection failed: {e}")
 
     async def _async_disconnect(self):
-        """异步断开连接方法"""
+        """Async disconnect implementation."""
         self.connected = False
 
         if self.websocket:
             await self.websocket.close()
 
-        await self._trigger_event("disconnect", {"reason": "主动断开"})
+        await self._trigger_event("disconnect", {"reason": "Disconnected by client"})
 
     async def _async_send_message(
         self,
@@ -161,9 +164,9 @@ class SyncWebSocketClient(BaseWebSocketClient):
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
     ) -> bool:
-        """异步发送消息方法"""
+        """Async send message implementation."""
         if not self.connected or not self.websocket:
-            raise ConnectionError("未连接到服务器")
+            raise ConnectionError("Not connected to the server")
 
         envelope = self.build_message_envelope(instruction, data, target)
 
@@ -171,10 +174,10 @@ class SyncWebSocketClient(BaseWebSocketClient):
             await self.websocket.send(json.dumps(envelope))
             return True
         except Exception as e:
-            raise MessageError(f"发送消息失败: {e}")
+            raise MessageError(f"Failed to send message: {e}")
 
     async def _message_loop(self):
-        """消息监听循环"""
+        """Message listening loop."""
         try:
             while self.connected and self.websocket:
                 message = await self.websocket.recv()
@@ -199,21 +202,21 @@ class SyncWebSocketClient(BaseWebSocketClient):
                     case MessageType.ERROR.value:
                         await self._trigger_event("error", message_data)
                     case _:
-                        # 处理其他消息类型
+                        # Handle other message types
                         await self._trigger_event("other", message_data)
 
         except websockets.exceptions.ConnectionClosed:
             self.connected = False
-            await self._trigger_event("disconnect", {"reason": "连接被关闭"})
+            await self._trigger_event("disconnect", {"reason": "Connection was closed"})
         except Exception as e:
             self.connected = False
             await self._trigger_event("error", {"error": str(e)})
 
     async def _heartbeat_loop(self):
-        """心跳循环"""
+        """Heartbeat loop."""
         try:
             while self.connected:
-                await asyncio.sleep(30)  # 每30秒发送心跳
+                await asyncio.sleep(30)  # Send heartbeat every 30 seconds
                 if self.connected:
                     await self._async_send_message(
                         MessageType.HEARTBEAT.value, {"timestamp": time.time()}
@@ -221,19 +224,19 @@ class SyncWebSocketClient(BaseWebSocketClient):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            await self._trigger_event("error", {"error": f"心跳错误: {e}"})
+            await self._trigger_event("error", {"error": f"Heartbeat error: {e}"})
 
     async def _trigger_event(self, event_type: str, data: Any):
-        """触发事件处理器"""
+        """Trigger registered event handlers."""
         if event_type in self.hub_event_handlers:
             for handler in self.hub_event_handlers[event_type]:
                 try:
-                    # 同步客户端的事件处理器都是同步的
+                    # Event handlers may be sync or async
                     if asyncio.iscoroutinefunction(handler):
                         await handler(data)
                     else:
-                        # 在线程池中执行同步处理器，避免阻塞事件循环
+                        # Run sync handlers in a thread to avoid blocking the loop
                         loop = asyncio.get_event_loop()
                         await loop.run_in_executor(None, handler, data)
                 except Exception as e:
-                    print(f"事件处理器错误 ({event_type}): {e}")
+                    print(f"Event handler error ({event_type}): {e}")
