@@ -380,6 +380,15 @@ class RoTKChatAgent:
             self._thinking_budget = 64
         if self._thinking_budget <= 0:
             self._thinking_budget = 64
+        # 强约束提示词（硬约束），可通过环境变量 SYSTEM_CONSTRAINTS 追加或覆盖
+        default_constraints = (
+            "[SYSTEM POLICY]\n"
+            "<think-policy>在 </think> 之前：最多两句、简短要点；禁止列点/分段；禁止复述问题；尽快闭合 </think>。</think-policy>\n"
+            "<tool-policy>优先使用工具获取事实；严格使用 tool_calls 字段，禁止在 content 中夹带工具信息。</tool-policy>\n"
+            "<answer-policy>最终答案 ≤4 行；使用祈使句给出可执行策略；不道歉、不犹豫、不请求确认。</answer-policy>\n"
+        )
+        extra_constraints = os.environ.get("SYSTEM_CONSTRAINTS", "")
+        self._system_constraints = f"{default_constraints}{extra_constraints}" if extra_constraints else default_constraints
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -990,9 +999,10 @@ class RoTKChatAgent:
             await self._register_agent_info()
             self._agent_registered = True
         
-        # Initialize conversation
+        # Initialize conversation（注入硬约束 + 业务系统提示）
+        merged_system_prompt = f"{self._system_constraints}\n{self.system_prompt}" if self.system_prompt else self._system_constraints
         self.conversation_history = [
-            Message(role="system", content=self.system_prompt)
+            Message(role="system", content=merged_system_prompt)
         ]
         self.conversation_history.append(
             Message(role="user", content=user_prompt)
@@ -1037,7 +1047,10 @@ class RoTKChatAgent:
                 stage1_response = await self.llm_client.chat_completion(
                     messages=self.conversation_history,
                     tools=None,
-                    max_tokens=thinking_budget
+                    max_tokens=thinking_budget,
+                    stop=["</think>"],
+                    temperature=0.4,
+                    top_p=0.7
                 )
 
                 stage1_choice = stage1_response.get("choices", [{}])[0]
