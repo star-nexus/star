@@ -373,8 +373,11 @@ async def run_action(parts):
 每个单位可进行移动、攻击、建造、使用技能等动作
 可以多次在不同单位间切换操作
 如果无法行动则结束回合
+你的 provide 是 aws
+你的 model_id 是 claude-sonnet-4-20250514
+自己阵营行动结束，要调用end turn，然后等待对方行动
 """
-    await chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"])
+    await chat(["chat", rule + "控制shu阵营,消灭敌人,获得胜利。"])
 
 
 ACTION = {
@@ -400,7 +403,7 @@ async def main():
         "--env-id", type=str, default="env_1", help="环境ID (默认: env_1)"
     )
     parser.add_argument(
-        "--agent-id", type=str, default="agent_1", help="Agent ID (默认: 1)"
+        "--agent-id", type=str, default="shu", help="Agent ID (默认: 1)"
     )
 
     args = parser.parse_args()

@@ -206,6 +206,16 @@ class LLMActionHandlerV3:
             f"[MOVE_ACTION] Unit {unit_id} exists, type: {unit.unit_type.value}, faction: {unit.faction.value}"
         )
 
+        # === 阵营回合权限验证 ===
+        print(f"[MOVE_ACTION] Checking faction turn permission for unit {unit_id}...")
+        permission_error = self._validate_faction_turn_permission(unit_id, "move")
+        if permission_error:
+            print(
+                f"[MOVE_ACTION] Faction permission denied: {permission_error['message']}"
+            )
+            return permission_error
+        print(f"[MOVE_ACTION] Faction permission granted for {unit.faction.value}")
+
         # Required components
         print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
         position = self.world.get_component(unit_id, HexPosition)
@@ -576,7 +586,9 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}")
+        print(
+            f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
+        )
 
         # 执行移动
         print(f"[MOVE_ACTION] Fetching MovementSystem...")
@@ -687,7 +699,19 @@ class LLMActionHandlerV3:
             f"[ATTACK_ACTION] Units exist: {attacker_unit.unit_type.value}({attacker_unit.faction.value}) -> {target_unit.unit_type.value}({target_unit.faction.value})"
         )
 
-        # === Layer 3: faction relation validation ===
+        # === Layer 3: 阵营回合权限验证 ===
+        print(f"[ATTACK_ACTION] Checking faction turn permission for unit {unit_id}...")
+        permission_error = self._validate_faction_turn_permission(unit_id, "attack")
+        if permission_error:
+            print(
+                f"[ATTACK_ACTION] Faction permission denied: {permission_error['message']}"
+            )
+            return permission_error
+        print(
+            f"[ATTACK_ACTION] Faction permission granted for {attacker_unit.faction.value}"
+        )
+
+        # === Layer 4: faction relation validation ===
         if attacker_unit.faction == target_unit.faction:
             return self._create_error_response(
                 "Cannot attack units of same faction",
@@ -949,6 +973,11 @@ class LLMActionHandlerV3:
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
+        # 阵营回合权限验证
+        permission_error = self._validate_faction_turn_permission(unit_id, "rest")
+        if permission_error:
+            return permission_error
+
         # 执行待命
         action_system = self._get_action_system()
         if action_system:
@@ -998,6 +1027,11 @@ class LLMActionHandlerV3:
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
+
+        # 阵营回合权限验证
+        permission_error = self._validate_faction_turn_permission(unit_id, "occupy")
+        if permission_error:
+            return permission_error
 
         # 检查单位位置和行动点
         unit_pos = self.world.get_component(unit_id, HexPosition)
@@ -1099,6 +1133,11 @@ class LLMActionHandlerV3:
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
+        # 阵营回合权限验证
+        permission_error = self._validate_faction_turn_permission(unit_id, "fortify")
+        if permission_error:
+            return permission_error
+
         # 检查动作点和建造点
         action_points = self.world.get_component(unit_id, ActionPoints)
         construction_points = self.world.get_component(unit_id, ConstructionPoints)
@@ -1165,6 +1204,11 @@ class LLMActionHandlerV3:
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
+
+        # 阵营回合权限验证
+        permission_error = self._validate_faction_turn_permission(unit_id, "skill")
+        if permission_error:
+            return permission_error
 
         # 检查技能组件
         unit_skills = self.world.get_component(unit_id, UnitSkills)
@@ -1389,7 +1433,10 @@ class LLMActionHandlerV3:
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "Whether execution succeeded"},
+                        "success": {
+                            "type": "bool",
+                            "description": "Whether execution succeeded",
+                        },
                         "message": {"type": "string", "description": "Result message"},
                         "resource_consumption": {
                             "type": "object",
@@ -1549,7 +1596,10 @@ class LLMActionHandlerV3:
                         }
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "Whether execution succeeded"},
+                        "success": {
+                            "type": "bool",
+                            "description": "Whether execution succeeded",
+                        },
                         "state": {
                             "type": "string",
                             "description": "Faction state: active/in_battle/victory/defeat/eliminated/draw",
@@ -1559,9 +1609,18 @@ class LLMActionHandlerV3:
                             "description": "Detailed status info",
                         },
                         "faction": {"type": "string", "description": "Faction name"},
-                        "total_units": {"type": "int", "description": "Total unit count"},
-                        "alive_units": {"type": "int", "description": "Alive unit count"},
-                        "units": {"type": "array", "description": "Detailed unit info list"},
+                        "total_units": {
+                            "type": "int",
+                            "description": "Total unit count",
+                        },
+                        "alive_units": {
+                            "type": "int",
+                            "description": "Alive unit count",
+                        },
+                        "units": {
+                            "type": "array",
+                            "description": "Detailed unit info list",
+                        },
                     },
                     "prerequisites": ["Valid faction name"],
                 },
@@ -1712,10 +1771,53 @@ class LLMActionHandlerV3:
 
         return response
 
+    def _validate_faction_turn_permission(
+        self, unit_id: int, action_name: str = "action"
+    ) -> Dict[str, Any]:
+        """验证指定单位的阵营是否有当前回合的操作权限
+
+        Args:
+            unit_id: 单位ID
+            action_name: 动作名称，用于错误信息
+
+        Returns:
+            Dict: 包含验证结果的字典，如果验证失败会返回错误响应，成功返回None
+        """
+        # 检查单位是否存在
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(
+                f"Unit {unit_id} not found", {"unit_id": unit_id, "action": action_name}
+            )
+
+        # 获取当前轮到行动的阵营
+        current_player = self._get_current_player()
+        if not current_player:
+            return self._create_error_response(
+                "Unable to determine current player",
+                {"unit_id": unit_id, "action": action_name},
+            )
+
+        # 检查是否是该阵营的回合
+        if unit.faction != current_player.faction:
+            return self._create_error_response(
+                f"Not {unit.faction.value}'s turn to act. Current turn: {current_player.faction.value}",
+                {
+                    "unit_id": unit_id,
+                    "unit_faction": unit.faction.value,
+                    "current_turn_faction": current_player.faction.value,
+                    "action": action_name,
+                    "suggestion": f"Wait for {unit.faction.value}'s turn or switch to a {current_player.faction.value} unit",
+                },
+            )
+
+        # 验证通过，返回None表示无错误
+        return None
+
     def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
         """Get detailed unit information with safe fallbacks."""
         try:
-            
+
             if not isinstance(unit_id, int) or unit_id <= 0:
                 return {
                     "unit_id": unit_id,
@@ -1743,7 +1845,6 @@ class LLMActionHandlerV3:
                     "available_skills": [],
                 }
 
-            
             unit = self.world.get_component(unit_id, Unit)
             unit_count = self.world.get_component(unit_id, UnitCount)
             position = self.world.get_component(unit_id, HexPosition)
@@ -1757,7 +1858,6 @@ class LLMActionHandlerV3:
             unit_status = self.world.get_component(unit_id, UnitStatus)
             unit_skills = self.world.get_component(unit_id, UnitSkills)
 
-            
             if not unit:
                 return {
                     "unit_id": unit_id,
@@ -1785,7 +1885,6 @@ class LLMActionHandlerV3:
                     "available_skills": [],
                 }
 
-            
             try:
                 unit_type_value = unit.unit_type.value if unit.unit_type else "unknown"
             except (AttributeError, ValueError):
@@ -1796,7 +1895,6 @@ class LLMActionHandlerV3:
             except (AttributeError, ValueError):
                 faction_value = "unknown"
 
-            
             position_info = {"col": 0, "row": 0}
             if position:
                 try:
@@ -1807,7 +1905,6 @@ class LLMActionHandlerV3:
                 except (AttributeError, ValueError, TypeError):
                     position_info = {"col": 0, "row": 0}
 
-            
             status_info = {
                 "current_count": 0,
                 "max_count": 0,
@@ -1855,7 +1952,6 @@ class LLMActionHandlerV3:
                 except (AttributeError, ValueError, TypeError):
                     status_info["morale"] = "normal"
 
-            
             capabilities_info = {
                 "movement": 0,
                 "attack_range": 1,
@@ -1914,7 +2010,6 @@ class LLMActionHandlerV3:
                 except (AttributeError, ValueError, TypeError):
                     pass
 
-            
             if attack_points:
                 try:
                     capabilities_info["attack_points"] = (
@@ -1945,7 +2040,6 @@ class LLMActionHandlerV3:
                 except (AttributeError, ValueError, TypeError):
                     pass
 
-            
             available_skills = []
             if unit_skills:
                 try:
@@ -2005,7 +2099,6 @@ class LLMActionHandlerV3:
         if not vision:
             return []
 
-        
         unit_position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
@@ -2047,7 +2140,7 @@ class LLMActionHandlerV3:
         unit_count: UnitCount,
     ) -> Dict[str, Any]:
         """Compute movement info from current to target tile."""
-        
+
         if current_pos == target_pos:
             return {
                 "reachable": True,
@@ -2086,7 +2179,7 @@ class LLMActionHandlerV3:
                     "reachable": reachable,
                     "is_current_position": False,
                     "movement_cost": total_movement_cost,
-                    "path_length": len(path) - 1,  
+                    "path_length": len(path) - 1,
                     "terrain_movement_cost": self._get_terrain_movement_cost(
                         target_pos
                     ),
@@ -2610,7 +2703,7 @@ class LLMActionHandlerV3:
         movement_points: MovementPoints,
         unit_count: UnitCount,
     ) -> Dict[str, Any]:
-        
+
         if not current_pos or not movement_points or not unit_count:
             return {
                 "reachable": False,
@@ -2619,7 +2712,6 @@ class LLMActionHandlerV3:
                 "remaining_movement": 0,
             }
 
-       
         if current_pos == target_pos:
             return {
                 "reachable": True,
@@ -2629,10 +2721,8 @@ class LLMActionHandlerV3:
                 "is_current_position": True,
             }
 
-        
         effective_movement = movement_points.get_effective_movement(unit_count)
 
-        
         obstacles = self._get_obstacles_excluding_unit(unit_id)
         if target_pos in obstacles:
             return {
@@ -2725,7 +2815,10 @@ class LLMActionHandlerV3:
             required_params = ["faction", "provider", "model_id", "base_url"]
             for param in required_params:
                 if param not in params:
-                    return {"success": False, "message": f"Missing required parameter: {param}"}
+                    return {
+                        "success": False,
+                        "message": f"Missing required parameter: {param}",
+                    }
 
             faction = params["faction"]
             provider = params["provider"]
@@ -2745,7 +2838,7 @@ class LLMActionHandlerV3:
                 version=params.get("version"),
                 note=params.get("note"),
                 # pass through optional thinking flag
-                enable_thinking=enable_thinking
+                enable_thinking=enable_thinking,
             )
 
             # Get or create registry
@@ -2760,15 +2853,19 @@ class LLMActionHandlerV3:
             # Maintain registered_factions set in GameStats
             try:
                 from ..components.state import GameStats
+
                 stats = self.world.get_singleton_component(GameStats)
                 if stats is None:
                     stats = GameStats()
                     self.world.add_singleton_component(stats)
                 from ..prefabs.config import Faction as _Faction
+
                 reg_faction = _Faction(faction)
                 stats.registered_factions.add(reg_faction)
             except Exception as _e:
-                print(f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}")
+                print(
+                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
+                )
 
             if success:
                 return {
@@ -2780,11 +2877,14 @@ class LLMActionHandlerV3:
                         "model_id": model_id,
                         "base_url_sanitized": agent_info.base_url,
                         # include thinking flag in response
-                        "enable_thinking": enable_thinking
+                        "enable_thinking": enable_thinking,
                     },
                 }
             else:
                 return {"success": False, "message": "Failed to register agent info"}
 
         except Exception as e:
-            return {"success": False, "message": f"Error registering agent info: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"Error registering agent info: {str(e)}",
+            }
