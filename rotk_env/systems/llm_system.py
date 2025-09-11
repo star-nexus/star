@@ -609,12 +609,77 @@ class LLMSystem(System):
             # 4. 未知动作
             else:
                 result = self._create_system_error_response(
-                    action, f"Unknown action: {action}", 2010
+                    action, f"UNKOWN ACTION: {action}", 2010
                 )
 
             # 标准化响应格式
             execution_time = time.time() - start_time
             standardized_result = result
+
+            # 🆕 如果是 end_turn，通知新当前玩家开始回合
+            if action == "end_turn" and isinstance(result, dict) and result.get("success"):
+                try:
+                    game_state = self.world.get_singleton_component(GameState)
+                    if game_state:
+                        current_faction = getattr(game_state, "current_player", None)
+                        if current_faction is not None:
+                            faction_key = (
+                                current_faction.value
+                                if hasattr(current_faction, "value")
+                                else str(current_faction)
+                            )
+
+                            # 收集目标 agent_id 列表
+                            target_agent_ids = set()
+
+                            # 1) 从注册表获取（可能只有一个）
+                            try:
+                                from ..components.agent_info import AgentInfoRegistry
+
+                                registry = self.world.get_singleton_component(AgentInfoRegistry)
+                                if registry:
+                                    agent_info = registry.get_agent_info(faction_key)
+                                    if agent_info and getattr(agent_info, "agent_id", None):
+                                        target_agent_ids.add(agent_info.agent_id)
+                            except Exception as _e:
+                                print(f"[LLMSystem] 获取AgentInfoRegistry失败: {_e}")
+
+                            # 2) 通过统计映射收集所有注册到该阵营的 agent_id
+                            if stats and getattr(stats, "agent_id_to_faction", None):
+                                try:
+                                    for mapped_agent_id, mapped_faction in stats.agent_id_to_faction.items():
+                                        if mapped_faction == current_faction:
+                                            target_agent_ids.add(mapped_agent_id)
+                                except Exception as _e:
+                                    print(f"[LLMSystem] 通过统计映射查找agent_id失败: {_e}")
+
+                            # 仅向当前已连接的 agent 发送
+                            connected_ids = set(self.client.connected_agents.keys())
+                            target_agent_ids = [aid for aid in target_agent_ids if aid in connected_ids]
+
+                            if target_agent_ids:
+                                notification = {
+                                    "type": "turn_start",
+                                    "faction": faction_key,
+                                    "turn_number": getattr(game_state, "turn_number", None),
+                                    "timestamp": time.time(),
+                                    "message": "Your turn starts."
+                                }
+                                for target_agent_id in target_agent_ids:
+                                    try:
+                                        self.send_message(
+                                            notification,
+                                            target={"type": "agent", "id": target_agent_id},
+                                        )
+                                        # 计入一次 ENV->Agent 交互
+                                        self._record_interaction(target_agent_id, {"faction": faction_key})
+                                        print(f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合")
+                                    except Exception as _e:
+                                        print(f"[LLMSystem] ❌ 发送回合开始通知失败: {_e}")
+                            else:
+                                print(f"[LLMSystem] ⚠️ 未找到阵营 {faction_key} 的在线 agent_id，跳过通知")
+                except Exception as _e:
+                    print(f"[LLMSystem] ⚠️ end_turn 后通知当前玩家失败: {_e}")
 
             # 🆕 若是注册动作成功，补充登记集合与映射
             if action == "register_agent_info" and isinstance(result, dict) and result.get("success"):
