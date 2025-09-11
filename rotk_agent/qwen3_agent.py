@@ -23,7 +23,7 @@ from rich import print_json
 console = Console()
 console_system = Console()
 # Replace console.print with an "empty" function to avoid printing to console
-console.print = lambda *a, **k: None
+# console.print = lambda *a, **k: None
 
 @dataclass
 class LLMConfig:
@@ -87,15 +87,14 @@ class ToolManager:
 class LLMClient:
     """Independent LLM Client, directly call various LLM APIs"""
     
+    # global LLM API Call count
+    _global_api_call_count = 0
+    _global_api_success_count = 0
+    _global_api_error_count = 0
+
     def __init__(self, config: LLMConfig):
         self.config = config
         self.client = httpx.AsyncClient()
-        
-        # LLM API interaction statistics
-        # Count the number of interactions at the beginning of the method to ensure all requests are recorded
-        self.api_call_count = 0  # Total number of calls
-        self.api_success_count = 0  # Number of successful calls
-        self.api_error_count = 0  # Number of failed calls
         
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
@@ -172,8 +171,8 @@ class LLMClient:
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
-        self.api_call_count += 1
-        print(f"🔍 API call count: {self.api_call_count}")
+        LLMClient._global_api_call_count += 1
+        print(f"🔍 API call count: {LLMClient._global_api_call_count}")
         
         try:
             response = await self.client.post(
@@ -213,17 +212,17 @@ class LLMClient:
                 print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
                 
                 # Count failed API calls
-                self.api_error_count += 1
+                LLMClient._global_api_error_count += 1
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
                 
             response_data = response.json()
             # Count successful API calls
-            self.api_success_count += 1
+            LLMClient._global_api_success_count += 1
             return response_data
             
         except httpx.ConnectError as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
             console.print(f"Please check network connection and API server status", style="yellow")
@@ -231,7 +230,7 @@ class LLMClient:
             
         except httpx.TimeoutException as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
@@ -239,14 +238,14 @@ class LLMClient:
             
         except httpx.HTTPStatusError as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"{self.config.provider} API HTTP error: {e.response.status_code}"
             console.print(f"🌐 HTTP error: {error_msg}", style="red")
             raise Exception(error_msg) from e
             
         except Exception as e:
             # Count failed API calls
-            self.api_error_count += 1
+            LLMClient._global_api_error_count += 1
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
             console.print(f"Request URL: {self.base_url}/chat/completions", style="yellow")
@@ -270,10 +269,10 @@ class LLMClient:
     def get_api_stats(self) -> Dict[str, int]:
         """Get API call statistics"""
         return {
-            "total_calls": self.api_call_count,
-            "successful_calls": self.api_success_count,
-            "failed_calls": self.api_error_count,
-            "success_rate": round(self.api_success_count / self.api_call_count * 100, 2) if self.api_call_count > 0 else 0.0
+            "total_calls": LLMClient._global_api_call_count,
+            "successful_calls": LLMClient._global_api_success_count,
+            "failed_calls": LLMClient._global_api_error_count,
+            "success_rate": round(LLMClient._global_api_success_count / LLMClient._global_api_call_count * 100, 2) if LLMClient._global_api_call_count > 0 else 0.0
         }
     
     async def close(self):
