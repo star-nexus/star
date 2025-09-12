@@ -621,9 +621,11 @@ class LLMActionHandlerV3:
 
             result = {
                 "success": True,
+                "result": True,
                 "message": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
+                "details": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
                 "action_status": "in_progress",
-                "movement_details": {
+                "movement_descriptions": {
                     "start_position": {"col": current_pos[0], "row": current_pos[1]},
                     "target_position": {"col": target_pos[0], "row": target_pos[1]},
                     "path": path,
@@ -913,7 +915,9 @@ class LLMActionHandlerV3:
 
         result = {
             "success": True,
+            "result": True,
             "message": f"Unit {unit_id} attacked unit {target_id} successfully",
+            "details": f"Unit {unit_id} attacked unit {target_id} successfully",
             "battle_summary": {
                 "attacker_info": {
                     "unit_id": unit_id,
@@ -929,7 +933,7 @@ class LLMActionHandlerV3:
                     "position": target_current_pos,
                     "terrain": target_terrain.value,
                 },
-                "battle_result": attack_result,  # 包含详细的战斗结果
+                "battle_result": attack_result,
                 "casualties_inflicted": casualties_inflicted,
                 "target_destroyed": target_destroyed,
                 "distance": distance,
@@ -988,7 +992,9 @@ class LLMActionHandlerV3:
 
                 return {
                     "success": True,
+                    "result": True,
                     "message": f"Unit {unit_id} is resting and recovering",
+                    "details": f"Unit {unit_id} is resting and recovering",
                     # "effects": {
                     #     "morale_recovery": True,
                     #     "fatigue_removed": unit_status.current_status
@@ -1082,7 +1088,9 @@ class LLMActionHandlerV3:
 
             return {
                 "success": True,
+                "result": True,
                 "message": f"Unit {unit_id} occupied territory at {target_pos}",
+                "details": f"Unit {unit_id} occupied territory at {target_pos}",
                 # "occupation_details": {
                 #     "position": target_pos,
                 #     "terrain_type": terrain_type.value,
@@ -1176,6 +1184,8 @@ class LLMActionHandlerV3:
 
                 return {
                     "success": True,
+                    "result": True,
+                    "details": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
                     "message": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
                     # "defense_bonus": defense_bonus,
                     # "terrain_type": terrain_type.value,
@@ -1253,7 +1263,7 @@ class LLMActionHandlerV3:
                 unit_id, skill_name, current_terrain, target
             )
 
-            if skill_result["success"]:
+            if skill_result["result"]:
                 # 消耗资源：多层次资源系统
                 # 1. 消耗行动点（决策层）
                 action_points.consume_ap(ActionType.SKILL)
@@ -1266,7 +1276,9 @@ class LLMActionHandlerV3:
 
                 return {
                     "success": True,
+                    "result": True,
                     "message": f"Unit {unit_id} used skill {skill_name}",
+                    "details": f"Unit {unit_id} used skill {skill_name}",
                     "skill_result": skill_result,
                     "remaining_action_points": action_points.current_ap,
                     "remaining_skill_points": skill_points.current_sp,
@@ -1301,6 +1313,7 @@ class LLMActionHandlerV3:
 
         result = {
             "success": True,
+            "result": True,
             "unit_info": unit_info,
             "visible_environment": visible_environment,
         }
@@ -1344,6 +1357,7 @@ class LLMActionHandlerV3:
         print(f"[FACTION_STATE] Completed for {faction.value}")
         return {
             "success": True,
+            "result": True,
             "state": faction_status,
             "faction": faction.value,
             "total_units": total_units_count,
@@ -1402,10 +1416,27 @@ class LLMActionHandlerV3:
                         }
                     },
                 },
+                "end_turn": {
+                    "description": "End the current faction's turn and pass control to the next faction. After ending the turn, no further actions (such as move, attack, etc.) can be performed by this faction until their next turn; only observation and information queries are allowed. Use this action when you have completed all desired actions for your faction in the current turn. The optional 'force' parameter can be used to forcibly end the turn in special cases (e.g., deadlock or error).",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Your current faction (wei | shu | wu)",
+                        },
+                        "force": {
+                            "type": "bool",
+                            "required": False,
+                            "description": "Force end turn (only use in special situations, default is False)",
+                            "default": False,
+                        },
+                    },
+                    "prerequisites": ["Game running", "Current faction's turn"],
+                },
             },
         }
 
-        return {"success": True, **action_docs}
+        return {"success": True, "result": True, **action_docs}
 
     def handle_action_list_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return full documentation for available actions."""
@@ -1633,17 +1664,17 @@ class LLMActionHandlerV3:
                 },
                 "end_turn": {
                     "category": "system",
-                    "description": "End current faction turn; hand control to opponent. Only observation allowed after.",
+                    "description": "End the current faction's turn and pass control to the next faction. After ending the turn, no further actions (such as move, attack, etc.) can be performed by this faction until their next turn; only observation and information queries are allowed. Use this action when you have completed all desired actions for your faction in the current turn. The optional 'force' parameter can be used to forcibly end the turn in special cases (e.g., deadlock or error).",
                     "parameters": {
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "Your current faction name (wei | shu | wu)",
+                            "description": "Your current faction (wei | shu | wu)",
                         },
                         "force": {
                             "type": "bool",
                             "required": False,
-                            "description": "Force end turn",
+                            "description": "Force end turn (only use in special situations, default is False)",
                             "default": False,
                         },
                     },
@@ -1690,7 +1721,7 @@ class LLMActionHandlerV3:
             },
         }
 
-        return {"success": True, **action_docs}
+        return {"success": True, "result": True, **action_docs}
 
     def handle_end_turn(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle end-turn action for the current faction."""
@@ -1737,6 +1768,8 @@ class LLMActionHandlerV3:
 
             return {
                 "success": True,
+                "result": True,
+                "details": f"Turn ended for faction {faction.value}",
                 "message": f"Turn ended for faction {faction.value}",
                 "turn_summary": {
                     "ended_faction": faction.value,
@@ -1763,6 +1796,8 @@ class LLMActionHandlerV3:
         """Create a structured error response (uniform schema)."""
         response = {
             "success": False,
+            "result": False,
+            "details": message,
             "message": message,
         }
 
@@ -2817,7 +2852,9 @@ class LLMActionHandlerV3:
                 if param not in params:
                     return {
                         "success": False,
+                        "result": False,
                         "message": f"Missing required parameter: {param}",
+                        "details": f"Missing required parameter: {param}",
                     }
 
             faction = params["faction"]
@@ -2870,6 +2907,8 @@ class LLMActionHandlerV3:
             if success:
                 return {
                     "success": True,
+                    "result": True,
+                    "details": f"Agent info registered for faction: {faction}",
                     "message": f"Agent info registered for faction: {faction}",
                     "registered_info": {
                         "faction": faction,
@@ -2881,10 +2920,17 @@ class LLMActionHandlerV3:
                     },
                 }
             else:
-                return {"success": False, "message": "Failed to register agent info"}
+                return {
+                    "success": False,
+                    "result": False, 
+                    "message": "Failed to register agent info", 
+                    "details": "Failed to register agent info",
+                }
 
         except Exception as e:
             return {
                 "success": False,
+                "result": False,
+                "details": f"Error registering agent info: {str(e)}",
                 "message": f"Error registering agent info: {str(e)}",
             }
