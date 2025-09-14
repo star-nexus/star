@@ -1626,7 +1626,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         )
         
         async def end_turn():
-            """Game over detected, agent should stop"""
+            """End current turn to recover"""
             await perform_action("end_turn", {"faction": faction})
             return {"result": "The current turn is over. But you can perform the `get_faction_state` action to observe the game state."}
         
