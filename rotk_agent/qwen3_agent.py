@@ -1591,14 +1591,15 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             },
         )
         
-        async def stop_running():
-            """Game over detected, agent should stop"""
-            return {"message": "You chose to stop running. Take a reset and start again."}
+        async def reset_ap():
+            """Take a rest"""
+            await asyncio.sleep(3)
+            return {"result": "AP has been restored, you can continue."}
         
         agent.register_tool(
-            name="stop_running",
-            function=stop_running,
-            description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
+            name="reset_ap",
+            function=reset_ap,
+            description="休息完毕，行动力已恢复，请继续进行。",
             parameters={"type": "object", "properties": {}, "required": []},
         )
 
