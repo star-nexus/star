@@ -1,12 +1,10 @@
 """
-异步 WebSocket 客户端
+Asynchronous WebSocket client
 """
 
 import asyncio
-from datetime import datetime
 import json
-import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 
 import websockets
 
@@ -16,7 +14,7 @@ from .exceptions import ConnectionError, MessageError
 
 
 class AsyncWebSocketClient(BaseWebSocketClient):
-    """异步 WebSocket 客户端"""
+    """Asynchronous WebSocket client."""
 
     def __init__(self, server_url: str, client_info: ClientInfo):
         super().__init__(server_url, client_info)
@@ -26,22 +24,22 @@ class AsyncWebSocketClient(BaseWebSocketClient):
         self._message_task = None
 
     async def connect(self) -> bool:
-        """连接到 WebSocket 服务器"""
+        """Connect to the WebSocket server."""
         try:
             url = self.url()
             self.websocket = await websockets.connect(url)
 
-            # 启动消息监听和心跳任务
+            # Start message listener and heartbeat tasks
             self._message_task = asyncio.create_task(self._message_loop())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
             return True
 
         except Exception as e:
-            raise ConnectionError(f"连接失败: {e}")
+            raise ConnectionError(f"Connection failed: {e}")
 
     async def disconnect(self):
-        """断开连接"""
+        """Disconnect from the server."""
 
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
@@ -60,10 +58,9 @@ class AsyncWebSocketClient(BaseWebSocketClient):
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
     ) -> bool:
-        """发送消息"""
+        """Send a message."""
         if not self.websocket:
-            # if not self.websocket:
-            raise ConnectionError("未连接到服务器")
+            raise ConnectionError("Not connected to the server")
 
         envelope = self.build_message_envelope(instruction, data, target)
 
@@ -71,13 +68,12 @@ class AsyncWebSocketClient(BaseWebSocketClient):
             await self.websocket.send(json.dumps(envelope))
             return True
         except Exception as e:
-            raise MessageError(f"发送消息失败: {e}")
+            raise MessageError(f"Failed to send message: {e}")
 
     async def _message_loop(self):
-        """消息监听循环"""
+        """Message listening loop."""
         try:
             while self.websocket:
-                # while self.websocket:
                 message = await self.websocket.recv()
                 message_data = self._check_message_format(message)
 
@@ -96,37 +92,37 @@ class AsyncWebSocketClient(BaseWebSocketClient):
                     case MessageType.ERROR.value:
                         await self._trigger_event("error", message_data)
                     case _:
-                        # 处理其他消息类型
+                        # Handle other message types
                         await self._trigger_event("other", message_data)
 
         except websockets.exceptions.ConnectionClosed:
-            await self._trigger_event("disconnect", {"reason": "连接被关闭"})
+            await self._trigger_event("disconnect", {"reason": "Connection was closed"})
         except Exception as e:
             await self._trigger_event("error", {"error": str(e)})
 
     async def _heartbeat_loop(self):
-        """心跳循环"""
+        """Heartbeat loop."""
         try:
             while self.websocket:
-                await asyncio.sleep(30)  # 每30秒发送心跳
+                await asyncio.sleep(30)  # Send heartbeat every 30 seconds
                 if self.websocket:
                     await self.send_message(
                         MessageType.HEARTBEAT.value,
-                        {},
+                        {"timestamp": asyncio.get_event_loop().time()},
                     )
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            await self._trigger_event("error", f"心跳错误: {e}")
+            await self._trigger_event("error", {"error": f"Heartbeat error: {e}"})
 
     async def _trigger_event(self, event_type: str, data: Any):
-        """触发事件处理器"""
+        """Trigger registered event handlers."""
         if event_type in self.hub_event_handlers:
             for handler in self.hub_event_handlers[event_type]:
-                # try:
-                if asyncio.iscoroutinefunction(handler):
-                    await handler(data)
-                else:
-                    handler(data)
-                # except Exception as e:
-                #     print(f"事件处理器错误 ({event_type}): {e}")
+                try:
+                    if asyncio.iscoroutinefunction(handler):
+                        await handler(data)
+                    else:
+                        handler(data)
+                except Exception as e:
+                    print(f"Event handler error ({event_type}): {e}")

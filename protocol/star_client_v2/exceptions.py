@@ -1,28 +1,28 @@
 """
-自定义异常类
+Custom exception classes for the Star Client SDK
 """
 
 
 class AgentClientError(Exception):
-    """SDK 基础异常类"""
+    """Base exception for the SDK."""
     pass
 
 
 class ConnectionError(AgentClientError):
-    """连接相关异常"""
+    """Connection-related error."""
     pass
 
 
 class MessageError(AgentClientError):
-    """消息处理相关异常"""
+    """Message-processing error."""
     pass
 
 
 class AuthenticationError(AgentClientError):
-    """认证相关异常"""
+    """Authentication error."""
     pass
 
 
 class TimeoutError(AgentClientError):
-    """超时异常"""
+    """Timeout error."""
     pass

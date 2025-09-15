@@ -1,5 +1,5 @@
 """
-WebSocket 客户端共同基础代码
+Shared base code for WebSocket clients
 """
 
 from dataclasses import asdict
@@ -20,7 +20,7 @@ from .exceptions import ConnectionError, MessageError
 
 
 class BaseWebSocketClient(ABC):
-    """WebSocket 客户端基类 - 包含同步和异步客户端的共同代码"""
+    """Base class for WebSocket clients - shared by sync and async clients."""
 
     def __init__(self, server_url: str, client_info: ClientInfo):
         self.server_url = server_url
@@ -30,7 +30,7 @@ class BaseWebSocketClient(ABC):
     def add_hub_listener(
         self, event_type: str, handler: EventHandler | AsyncEventHandler
     ):
-        """添加事件监听器"""
+        """Add an event listener."""
         if event_type not in self.hub_event_handlers:
             self.hub_event_handlers[event_type] = []
         self.hub_event_handlers[event_type].append(handler)
@@ -40,7 +40,7 @@ class BaseWebSocketClient(ABC):
         event_type: str,
         handler: Optional[EventHandler | AsyncEventHandler] = None,
     ):
-        """移除事件监听器"""
+        """Remove an event listener."""
         if handler is None:
             self.hub_event_handlers[event_type] = []
         elif event_type in self.hub_event_handlers:
@@ -54,7 +54,7 @@ class BaseWebSocketClient(ABC):
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
     ) -> Dict[str, Any]:
-        """准备消息信封 - 同步和异步版本都会用到"""
+        """Prepare the message envelope - used by both sync and async clients."""
 
         if target is None:
             target = {"type": "hub", "id": ""}
@@ -79,26 +79,26 @@ class BaseWebSocketClient(ABC):
         )
 
     def _check_message_format(self, message: str) -> Optional[Dict[str, Any]]:
-        """检查接收到的消息格式 - 解析 JSON 并返回消息数据"""
+        """Validate and parse an incoming message from JSON to a dict."""
         try:
             return json.loads(message)
         except json.JSONDecodeError:
-            return {"error": f"无效的 JSON: {message}"}
+            return {"error": f"Invalid JSON: {message}"}
 
     @abstractmethod
     def url(self) -> str:
-        """构建连接 URL - 子类必须实现"""
+        """Build the connection URL - must be implemented by subclasses."""
         pass
 
     # 抽象方法，同步和异步版本分别实现
     @abstractmethod
     def connect(self):
-        """连接到服务器 - 子类必须实现"""
+        """Connect to the server - must be implemented by subclasses."""
         pass
 
     @abstractmethod
     def disconnect(self):
-        """断开连接 - 子类必须实现"""
+        """Disconnect - must be implemented by subclasses."""
         pass
 
     @abstractmethod
@@ -108,5 +108,5 @@ class BaseWebSocketClient(ABC):
         data: Dict[str, Any],
         target: Optional[MessageTarget] = None,
     ):
-        """发送消息 - 子类必须实现"""
+        """Send a message - must be implemented by subclasses."""
         pass

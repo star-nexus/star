@@ -186,3 +186,5 @@ env_status.txt
 screenshots/
 .configs.toml
 /test
+settlement_reports/
+error_log_*
