@@ -373,8 +373,11 @@ class RoTKChatAgent:
         self._agent_registered: bool = False
         
         self._strategy_last_ping_ts: float = 0.0
-        # 🆕 最近一次已处理的回合号（用于 turn_start 幂等）
+        # 🆕 最近一次已处理的回合号（用于 rotk_agent/qwen3_agent_turn.py 幂等）
         self._last_turn_notified: int = -1
+        # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
+        self._turn_gate: asyncio.Event = asyncio.Event()
+        self._turn_gate.set()
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -987,6 +990,11 @@ class RoTKChatAgent:
                     console.print(f"🔍 Status check (iteration {iterations}): {status}", style="dim cyan")
                 if status.get("game_ended", False):
                     console.print(f"🏁 Game ended @iteration {iterations}, preparing to report LLM stats and exit", style="yellow bold")
+                    # 确保解除等待，防止潜在阻塞
+                    try:
+                        self._turn_gate.set()
+                    except Exception:
+                        pass
                     await self.stop()
                     return {
                         "success": True,
@@ -1008,13 +1016,26 @@ class RoTKChatAgent:
                                     self.conversation_history.append(Message(role="user", content=hint))
                                 self._last_turn_notified = evt_turn
                                 console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn}", style="green")
+                                # 🆕 解除回合门控，允许 LLM API 调用
+                                try:
+                                    self._turn_gate.set()
+                                except Exception as _e_set:
+                                    console.print(f"⚠️ Failed to set turn gate: {_e_set}", style="yellow")
                 except Exception as _e:
                     console.print(f"⚠️ Turn-start injection failed: {_e}", style="yellow")
             except Exception as status_error:
                 console.print(f"⚠️ Error checking game status: {status_error}", style="red")
             
             try:
-
+                # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
+                if not self._turn_gate.is_set():
+                    console.print("⏸️ Waiting for next turn_start to resume LLM calls...", style="yellow")
+                    try:
+                        await self._turn_gate.wait()
+                        console.print("▶️ Turn started. Resuming LLM calls.", style="green")
+                    except Exception as _e_wait:
+                        console.print(f"⚠️ Waiting for turn_start interrupted: {_e_wait}", style="yellow")
+                    continue
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
                 if len(self.conversation_history) > 80:
@@ -1628,6 +1649,12 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         async def end_turn():
             """End current turn to recover"""
             await perform_action("end_turn", {"faction": faction})
+            # 🆕 结束回合后，关闭回合门控，暂停后续 LLM API 调用直至收到 turn_start
+            try:
+                agent._turn_gate.clear()
+                console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
+            except Exception as _e_gate:
+                console.print(f"⚠️ Failed to clear turn gate after end_turn: {_e_gate}", style="yellow")
             return {"result": "The current turn is over. But you can perform the `get_faction_state` action to observe the game state."}
         
         agent.register_tool(
