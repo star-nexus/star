@@ -379,6 +379,79 @@ class RoTKChatAgent:
         self._turn_gate: asyncio.Event = asyncio.Event()
         self._turn_gate.set()
         
+    # ======== Turn Gate Control Functions ========
+    # These functions are used to control and record the turn gate status for LLM API calls,
+    # ensuring that LLM inference is only performed during allowed turns.
+    def _log_gate_status(self, action: str):
+        """记录门控状态变化"""
+        status = "OPEN" if self._turn_gate.is_set() else "CLOSED"
+        console.print(f"🚪 Turn gate {action}: {status}", style="cyan")
+    
+    async def _wait_for_turn_gate(self) -> bool:
+        """等待回合门控开启，返回是否应该继续执行 LLM API 调用。
+        期间轮询 RemoteContext 的 turn_start 状态，主动解除门控，避免死等。"""
+        if self._turn_gate.is_set():
+            return True
+        console.print("⏸️ Waiting for next turn_start to resume LLM calls...", style="yellow")
+        while not self._turn_gate.is_set():
+            # 轮询环境状态，检测 turn_start 并主动开启门控
+            try:
+                status = RemoteContext.get_status() or {}
+                turn_evt = status.get("turn_start")
+                if isinstance(turn_evt, dict):
+                    evt_faction = str(turn_evt.get("faction", "")).lower()
+                    evt_turn = turn_evt.get("turn_number", None)
+                    # 仅当：阵营匹配 且 回合号严格大于已处理回合号 时，才放行
+                    if evt_faction == str(self.faction).lower() and isinstance(evt_turn, int):
+                        if evt_turn > self._last_turn_notified:
+                            hint = f"你的回合开始（第{evt_turn}回合）。请开始行动。"
+                            async with self._history_lock:
+                                self.conversation_history.append(Message(role="user", content=hint))
+                            self._last_turn_notified = evt_turn
+                            console.print(f"📣 Injected turn_start hint during wait for faction={self.faction}, turn={evt_turn}", style="green")
+                            self._set_turn_gate("turn_start (polled)")
+                            break
+                        else:
+                            console.print(f"⏳ Detected turn_start during wait but not newer (evt_turn={evt_turn}, last={self._last_turn_notified}), keep waiting...", style="dim yellow")
+                    else:
+                        if evt_faction and evt_faction != str(self.faction).lower():
+                            console.print(f"⏳ Detected turn_start for other faction: {evt_faction}, keep waiting...", style="dim yellow")
+                if status.get("game_ended", False):
+                    # 游戏结束时确保不阻塞
+                    if not self._turn_gate.is_set():
+                        self._set_turn_gate("game_ended - emergency (wait)")
+                    return False
+            except Exception as e:
+                console.print(f"⚠️ Polling status while waiting failed: {e}", style="yellow")
+            # 短暂等待，避免忙等
+            try:
+                await asyncio.wait_for(self._turn_gate.wait(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                console.print(f"⚠️ Waiting for turn_start interrupted: {e}", style="yellow")
+                return False
+        console.print("▶️ Turn started. Resuming LLM calls.", style="green")
+        return True
+    
+    def _set_turn_gate(self, action: str = "manual"):
+        """Unified turn gate opening operation for LLM API calls"""
+        try:
+            self._turn_gate.set()
+            self._log_gate_status(f"OPENED ({action})")
+        except Exception as e:
+            console.print(f"⚠️ Failed to set turn gate: {e}", style="yellow")
+    
+    def _clear_turn_gate(self, action: str = "manual"):
+        """Unified turn gate closing operation for LLM API calls"""
+        try:
+            self._turn_gate.clear()
+            self._log_gate_status(f"CLOSED ({action})")
+        except Exception as e:
+            console.print(f"⚠️ Failed to clear turn gate: {e}", style="yellow")
+    # ======== Turn Gate Control Functions End ========
+        
+
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
         tool = ToolDefinition(
@@ -388,7 +461,9 @@ class RoTKChatAgent:
             function=function
         )
         self.tool_manager.register_tool(tool)
+
     
+    # ==================== Tool Calls Parsing Functions Start ====================
     def _parse_text_based_tool_calls(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse text-based tool calls from content field.
@@ -527,7 +602,10 @@ class RoTKChatAgent:
             async with self._history_lock:
                 self.conversation_history.append(error_message)
 
-    # ==================== Strategy keyword detection and reporting ====================
+    # ==================== Tool Calls Execution Functions End ====================
+
+
+    # ==================== Strategy keyword detection and reporting Start ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
         """Detects basic strategy thinking: keywords + structure words within proximity, without negation."""
         if not text:
@@ -763,7 +841,10 @@ class RoTKChatAgent:
             })
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
-    
+    # ==================== Strategy keyword detection and reporting End ====================
+
+
+    # ==================== Tool Results Filtering Functions Start ====================
     def _filter_tool_result(self, function_name: str, result: Any) -> Any:
         """Filter tool results, remove redundant information to keep conversation history concise"""
         if not isinstance(result, dict):
@@ -898,6 +979,7 @@ class RoTKChatAgent:
             tail = non_system_msgs[-window:]
         
         self.conversation_history = system_msgs + user_msgs + tail
+    # ==================== Tool Results Filtering Functions End ====================
 
 
     async def _register_agent_info(self):
@@ -990,11 +1072,9 @@ class RoTKChatAgent:
                     console.print(f"🔍 Status check (iteration {iterations}): {status}", style="dim cyan")
                 if status.get("game_ended", False):
                     console.print(f"🏁 Game ended @iteration {iterations}, preparing to report LLM stats and exit", style="yellow bold")
-                    # 确保解除等待，防止潜在阻塞
-                    try:
-                        self._turn_gate.set()
-                    except Exception:
-                        pass
+                    # 游戏结束时确保解除等待，防止潜在阻塞，但不改变门控的语义状态
+                    if not self._turn_gate.is_set():
+                        self._set_turn_gate("game_ended - emergency")
                     await self.stop()
                     return {
                         "success": True,
@@ -1017,10 +1097,7 @@ class RoTKChatAgent:
                                 self._last_turn_notified = evt_turn
                                 console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn}", style="green")
                                 # 🆕 解除回合门控，允许 LLM API 调用
-                                try:
-                                    self._turn_gate.set()
-                                except Exception as _e_set:
-                                    console.print(f"⚠️ Failed to set turn gate: {_e_set}", style="yellow")
+                                self._set_turn_gate("turn_start")
                 except Exception as _e:
                     console.print(f"⚠️ Turn-start injection failed: {_e}", style="yellow")
             except Exception as status_error:
@@ -1028,14 +1105,8 @@ class RoTKChatAgent:
             
             try:
                 # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
-                if not self._turn_gate.is_set():
-                    console.print("⏸️ Waiting for next turn_start to resume LLM calls...", style="yellow")
-                    try:
-                        await self._turn_gate.wait()
-                        console.print("▶️ Turn started. Resuming LLM calls.", style="green")
-                    except Exception as _e_wait:
-                        console.print(f"⚠️ Waiting for turn_start interrupted: {_e_wait}", style="yellow")
-                    continue
+                if not await self._wait_for_turn_gate():
+                    continue  # 门控未开启或异常，跳过 LLM API 调用
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
                 if len(self.conversation_history) > 80:
@@ -1306,7 +1377,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_cn")
+        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
         system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
 
         user_prompt = f"""
@@ -1650,11 +1721,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             """End current turn to recover"""
             await perform_action("end_turn", {"faction": faction})
             # 🆕 结束回合后，关闭回合门控，暂停后续 LLM API 调用直至收到 turn_start
-            try:
-                agent._turn_gate.clear()
-                console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
-            except Exception as _e_gate:
-                console.print(f"⚠️ Failed to clear turn gate after end_turn: {_e_gate}", style="yellow")
+            agent._clear_turn_gate("end_turn")
+            console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
             return {"result": "The current turn is over. But you can perform the `get_faction_state` action to observe the game state."}
         
         agent.register_tool(
@@ -1675,8 +1743,6 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
         traceback.print_exc()
-
-
 
 
 def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
