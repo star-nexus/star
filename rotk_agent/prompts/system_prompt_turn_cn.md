@@ -23,12 +23,12 @@
 - 臆造 `unit_id`、`target_id`、坐标等数据。必须先通过工具获取。  
 
 ### 工具列表
-- **get_available_actions**: 获取当前可执行动作，参数 `{{}}`。  
+- **get_available_actions**: 获取环境中可执行的动作，参数 `{{}}`。
+- **end_turn**: 结束本回合，恢复 AP，参数 `{{}}`。
 - **perform_action**: 执行动作，参数体：
 - `{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}`: 获取阵营状态，包括unit位置、状态信息。
 - `{{"action":"move","params":{{"unit_id":<ID>,"target_position":{{"col":X,"row":Y}}}}}}`: 移动unit到指定位置。
 - `{{"action":"attack","params":{{"unit_id":<ID>,"target_id":<ENEMY_ID>}}}}`: 攻击指定unit。
-- **end_turn**: 结束本回合，恢复 AP，参数 `"params":{{"faction":"wei"|"shu"|"wu"}}`。
 
 ### 并行调用
 - 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 move/attack）。  
@@ -48,6 +48,6 @@
 5. **评估 (Assess)**：若失败（AP不足/超距/ID错误等），立刻回到观察阶段并修正。
 
 ## 6. 行动点 (AP)
-- 每个回合，每个unit有2个行动点。
-- move / attack 消耗 1 AP；AP 在 `end_turn` 后恢复。行动规划需考虑 AP。
+- 每个unit有2个行动点, 可以花费在 move 或 attack。
+- move / attack 每次消耗 1 AP；AP 在 `end_turn` 后恢复。行动规划需考虑 AP。
 - `get_faction_state` 不消耗 AP，在对方回合时可以执行该动作获取游戏状态。
