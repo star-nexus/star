@@ -359,25 +359,48 @@ async def available_actions() -> list[Dict[str, Any]]:
 
 async def run_action(parts):
     """执行指定动作"""
-    rule = """游戏规则:
-# 阵营
+    faction = parts[1] if len(parts) > 1 else "wei"
+    rule = """# 游戏规则
+## 阵营
 有两方阵营，wei 和 shu
 所有单位同时进行操作
-# 地图
+## 地图
 地图大小：通常为不超过50x50六边形格子,以(0,0)为地图中心
-# 单位
+## 单位
 每个阵营开始时拥有若干个单位
 初始单位包含步兵、骑兵、弓兵的组合
-# 阶段
+## 阶段
 可以任意顺序操作所有己方单位
 每个单位可进行移动、攻击、建造、使用技能等动作
 可以多次在不同单位间切换操作
 如果无法行动则结束回合
+
+## 能力示例
+"capabilities": { 
+    "properties": { // 单位属性
+        "attack_range": 1, // 攻击距离
+        "attack_power": 10, // 攻击力
+        "vision_range": 2 // 视野范围
+    },
+    "turn_resources": { // 每回合自动补充资源
+        "action_points": 2, // 当前行动点，用于执行攻击，占领，建造等
+        "max_action_points": 2, // 最大行动点
+        "movement_points": 6, // 当前移动点，用于移动，每一个移动格子消耗1点
+        "max_movement_points": 10 // 最大移动点
+    },
+    "long_rest_resources": { // 长休后补充资源,长休需要去城镇进行rest
+        "construction_points": 1, // 建造点，用来在已占领的地块构建防御工事，
+        "skill_points": 1 // 技能点，用来使用单位的特殊技能（暂时不启用）
+    }
+}
+
+
+
 你的 provide 是 aws
 你的 model_id 是 claude-sonnet-4-20250514
 自己阵营行动结束，要调用end turn，然后等待对方行动
 """
-    await chat(["chat", rule + "控制wei阵营,消灭敌人,获得胜利。"])
+    await chat(["chat", rule + f"控制{faction}阵营,消灭敌人,获得胜利。"])
 
 
 ACTION = {

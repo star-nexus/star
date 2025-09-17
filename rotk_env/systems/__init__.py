@@ -18,6 +18,7 @@ from .game_over_render_system import GameOverRenderSystem
 from .llm_system import LLMSystem
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem
+from .mock_llm_ai_system import MockLLMAISystem
 
 # 渲染系统拆分为多个独立系统
 from .map_render_system import MapRenderSystem
@@ -46,6 +47,7 @@ __all__ = [
     "LLMSystem",
     "LLMActionHandler",
     "LLMObservationSystem",
+    "MockLLMAISystem",
     # 新的渲染系统
     "MapRenderSystem",
     "UnitRenderSystem",

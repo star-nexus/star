@@ -24,6 +24,7 @@ from ..systems import (
     ActionSystem,
     UIButtonSystem,
     UIRenderSystem,
+    MockLLMAISystem,
 )
 from ..systems.map_render_system import MapRenderSystem
 from ..systems.unit_render_system import UnitRenderSystem
@@ -89,7 +90,7 @@ class GameScene(Scene):
 
         # Initialization flag
         self.initialized = False
-        
+
         # 🆕 Game end waiting state
         self.game_end_wait_start = None
         self.game_end_wait_timeout = 15.0  # Maximum wait time for 5 seconds
@@ -136,7 +137,7 @@ class GameScene(Scene):
 
         # Initialize game statistics
         self._initialize_stats()
-        
+
         # Initialize minimap
         self._initialize_minimap()
 
@@ -153,7 +154,7 @@ class GameScene(Scene):
             CombatSystem(),  # Combat system
             TerritorySystem(),  # Territory system
             ResourceRecoverySystem(),  # Resource recovery system
-            # AISystem(),  # Add AI system when there are AI players - temporarily disabled for repair
+            # MockLLMAISystem(),  # Mock LLM AI system - new AI using LLM Action Handler V3
             LLMSystem(),  # LLM system (priority 5)
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)
@@ -214,9 +215,9 @@ class GameScene(Scene):
 
         # Define the starting area center for each faction
         faction_centers = {
-            Faction.WEI: (3, 3),  
-            Faction.SHU: (-3, -3), 
-            Faction.WU: (3, -3), 
+            Faction.WEI: (3, 3),
+            Faction.SHU: (-3, -3),
+            Faction.WU: (3, -3),
         }
 
         # Define unit quantity (only process factions participating in the game)
@@ -233,7 +234,9 @@ class GameScene(Scene):
         game_stats = self.world.get_singleton_component(GameStats)
         if not game_stats:
             # If GameStats does not exist, create a temporary one, it will be correctly initialized when _initialize_stats is called
-            print("[GameScene] ⚠️ GameStats component does not exist, waiting for subsequent initialization...")
+            print(
+                "[GameScene] ⚠️ GameStats component does not exist, waiting for subsequent initialization..."
+            )
             pass
 
         # Temporarily store the initial unit count, write it to GameStats in _initialize_stats
@@ -241,7 +244,9 @@ class GameScene(Scene):
         for faction, count in unit_counts.items():
             total_units = sum(count)
             self._temp_initial_unit_counts[faction] = total_units
-            print(f"[GameScene] Preparing to record {faction.value} faction initial unit count: {total_units}")
+            print(
+                f"[GameScene] Preparing to record {faction.value} faction initial unit count: {total_units}"
+            )
 
         for faction, count in unit_counts.items():
             if sum(count) == 0:
@@ -525,29 +530,37 @@ class GameScene(Scene):
                 # Record wait start time
                 if self.game_end_wait_start is None:
                     import time
+
                     self.game_end_wait_start = time.time()
                     print("[GameScene] 🏁 Game End, waiting for settlement report...")
-                
+
                 # Check if the settlement report has been completed
                 settlement_report = self.world.get_singleton_component(SettlementReport)
                 if settlement_report:
                     # Settlement report generated, can switch scene
-                    print("[GameScene] ✅ Settlement report generated, switching to game over scene")
+                    print(
+                        "[GameScene] ✅ Settlement report generated, switching to game over scene"
+                    )
                     self._switch_to_game_over(game_state)
                 else:
                     # Check if it is timeout
                     import time
+
                     elapsed = time.time() - self.game_end_wait_start
                     if elapsed >= self.game_end_wait_timeout:
-                        print(f"[GameScene] ⏰ Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene")
+                        print(
+                            f"[GameScene] ⏰ Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene"
+                        )
                         self._switch_to_game_over(game_state)
                     else:
                         # Wait for settlement report generation (output progress once per second)
-                        if int(elapsed) != getattr(self, '_last_wait_second', -1):
+                        if int(elapsed) != getattr(self, "_last_wait_second", -1):
                             remaining = self.game_end_wait_timeout - elapsed
-                            print(f"[GameScene] ⏳ Waiting for settlement report generation... {elapsed:.1f}s / {self.game_end_wait_timeout}s (remaining {remaining:.1f}s)")
+                            print(
+                                f"[GameScene] ⏳ Waiting for settlement report generation... {elapsed:.1f}s / {self.game_end_wait_timeout}s (remaining {remaining:.1f}s)"
+                            )
                             self._last_wait_second = int(elapsed)
-    
+
     def _switch_to_game_over(self, game_state):
         """Switch to game over scene"""
         # Collect statistics data
@@ -556,13 +569,9 @@ class GameScene(Scene):
         # Switch to game over scene, pass statistics data
         if self.headless:
             # Print statistics data in headless mode
-            print(
-                f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}"
-            )
+            print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
         else:
-            SMS.switch_to(
-                "game_over", winner=game_state.winner, statistics=statistics
-            )
+            SMS.switch_to("game_over", winner=game_state.winner, statistics=statistics)
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """Collect game statistics data"""
