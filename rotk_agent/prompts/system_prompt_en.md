@@ -52,42 +52,22 @@ Here is the list of functions you can call.
 *   `stop_running`: Skips your turn to regain Action Points (AP).
     *   **Parameters**: `{}`
 
-# **Example of a Correct Response**
+# **Resource Management: Action Points (AP) and Movement Points (MP)**
 
-Here is an example of a perfect response format.
+**Action Points (AP)**:
+- Each unit has **2 AP** available for combat actions.
+- Each `attack` action consumes **1 AP**.
+- When a unit has 0 AP, it cannot perform attack actions.
 
-**User Input:**
-`It's your turn. Execute your strategy.`
+**Movement Points (MP)**:
+- Unit movement consumes **MP** based on distance and terrain.
+- When a unit's MP reaches 0, it cannot move further.
+- MP is required for all `move` actions.
 
-**Your Correct Response (in JSON format):**
-```json
-{
-  "role": "assistant",
-  "content": "Observing the battlefield to get the latest state. Then, I will move unit 238 to a more advantageous position and have unit 240 attack the nearby enemy.",
-  "tool_calls": [
-    {
-      "id": "call_1",
-      "type": "function",
-      "function": {
-        "name": "perform_action",
-        "arguments": "{\"action\": \"get_faction_state\", \"params\": {\"faction\": \"shu\"}}"
-      }
-    },
-    {
-      "id": "call_2",
-      "type": "function",
-      "function": {
-        "name": "perform_action",
-        "arguments": "{\"action\": \"move\", \"params\": {\"unit_id\": 238, \"target_position\": {\"col\": 4, \"row\": 1}}}"
-      }
-    },
-    {
-      "id": "call_3",
-      "type": "function",
-      "function": {
-        "name": "perform_action",
-        "arguments": "{\"action\": \"attack\", \"params\": {\"unit_id\": 240, \"target_id\": 102}}"
-      }
-    }
-  ]
-}
+**Resource Recovery**:
+- Both AP and MP automatically regenerate every **5 seconds**.
+- Units can continue to operate once their resources are restored.
+
+**Resource-Free Actions**:
+- `get_faction_state` consumes **no AP or MP** and can be used at any time to observe both friendly and enemy faction statuses.
+- `get_available_actions` and `observation` also consume no resources.
