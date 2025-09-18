@@ -192,9 +192,9 @@ class ActionSystem(System):
 
             # 重置移动力（考虑人数影响）
             if unit_count:
-                movement.current_movement = movement.get_effective_movement(unit_count)
+                movement.current_mp = movement.get_effective_movement(unit_count)
             else:
-                movement.current_movement = movement.base_movement
+                movement.current_mp = movement.base_mp
             # movement.has_moved = False  # 移除单次移动限制
 
             # 处理状态持续时间
