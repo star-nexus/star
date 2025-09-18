@@ -57,12 +57,14 @@ class MovementPoints(Component):
 
     def get_effective_movement(self, unit_count) -> int:
         """获取考虑人数的有效移动力"""
-        # # 每少20%人数移动力-1（最低1）
-        # ratio = unit_count.ratio if unit_count else 1.0
-        # penalty = max(0, int((1 - ratio) / 0.2))
-        # return max(1, self.base_mp - penalty)
-        # 暂时取消 效果对移动的影响
-        return self.current_mp
+        # 每少20%人数移动力-1（最低1）
+        if unit_count:
+            ratio = unit_count.ratio
+            penalty = max(0, int((1 - ratio) / 0.2))
+            return max(1, self.base_mp - penalty)
+        else:
+            # 如果没有单位数量组件，返回基础移动力
+            return self.base_mp
 
     def can_move(self, cost: int) -> bool:
         """检查是否有足够移动力"""
