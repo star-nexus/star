@@ -1,5 +1,5 @@
 """
-UI Render System - Responsible for rendering game information, 
+UI Render System - Responsible for rendering game information,
 statistics, help and other UI elements
 """
 
@@ -13,7 +13,7 @@ from ..components import (
     TurnManager,
     Player,
 )
-from ..prefabs.config import GameConfig
+from ..prefabs.config import GameConfig, GameMode
 
 
 class UIRenderSystem(System):
@@ -49,34 +49,104 @@ class UIRenderSystem(System):
         self._render_help_panel()
 
     def _render_game_info(self):
-        """Render game information (top of screen)"""
+        """Render game information (top of screen) - mode-specific display"""
         game_state = self.world.get_singleton_component(GameState)
         turn_manager = self.world.get_singleton_component(TurnManager)
 
-        if not game_state or not turn_manager:
+        if not game_state:
             return
 
-        # Render turn information
+        # Render game mode indicator
+        mode_text = f"Mode: {game_state.game_mode.value}"
+        mode_color = (
+            (100, 255, 100)
+            if game_state.game_mode == GameMode.TURN_BASED
+            else (255, 255, 100)
+        )
+        mode_surface = self.small_font.render(mode_text, True, mode_color)
+        RMS.draw(mode_surface, (10, 10))
+
+        # Mode-specific rendering
+        if game_state.game_mode == GameMode.TURN_BASED:
+            self._render_turn_based_info(game_state, turn_manager)
+        elif game_state.game_mode == GameMode.REAL_TIME:
+            self._render_real_time_info(game_state)
+
+    def _render_turn_based_info(self, game_state, turn_manager):
+        """Render turn-based mode specific information"""
+        # Render turn number with emphasis
         turn_text = f"Turn {game_state.turn_number}"
         turn_surface = self.font.render(turn_text, True, (255, 255, 255))
-        RMS.draw(turn_surface, (10, 10))
+        RMS.draw(turn_surface, (10, 40))
 
-        # Render current player
-        current_player_entity = turn_manager.get_current_player()
-        if current_player_entity:
-            player_comp = self.world.get_component(current_player_entity, Player)
-            if player_comp:
-                player_text = f"Active Faction: {player_comp.name}"
-                player_color = GameConfig.FACTION_COLORS.get(
-                    player_comp.faction, (255, 255, 255)
-                )
-                player_surface = self.font.render(player_text, True, player_color)
-                RMS.draw(player_surface, (250, 10))
+        # Render current active faction with clear indicator
+        if hasattr(game_state, "current_player") and game_state.current_player:
+            faction_text = f"Active: {game_state.current_player.value}"
+            faction_color = GameConfig.FACTION_COLORS.get(
+                game_state.current_player, (255, 255, 255)
+            )
+            faction_surface = self.font.render(faction_text, True, faction_color)
+            RMS.draw(faction_surface, (250, 40))
 
-        # Render game phase (simplified handling here)
-        phase_text = f"Game Mode: {game_state.game_mode.value}"
-        phase_surface = self.small_font.render(phase_text, True, (200, 200, 200))
-        RMS.draw(phase_surface, (10, 40))
+            # Add visual indicator for active faction
+            indicator_rect = (240, 45, 8, 20)
+            RMS.rect(faction_color, indicator_rect, 0)
+
+        # Show turn end instruction and player type
+        if turn_manager:
+            current_player_entity = turn_manager.get_current_player()
+            if current_player_entity:
+                player_comp = self.world.get_component(current_player_entity, Player)
+                if player_comp:
+                    # Show player type
+                    player_type_text = f"Player: {player_comp.player_type.value}"
+                    player_type_surface = self.small_font.render(
+                        player_type_text, True, (150, 150, 150)
+                    )
+                    RMS.draw(player_type_surface, (250, 70))
+
+                    # Show specific instructions based on player type
+                    if player_comp.player_type.value == "human":
+                        hint_text = "Press SPACE to end turn"
+                        hint_color = (255, 255, 100)
+                    elif player_comp.player_type.value == "ai":
+                        hint_text = "AI thinking..."
+                        hint_color = (100, 255, 100)
+                    else:  # LLM
+                        hint_text = "Waiting for LLM agent..."
+                        hint_color = (100, 200, 255)
+
+                    hint_surface = self.small_font.render(hint_text, True, hint_color)
+                    RMS.draw(hint_surface, (250, 90))
+
+        # Show waiting factions in turn-based mode
+        self._render_waiting_factions(game_state)
+
+    def _render_real_time_info(self, game_state):
+        """Render real-time mode specific information"""
+        # Show game time - try to get from GameStats if game_time not available
+        if hasattr(game_state, "game_time"):
+            time_text = f"Game Time: {game_state.game_time:.1f}s"
+        else:
+            # Fallback to GameStats total_game_time
+            game_stats = self.world.get_singleton_component(GameStats)
+            if game_stats:
+                minutes = int(game_stats.total_game_time // 60)
+                seconds = int(game_stats.total_game_time % 60)
+                time_text = f"Game Time: {minutes:02d}:{seconds:02d}"
+            else:
+                time_text = "Game Time: 00:00"
+
+        time_surface = self.font.render(time_text, True, (255, 255, 255))
+        RMS.draw(time_surface, (10, 40))
+
+        # Show all factions as active
+        active_text = "All factions active"
+        active_surface = self.font.render(active_text, True, (255, 255, 100))
+        RMS.draw(active_surface, (250, 40))
+
+        # Show faction status indicators
+        self._render_faction_status_indicators()
 
     def _render_stats_panel(self):
         """Render statistics panel"""
@@ -203,3 +273,56 @@ class UIRenderSystem(System):
             line_surface = self.small_font.render(line, True, color)
             RMS.draw(line_surface, (panel_x + 20, y_offset))
             y_offset += line_height
+
+    def _render_faction_status_indicators(self):
+        """Render faction status indicators for real-time mode"""
+        from ..components import Unit
+
+        # Get all factions with units
+        faction_units = {}
+        for entity in self.world.query().with_component(Unit).entities():
+            unit = self.world.get_component(entity, Unit)
+            if unit:
+                faction = unit.faction
+                if faction not in faction_units:
+                    faction_units[faction] = 0
+                faction_units[faction] += 1
+
+        # Render faction status indicators
+        x_offset = 450
+        y_pos = 40
+        indicator_size = 12
+        spacing = 80
+
+        for i, (faction, unit_count) in enumerate(faction_units.items()):
+            faction_color = GameConfig.FACTION_COLORS.get(faction, (255, 255, 255))
+
+            # Faction indicator circle
+            circle_center = (x_offset + i * spacing, y_pos)
+            RMS.circle(faction_color, circle_center, indicator_size, 0)
+
+            # Faction name and unit count
+            faction_text = f"{faction.value}: {unit_count}"
+            faction_surface = self.small_font.render(faction_text, True, faction_color)
+            RMS.draw(faction_surface, (x_offset + i * spacing - 20, y_pos + 15))
+
+    def _render_waiting_factions(self, game_state):
+        """Render waiting factions in turn-based mode"""
+        from ..components import Unit
+
+        # Get all factions
+        all_factions = set()
+        for entity in self.world.query().with_component(Unit).entities():
+            unit = self.world.get_component(entity, Unit)
+            if unit:
+                all_factions.add(unit.faction)
+
+        # Show waiting factions
+        waiting_factions = [f for f in all_factions if f != game_state.current_player]
+
+        if waiting_factions:
+            waiting_text = "Waiting: " + ", ".join([f.value for f in waiting_factions])
+            waiting_surface = self.small_font.render(
+                waiting_text, True, (150, 150, 150)
+            )
+            RMS.draw(waiting_surface, (10, 70))
