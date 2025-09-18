@@ -588,9 +588,9 @@ class LLMActionHandlerV3:
             )
 
             result = {
-                # "success": True,
+                "success": True,
                 "result": True,
-                # "message": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
+                "message": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
                 "details": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
                 "action_status": "in_progress",
                 "movement_descriptions": {
@@ -882,9 +882,9 @@ class LLMActionHandlerV3:
         target_terrain = self._get_terrain_at_position(target_current_pos)
 
         result = {
-            # "success": True,
+            "success": True,
             "result": True,
-            # "message": f"Unit {unit_id} attacked unit {target_id} successfully",
+            "message": f"Unit {unit_id} attacked unit {target_id} successfully",
             "details": f"Unit {unit_id} attacked unit {target_id} successfully",
             "battle_summary": {
                 "attacker_info": {
@@ -959,9 +959,9 @@ class LLMActionHandlerV3:
                 unit_status = self.world.get_component(unit_id, UnitStatus)
 
                 return {
-                    # "success": True,
+                    "success": True,
                     "result": True,
-                    # "message": f"Unit {unit_id} is resting and recovering",
+                    "message": f"Unit {unit_id} is resting and recovering",
                     "details": f"Unit {unit_id} is resting and recovering",
                     # "effects": {
                     #     "morale_recovery": True,
@@ -1055,9 +1055,9 @@ class LLMActionHandlerV3:
             terrain_type = self._get_terrain_at_position(target_pos)
 
             return {
-                # "success": True,
+                "success": True,
                 "result": True,
-                # "message": f"Unit {unit_id} occupied territory at {target_pos}",
+                "message": f"Unit {unit_id} occupied territory at {target_pos}",
                 "details": f"Unit {unit_id} occupied territory at {target_pos}",
                 # "occupation_details": {
                 #     "position": target_pos,
@@ -1151,10 +1151,10 @@ class LLMActionHandlerV3:
                 defense_bonus = self._calculate_fortification_defense_bonus(new_level)
 
                 return {
-                    # "success": True,
+                    "success": True,
                     "result": True,
                     "details": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
-                    # "message": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
+                    "message": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
                     # "defense_bonus": defense_bonus,
                     # "terrain_type": terrain_type.value,
                     "remaining_action_points": action_points.current_ap - 1,
@@ -1243,9 +1243,9 @@ class LLMActionHandlerV3:
                 unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
 
                 return {
-                    # "success": True,
+                    "success": True,
                     "result": True,
-                    # "message": f"Unit {unit_id} used skill {skill_name}",
+                    "message": f"Unit {unit_id} used skill {skill_name}",
                     "details": f"Unit {unit_id} used skill {skill_name}",
                     "skill_result": skill_result,
                     "remaining_action_points": action_points.current_ap,
@@ -1280,7 +1280,7 @@ class LLMActionHandlerV3:
         visible_environment = self._get_visible_environment(unit_id, observation_level)
 
         result = {
-            # "success": True,
+            "success": True,
             "result": True,
             "unit_info": unit_info,
             "visible_environment": visible_environment,
@@ -1324,7 +1324,7 @@ class LLMActionHandlerV3:
 
         print(f"[FACTION_STATE] Completed for {faction.value}")
         return {
-            # "success": True,
+            "success": True,
             "result": True,
             "state": faction_status,
             "faction": faction.value,
@@ -1735,10 +1735,10 @@ class LLMActionHandlerV3:
             )
 
             return {
-                # "success": True,
+                "success": True,
                 "result": True,
                 "details": f"Turn ended for faction {faction.value}",
-                # "message": f"Turn ended for faction {faction.value}",
+                "message": f"Turn ended for faction {faction.value}",
                 "turn_summary": {
                     "ended_faction": faction.value,
                     "next_faction": next_faction,
@@ -1763,10 +1763,10 @@ class LLMActionHandlerV3:
     ) -> Dict[str, Any]:
         """Create a structured error response (uniform schema)."""
         response = {
-            # "success": False,
+            "success": False,
             "result": False,
             "details": message,
-            # "message": message,
+            "message": message,
         }
 
         if extra_data:
@@ -2854,9 +2854,9 @@ class LLMActionHandlerV3:
             for param in required_params:
                 if param not in params:
                     return {
-                        # "success": False,
+                        "success": False,
                         "result": False,
-                        # "message": f"Missing required parameter: {param}",
+                        "message": f"Missing required parameter: {param}",
                         "details": f"Missing required parameter: {param}",
                     }
 
@@ -2909,10 +2909,10 @@ class LLMActionHandlerV3:
 
             if success:
                 return {
-                    # "success": True,
+                    "success": True,
                     "result": True,
                     "details": f"Agent info registered for faction: {faction}",
-                    # "message": f"Agent info registered for faction: {faction}",
+                    "message": f"Agent info registered for faction: {faction}",
                     "registered_info": {
                         "faction": faction,
                         "provider": provider,
@@ -2924,16 +2924,16 @@ class LLMActionHandlerV3:
                 }
             else:
                 return {
-                    # "success": False,
+                    "success": False,
                     "result": False,
-                    # "message": "Failed to register agent info",
+                    "message": "Failed to register agent info",
                     "details": "Failed to register agent info",
                 }
 
         except Exception as e:
             return {
-                # "success": False,
+                "success": False,
                 "result": False,
                 "details": f"Error registering agent info: {str(e)}",
-                # "message": f"Error registering agent info: {str(e)}",
+                "message": f"Error registering agent info: {str(e)}",
             }
