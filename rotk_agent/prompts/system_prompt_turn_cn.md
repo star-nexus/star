@@ -27,7 +27,6 @@
 - `{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}`: 获取阵营状态，包括unit位置、状态信息。
 - `{{"action":"move","params":{{"unit_id":<ID>,"target_position":{{"col":X,"row":Y}}}}}}`: 移动unit到指定位置。
 - `{{"action":"attack","params":{{"unit_id":<ID>,"target_id":<ENEMY_ID>}}}}`: 攻击指定unit。
-- `{{"action":"get_faction_state","params":{{"faction":"wei | shu | wu"}}}}`: 获取阵营状态
 
 ### 并行调用
 - 允许一次回复中包含 **多个 tool_calls**（如对多个单位同时 move/attack）。  
