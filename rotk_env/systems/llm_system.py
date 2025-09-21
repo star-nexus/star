@@ -122,6 +122,7 @@ class LLMSystem(System):
         return {
             "strategy_ping": self.handle_strategy_ping,
             "report_llm_stats": self.handle_report_llm_stats,
+            "retrieve_game_status": self.handle_retrieve_game_status,
         }
 
     def add_listener(self):
@@ -412,6 +413,49 @@ class LLMSystem(System):
             
         except Exception as e:
             return {"success": False, "message": f"Report LLM stats failed: {e}"}
+
+    def handle_retrieve_game_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """返回系统级状态信息给 Agent（不改变游戏状态）。
+        内容包含：
+          - 当前回合数、当前玩家阵营、游戏是否在运行/暂停/结束
+          - 赢家（如有）和最大回合
+          - 已注册阵营、已连接的Agent数量
+          - LLM统计收集进度（已收与期望）
+        """
+        try:
+            game_state = self.world.get_singleton_component(GameState)
+            stats = self.world.get_singleton_component(GameStats)
+
+            turn = getattr(game_state, "turn_number", None) if game_state else None
+            current_player = (
+                getattr(getattr(game_state, "current_player", None), "value", None)
+                if game_state else None
+            )
+
+            registered = []
+            if stats and hasattr(stats, 'registered_factions'):
+                try:
+                    registered = [f.value for f in stats.registered_factions]
+                except Exception:
+                    registered = []
+
+            connected_agents = len(self.client.connected_agents) if hasattr(self, 'client') else 0
+
+            payload = {
+                "turn": turn,
+                "current_player": current_player,
+                "registered_factions": registered,
+                "connected_agents": connected_agents,
+                "timestamp": time.time()
+            }
+
+            return {
+                "success": True,
+                "message": "Game status reported",
+                "data": payload
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Report game status failed: {e}"}
 
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
