@@ -364,7 +364,6 @@ class RoTKChatAgent:
     def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
-        self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
@@ -373,6 +372,26 @@ class RoTKChatAgent:
         self._agent_registered: bool = False
         
         self._strategy_last_ping_ts: float = 0.0
+        # Thinking budget config (tokens) — can override via env THINKING_BUDGET
+        try:
+            self._thinking_budget = int(os.environ.get("THINKING_BUDGET", "64"))
+        except Exception:
+            self._thinking_budget = 64
+        if self._thinking_budget <= 0:
+            self._thinking_budget = 64
+        # 强约束提示词（硬约束），可通过环境变量 SYSTEM_CONSTRAINTS 追加或覆盖
+        default_constraints = (
+            "[SYSTEM POLICY]\n"
+            "<think-policy>在 </think> 之前：最多两句、简短要点；禁止列点/分段；禁止复述问题；尽快闭合 </think>；Thinking level: low and fast.</think-policy>\n"
+            "<tool-policy>优先使用工具获取事实；严格使用 tool_calls 字段，禁止在 content 中夹带工具信息。</tool-policy>\n"
+            "<answer-policy>最终答案 ≤4 行；使用祈使句给出可执行策略；不道歉、不犹豫、不请求确认。</answer-policy>\n"
+            "<example-note>以下 JSON 仅为说明示例，请勿直接输出到 content；工具调用必须放入 tool_calls。</example-note>\n"
+        )
+        extra_constraints = os.environ.get("SYSTEM_CONSTRAINTS", "")
+        self._system_constraints = f"{default_constraints}{extra_constraints}" if extra_constraints else default_constraints
+        self.system_prompt = f"{self._system_constraints}\n{system_prompt}" if system_prompt else self._system_constraints
+
+        
         # 🆕 最近一次已处理的回合号（用于 rotk_agent/qwen3_agent_turn.py 幂等）
         self._last_turn_notified: int = -1
         # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
@@ -875,6 +894,24 @@ class RoTKChatAgent:
 
         return False
 
+    def _ensure_closed_think_block(self, reasoning_content: str) -> str:
+        """Ensure the reasoning block is closed with </think> to keep template well-formed."""
+        if not reasoning_content:
+            return "</think>\n\n"
+        text = reasoning_content
+        if "</think>" not in text:
+            if not text.endswith("."):
+                text = f"{text}."
+            text = f"{text}\n</think>\n\n"
+        return text
+
+    def _compute_answer_budget(self) -> int:
+        """Compute remaining tokens for stage-2 answering."""
+        total_max = self.llm_client.config.max_tokens or 512
+        # Guarantee stage-2 has at least 16 tokens
+        remaining = max(16, total_max - self._thinking_budget)
+        return remaining
+
     async def _async_strategy_detection(self, assistant_text: str):
         """If strategy content is detected, report strategy_ping (throttling) to ENV."""
         import time
@@ -1224,10 +1261,39 @@ class RoTKChatAgent:
                     await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
-                # Get LLM response
+                # === Stage 1: budgeted thinking (no tools, small max_tokens) ===
+                # Ensure thinking_budget < total max_tokens
+                total_max_tokens = self.llm_client.config.max_tokens or 512
+                thinking_budget = min(max(16, self._thinking_budget), max(16, total_max_tokens - 16))
+                console.print(f"🧠 Stage-1 thinking with budget tokens: {thinking_budget}/{total_max_tokens}", style="cyan")
+
+                stage1_response = await self.llm_client.chat_completion(
+                    messages=self.conversation_history,
+                    tools=None,
+                    max_tokens=thinking_budget,
+                    stop=["</think>"],
+                    temperature=0.4,
+                    top_p=0.7
+                )
+
+                stage1_choice = stage1_response.get("choices", [{}])[0]
+                stage1_message = stage1_choice.get("message", {})
+                stage1_content = stage1_message.get("content", "")
+                reasoning_content = self._ensure_closed_think_block(stage1_content)
+
+                # Inject reasoning content back to history as assistant message
+                self.conversation_history.append(
+                    Message(role="assistant", content=reasoning_content)
+                )
+
+                # === Stage 2: produce actionable answer (with tools) ===
+                answer_budget = self._compute_answer_budget()
+                console.print(f"💬 Stage-2 answering with tokens: {answer_budget}", style="cyan")
+
                 response = await self.llm_client.chat_completion(
                     messages=self.conversation_history,
-                    tools=self.tool_manager.get_tool_definitions()
+                    tools=self.tool_manager.get_tool_definitions(),
+                    max_tokens=answer_budget
                 )
 
                 choice = response["choices"][0]
@@ -1852,8 +1918,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                     except Exception as e:
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
-                # return response
-                return {"result": "The current turn is over. Wait for the next turn_start to resume."}
+                return response
+                # return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
                 console.print(f"❌ end_turn error: {e}", style="red")
                 raise
