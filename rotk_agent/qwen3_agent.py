@@ -1004,7 +1004,7 @@ class RoTKChatAgent:
 
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
-                if len(self.conversation_history) > 80:
+                if len(self.conversation_history) > 40:
                     await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
@@ -1056,9 +1056,6 @@ class RoTKChatAgent:
                 if message.get("tool_calls"):
                     console.print(f"🔧 Handling tool calls @iteration {iterations}: {message['tool_calls']}", style="cyan")
                     await self._handle_tool_calls(message["tool_calls"])
-                    if iterations == 10 or iterations == 70:
-                        self.conversation_history.append(Message(role="user", content="After getting the enemy coordinates, move all your units to the enemy's position and attack them once they are in range."))
-                    continue  # keep the loop going
 
                 # 2) Hit max length? Ask model to continue (or just continue loop)
                 if finish_reason == "length":
