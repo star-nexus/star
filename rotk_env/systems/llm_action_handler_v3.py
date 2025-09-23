@@ -587,6 +587,7 @@ class LLMActionHandlerV3:
                 path_length / animation_speed if animation_speed > 0 else 0
             )
 
+            # After move_unit, movement_points.current_mp has been updated
             result = {
                 "success": True,
                 "result": True,
@@ -600,6 +601,7 @@ class LLMActionHandlerV3:
                     "path_length": path_length,
                     "estimated_duration_seconds": round(estimated_duration, 2),
                 },
+                "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
             }
             print(f"[MOVE_ACTION] Move done, result: {result}")
             return result
@@ -2020,6 +2022,12 @@ class LLMActionHandlerV3:
                         int(combat.base_attack)
                         if hasattr(combat, "base_attack")
                         else 10
+                    )
+                    # Add defense info after attack info
+                    capabilities_info["properties"]["defense_power"] = (
+                        int(combat.base_defense)
+                        if hasattr(combat, "base_defense")
+                        else 5
                     )
                 except (AttributeError, ValueError, TypeError):
                     pass
