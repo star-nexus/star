@@ -1342,6 +1342,7 @@ class RoTKChatAgent:
                 if message.get("tool_calls"):
                     console.print(f"🔧 Handling tool calls @iteration {iterations}: {message['tool_calls']}", style="cyan")
                     await self._handle_tool_calls(message["tool_calls"])
+                    continue
 
                 # 2) Hit max length? Ask model to continue (or just continue loop)
                 if finish_reason == "length":
