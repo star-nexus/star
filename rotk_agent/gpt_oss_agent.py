@@ -34,10 +34,10 @@ class LLMConfig:
     model_id: str
     api_key: str
     base_url: Optional[str] = None
-    temperature: float = 0.7
+    temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    top_p: float = 0.8
-    top_k: int = 20
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
     enable_thinking: bool = False
 
 
@@ -133,8 +133,16 @@ class LLMClient:
         payload = {
             "model": self.config.model_id,
             "input": input_items,
-            "temperature": self.config.temperature,
         }
+        
+        # Only include sampling/limit params when explicitly set
+        if self.config.temperature is not None:
+            payload["temperature"] = self.config.temperature
+        if self.config.top_p is not None:
+            payload["top_p"] = self.config.top_p
+        if self.config.max_tokens is not None:
+            # Responses API uses max_output_tokens
+            payload["max_output_tokens"] = self.config.max_tokens
         
         if instructions:
             payload["instructions"] = instructions
@@ -302,11 +310,11 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
-    temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 1500)
+    temperature = provider_config.get("temperature")
+    max_tokens = provider_config.get("max_tokens")
     enable_thinking = provider_config.get("enable_thinking", False)
-    top_p = provider_config.get("top_p", 0.8)
-    top_k = provider_config.get("top_k", 20)
+    top_p = provider_config.get("top_p")
+    top_k = provider_config.get("top_k")
 
     return LLMConfig(
         provider=provider,
@@ -1100,7 +1108,7 @@ class RoTKChatAgent:
                     # 执行工具时用清洗后的名字
                     cleaned_calls = []
                     for it in raw_calls:
-                        # 构造一个“干净版”的 function_call item，用于回灌
+                        # 构造一个"干净版"的 function_call item，用于回灌
                         cleaned_calls.append(type(it)(
                             **{**it.__dict__, "name": _clean_tool_name(it.name)}  # pydantic 对象/命名元组按你的响应结构调整
                         ))

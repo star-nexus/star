@@ -32,10 +32,10 @@ class LLMConfig:
     model_id: str
     api_key: str
     base_url: Optional[str] = None
-    temperature: float = 0.7
+    temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    top_p: float = 0.8
-    top_k: int = 20
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
     enable_thinking: bool = False
 
 
@@ -138,13 +138,17 @@ class LLMClient:
         payload = {
             "model": self.config.model_id,
             "messages": formatted_messages,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-            "top_p": self.config.top_p,
-            "top_k": self.config.top_k,
             "stream": False,
         }
         
+        if self.config.temperature is not None:
+            payload["temperature"] = self.config.temperature
+        if self.config.top_p is not None:
+            payload["top_p"] = self.config.top_p
+        if self.config.top_k is not None:
+            payload["top_k"] = self.config.top_k
+        if self.config.max_tokens is not None:
+            payload["max_tokens"] = self.config.max_tokens
         # if self.config_thinking:
         #     if self.config.provider == "siliconflow":
         #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
@@ -152,7 +156,7 @@ class LLMClient:
         #         payload["chat_template_kwargs"] = {
         #                 "enable_thinking": bool(self.config.enable_thinking)
         #             }
-            
+        
         if tools:
             payload["tools"] = self._format_tools(tools)
             payload["tool_choice"] = "auto"
@@ -340,11 +344,11 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
-    temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 1500)
     enable_thinking = provider_config.get("enable_thinking", False)
-    top_p = provider_config.get("top_p", 0.8)
-    top_k = provider_config.get("top_k", 20)
+    temperature = provider_config.get("temperature")
+    top_p = provider_config.get("top_p")
+    top_k = provider_config.get("top_k")
+    max_tokens = provider_config.get("max_tokens")
 
     return LLMConfig(
         provider=provider,
