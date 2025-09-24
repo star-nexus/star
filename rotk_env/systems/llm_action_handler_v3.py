@@ -599,8 +599,8 @@ class LLMActionHandlerV3:
                     "target_position": {"col": target_pos[0], "row": target_pos[1]},
                     "path": path,
                     "path_length": path_length,
-                    "estimated_duration_seconds": round(estimated_duration, 2),
                 },
+                "estimated_duration_seconds": round(estimated_duration, 2),
                 "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
             }
             print(f"[MOVE_ACTION] Move done, result: {result}")
@@ -2024,7 +2024,7 @@ class LLMActionHandlerV3:
                         else 10
                     )
                     # Add defense info after attack info
-                    capabilities_info["properties"]["defense_power"] = (
+                    capabilities_info["properties"]["defense"] = (
                         int(combat.base_defense)
                         if hasattr(combat, "base_defense")
                         else 5

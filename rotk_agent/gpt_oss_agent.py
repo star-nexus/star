@@ -470,12 +470,13 @@ class RoTKChatAgent:
 
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
+            filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            # console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="magenta")
-            # console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name}->{arguments['action']} ────────────────────────────────╮", style="magenta")
+            # console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
             # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
 
-            filtered_result = self._filter_tool_result(function_name, result)
+
             return {
                 "type": "function_call_output",
                 "call_id": tool_call_id,
@@ -727,32 +728,37 @@ class RoTKChatAgent:
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
     
-    def _filter_tool_result(self, function_name: str, result: Any) -> Any:
-        """Filter tool results, remove redundant information to keep conversation history concise"""
+    def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
+        
         if not isinstance(result, dict):
             return result
-        
+        console.print(f"Filtering tool result {function_name}", style="cyan")
+
         import copy
-        filtered_result = copy.deepcopy(result)
+        data = copy.deepcopy(result)
+
+        if function_name != "perform_action":
+            return data
+
+        # 1) 首选：基于 tool_arguments.action 的精确分流
+        action = (tool_arguments or {}).get("action") if isinstance(tool_arguments, dict) else None
+        if isinstance(action, str):
+            action_norm = action.strip().lower()
+        else:
+            action_norm = None
+
+        action_map = {
+            "move": self._filter_move_result,
+            "get_faction_state": self._filter_faction_state_result,
+            "observation": self._filter_observation_result,
+            "attack": self._filter_attack_result,
+        }
+
+        if action_norm in action_map:
+            return self._replace_booleans_with_strings(action_map[action_norm](data))
+
+        return data
         
-        # Remove success field globally to avoid backend parsing issues
-        filtered_result.pop("success", None)
-        
-        if function_name == "perform_action":
-            if "visible_environment" in filtered_result and "unit_info" in filtered_result:
-                filtered_result = self._filter_observation_result(filtered_result)
-            elif "faction" in filtered_result and "units" in filtered_result and "total_units" in filtered_result:
-                filtered_result = self._filter_faction_state_result(filtered_result)
-            elif "message" in filtered_result and ("moved successfully" in str(filtered_result.get("message", "")) or 
-                                                  "failure_reason" in filtered_result):
-                filtered_result = self._filter_move_result(filtered_result)
-            elif "battle_summary" in filtered_result and "casualties_inflicted" in filtered_result:
-                filtered_result = self._filter_attack_result(filtered_result)
-        
-        # Replace all boolean values with strings to avoid backend parsing issues
-        filtered_result = self._replace_booleans_with_strings(filtered_result)
-        
-        return filtered_result
     
     def _replace_booleans_with_strings(self, data: Any) -> Any:
         """Recursively replace all boolean values with strings to avoid backend parsing issues"""
@@ -818,56 +824,71 @@ class RoTKChatAgent:
         return filtered_result
     
     def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter faction_state result, remove redundant fields to avoid backend parsing issues"""
+        """Filter faction_state result, remove redundant fields to save tokens"""
         import copy
         filtered_result = copy.deepcopy(result)
-        
-        # Remove success field to avoid backend parsing issues
         filtered_result.pop("success", None)
         
-        # Simplify units information - keep only essential fields
+        # 保留基本的阵营状态信息
         if "units" in filtered_result and isinstance(filtered_result["units"], list):
-            simplified_units = []
+            filtered_units = []
             for unit in filtered_result["units"]:
                 if isinstance(unit, dict):
-                    simplified_unit = {
-                        "unit_id": unit.get("unit_id"),
-                        "unit_type": unit.get("unit_type"),
-                        "faction": unit.get("faction"),
-                        "position": unit.get("position"),
-                        "unit_status": {
-                            "current_count": unit.get("unit_status", {}).get("current_count"),
-                            "max_count": unit.get("unit_status", {}).get("max_count"),
-                            "health_percentage": unit.get("unit_status", {}).get("health_percentage"),
-                        } if unit.get("unit_status") else None,
-                        "capabilities": {
-                            "movement": unit.get("capabilities", {}).get("movement"),
-                            "attack_range": unit.get("capabilities", {}).get("attack_range"),
-                            "vision_range": unit.get("capabilities", {}).get("vision_range"),
-                            "action_points": unit.get("capabilities", {}).get("action_points"),
-                            "max_action_points": unit.get("capabilities", {}).get("max_action_points"),
-                        } if unit.get("capabilities") else None,
-                    }
-                    # Remove None values
-                    simplified_unit = {k: v for k, v in simplified_unit.items() if v is not None}
-                    simplified_units.append(simplified_unit)
-            filtered_result["units"] = simplified_units
+                    filtered_unit = copy.deepcopy(unit)
+                    
+                    # 过滤 unit_status 中的噪声字段
+                    if "unit_status" in filtered_unit and isinstance(filtered_unit["unit_status"], dict):
+                        unit_status = filtered_unit["unit_status"]
+                        # 移除 morale 和 fatigue，这些在其他filter中也被认为是噪声
+                        unit_status.pop("morale", None)
+                        unit_status.pop("fatigue", None)
+                    
+                    # 过滤 capabilities 中的冗余字段
+                    if "capabilities" in filtered_unit and isinstance(filtered_unit["capabilities"], dict):
+                        capabilities = filtered_unit["capabilities"]
+                        # 移除 long_rest_resources，ENV中没有对应实现
+                        capabilities.pop("long_rest_resources", None)
+                        
+                        # 也可以移除其他噪声字段（参考observation过滤器）
+                        noise_capabilities = ["attack_points", "construction_points", "skill_points"]
+                        for noise_key in noise_capabilities:
+                            capabilities.pop(noise_key, None)
+                    
+                    # 移除 available_skills，通常是空数组，没有实际意义
+                    filtered_unit.pop("available_skills", None)
+                    
+                    filtered_units.append(filtered_unit)
+            
+            filtered_result["units"] = filtered_units
         
         return filtered_result
     
     def _filter_move_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter move result, keep critical error or success information"""
-        if not result.get("success", True):
+        if not result.get("result", True):
             if "suggested_action" in result:
                 essential_keys = {
-                    "success", "message", "failure_reason", 
+                    "result", "details", "failure_reason", 
                     "current_movement_points", "required_movement_points",
                     "closest_reachable_position", "suggested_action", "suggestion"
                 }
                 filtered_result = {k: v for k, v in result.items() if k in essential_keys}
                 return filtered_result
-        
-        return result
+        # Success case: remove only success and message, keep others
+        try:
+            filtered = dict(result)
+            if "success" in filtered:
+                filtered.pop("success", None)
+            if "message" in filtered:
+                filtered.pop("message", None)
+            # Remove verbose movement description path details to save tokens
+            if "movement_descriptions" in filtered:
+                filtered.pop("movement_descriptions", None)
+            if "action_status" in filtered:
+                filtered.pop("action_status", None)
+            return filtered
+        except Exception:
+            return result
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter attack result"""
