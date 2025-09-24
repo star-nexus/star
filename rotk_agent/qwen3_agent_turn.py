@@ -642,14 +642,12 @@ class RoTKChatAgent:
 
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
-            
-            console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="magenta")
-            console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
-            
+            filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            filtered_result = self._filter_tool_result(function_name, result)
-            
+            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name}->{arguments['action']} ────────────────────────────────╮", style="magenta")
+            console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
+
             tool_message = Message(
                 role="tool",
                 content=json.dumps(filtered_result, ensure_ascii=False),
@@ -913,26 +911,35 @@ class RoTKChatAgent:
 
 
     # ==================== Tool Results Filtering Functions Start ====================
-    def _filter_tool_result(self, function_name: str, result: Any) -> Any:
-        """Filter tool results, remove redundant information to keep conversation history concise"""
+    def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
+        
         if not isinstance(result, dict):
             return result
-        
+
         import copy
-        filtered_result = copy.deepcopy(result)
-        
-        if function_name == "perform_action":
-            if "visible_environment" in filtered_result and "unit_info" in filtered_result:
-                filtered_result = self._filter_observation_result(filtered_result)
-            elif "faction" in filtered_result and "units" in filtered_result and "total_units" in filtered_result:
-                filtered_result = self._filter_faction_state_result(filtered_result)
-            elif "details" in filtered_result and ("moved successfully" in str(filtered_result.get("details", "")) or 
-                                                  "failure_reason" in filtered_result):
-                filtered_result = self._filter_move_result(filtered_result)
-            elif "battle_summary" in filtered_result and "casualties_inflicted" in filtered_result:
-                filtered_result = self._filter_attack_result(filtered_result)
-        
-        return filtered_result
+        data = copy.deepcopy(result)
+
+        if function_name != "perform_action":
+            return data
+
+        # 1) 首选：基于 tool_arguments.action 的精确分流
+        action = (tool_arguments or {}).get("action") if isinstance(tool_arguments, dict) else None
+        if isinstance(action, str):
+            action_norm = action.strip().lower()
+        else:
+            action_norm = None
+
+        action_map = {
+            "move": self._filter_move_result,
+            "get_faction_state": self._filter_faction_state_result,
+            "observation": self._filter_observation_result,
+            "attack": self._filter_attack_result,
+        }
+
+        if action_norm in action_map:
+            return action_map[action_norm](data)
+
+        return data
     
     def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter observation result, remove redundant fields"""
@@ -990,6 +997,7 @@ class RoTKChatAgent:
         """Filter faction_state result, remove redundant fields to save tokens"""
         import copy
         filtered_result = copy.deepcopy(result)
+        filtered_result.pop("success", None)
         
         # 保留基本的阵营状态信息
         if "units" in filtered_result and isinstance(filtered_result["units"], list):
@@ -1036,8 +1044,21 @@ class RoTKChatAgent:
                 }
                 filtered_result = {k: v for k, v in result.items() if k in essential_keys}
                 return filtered_result
-        
-        return result
+        # Success case: remove only success and message, keep others
+        try:
+            filtered = dict(result)
+            if "success" in filtered:
+                filtered.pop("success", None)
+            if "message" in filtered:
+                filtered.pop("message", None)
+            # Remove verbose movement description path details to save tokens
+            if "movement_descriptions" in filtered:
+                filtered.pop("movement_descriptions", None)
+            if "action_status" in filtered:
+                filtered.pop("action_status", None)
+            return filtered
+        except Exception:
+            return result
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter attack result, keep only essential battle information to reduce token consumption"""
