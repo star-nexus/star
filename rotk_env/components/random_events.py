@@ -107,7 +107,7 @@ class CombatRoll(Component):
     damage_roll: Optional[int] = None  # 伤害投掷
     crit_roll: Optional[int] = None  # 暴击投掷
 
-    hit_threshold: int = 2  # 命中阈值
+    hit_threshold: int = 1  # 命中阈值
     crit_threshold: int = 19  # 暴击阈值
 
     def roll_hit(self) -> bool:
