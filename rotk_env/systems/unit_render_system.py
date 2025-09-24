@@ -107,7 +107,9 @@ class UnitRenderSystem(System):
         self.profiler_interval = interval
 
         if enabled:
-            print(f"[UnitRenderSystem] Profiler enabled, prints every {interval} frames")
+            print(
+                f"[UnitRenderSystem] Profiler enabled, prints every {interval} frames"
+            )
         else:
             print("[UnitRenderSystem] Profiler disabled")
 
@@ -173,7 +175,9 @@ class UnitRenderSystem(System):
                         self.unit_textures[key] = original_texture
 
                     except pygame.error as e:
-                        print(f"Warning: failed to load unit texture {texture_path}: {e}")
+                        print(
+                            f"Warning: failed to load unit texture {texture_path}: {e}"
+                        )
 
         if len(self.unit_textures) > 0:
             self.textures_loaded = True
@@ -853,6 +857,7 @@ class UnitRenderSystem(System):
         }
 
         symbol = unit_symbols.get(unit.unit_type, "?")
+        faction = unit.faction
         font_size = int(14 * zoom * scale)
 
         if font_size < 8:
@@ -861,7 +866,9 @@ class UnitRenderSystem(System):
         try:
             font = self._get_font(font_size)
             if font:
-                text_surface = font.render(symbol, True, (255, 255, 255))
+                # 根据faction获取字体颜色
+                faction_color = GameConfig.FACTION_COLORS.get(faction, (255, 255, 255))
+                text_surface = font.render(symbol, True, faction_color)
                 text_rect = text_surface.get_rect(center=(int(screen_x), int(screen_y)))
                 RMS.draw(text_surface, text_rect)
         except:
