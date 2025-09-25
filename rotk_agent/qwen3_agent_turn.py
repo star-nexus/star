@@ -644,7 +644,7 @@ class RoTKChatAgent:
             result = await self.tool_manager.execute_tool(function_name, arguments)
             filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name}->{arguments['action']} ────────────────────────────────╮", style="magenta")
+            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
             console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
             console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
 
@@ -657,7 +657,7 @@ class RoTKChatAgent:
                 self.conversation_history.append(tool_message)
             
         except Exception as e:
-            console.print(f"Tool execution error during tool call: {e}", style="red")
+            console.print(f"Tool execution error during tool call: {e}, function_name: {function_name}", style="red")
             # Add error information to conversation history (using lock to protect parallel access)
             error_message = Message(
                 role="tool",
@@ -1245,7 +1245,7 @@ class RoTKChatAgent:
                     continue  # 门控未开启或异常，跳过 LLM API 调用
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
-                if len(self.conversation_history) > 40:
+                if len(self.conversation_history) > 20:
                     await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
