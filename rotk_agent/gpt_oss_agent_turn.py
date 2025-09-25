@@ -315,7 +315,114 @@ class RoTKChatAgent:
         self._agent_registered: bool = False
         
         self._strategy_last_ping_ts: float = 0.0
+        # 🆕 最近一次已处理的回合号（用于 rotk_agent/qwen3_agent_turn.py 幂等）
+        self._last_turn_notified: int = -1
+        # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
+        self._turn_gate: asyncio.Event = asyncio.Event()
+        self._turn_gate.set()
         
+    # ======== Turn Gate Control Functions ========
+    # These functions are used to control and record the turn gate status for LLM API calls,
+    # ensuring that LLM inference is only performed during allowed turns.
+    def _log_gate_status(self, action: str):
+        """记录门控状态变化"""
+        status = "OPEN" if self._turn_gate.is_set() else "CLOSED"
+        console.print(f"🚪 Turn gate {action}: {status}", style="cyan")
+    
+    async def _wait_for_turn_gate(self) -> bool:
+        """等待回合门控开启，返回是否应该继续执行 LLM API 调用。
+        期间轮询 RemoteContext 的 turn_start 状态，主动解除门控，避免死等。"""
+        if self._turn_gate.is_set():
+            return True
+        console.print("⏸️ Waiting for next turn_start to resume LLM calls...", style="yellow")
+        while not self._turn_gate.is_set():
+            # 使用统一的turn_start处理方法
+            try:
+                if await self._process_turn_start_if_available("wait_gate"):
+                    break  # 成功处理了turn_start，门控已开启，退出等待
+                
+                # 检查游戏是否结束
+                status = RemoteContext.get_status() or {}
+                if status.get("game_ended", False):
+                    # 游戏结束时确保不阻塞
+                    if not self._turn_gate.is_set():
+                        self._set_turn_gate("game_ended - emergency (wait)")
+                    return False
+            except Exception as e:
+                console.print(f"⚠️ Polling status while waiting failed: {e}", style="yellow")
+            
+            # 短暂等待，避免忙等
+            try:
+                await asyncio.wait_for(self._turn_gate.wait(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                console.print(f"⚠️ Waiting for turn_start interrupted: {e}", style="yellow")
+                return False
+        console.print("▶️ Turn started. Resuming LLM calls.", style="green")
+        return True
+    
+    def _set_turn_gate(self, action: str = "manual"):
+        """Unified turn gate opening operation for LLM API calls"""
+        try:
+            self._turn_gate.set()
+            self._log_gate_status(f"OPENED ({action})")
+        except Exception as e:
+            console.print(f"⚠️ Failed to set turn gate: {e}", style="yellow")
+    
+    def _clear_turn_gate(self, action: str = "manual"):
+        """Unified turn gate closing operation for LLM API calls"""
+        try:
+            self._turn_gate.clear()
+            self._log_gate_status(f"CLOSED ({action})")
+        except Exception as e:
+            console.print(f"⚠️ Failed to clear turn gate: {e}", style="yellow")
+    
+    async def _process_turn_start_if_available(self, context_name: str = "") -> bool:
+        """统一处理turn_start事件检测和通知注入
+        
+        Args:
+            context_name: 调用上下文名称，用于日志区分
+        
+        Returns:
+            bool: 是否成功处理了turn_start事件
+        """
+        try:
+            status = RemoteContext.get_status() or {}
+            turn_evt = status.get("turn_start")
+            if isinstance(turn_evt, dict):
+                evt_faction = str(turn_evt.get("faction", "")).lower()
+                evt_turn = turn_evt.get("turn_number", None)
+                # 仅当：阵营匹配 且 回合号严格大于已处理回合号 时，才处理
+                if evt_faction == str(self.faction).lower() and isinstance(evt_turn, int):
+                    if evt_turn > self._last_turn_notified:
+                        # 🔧 额外检查：确保门控当前是关闭的（意味着我们确实在等待新回合）
+                        if self._turn_gate.is_set():
+                            console.print(f"⚠️ Found turn_start but gate is already open - likely a stale event (evt_turn={evt_turn}, last={self._last_turn_notified}) [{context_name}]", style="yellow")
+                            return False
+                        
+                        # 注入一条精简 user 提示
+                        hint = f"你的回合开始（第{evt_turn}回合）。所有资源已恢复。请开始行动。"
+                        async with self._history_lock:
+                            self.conversation_history.append(Message(role="user", content=hint))
+                        self._last_turn_notified = evt_turn
+                        console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn} [{context_name}]", style="green")
+                        # 解除回合门控，允许 LLM API 调用
+                        self._set_turn_gate(f"turn_start ({context_name})")
+                        return True
+                    else:
+                        if context_name:
+                            console.print(f"⏳ Detected turn_start but not newer (evt_turn={evt_turn}, last={self._last_turn_notified}) [{context_name}]", style="dim yellow")
+                else:
+                    if evt_faction and evt_faction != str(self.faction).lower() and context_name:
+                        console.print(f"⏳ Detected turn_start for other faction: {evt_faction} [{context_name}]", style="dim yellow")
+            return False
+        except Exception as e:
+            console.print(f"⚠️ Turn-start processing failed [{context_name}]: {e}", style="yellow")
+            return False
+    # ======== Turn Gate Control Functions End ========
+        
+
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
         tool = ToolDefinition(
@@ -325,7 +432,9 @@ class RoTKChatAgent:
             function=function
         )
         self.tool_manager.register_tool(tool)
+
     
+    # ==================== Tool Calls Parsing Functions Start ====================
     def _parse_text_based_tool_calls(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse text-based tool calls from content field.
@@ -439,14 +548,49 @@ class RoTKChatAgent:
                     arguments['params'] = json.loads(arguments['params'])
                 except json.JSONDecodeError as e:
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
+            
+            # Intercept misuse: perform_action attempting to call end_turn
+            if function_name == "perform_action":
+                action_name = (arguments or {}).get("action")
+                if action_name == "end_turn":
+                    error_message = (
+                        "❌ 工具使用错误！'end_turn' 是一个独立的工具，不能通过 'perform_action' 调用。\n"
+                        "正确的调用方式是：\n"
+                        '{"name": "end_turn", "arguments": {}}\n\n'
+                        "请直接使用 end_turn 工具来结束回合。"
+                    )
+                    tool_error = {
+                        "success": False,
+                        "error": "Invalid tool usage",
+                        "message": error_message
+                    }
+                    # Append tool error response and a user correction hint
+                    tool_message = Message(
+                        role="tool",
+                        content=json.dumps(tool_error, ensure_ascii=False),
+                        tool_call_id=tool_call_id
+                    )
+                    correction_message = Message(
+                        role="user",
+                        content=(
+                            "请注意：你刚才试图通过 perform_action 调用 end_turn，这是错误的。\n"
+                            "end_turn 是一个独立的工具。正确的调用方式是：\n"
+                            '{"name": "end_turn", "arguments": {}}\n\n'
+                            "请直接使用 end_turn 工具来结束当前回合。"
+                        )
+                    )
+                    async with self._history_lock:
+                        self.conversation_history.append(tool_message)
+                        self.conversation_history.append(correction_message)
+                    return
 
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
             filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
-            # console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
-            # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
+            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
+            console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
 
 
             return {
@@ -699,7 +843,10 @@ class RoTKChatAgent:
             })
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
-    
+    # ==================== Strategy keyword detection and reporting End ====================
+
+
+    # ==================== Tool Results Filtering Functions Start ====================
     def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
         
         if not isinstance(result, dict):
@@ -853,7 +1000,7 @@ class RoTKChatAgent:
                 filtered.pop("success", None)
             if "message" in filtered:
                 filtered.pop("message", None)
-            # Remove verbose movement description path details to save tokens
+
             if "movement_descriptions" in filtered:
                 filtered.pop("movement_descriptions", None)
             if "action_status" in filtered:
@@ -933,6 +1080,7 @@ class RoTKChatAgent:
             tail = non_system_msgs[-window:]
         
         self.conversation_history = system_msgs + user_msgs + tail
+    # ==================== Tool Results Filtering Functions End ====================
 
 
     async def _register_agent_info(self):
@@ -1054,6 +1202,9 @@ class RoTKChatAgent:
                     console.print(f"🔍 Status check (iteration {iterations}): {status}", style="dim cyan")
                 if status.get("game_ended", False):
                     console.print(f"🏁 Game ended @iteration {iterations}, preparing to report LLM stats and exit", style="yellow bold")
+                    # 游戏结束时确保解除等待，防止潜在阻塞，但不改变门控的语义状态
+                    if not self._turn_gate.is_set():
+                        self._set_turn_gate("game_ended - emergency")
                     await self.stop()
                     return {
                         "success": True,
@@ -1062,9 +1213,17 @@ class RoTKChatAgent:
                         "reason": "game_ended"
                     }
             except Exception as status_error:
-                console.print(f"⚠️ Error checking game status: {status_error}", style="red")
+                 console.print(f"⚠️ Error checking game status: {status_error}", style="red")
             
             try:
+                # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
+                if not await self._wait_for_turn_gate():
+                    continue  # 门控未开启或异常，跳过 LLM API 调用
+                # Check if the conversation_history is too long, trim it if necessary
+                console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
+                if len(input_items) > 20:
+                    await self._shrink_history(window=10)
+                    console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
                 response = await self.llm_client.chat_completion(
                     input_items=input_items,
@@ -1262,6 +1421,22 @@ class AgentDemo:
                 RemoteContext.set_status(current_status)
                 console.print(f"🔧 State updated: {current_status}", style="cyan")  # 🆕 Debug information
                 message += f"\n    Game end notification: {msg_data}"
+            elif msg_type == "turn_start":
+                # 🆕 Handle turn start notification and store to status for agent loop to consume
+                try:
+                    current_status = RemoteContext.get_status() or {}
+                except:
+                    current_status = {}
+                # 只保存最后一条 turn_start（幂等处理在 Agent 侧完成）
+                current_status.update({"turn_start": {
+                    "type": msg_type,
+                    "faction": msg_data.get("faction"),
+                    "turn_number": msg_data.get("turn_number"),
+                    "timestamp": msg_data.get("timestamp"),
+                    "message": msg_data.get("message")
+                }})
+                RemoteContext.set_status(current_status)
+                console.print(f"📬 Received turn_start: {current_status.get('turn_start')}", style="cyan")
             # console.print(message, style="blue")
             self.messages.append(message)
 
@@ -1332,7 +1507,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_cn")
+        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
         system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
 
         user_prompt = f"""
@@ -1586,6 +1761,10 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
 
 async def perform_action(action: str, params: Any):
     """Execute action"""
+    # 🚨 Defensive programming: prohibit calling end_turn via perform_action (should use the standalone end_turn tool)
+    if action == "end_turn":
+        raise ValueError("Invalid tool usage: 'end_turn' must be called via the standalone 'end_turn' tool, not 'perform_action'.")
+    
     try:
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
@@ -1672,16 +1851,38 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             },
         )
         
-        # async def stop_running():
-        #     """Game over detected, agent should stop"""
-        #     return {"message": "You chose to stop running. Take a reset and start again."}
+        async def end_turn():
+            """End current turn to recover"""
+            try:
+                client = RemoteContext.get_client()
+                request_id = await client.send_action("end_turn", {"faction": faction})
+                response = await get_env_response(request_id, timeout_seconds=5)
+
+                # Only close the turn gate when ENV confirms success (result == True)
+                if isinstance(response, dict) and response.get("success", False):
+                    agent._clear_turn_gate("end_turn")
+                    # Clear old turn_start event to avoid duplicate processing
+                    try:
+                        current_status = RemoteContext.get_status() or {}
+                        if "turn_start" in current_status:
+                            current_status.pop("turn_start", None)
+                            RemoteContext.set_status(current_status)
+                            console.print("🗑️ Cleared old turn_start event from RemoteContext", style="dim cyan")
+                    except Exception as e:
+                        console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
+                    console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
+                # return response
+                return {"result": "The current turn is over. Wait for the next turn_start to resume."}
+            except Exception as e:
+                console.print(f"❌ end_turn error: {e}", style="red")
+                raise
         
-        # agent.register_tool(
-        #     name="stop_running",
-        #     function=stop_running,
-        #     description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
-        #     parameters={"type": "object", "properties": {}, "required": []},
-        # )
+        agent.register_tool(
+            name="end_turn",
+            function=end_turn,
+            description="结束本回合，恢复行动力和移动力。",
+            parameters={"type": "object", "properties": {}, "required": []},
+        )
 
         # Execute chat task
         result = await agent.chat(user_prompt)
@@ -1694,8 +1895,6 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
         traceback.print_exc()
-
-
 
 
 def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
