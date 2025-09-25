@@ -663,7 +663,7 @@ class RoTKChatAgent:
             result = await self.tool_manager.execute_tool(function_name, arguments)
             filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name}->{arguments['action']} ────────────────────────────────╮", style="magenta")
+            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
             console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
             console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
                        
@@ -676,7 +676,7 @@ class RoTKChatAgent:
                 self.conversation_history.append(tool_message)
             
         except Exception as e:
-            console.print(f"Tool execution error during tool call: {e}", style="red")
+            console.print(f"Tool execution error during tool call: {e}, function_name: {function_name}", style="red")
             # Add error information to conversation history (using lock to protect parallel access)
             error_message = Message(
                 role="tool",
