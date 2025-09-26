@@ -327,7 +327,7 @@ class RemoteContext:
         return RemoteContext.id_map.get()
 
 
-def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> LLMConfig:
+def load_config(config_path: str = ".configs.toml", provider: str = "vllm", model_id: str = None) -> LLMConfig:
     """Load LLM configuration from config file"""
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -339,7 +339,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
         raise ValueError(f"Invalid provider: {provider}")
 
     try:
-        model_id = provider_config["model_id"]
+        model_id = model_id or provider_config["model_id"]
     except KeyError:
         raise ValueError(f"Model ID not found for {provider}")
     
@@ -1311,7 +1311,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_cn")
+        raw_prompt = self.load_prompt(name="system_prompt_realtime_cn")
         system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
 
         user_prompt = f"""
@@ -1617,7 +1617,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         console_system.print("Attempting to load configuration file")
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
-        llm_config = load_config(config_path, provider=provider)
+        model_id = os.environ.get("LLM_MODEL_ID", "gpt-5")
+        llm_config = load_config(config_path, provider=provider, model_id=model_id)
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
         # Register tools
@@ -1796,6 +1797,9 @@ async def main():
         "--provider", type=str, default="openai", help="Provider (default: openai)"
     )
     parser.add_argument(
+        "--model_id", type=str, default="gpt-5", help="Model ID (default: gpt-5)"
+    )
+    parser.add_argument(
         "--faction", 
         type=str, 
         default="wei", 
@@ -1815,6 +1819,7 @@ async def main():
     # Set environment variables
     os.environ["LLM_PROVIDER"] = args.provider
     os.environ["AGENT_FACTION"] = args.faction
+    os.environ["LLM_MODEL_ID"] = args.model_id
 
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
