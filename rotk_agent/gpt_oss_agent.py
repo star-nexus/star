@@ -34,10 +34,10 @@ class LLMConfig:
     model_id: str
     api_key: str
     base_url: Optional[str] = None
-    temperature: float = 0.7
+    temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    top_p: float = 0.8
-    top_k: int = 20
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
     enable_thinking: bool = False
 
 
@@ -98,19 +98,12 @@ class LLMClient:
         self.config = config
         
         # Initialize OpenAI client
-        if config.provider == "vllm":
-            base_url = config.base_url or "http://172.16.75.202:10000/v1"
-        else:
-            base_url = config.base_url or "https://api.openai.com/v1"
-            
+        self.base_url = config.base_url
+       
         self.client = AsyncOpenAI(
             api_key=config.api_key,
-            base_url=base_url
+            base_url=self.base_url
         )
-
-        
-        # Store base_url for logging purposes
-        self.base_url = base_url
 
         self.config_thinking = True
 
@@ -128,33 +121,10 @@ class LLMClient:
         instructions: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Send Responses API request"""
-        
-        payload = {
-            "model": self.config.model_id,
-            "input": input_items,
-            "temperature": self.config.temperature,
-        }
-        
-        if instructions:
-            payload["instructions"] = instructions
-        payload["stream"] = False
-        payload["parallel_tool_calls"] = True
-        payload["tool_choice"] = "auto"
-        payload["reasoning"] = {"effort": "low"}
-            
-        if tools:
-            payload["tools"] = self._format_tools(tools)
-            # Responses API doesn't use tool_choice and parallel_tool_calls
-            # payload["tool_choice"] = "auto"
-            # payload["parallel_tool_calls"] = True
-            
-        payload.update(kwargs)
-        
-        console.print(payload, style="green")
+        """Send Responses API request"""   
         
         # console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
-        # console.print(f"│ {json.dumps(serializable_payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+        # console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
         # console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
 
         # Send request
@@ -163,7 +133,17 @@ class LLMClient:
         print(f"🔍 API call count: {LLMClient._global_api_call_count}")
         
         try:
-            response = await self.client.responses.create(**payload)
+            response =  await self.client.responses.create(
+                model=self.config.model_id,
+                input=input_items,
+                tools=self._format_tools(tools),
+                instructions=instructions,
+                # max_output_tokens = 3000,
+                stream=False,
+                parallel_tool_calls=True,
+                tool_choice="auto",
+                reasoning={"effort": "medium"},
+            )
             
             console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
             console.print(f"│ {json.dumps(response.model_dump(), indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
@@ -176,7 +156,7 @@ class LLMClient:
         except APIConnectionError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
-            error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
+            error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url} {self.client.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
             console.print(f"Please check network connection and API server status", style="yellow")
             raise Exception(error_msg) from e
@@ -202,7 +182,7 @@ class LLMClient:
             LLMClient._global_api_error_count += 1
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
-            console.print(f"Request URL: {self.base_url}", style="yellow")
+            console.print(f"Request URL: {self.base_url} {self.client.base_url}", style="yellow")
             console.print(f"Provider: {self.config.provider}", style="yellow")
             console.print(payload, style="cyan")
             raise Exception(error_msg) from e
@@ -302,11 +282,11 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
-    temperature = provider_config.get("temperature", 0.7)
-    max_tokens = provider_config.get("max_tokens", 1500)
+    temperature = provider_config.get("temperature")
+    max_tokens = provider_config.get("max_tokens")
     enable_thinking = provider_config.get("enable_thinking", False)
-    top_p = provider_config.get("top_p", 0.8)
-    top_k = provider_config.get("top_k", 20)
+    top_p = provider_config.get("top_p")
+    top_k = provider_config.get("top_k")
 
     return LLMConfig(
         provider=provider,
@@ -462,12 +442,13 @@ class RoTKChatAgent:
 
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
+            filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            # console.print(f"╭──────────────────────────────── Tool '{function_name}' Result ────────────────────────────────╮", style="magenta")
-            # console.print(f"│ {json.dumps(result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
+            # console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
             # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
 
-            filtered_result = self._filter_tool_result(function_name, result)
+
             return {
                 "type": "function_call_output",
                 "call_id": tool_call_id,
@@ -475,7 +456,7 @@ class RoTKChatAgent:
             }
 
         except Exception as e:
-            console.print(f"Tool execution error during tool call: {e}", style="red")
+            console.print(f"Tool execution error during tool call: {e}, function_name: {function_name}", style="red")
             return {
                 "type": "function_call_output",
                 "call_id": tool_call_id,
@@ -719,32 +700,37 @@ class RoTKChatAgent:
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
     
-    def _filter_tool_result(self, function_name: str, result: Any) -> Any:
-        """Filter tool results, remove redundant information to keep conversation history concise"""
+    def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
+        
         if not isinstance(result, dict):
             return result
-        
+        console.print(f"Filtering tool result {function_name}", style="cyan")
+
         import copy
-        filtered_result = copy.deepcopy(result)
+        data = copy.deepcopy(result)
+
+        if function_name != "perform_action":
+            return data
+
+        # 1) 首选：基于 tool_arguments.action 的精确分流
+        action = (tool_arguments or {}).get("action") if isinstance(tool_arguments, dict) else None
+        if isinstance(action, str):
+            action_norm = action.strip().lower()
+        else:
+            action_norm = None
+
+        action_map = {
+            "move": self._filter_move_result,
+            "get_faction_state": self._filter_faction_state_result,
+            "observation": self._filter_observation_result,
+            "attack": self._filter_attack_result,
+        }
+
+        if action_norm in action_map:
+            return self._replace_booleans_with_strings(action_map[action_norm](data))
+
+        return data
         
-        # Remove success field globally to avoid backend parsing issues
-        filtered_result.pop("success", None)
-        
-        if function_name == "perform_action":
-            if "visible_environment" in filtered_result and "unit_info" in filtered_result:
-                filtered_result = self._filter_observation_result(filtered_result)
-            elif "faction" in filtered_result and "units" in filtered_result and "total_units" in filtered_result:
-                filtered_result = self._filter_faction_state_result(filtered_result)
-            elif "message" in filtered_result and ("moved successfully" in str(filtered_result.get("message", "")) or 
-                                                  "failure_reason" in filtered_result):
-                filtered_result = self._filter_move_result(filtered_result)
-            elif "battle_summary" in filtered_result and "casualties_inflicted" in filtered_result:
-                filtered_result = self._filter_attack_result(filtered_result)
-        
-        # Replace all boolean values with strings to avoid backend parsing issues
-        filtered_result = self._replace_booleans_with_strings(filtered_result)
-        
-        return filtered_result
     
     def _replace_booleans_with_strings(self, data: Any) -> Any:
         """Recursively replace all boolean values with strings to avoid backend parsing issues"""
@@ -810,75 +796,118 @@ class RoTKChatAgent:
         return filtered_result
     
     def _filter_faction_state_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter faction_state result, remove redundant fields to avoid backend parsing issues"""
+        """Filter faction_state result, remove redundant fields to save tokens"""
         import copy
         filtered_result = copy.deepcopy(result)
-        
-        # Remove success field to avoid backend parsing issues
         filtered_result.pop("success", None)
         
-        # Simplify units information - keep only essential fields
+        # 保留基本的阵营状态信息
         if "units" in filtered_result and isinstance(filtered_result["units"], list):
-            simplified_units = []
+            filtered_units = []
             for unit in filtered_result["units"]:
                 if isinstance(unit, dict):
-                    simplified_unit = {
-                        "unit_id": unit.get("unit_id"),
-                        "unit_type": unit.get("unit_type"),
-                        "faction": unit.get("faction"),
-                        "position": unit.get("position"),
-                        "unit_status": {
-                            "current_count": unit.get("unit_status", {}).get("current_count"),
-                            "max_count": unit.get("unit_status", {}).get("max_count"),
-                            "health_percentage": unit.get("unit_status", {}).get("health_percentage"),
-                        } if unit.get("unit_status") else None,
-                        "capabilities": {
-                            "movement": unit.get("capabilities", {}).get("movement"),
-                            "attack_range": unit.get("capabilities", {}).get("attack_range"),
-                            "vision_range": unit.get("capabilities", {}).get("vision_range"),
-                            "action_points": unit.get("capabilities", {}).get("action_points"),
-                            "max_action_points": unit.get("capabilities", {}).get("max_action_points"),
-                        } if unit.get("capabilities") else None,
-                    }
-                    # Remove None values
-                    simplified_unit = {k: v for k, v in simplified_unit.items() if v is not None}
-                    simplified_units.append(simplified_unit)
-            filtered_result["units"] = simplified_units
+                    filtered_unit = copy.deepcopy(unit)
+                    
+                    # 过滤 unit_status 中的噪声字段
+                    if "unit_status" in filtered_unit and isinstance(filtered_unit["unit_status"], dict):
+                        unit_status = filtered_unit["unit_status"]
+                        # 移除 morale 和 fatigue，这些在其他filter中也被认为是噪声
+                        unit_status.pop("morale", None)
+                        unit_status.pop("fatigue", None)
+                    
+                    # 过滤 capabilities 中的冗余字段
+                    if "capabilities" in filtered_unit and isinstance(filtered_unit["capabilities"], dict):
+                        capabilities = filtered_unit["capabilities"]
+                        # 移除 long_rest_resources，ENV中没有对应实现
+                        capabilities.pop("long_rest_resources", None)
+                        
+                        # 也可以移除其他噪声字段（参考observation过滤器）
+                        noise_capabilities = ["attack_points", "construction_points", "skill_points"]
+                        for noise_key in noise_capabilities:
+                            capabilities.pop(noise_key, None)
+                    
+                    # 移除 available_skills，通常是空数组，没有实际意义
+                    filtered_unit.pop("available_skills", None)
+                    
+                    filtered_units.append(filtered_unit)
+            
+            filtered_result["units"] = filtered_units
         
         return filtered_result
     
     def _filter_move_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter move result, keep critical error or success information"""
-        if not result.get("success", True):
+        if not result.get("result", True):
             if "suggested_action" in result:
                 essential_keys = {
-                    "success", "message", "failure_reason", 
+                    "result", "details", "failure_reason", 
                     "current_movement_points", "required_movement_points",
                     "closest_reachable_position", "suggested_action", "suggestion"
                 }
                 filtered_result = {k: v for k, v in result.items() if k in essential_keys}
                 return filtered_result
-        
-        return result
+        # Success case: remove only success and message, keep others
+        try:
+            filtered = dict(result)
+            if "success" in filtered:
+                filtered.pop("success", None)
+            if "message" in filtered:
+                filtered.pop("message", None)
+            # Remove verbose movement description path details to save tokens
+            if "movement_descriptions" in filtered:
+                filtered.pop("movement_descriptions", None)
+            if "action_status" in filtered:
+                filtered.pop("action_status", None)
+            return filtered
+        except Exception:
+            return result
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter attack result"""
-        if result.get("success", True):
-            essential_keys = {
-                "success", "message", "battle_summary", 
-                "remaining_resources", "tactical_info"
+        """Filter attack result, keep only essential battle information to reduce token consumption"""
+        if result.get("result", True):
+            filtered_result = {
+                "result": result.get("result"),
+                "remaining_resources": result.get("remaining_resources")
             }
-            filtered_result = {k: v for k, v in result.items() if k in essential_keys}
             
-            if "battle_summary" in filtered_result and isinstance(filtered_result["battle_summary"], dict):
-                battle_summary = filtered_result["battle_summary"]
-                essential_battle_keys = {
-                    "attacker_info", "target_info", "casualties_inflicted", 
-                    "target_destroyed", "distance"
-                }
-                filtered_result["battle_summary"] = {
-                    k: v for k, v in battle_summary.items() if k in essential_battle_keys
-                }
+            # Process battle_summary
+            if "battle_summary" in result and isinstance(result["battle_summary"], dict):
+                battle_summary = result["battle_summary"]
+                filtered_battle = {}
+                
+                # Extract essential attacker info
+                if "attacker_info" in battle_summary:
+                    attacker = battle_summary["attacker_info"]
+                    filtered_battle["attacker_info"] = {
+                        k: attacker.get(k) for k in ["unit_id", "unit_type", "faction", "position", "terrain"]
+                        if k in attacker
+                    }
+                
+                # Extract essential target info
+                if "target_info" in battle_summary:
+                    target = battle_summary["target_info"]
+                    filtered_battle["target_info"] = {
+                        k: target.get(k) for k in ["unit_id", "unit_type", "faction", "position", "terrain"]
+                        if k in target
+                    }
+                
+                # Extract essential battle result info
+                if "battle_result" in battle_summary and isinstance(battle_summary["battle_result"], dict):
+                    battle_result = battle_summary["battle_result"]
+                    filtered_battle["battle_result"] = {
+                        k: battle_result.get(k) for k in ["is_critical", "damage_dealt", "target_destroyed", "terrain_effects", "combat_log"]
+                        if k in battle_result
+                    }
+                
+                filtered_result["battle_summary"] = filtered_battle
+            
+            # Add essential tactical info with better naming
+            if "tactical_info" in result and isinstance(result["tactical_info"], dict):
+                tactical = result["tactical_info"]
+                if "attack_was_effective" in tactical:
+                    filtered_result["attack_was_effective"] = tactical["attack_was_effective"]
+                if "target_strength_percentage" in tactical:
+                    filtered_result["target_remaining_manpower"] = f"{tactical['target_strength_percentage']}%"
             
             return filtered_result
         
@@ -1100,7 +1129,7 @@ class RoTKChatAgent:
                     # 执行工具时用清洗后的名字
                     cleaned_calls = []
                     for it in raw_calls:
-                        # 构造一个“干净版”的 function_call item，用于回灌
+                        # 构造一个"干净版"的 function_call item，用于回灌
                         cleaned_calls.append(type(it)(
                             **{**it.__dict__, "name": _clean_tool_name(it.name)}  # pydantic 对象/命名元组按你的响应结构调整
                         ))
@@ -1613,12 +1642,12 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
         # Register tools
-        agent.register_tool(
-            name="get_available_actions",
-            function=get_available_actions,
-            description="获取可以执行的action列表。",
-            parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
-        )
+        # agent.register_tool(
+        #     name="get_available_actions",
+        #     function=get_available_actions,
+        #     description="获取可以执行的action列表。",
+        #     parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+        # )
         
         agent.register_tool(
             name="perform_action",
@@ -1681,8 +1710,7 @@ def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
     Returns:
         float: Delay seconds, 0 means no delay
     """
-    if not isinstance(response, dict) or not response.get("success", False):
-        # No delay when action fails
+    if not (isinstance(response, dict) and response.get("result", False)):
         return 0.0
     
     if action == "move":

@@ -24,7 +24,6 @@ from ..components import (
     UnitStatus,
     UnitSkills,
     ActionPoints,  # now points to the new multi-layer ActionPoints
-    AttackPoints,
     ConstructionPoints,
     SkillPoints,
     Terrain,
@@ -33,6 +32,7 @@ from ..components import (
     MapData,
     TerritoryControl,
     FogOfWar,
+    GameModeComponent,
 )
 from ..prefabs.config import (
     Faction,
@@ -221,9 +221,9 @@ class LLMActionHandlerV3:
         position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
-        action_points = self.world.get_component(unit_id, ActionPoints)
         unit_status = self.world.get_component(unit_id, UnitStatus)
 
+        # Note: ActionPoints no longer required for movement
         # Detailed missing-components report
         missing_components = []
         component_info = {}
@@ -260,17 +260,6 @@ class LLMActionHandlerV3:
                 f"[MOVE_ACTION] Unit strength: {unit_count.current_count}/{unit_count.max_count}"
             )
 
-        if not action_points:
-            missing_components.append("ActionPoints")
-        else:
-            component_info["action_points"] = {
-                "current_ap": action_points.current_ap,
-                "max_ap": action_points.max_ap,
-            }
-            print(
-                f"[MOVE_ACTION] Action points: {action_points.current_ap}/{action_points.max_ap}"
-            )
-
         if missing_components:
             error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
             print(f"[MOVE_ACTION] Missing components: {error_msg}")
@@ -284,7 +273,6 @@ class LLMActionHandlerV3:
                         "HexPosition",
                         "MovementPoints",
                         "UnitCount",
-                        "ActionPoints",
                     ],
                     "suggestion": "This unit may not be properly initialized",
                 },
@@ -309,28 +297,8 @@ class LLMActionHandlerV3:
         else:
             print(f"[MOVE_ACTION] Unit status component missing; assume normal")
 
-        # === Layer 1: Action points (decision layer) ===
-        print(f"[MOVE_ACTION] Checking action points...")
-        required_ap = 1
-        current_ap = action_points.current_ap
-
-        if current_ap < required_ap:
-            error_msg = f"Insufficient action points to initiate movement decision: need {required_ap}, have {current_ap}"
-            print(f"[MOVE_ACTION] Insufficient AP: {error_msg}")
-            return self._create_error_response(
-                error_msg,
-                {
-                    "unit_id": unit_id,
-                    "required_action_points": required_ap,
-                    "current_action_points": current_ap,
-                    "deficit": required_ap - current_ap,
-                    "action_point_info": component_info.get("action_points", {}),
-                    "suggestion": "Wait for action points to recover or use garrison action",
-                },
-            )
-        print(f"[MOVE_ACTION] AP check passed: {current_ap}/{action_points.max_ap}")
-
-        # === Layer 2: Movement points (execution layer) ===
+        # === Movement points check (execution layer) ===
+        # Note: Movement no longer requires action points, only movement points
         print(f"[MOVE_ACTION] Checking movement points...")
         current_mp = movement_points.current_mp
 
@@ -619,6 +587,7 @@ class LLMActionHandlerV3:
                 path_length / animation_speed if animation_speed > 0 else 0
             )
 
+            # After move_unit, movement_points.current_mp has been updated
             result = {
                 "success": True,
                 "result": True,
@@ -630,8 +599,9 @@ class LLMActionHandlerV3:
                     "target_position": {"col": target_pos[0], "row": target_pos[1]},
                     "path": path,
                     "path_length": path_length,
-                    "estimated_duration_seconds": round(estimated_duration, 2),
                 },
+                "estimated_duration_seconds": round(estimated_duration, 2),
+                "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
             }
             print(f"[MOVE_ACTION] Move done, result: {result}")
             return result
@@ -781,7 +751,7 @@ class LLMActionHandlerV3:
         # === Layer 5: action point validation ===
         print(f"[ATTACK_ACTION] Checking action points...")
         if not attacker_action_points.can_perform_action(ActionType.ATTACK):
-            required_ap = 2  # requires 2 AP to attack
+            required_ap = 1  # requires 1 AP to attack
             current_ap = attacker_action_points.current_ap
             return self._create_error_response(
                 f"Insufficient action points for attack: need {required_ap}, have {current_ap}",
@@ -1263,7 +1233,7 @@ class LLMActionHandlerV3:
                 unit_id, skill_name, current_terrain, target
             )
 
-            if skill_result["result"]:
+            if skill_result.get("result", False):
                 # 消耗资源：多层次资源系统
                 # 1. 消耗行动点（决策层）
                 action_points.consume_ap(ActionType.SKILL)
@@ -1436,7 +1406,7 @@ class LLMActionHandlerV3:
             },
         }
 
-        return {"success": True, "result": True, **action_docs}
+        return {"result": True, **action_docs}
 
     def handle_action_list_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return full documentation for available actions."""
@@ -1464,11 +1434,11 @@ class LLMActionHandlerV3:
                         },
                     },
                     "returns": {
-                        "success": {
+                        "result": {
                             "type": "bool",
                             "description": "Whether execution succeeded",
                         },
-                        "message": {"type": "string", "description": "Result message"},
+                        "details": {"type": "string", "description": "details message"},
                         "resource_consumption": {
                             "type": "object",
                             "description": "Resource consumption details",
@@ -1627,7 +1597,7 @@ class LLMActionHandlerV3:
                         }
                     },
                     "returns": {
-                        "success": {
+                        "result": {
                             "type": "bool",
                             "description": "Whether execution succeeded",
                         },
@@ -1721,7 +1691,7 @@ class LLMActionHandlerV3:
             },
         }
 
-        return {"success": True, "result": True, **action_docs}
+        return {"result": True, **action_docs}
 
     def handle_end_turn(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle end-turn action for the current faction."""
@@ -1825,7 +1795,15 @@ class LLMActionHandlerV3:
                 f"Unit {unit_id} not found", {"unit_id": unit_id, "action": action_name}
             )
 
-        # 获取当前轮到行动的阵营
+        # 检查游戏模式
+        game_mode = self.world.get_singleton_component(GameModeComponent)
+        is_realtime = game_mode and game_mode.is_real_time()
+
+        # 在实时模式下，所有阵营都可以同时行动，跳过回合检查
+        if is_realtime:
+            return None
+
+        # 获取当前轮到行动的阵营（仅在回合制模式下）
         current_player = self._get_current_player()
         if not current_player:
             return self._create_error_response(
@@ -1868,14 +1846,21 @@ class LLMActionHandlerV3:
                         "fatigue": "none",
                     },
                     "capabilities": {
-                        "movement": 0,
-                        "attack_range": 0,
-                        "vision_range": 0,
-                        "action_points": 0,
-                        "max_action_points": 0,
-                        "attack_points": 0,
-                        "construction_points": 0,
-                        "skill_points": 0,
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                        },
+                        "turn_resources": {
+                            "action_points": 0,
+                            "max_action_points": 2,
+                            "movement_points": 0,
+                            "max_movement_points": 3,
+                        },
+                        "long_rest_resources": {
+                            "construction_points": 0,
+                            "skill_points": 0,
+                        },
                     },
                     "available_skills": [],
                 }
@@ -1887,7 +1872,6 @@ class LLMActionHandlerV3:
             combat = self.world.get_component(unit_id, Combat)
             vision = self.world.get_component(unit_id, Vision)
             action_points = self.world.get_component(unit_id, ActionPoints)
-            attack_points = self.world.get_component(unit_id, AttackPoints)
             construction_points = self.world.get_component(unit_id, ConstructionPoints)
             skill_points = self.world.get_component(unit_id, SkillPoints)
             unit_status = self.world.get_component(unit_id, UnitStatus)
@@ -1908,14 +1892,21 @@ class LLMActionHandlerV3:
                         "fatigue": "none",
                     },
                     "capabilities": {
-                        "movement": 0,
-                        "attack_range": 0,
-                        "vision_range": 0,
-                        "action_points": 0,
-                        "max_action_points": 0,
-                        "attack_points": 0,
-                        "construction_points": 0,
-                        "skill_points": 0,
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                        },
+                        "turn_resources": {
+                            "action_points": 0,
+                            "max_action_points": 2,
+                            "movement_points": 0,
+                            "max_movement_points": 3,
+                        },
+                        "long_rest_resources": {
+                            "construction_points": 0,
+                            "skill_points": 0,
+                        },
                     },
                     "available_skills": [],
                 }
@@ -1963,7 +1954,7 @@ class LLMActionHandlerV3:
                                 else 0
                             ),
                             "health_percentage": (
-                                float(unit_count.ratio)
+                                float(unit_count.ratio * 100)
                                 if hasattr(unit_count, "ratio")
                                 else 0.0
                             ),
@@ -1988,39 +1979,62 @@ class LLMActionHandlerV3:
                     status_info["morale"] = "normal"
 
             capabilities_info = {
-                "movement": 0,
-                "attack_range": 1,
-                "vision_range": 2,
-                "action_points": 0,
-                "max_action_points": 2,
-                "attack_points": 0,
-                "construction_points": 0,
-                "skill_points": 0,
+                "properties": {
+                    "attack_range": 1,
+                    "attack_power": 10,  # 默认攻击力
+                    "vision_range": 2,
+                },
+                "turn_resources": {
+                    "action_points": 0,
+                    "max_action_points": 2,
+                    "movement_points": 0,
+                    "max_movement_points": 3,
+                },
+                "long_rest_resources": {
+                    "construction_points": 0,
+                    "skill_points": 0,
+                },
             }
 
             if movement_points:
                 try:
-                    capabilities_info["movement"] = (
+                    capabilities_info["turn_resources"]["movement_points"] = (
                         int(movement_points.current_mp)
                         if hasattr(movement_points, "current_mp")
                         else 0
+                    )
+                    capabilities_info["turn_resources"]["max_movement_points"] = (
+                        int(movement_points.max_mp)
+                        if hasattr(movement_points, "max_mp")
+                        else 3
                     )
                 except (AttributeError, ValueError, TypeError):
                     pass
 
             if combat:
                 try:
-                    capabilities_info["attack_range"] = (
+                    capabilities_info["properties"]["attack_range"] = (
                         int(combat.attack_range)
                         if hasattr(combat, "attack_range")
                         else 1
+                    )
+                    capabilities_info["properties"]["attack_power"] = (
+                        int(combat.base_attack)
+                        if hasattr(combat, "base_attack")
+                        else 10
+                    )
+                    # Add defense info after attack info
+                    capabilities_info["properties"]["defense"] = (
+                        int(combat.base_defense)
+                        if hasattr(combat, "base_defense")
+                        else 5
                     )
                 except (AttributeError, ValueError, TypeError):
                     pass
 
             if vision:
                 try:
-                    capabilities_info["vision_range"] = (
+                    capabilities_info["properties"]["vision_range"] = (
                         int(vision.range) if hasattr(vision, "range") else 2
                     )
                 except (AttributeError, ValueError, TypeError):
@@ -2028,7 +2042,7 @@ class LLMActionHandlerV3:
 
             if action_points:
                 try:
-                    capabilities_info.update(
+                    capabilities_info["turn_resources"].update(
                         {
                             "action_points": (
                                 int(action_points.current_ap)
@@ -2045,19 +2059,9 @@ class LLMActionHandlerV3:
                 except (AttributeError, ValueError, TypeError):
                     pass
 
-            if attack_points:
-                try:
-                    capabilities_info["attack_points"] = (
-                        int(attack_points.normal_attacks)
-                        if hasattr(attack_points, "normal_attacks")
-                        else 0
-                    )
-                except (AttributeError, ValueError, TypeError):
-                    pass
-
             if construction_points:
                 try:
-                    capabilities_info["construction_points"] = (
+                    capabilities_info["long_rest_resources"]["construction_points"] = (
                         int(construction_points.current_cp)
                         if hasattr(construction_points, "current_cp")
                         else 0
@@ -2067,7 +2071,7 @@ class LLMActionHandlerV3:
 
             if skill_points:
                 try:
-                    capabilities_info["skill_points"] = (
+                    capabilities_info["long_rest_resources"]["skill_points"] = (
                         int(skill_points.current_sp)
                         if hasattr(skill_points, "current_sp")
                         else 0
@@ -2114,14 +2118,21 @@ class LLMActionHandlerV3:
                     "fatigue": "none",
                 },
                 "capabilities": {
-                    "movement": 0,
-                    "attack_range": 0,
-                    "vision_range": 0,
-                    "action_points": 0,
-                    "max_action_points": 0,
-                    "attack_points": 0,
-                    "construction_points": 0,
-                    "skill_points": 0,
+                    "properties": {
+                        "attack_range": 1,
+                        "attack_power": 10,
+                        "vision_range": 2,
+                    },
+                    "turn_resources": {
+                        "action_points": 0,
+                        "max_action_points": 2,
+                        "movement_points": 0,
+                        "max_movement_points": 3,
+                    },
+                    "long_rest_resources": {
+                        "construction_points": 0,
+                        "skill_points": 0,
+                    },
                 },
                 "available_skills": [],
             }
@@ -2397,9 +2408,9 @@ class LLMActionHandlerV3:
                 if terrain and terrain.terrain_type == TerrainType.WATER:
                     obstacles.add((q, r))
 
-        print(
-            f"[DEBUG] Obstacles (including water): {len(obstacles)} (excluding unit {exclude_unit_id})"
-        )
+        # print(
+        #     f"[DEBUG] Obstacles (including water): {len(obstacles)} (excluding unit {exclude_unit_id})"
+        # )
         return obstacles
 
     def _get_adjacent_free_positions(
@@ -2922,8 +2933,8 @@ class LLMActionHandlerV3:
             else:
                 return {
                     "success": False,
-                    "result": False, 
-                    "message": "Failed to register agent info", 
+                    "result": False,
+                    "message": "Failed to register agent info",
                     "details": "Failed to register agent info",
                 }
 

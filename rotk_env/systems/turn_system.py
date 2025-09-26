@@ -160,10 +160,12 @@ class TurnSystem(System):
             action_points = self.world.get_component(entity, ActionPoints)
 
             if movement:
+                # 首先重置到最大移动力
+                movement.reset()
+                # 然后根据单位状况调整有效移动力
                 if unit_count:
-                    movement.current_mp = movement.get_effective_movement(unit_count)
-                else:
-                    movement.current_mp = movement.base_mp
+                    effective_mp = movement.get_effective_movement(unit_count)
+                    movement.current_mp = effective_mp
                 # movement.has_moved = False  # 移除单次移动限制
 
             if action_points:

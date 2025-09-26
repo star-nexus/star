@@ -395,14 +395,26 @@ class StatisticsSystem(System):
         if game_time:
             return game_time.get_current_time_display(), game_time.get_turn_number()
 
-        # Compatibility: if no game time system, use old logic
-        game_mode = self.world.get_singleton_component(GameModeComponent)
-        if game_mode and game_mode.is_turn_based():
-            game_state = self.world.get_singleton_component(GameState)
-            turn_num = game_state.turn_number if game_state else 1
-            return f"T{turn_num}", turn_num
-        else:
-            return "00:00", None
+        # Compatibility: use GameState to determine mode
+        game_state = self.world.get_singleton_component(GameState)
+        if game_state:
+            if game_state.game_mode.value == "turn_based":
+                # 回合制：显示回合数
+                time_display = f"Turn {game_state.turn_number}"
+                return time_display, game_state.turn_number
+            else:
+                # 实时制：显示游戏时间
+                stats = self.world.get_singleton_component(GameStats)
+                if stats:
+                    minutes = int(stats.total_game_time // 60)
+                    seconds = int(stats.total_game_time % 60)
+                    time_display = f"{minutes:02d}:{seconds:02d}"
+                else:
+                    time_display = "00:00"
+                return time_display, None
+
+        # 默认回退
+        return "00:00", None
 
     def _get_current_turn_number(self) -> Optional[int]:
         """Get current turn number (only in turn-based mode)"""
@@ -461,7 +473,9 @@ class StatisticsSystem(System):
     ) -> None:
         """Add turn change log entry"""
         if previous_faction:
-            message = f"{previous_faction.value} turn ended, {new_faction.value} turn started"
+            message = (
+                f"{previous_faction.value} turn ended, {new_faction.value} turn started"
+            )
         else:
             message = f"{new_faction.value} turn started"
         log_type = "turn"
@@ -662,12 +676,15 @@ class StatisticsSystem(System):
         # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            message = (
-                f"{unit.faction.value}'s {unit.unit_type.value} used skill: {skill_name}"
-            )
+            message = f"{unit.faction.value}'s {unit.unit_type.value} used skill: {skill_name}"
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
-                message, "skill", unit.faction.value, (255, 165, 0), turn_number
+                message,
+                "skill",
+                unit.faction.value,
+                (255, 165, 0),
+                time_display,
+                turn_number,
             )
 
     def record_garrison_action(self, entity: int) -> None:
@@ -679,10 +696,17 @@ class StatisticsSystem(System):
         # Record to battle log
         battle_log = self.world.get_singleton_component(BattleLog)
         if battle_log:
-            message = f"{unit.faction.value}'s {unit.unit_type.value} entered garrison status"
+            message = (
+                f"{unit.faction.value}'s {unit.unit_type.value} entered garrison status"
+            )
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
-                message, "garrison", unit.faction.value, (128, 255, 128), turn_number
+                message,
+                "garrison",
+                unit.faction.value,
+                (128, 255, 128),
+                time_display,
+                turn_number,
             )
 
     def record_wait_action(self, entity: int) -> None:
@@ -697,7 +721,12 @@ class StatisticsSystem(System):
             message = f"{unit.faction.value}'s {unit.unit_type.value} chose to wait"
             time_display, turn_number = self._get_current_time_info()
             battle_log.add_entry(
-                message, "wait", unit.faction.value, (192, 192, 192), turn_number
+                message,
+                "wait",
+                unit.faction.value,
+                (192, 192, 192),
+                time_display,
+                turn_number,
             )
 
     def record_death_action(
@@ -709,22 +738,45 @@ class StatisticsSystem(System):
             return
 
         battle_log = self.world.get_singleton_component(BattleLog)
+        game_state = self.world.get_singleton_component(GameState)
+
         if battle_log:
             if killer_entity:
                 killer_unit = self.world.get_component(killer_entity, Unit)
                 if killer_unit:
                     message = f"{unit.faction.value}'s {unit.unit_type.value} was defeated by {killer_unit.faction.value}"
                 else:
-                    message = f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
+                    message = (
+                        f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
+                    )
             else:
-                message = f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
+                message = (
+                    f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
+                )
+
+            # 根据游戏模式选择时间显示方式
+            if game_state and game_state.game_mode.value == "turn_based":
+                # 回合制：显示回合数
+                time_display = f"Turn {game_state.turn_number}"
+                turn_number = game_state.turn_number
+            else:
+                # 实时制：显示游戏时间
+                stats = self.world.get_singleton_component(GameStats)
+                if stats:
+                    minutes = int(stats.total_game_time // 60)
+                    seconds = int(stats.total_game_time % 60)
+                    time_display = f"{minutes:02d}:{seconds:02d}"
+                else:
+                    time_display = "00:00"
+                turn_number = None
 
             battle_log.add_entry(
                 message,
                 "death",
                 unit.faction.value,
                 (255, 0, 0),
-                self._get_current_turn_number(),
+                time_display,
+                turn_number,
             )
 
     def record_game_event(

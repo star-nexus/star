@@ -16,14 +16,13 @@ from ..components import (
     MovementPoints,  # 使用新的多层次资源组件
     Unit,
     UnitCount,
-    ActionPoints,
     MapData,
     Terrain,
     Tile,
     MovementAnimation,
     UnitStatus,
 )
-from ..prefabs.config import TerrainType, ActionType
+from ..prefabs.config import TerrainType
 from ..utils.hex_utils import HexMath, PathFinding
 
 
@@ -48,9 +47,8 @@ class MovementSystem(System):
         position = self.world.get_component(entity, HexPosition)
         movement_points = self.world.get_component(entity, MovementPoints)
         unit_count = self.world.get_component(entity, UnitCount)
-        action_points = self.world.get_component(entity, ActionPoints)
 
-        if not all([position, movement_points, unit_count, action_points]):
+        if not all([position, movement_points, unit_count]):
             return False
 
         # Prevent concurrent movement for this entity
@@ -76,23 +74,16 @@ class MovementSystem(System):
         # Calculate total movement cost along path (terrain-aware)
         total_cost = self._calculate_total_movement_cost(path)
 
-        if total_cost > effective_movement:
-            return False
-
-        # Check action points
-        if not action_points.can_perform_action(ActionType.MOVE):
+        # Check if unit has enough current movement points for this path
+        if total_cost > movement_points.current_mp:
             return False
 
         print(f"✓ Unit {entity} moves to {target_pos}")
 
-        # === Spend resources (multi-layer model) ===
-        # 1) Spend action point (decision layer): fixed 1 AP to initiate movement
-        action_points.current_ap -= 1
-
-        # 2) Spend movement points (execution layer): terrain-based path cost
-        # allow multiple moves per turn if MP/AP remain
+        # === Spend resources ===
+        # Only spend movement points (execution layer): terrain-based path cost
+        # Movement no longer requires action points
         movement_points.current_mp -= total_cost
-        # movement_points.has_moved = True  # 移除单次移动限制
 
         # Record movement to statistics system
         statistics_system = self._get_statistics_system()
