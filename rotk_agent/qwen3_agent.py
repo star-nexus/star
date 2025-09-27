@@ -1691,13 +1691,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "unit_id": {"type": "integer", "minimum": 0},
                                     "target_position": {
                                         "type": "object",
                                         "additionalProperties": False,
                                         "properties": {
-                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
-                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7}
                                         },
                                         "required": ["col", "row"]
                                     }
@@ -1709,8 +1709,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "string", "minLength": 1},
-                                    "target_id": {"type": "string", "minLength": 1}
+                                    "unit_id": {"type": "integer", "minimum": 0},
+                                    "target_id": {"type": "integer", "minimum": 0}
                                 },
                                 "required": ["unit_id", "target_id"],
                                 "title": "attack"

@@ -1861,13 +1861,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "unit_id": {"type": "integer", "minimum": 0},
                                     "target_position": {
                                         "type": "object",
                                         "additionalProperties": False,
                                         "properties": {
-                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
-                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7}
                                         },
                                         "required": ["col", "row"]
                                     }
@@ -1879,8 +1879,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "string", "minLength": 1},
-                                    "target_id": {"type": "string", "minLength": 1}
+                                    "unit_id": {"type": "integer", "minimum": 0},
+                                    "target_id": {"type": "integer", "minimum": 0}
                                 },
                                 "required": ["unit_id", "target_id"],
                                 "title": "attack"
@@ -2071,8 +2071,8 @@ def _validate_action_payload(action: str, params: Any) -> None:
         if a == "move":
             unit_id = params.get("unit_id")
             target_position = params.get("target_position")
-            if not unit_id or not isinstance(unit_id, str):
-                raise ValueError("move.params.unit_id is required and must be string.")
+            if not isinstance(unit_id, int) or unit_id < 0:
+                raise ValueError("move.params.unit_id is required and must be integer >= 0.")
             if not isinstance(target_position, dict):
                 raise ValueError("move.params.target_position must be an object.")
             col = target_position.get("col")
@@ -2085,10 +2085,10 @@ def _validate_action_payload(action: str, params: Any) -> None:
         elif a == "attack":
             unit_id = params.get("unit_id")
             target_id = params.get("target_id")
-            if not unit_id or not isinstance(unit_id, str):
-                raise ValueError("attack.params.unit_id is required and must be string.")
-            if not target_id or not isinstance(target_id, str):
-                raise ValueError("attack.params.target_id is required and must be string.")
+            if not isinstance(unit_id, int) or unit_id < 0:
+                raise ValueError("attack.params.unit_id is required and must be integer >= 0.")
+            if not isinstance(target_id, int) or target_id < 0:
+                raise ValueError("attack.params.target_id is required and must be integer >= 0.")
 
         elif a == "get_faction_state":
             f = params.get("faction")
