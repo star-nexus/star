@@ -9,6 +9,7 @@ import httpx
 import toml
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
+from string import Template
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -1579,7 +1580,13 @@ class AgentDemo:
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
         raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
-        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
+        tmpl = Template(raw_prompt)
+        system_prompt = tmpl.safe_substitute(
+            faction=faction,
+            faction_name=faction_info["name"],
+            opponent=faction_info["enemy"],
+            opponent_name=opponent_info["name"],
+        )
 
         user_prompt = f"""
 **当前配置**:
@@ -1837,6 +1844,7 @@ async def perform_action(action: str, params: Any):
         raise ValueError("Invalid tool usage: 'end_turn' must be called via the standalone 'end_turn' tool, not 'perform_action'.")
     
     try:
+        # _validate_action_payload(action, params)
         client = RemoteContext.get_client()
         request_id = await client.send_action(action, params)
         response = await get_env_response(request_id, timeout_seconds=5)
@@ -1913,9 +1921,46 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "type": "object",
                         "description": "指定动作所需的参数字典。",
-                        "additionalProperties": True,
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_position": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
+                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                        },
+                                        "required": ["col", "row"]
+                                    }
+                                },
+                                "required": ["unit_id", "target_position"],
+                                "title": "move"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_id": {"type": "string", "minLength": 1}
+                                },
+                                "required": ["unit_id", "target_id"],
+                                "title": "attack"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                },
+                                "required": ["faction"],
+                                "title": "get_faction_state"
+                            }
+                        ]
                     },
                 },
                 "required": ["action", "params"],
@@ -1929,8 +1974,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                 request_id = await client.send_action("end_turn", {"faction": faction})
                 response = await get_env_response(request_id, timeout_seconds=5)
 
-                # Only close the turn gate when ENV confirms success (result == True)
-                if isinstance(response, dict) and response.get("success", False):
+                # Only close the turn gate when ENV confirms success
+                # Accept either response["success"] == True or response["result"] == True
+                resp_success = False
+                if isinstance(response, dict):
+                    resp_success = bool(response.get("success") is True or response.get("result") is True)
+
+                if resp_success:
                     agent._clear_turn_gate("end_turn")
                     # Clear old turn_start event to avoid duplicate processing
                     try:
@@ -1942,8 +1992,10 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                     except Exception as e:
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
-                return response
-                # return {"result": "The current turn is over. Wait for the next turn_start to resume."}
+                else:
+                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
+                # return response
+                return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
                 console.print(f"❌ end_turn error: {e}", style="red")
                 raise
@@ -2025,6 +2077,43 @@ def _calculate_move_delay(params: Any, response: Any) -> float:
     except Exception as e:
         console.print(f"⚠️ Error calculating move delay: {e}", style="yellow")
         return 1.0
+
+def _validate_action_payload(action: str, params: Any) -> None:
+    """Lightweight validation for perform_action payload."""
+    if not isinstance(action, str):
+        raise ValueError("'action' must be a string.")
+    a = action.strip().lower()
+    # Pass-through for system actions triggered by Agent (not by LLM)
+    if a in ("register_agent_info", "report_llm_stats"):
+        return
+    if a not in ("move", "attack", "get_faction_state"):
+        raise ValueError(f"Unsupported action: {action}.")
+    if not isinstance(params, dict):
+        raise ValueError("'params' must be an object.")
+    if a == "move":
+        unit_id = params.get("unit_id")
+        target_position = params.get("target_position")
+        if not unit_id or not isinstance(unit_id, str):
+            raise ValueError("move.params.unit_id is required and must be string.")
+        if not isinstance(target_position, dict):
+            raise ValueError("move.params.target_position must be an object.")
+        col = target_position.get("col")
+        row = target_position.get("row")
+        if not isinstance(col, int) or not isinstance(row, int):
+            raise ValueError("move.target_position.col/row must be integers.")
+        if not (0 <= col <= 14 and 0 <= row <= 14):
+            raise ValueError("move.target_position.col/row must be within [0,14].")
+    elif a == "attack":
+        unit_id = params.get("unit_id")
+        target_id = params.get("target_id")
+        if not unit_id or not isinstance(unit_id, str):
+            raise ValueError("attack.params.unit_id is required and must be string.")
+        if not target_id or not isinstance(target_id, str):
+            raise ValueError("attack.params.target_id is required and must be string.")
+    elif a == "get_faction_state":
+        f = params.get("faction")
+        if f not in ("wei", "shu", "wu"):
+            raise ValueError("get_faction_state.params.faction must be one of ['wei','shu','wu'].")
 
 def _is_context_overflow_error(exc: Exception, error_details: dict | None = None) -> bool:
     """Check if it is a context/token overflow error (compatible with common error messages from multiple providers)"""
