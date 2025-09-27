@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
 from openai import AsyncOpenAI, OpenAI
 from openai import APIConnectionError, APITimeoutError, APIStatusError
-
+from string import Template
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from prompt_toolkit import PromptSession
@@ -325,7 +325,9 @@ class RoTKChatAgent:
             function=function
         )
         self.tool_manager.register_tool(tool)
+
     
+    # ==================== Tool Calls Parsing Functions Start ====================
     def _parse_text_based_tool_calls(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse text-based tool calls from content field.
@@ -699,7 +701,10 @@ class RoTKChatAgent:
             })
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
-    
+    # ==================== Strategy keyword detection and reporting End ====================
+
+
+    # ==================== Tool Results Filtering Functions Start ====================
     def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
         
         if not isinstance(result, dict):
@@ -933,6 +938,7 @@ class RoTKChatAgent:
             tail = non_system_msgs[-window:]
         
         self.conversation_history = system_msgs + user_msgs + tail
+    # ==================== Tool Results Filtering Functions End ====================
 
 
     async def _register_agent_info(self):
@@ -1332,8 +1338,14 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_cn")
-        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
+        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
+        tmpl = Template(raw_prompt)
+        system_prompt = tmpl.safe_substitute(
+            faction=faction,
+            faction_name=faction_info["name"],
+            opponent=faction_info["enemy"],
+            opponent_name=opponent_info["name"],
+        )
 
         user_prompt = f"""
 **当前配置**:
@@ -1663,9 +1675,46 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "type": "object",
                         "description": "指定动作所需的参数字典。",
-                        "additionalProperties": True,
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_position": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
+                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                        },
+                                        "required": ["col", "row"]
+                                    }
+                                },
+                                "required": ["unit_id", "target_position"],
+                                "title": "move"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_id": {"type": "string", "minLength": 1}
+                                },
+                                "required": ["unit_id", "target_id"],
+                                "title": "attack"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                },
+                                "required": ["faction"],
+                                "title": "get_faction_state"
+                            }
+                        ]
                     },
                 },
                 "required": ["action", "params"],

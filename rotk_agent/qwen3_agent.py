@@ -9,6 +9,7 @@ import httpx
 import toml
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
+from string import Template
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -99,15 +100,15 @@ class LLMClient:
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
         elif config.provider == "deepseek":
-            self.base_url = "https://api.deepseek.com"
+            self.base_url = "https://api.deepseek.com/chat/completions"
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1/chat/completions"
         elif config.provider == "siliconflow":
             self.base_url = "https://api.siliconflow.cn/v1/chat/completions"
         elif config.provider == "vllm":
-            self.base_url = config.base_url or "http://172.16.75.202:10000/v1/chat/completions"
+            self.base_url = config.base_url
         else:
-            self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
+            self.base_url = config.base_url
 
         self.config_thinking = True
 
@@ -149,15 +150,14 @@ class LLMClient:
             payload["top_k"] = self.config.top_k
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
-
-        if self.config_thinking:
-            if self.config.provider == "siliconflow":
-                payload["enable_thinking"] = bool(self.config.enable_thinking)    
-            elif self.config.provider.startswith("vllm"):
-                payload["chat_template_kwargs"] = {
-                        "enable_thinking": bool(self.config.enable_thinking)
-                    }
-            
+        # if self.config_thinking:
+        #     if self.config.provider == "siliconflow":
+        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
+        #     elif self.config.provider.startswith("vllm"):
+        #         payload["chat_template_kwargs"] = {
+        #                 "enable_thinking": bool(self.config.enable_thinking)
+        #             }
+        
         if tools:
             payload["tools"] = self._format_tools(tools)
             payload["tool_choice"] = "auto"
@@ -388,7 +388,9 @@ class RoTKChatAgent:
             function=function
         )
         self.tool_manager.register_tool(tool)
+
     
+    # ==================== Tool Calls Parsing Functions Start ====================
     def _parse_text_based_tool_calls(self, content: str) -> List[Dict[str, Any]]:
         """
         Parse text-based tool calls from content field.
@@ -525,7 +527,10 @@ class RoTKChatAgent:
             async with self._history_lock:
                 self.conversation_history.append(error_message)
 
-    # ==================== Strategy keyword detection and reporting ====================
+    # ==================== Tool Calls Execution Functions End ====================
+
+
+    # ==================== Strategy keyword detection and reporting Start ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
         """Detects basic strategy thinking: keywords + structure words within proximity, without negation."""
         if not text:
@@ -761,7 +766,10 @@ class RoTKChatAgent:
             })
         except Exception as e:
             console.print(f"⚠️ strategy_ping failed: {e}", style="yellow")
-    
+    # ==================== Strategy keyword detection and reporting End ====================
+
+
+    # ==================== Tool Results Filtering Functions Start ====================
     def _filter_tool_result(self, function_name: str, result: Any, tool_arguments: Dict[str, Any] | None = None) -> Any:
         
         if not isinstance(result, dict):
@@ -913,23 +921,51 @@ class RoTKChatAgent:
             return result   
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter attack result"""
-        if result.get("success", True):
-            essential_keys = {
-                "success", "message", "battle_summary", 
-                "remaining_resources", "tactical_info"
+        """Filter attack result, keep only essential battle information to reduce token consumption"""
+        if result.get("result", True):
+            filtered_result = {
+                "result": result.get("result"),
+                "remaining_resources": result.get("remaining_resources")
             }
-            filtered_result = {k: v for k, v in result.items() if k in essential_keys}
             
-            if "battle_summary" in filtered_result and isinstance(filtered_result["battle_summary"], dict):
-                battle_summary = filtered_result["battle_summary"]
-                essential_battle_keys = {
-                    "attacker_info", "target_info", "casualties_inflicted", 
-                    "target_destroyed", "distance"
-                }
-                filtered_result["battle_summary"] = {
-                    k: v for k, v in battle_summary.items() if k in essential_battle_keys
-                }
+            # Process battle_summary
+            if "battle_summary" in result and isinstance(result["battle_summary"], dict):
+                battle_summary = result["battle_summary"]
+                filtered_battle = {}
+                
+                # Extract essential attacker info
+                if "attacker_info" in battle_summary:
+                    attacker = battle_summary["attacker_info"]
+                    filtered_battle["attacker_info"] = {
+                        k: attacker.get(k) for k in ["unit_id", "unit_type", "faction", "position", "terrain"]
+                        if k in attacker
+                    }
+                
+                # Extract essential target info
+                if "target_info" in battle_summary:
+                    target = battle_summary["target_info"]
+                    filtered_battle["target_info"] = {
+                        k: target.get(k) for k in ["unit_id", "unit_type", "faction", "position", "terrain"]
+                        if k in target
+                    }
+                
+                # Extract essential battle result info
+                if "battle_result" in battle_summary and isinstance(battle_summary["battle_result"], dict):
+                    battle_result = battle_summary["battle_result"]
+                    filtered_battle["battle_result"] = {
+                        k: battle_result.get(k) for k in ["is_critical", "damage_dealt", "target_destroyed", "terrain_effects", "combat_log"]
+                        if k in battle_result
+                    }
+                
+                filtered_result["battle_summary"] = filtered_battle
+            
+            # Add essential tactical info with better naming
+            if "tactical_info" in result and isinstance(result["tactical_info"], dict):
+                tactical = result["tactical_info"]
+                if "attack_was_effective" in tactical:
+                    filtered_result["attack_was_effective"] = tactical["attack_was_effective"]
+                if "target_strength_percentage" in tactical:
+                    filtered_result["target_remaining_manpower"] = f"{tactical['target_strength_percentage']}%"
             
             return filtered_result
         
@@ -955,6 +991,7 @@ class RoTKChatAgent:
             tail = non_system_msgs[-window:]
         
         self.conversation_history = system_msgs + user_msgs + tail
+    # ==================== Tool Results Filtering Functions End ====================
 
 
     async def _register_agent_info(self):
@@ -1312,7 +1349,13 @@ class AgentDemo:
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
         raw_prompt = self.load_prompt(name="system_prompt_cn")
-        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
+        tmpl = Template(raw_prompt)
+        system_prompt = tmpl.safe_substitute(
+            faction=faction,
+            faction_name=faction_info["name"],
+            opponent=faction_info["enemy"],
+            opponent_name=opponent_info["name"],
+        )
 
         user_prompt = f"""
 **当前配置**:
@@ -1621,12 +1664,12 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
         # Register tools
-        agent.register_tool(
-            name="get_available_actions",
-            function=get_available_actions,
-            description="获取可以执行的action列表。",
-            parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
-        )
+        # agent.register_tool(
+        #     name="get_available_actions",
+        #     function=get_available_actions,
+        #     description="获取可以执行的action列表。",
+        #     parameters={"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+        # )
         
         agent.register_tool(
             name="perform_action",
@@ -1639,12 +1682,49 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                     "action": {
                         "type": "string",
                         "description": "要执行的动作的名称。",
-                        "enum": ["move", "attack", "get_faction_state", "observation"],
+                        "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "type": "object",
                         "description": "指定动作所需的参数字典。",
-                        "additionalProperties": True,
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_position": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
+                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                        },
+                                        "required": ["col", "row"]
+                                    }
+                                },
+                                "required": ["unit_id", "target_position"],
+                                "title": "move"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_id": {"type": "string", "minLength": 1}
+                                },
+                                "required": ["unit_id", "target_id"],
+                                "title": "attack"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                },
+                                "required": ["faction"],
+                                "title": "get_faction_state"
+                            }
+                        ]
                     },
                 },
                 "required": ["action", "params"],
@@ -1690,8 +1770,7 @@ def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
     Returns:
         float: Delay seconds, 0 means no delay
     """
-    if not isinstance(response, dict) or not response.get("success", False):
-        # No delay when action fails
+    if not (isinstance(response, dict) and response.get("result", False)):
         return 0.0
     
     if action == "move":

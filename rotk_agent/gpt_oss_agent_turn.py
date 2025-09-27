@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
 from openai import AsyncOpenAI, OpenAI
 from openai import APIConnectionError, APITimeoutError, APIStatusError
+from string import Template
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -1507,8 +1508,14 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
-        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
+        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
+        tmpl = Template(raw_prompt)
+        system_prompt = tmpl.safe_substitute(
+            faction=faction,
+            faction_name=faction_info["name"],
+            opponent=faction_info["enemy"],
+            opponent_name=opponent_info["name"],
+        )
 
         user_prompt = f"""
 **当前配置**:
@@ -1842,9 +1849,46 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "type": "object",
                         "description": "指定动作所需的参数字典。",
-                        "additionalProperties": True,
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_position": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "col": {"type": "integer", "minimum": 0, "maximum": 14},
+                                            "row": {"type": "integer", "minimum": 0, "maximum": 14}
+                                        },
+                                        "required": ["col", "row"]
+                                    }
+                                },
+                                "required": ["unit_id", "target_position"],
+                                "title": "move"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "string", "minLength": 1},
+                                    "target_id": {"type": "string", "minLength": 1}
+                                },
+                                "required": ["unit_id", "target_id"],
+                                "title": "attack"
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                },
+                                "required": ["faction"],
+                                "title": "get_faction_state"
+                            }
+                        ]
                     },
                 },
                 "required": ["action", "params"],
@@ -1858,8 +1902,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                 request_id = await client.send_action("end_turn", {"faction": faction})
                 response = await get_env_response(request_id, timeout_seconds=5)
 
-                # Only close the turn gate when ENV confirms success (result == True)
-                if isinstance(response, dict) and response.get("success", False):
+                # Only close the turn gate when ENV confirms success
+                # Accept either response["success"] == True or response["result"] == True
+                resp_success = False
+                if isinstance(response, dict):
+                    resp_success = bool(response.get("success") is True or response.get("result") is True)
+
+                if resp_success:
                     agent._clear_turn_gate("end_turn")
                     # Clear old turn_start event to avoid duplicate processing
                     try:
@@ -1871,6 +1920,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                     except Exception as e:
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
+                else:
+                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
                 # return response
                 return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
