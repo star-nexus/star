@@ -25,7 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent / "framework"))
 from framework.engine.game_engine import GameEngine
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
-from rotk_env.prefabs.config import Faction, PlayerType
+from rotk_env.prefabs.config import Faction, PlayerType,GameMode
 
 
 def parse_arguments():
@@ -80,6 +80,13 @@ Victory Conditions:
         help="Player configuration (default: human_vs_ai)",
     )
 
+    parser.add_argument(
+        "--env-id",
+        type=str,
+        default="env_1",
+        help="Environment ID for this instance (default: env_1)",
+    )
+
     return parser.parse_args()
 
 
@@ -125,6 +132,12 @@ def main():
         # Display welcome message
         print_welcome()
 
+        print(f"mode: {args.mode}")
+        print(f"scenario: {args.scenario}")
+        print(f"players: {args.players}")
+        print(f"headless: {args.headless}")
+        print(f"env-id: {args.env_id}")
+
         # Create game engine
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
@@ -140,15 +153,18 @@ def main():
 
         # Determine initial scene based on command line arguments
         if args.headless:
-            # If start scene is skipped, enter game scene directly
-            os.environ["SDL_VIDEODRIVER"] = "dummy"
-
             # Get player configuration
             players_config = create_game_from_args(args)
 
+            # Convert mode string to GameMode enum
+            if args.mode == "real_time":
+                game_mode = GameMode.REAL_TIME
+            else:
+                game_mode = GameMode.TURN_BASED
+
             # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
-                "game", players=players_config, game_mode=args.mode, headless=True
+                "game", players=players_config, mode=game_mode, headless=True
             )
 
             print(f"Game mode: {args.mode}")

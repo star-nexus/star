@@ -110,6 +110,9 @@ class GameScene(Scene):
         headless = kwargs.get("headless", False)
         self.headless = headless
 
+        env_id = kwargs.get("env_id", "env_1")
+        self.env_id = env_id
+
         # Get scene parameters (optional)
         self.scenario = kwargs.get("scenario", "default")
 
@@ -155,7 +158,7 @@ class GameScene(Scene):
             TerritorySystem(),  # Territory system
             ResourceRecoverySystem(),  # Resource recovery system
             # MockLLMAISystem(),  # Mock LLM AI system - new AI using LLM Action Handler V3
-            LLMSystem(),  # LLM system (priority 5)
+            LLMSystem(self.env_id),  # LLM system (priority 5)
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)
             InputHandlingSystem(),  # Input system (priority 10)
@@ -570,6 +573,9 @@ class GameScene(Scene):
         if self.headless:
             # Print statistics data in headless mode
             print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
+            # Exit the game in headless mode
+            import pygame
+            pygame.event.post(pygame.event.Event(pygame.QUIT))
         else:
             SMS.switch_to("game_over", winner=game_state.winner, statistics=statistics)
 

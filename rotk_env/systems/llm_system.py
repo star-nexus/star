@@ -76,12 +76,14 @@ class SyncEnvClient(SyncWebSocketClient):
 class LLMSystem(System):
     """LLM系统 - 游戏全局控制接口"""
 
-    def __init__(self):
+    def __init__(self,env_id="env_1"):
         super().__init__()
         self.name = "LLMSystem"
         
         # 🆕 游戏结束通知状态
         self.game_end_notified = False
+
+        self.env_id = env_id
 
         # 系统级错误代码
         self.system_error_codes = {
@@ -107,7 +109,7 @@ class LLMSystem(System):
         # 使用同步客户端
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
-            env_id="env_1",
+            env_id=self.env_id,
         )
         self.add_listener()
 

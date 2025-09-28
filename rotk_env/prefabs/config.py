@@ -230,27 +230,27 @@ class GameConfig:
     UNIT_BASE_STATS: Dict[UnitType, UnitBaseStats] = {
         UnitType.INFANTRY: UnitBaseStats(
             max_count=100,
-            movement=10,
-            base_attack=10,  # 中
-            base_defense=8,  # 中
+            movement=5,
+            base_attack=15,  # 中
+            base_defense=0,  # 中
             attack_range=1,
             vision_range=2,
         ),
         UnitType.CAVALRY: UnitBaseStats(
             max_count=100,
-            movement=15,
-            base_attack=12,  # 高
-            base_defense=6,  # 低
+            movement=10,
+            base_attack=20,  # 高
+            base_defense=0,  # 低
             attack_range=1,
             vision_range=3,
         ),
         UnitType.ARCHER: UnitBaseStats(
             max_count=100,
-            movement=10,
+            movement=5,
             base_attack=10,  # 低
-            base_defense=4,  # 极低
+            base_defense=0,  # 极低
             attack_range=3,
-            vision_range=4,
+            vision_range=3,
         ),
     }
 
