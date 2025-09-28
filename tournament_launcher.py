@@ -83,14 +83,20 @@ def launch_env(match_data, game_data, mode = "turn_based",dry_run=False):
     
     print(f"\n=== 启动游戏环境 ===")
     print(f"环境ID: {env_id}")
-    print(f"启动命令: {' '.join(env_cmd)}")
+    print(f"启动命令: SDL_VIDEODRIVER=dummy {' '.join(env_cmd)}")
     
     if dry_run:
         print("=== 干运行模式: 不实际启动环境 ===")
         return None
     else:
         print(f"正在启动游戏环境...")
-        env_process = subprocess.Popen(env_cmd)
+        
+        # 设置环境变量
+        import os
+        env = os.environ.copy()
+        env['SDL_VIDEODRIVER'] = 'dummy'
+        
+        env_process = subprocess.Popen(env_cmd, env=env)
         
         print(f"游戏环境已启动! 进程ID: {env_process.pid}")
         print(f"等待环境初始化...")
