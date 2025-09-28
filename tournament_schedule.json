@@ -1,0 +1,3266 @@
+{
+  "tournament": {
+    "name": "三国策略游戏 AI 模型锦标赛",
+    "format": "双循环积分赛",
+    "rounds": 2,
+    "models": [
+      {
+        "id": 1,
+        "name": "Gemini 2.5 pro",
+        "model_id": "gemini-2.5-pro"
+      },
+      {
+        "id": 2,
+        "name": "grok-3 beta",
+        "model_id": "grok-3-beta"
+      },
+      {
+        "id": 3,
+        "name": "gpt-4o",
+        "model_id": "gpt-4o"
+      },
+      {
+        "id": 4,
+        "name": "Sonnet 4",
+        "model_id": "claude-sonnet-4-20250514"
+      },
+      {
+        "id": 5,
+        "name": "GLM4.5",
+        "model_id": "glm-4.5"
+      },
+      {
+        "id": 6,
+        "name": "GLM-4.5-Air",
+        "model_id": "glm-4.5-air"
+      },
+      {
+        "id": 7,
+        "name": "Kimi 2",
+        "model_id": "kimi-2"
+      },
+      {
+        "id": 8,
+        "name": "DeepSeek-R1",
+        "model_id": "deepseek-r1"
+      },
+      {
+        "id": 9,
+        "name": "DeepSeek-V3.1-Terminus",
+        "model_id": "deepseek-v3.1-terminus"
+      },
+      {
+        "id": 10,
+        "name": "Qwen3-Next-80B-A3B-Instruct",
+        "model_id": "qwen3-next-80b-a3b-instruct"
+      },
+      {
+        "id": 11,
+        "name": "Qwen3-Next-80B-A3B-Thinking",
+        "model_id": "qwen3-next-80b-a3b-thinking"
+      },
+      {
+        "id": 12,
+        "name": "gpt-oss-20b",
+        "model_id": "gpt-oss-20b"
+      },
+      {
+        "id": 13,
+        "name": "gpt-oss-120b",
+        "model_id": "gpt-oss-120b"
+      },
+      {
+        "id": 14,
+        "name": "llama-33-70b-instruct",
+        "model_id": "llama-33-70b-instruct"
+      }
+    ],
+    "matches": [
+      {
+        "match_id": 1,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "grok-3 beta",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 2,
+            "wei": "grok-3 beta",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "grok-3 beta",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "grok-3-beta",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 2,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-4o",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-4o",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-4o",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-4o",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 3,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 2,
+            "wei": "Sonnet 4",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "claude-sonnet-4-20250514",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 4,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "GLM4.5",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 2,
+            "wei": "GLM4.5",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "GLM4.5",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "glm-4.5",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 5,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 2,
+            "wei": "GLM-4.5-Air",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "glm-4.5-air",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 6,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Kimi 2",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Kimi 2",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 7,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 8,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 9,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 10,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 11,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 12,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 13,
+        "model_a": {
+          "id": 1,
+          "name": "Gemini 2.5 pro"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Gemini 2.5 pro",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "Gemini 2.5 pro",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "gemini-2.5-pro"
+          },
+          {
+            "game": 3,
+            "wei": "Gemini 2.5 pro",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gemini-2.5-pro",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 14,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "gpt-4o",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-4o",
+            "shu": "grok-3 beta",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "gpt-4o",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-4o",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 15,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "Sonnet 4",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 2,
+            "wei": "Sonnet 4",
+            "shu": "grok-3 beta",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "Sonnet 4",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "claude-sonnet-4-20250514",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 16,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "GLM4.5",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 2,
+            "wei": "GLM4.5",
+            "shu": "grok-3 beta",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "GLM4.5",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "glm-4.5",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 17,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 2,
+            "wei": "GLM-4.5-Air",
+            "shu": "grok-3 beta",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "glm-4.5-air",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 18,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "Kimi 2",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "grok-3 beta",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "Kimi 2",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 19,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "grok-3 beta",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 20,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "grok-3 beta",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 21,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "grok-3 beta",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 22,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "grok-3 beta",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 23,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "grok-3 beta",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 24,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "grok-3 beta",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 25,
+        "model_a": {
+          "id": 2,
+          "name": "grok-3 beta"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "grok-3 beta",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "grok-3 beta",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "grok-3-beta"
+          },
+          {
+            "game": 3,
+            "wei": "grok-3 beta",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "grok-3-beta",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 26,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 2,
+            "wei": "Sonnet 4",
+            "shu": "gpt-4o",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "claude-sonnet-4-20250514",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 27,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "GLM4.5",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 2,
+            "wei": "GLM4.5",
+            "shu": "gpt-4o",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "GLM4.5",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "glm-4.5",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 28,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 2,
+            "wei": "GLM-4.5-Air",
+            "shu": "gpt-4o",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "glm-4.5-air",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 29,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "Kimi 2",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "gpt-4o",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "Kimi 2",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 30,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "gpt-4o",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 31,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "gpt-4o",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 32,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "gpt-4o",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 33,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "gpt-4o",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 34,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "gpt-4o",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 35,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "gpt-4o",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 36,
+        "model_a": {
+          "id": 3,
+          "name": "gpt-4o"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-4o",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "gpt-4o",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "gpt-4o"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-4o",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-4o",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 37,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "GLM4.5",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 2,
+            "wei": "GLM4.5",
+            "shu": "Sonnet 4",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "GLM4.5",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "glm-4.5",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 38,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 2,
+            "wei": "GLM-4.5-Air",
+            "shu": "Sonnet 4",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "glm-4.5-air",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 39,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "Kimi 2",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "Sonnet 4",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "Kimi 2",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 40,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "Sonnet 4",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 41,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Sonnet 4",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 42,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "Sonnet 4",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 43,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "Sonnet 4",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 44,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 45,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "Sonnet 4",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 46,
+        "model_a": {
+          "id": 4,
+          "name": "Sonnet 4"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Sonnet 4",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "Sonnet 4",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "claude-sonnet-4-20250514"
+          },
+          {
+            "game": 3,
+            "wei": "Sonnet 4",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "claude-sonnet-4-20250514",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 47,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 2,
+            "wei": "GLM-4.5-Air",
+            "shu": "GLM4.5",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "glm-4.5-air",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 48,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "Kimi 2",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "GLM4.5",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "Kimi 2",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 49,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "GLM4.5",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 50,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "GLM4.5",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 51,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "GLM4.5",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 52,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "GLM4.5",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 53,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "GLM4.5",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 54,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "GLM4.5",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 55,
+        "model_a": {
+          "id": 5,
+          "name": "GLM4.5"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM4.5",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "GLM4.5",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "glm-4.5"
+          },
+          {
+            "game": 3,
+            "wei": "GLM4.5",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "glm-4.5",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 56,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "Kimi 2",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 2,
+            "wei": "Kimi 2",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "Kimi 2",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "kimi-2",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 57,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 58,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 59,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 60,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 61,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 62,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 63,
+        "model_a": {
+          "id": 6,
+          "name": "GLM-4.5-Air"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "GLM-4.5-Air",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "GLM-4.5-Air",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "glm-4.5-air"
+          },
+          {
+            "game": 3,
+            "wei": "GLM-4.5-Air",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "glm-4.5-air",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 64,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-R1",
+            "shu": "Kimi 2",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "deepseek-r1",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 65,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Kimi 2",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 66,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "Kimi 2",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 67,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "Kimi 2",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 68,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "Kimi 2",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 69,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "Kimi 2",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 70,
+        "model_a": {
+          "id": 7,
+          "name": "Kimi 2"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Kimi 2",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "Kimi 2",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "kimi-2"
+          },
+          {
+            "game": 3,
+            "wei": "Kimi 2",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "kimi-2",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 71,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 2,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "deepseek-v3.1-terminus",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 72,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 73,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 74,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 75,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 76,
+        "model_a": {
+          "id": 8,
+          "name": "DeepSeek-R1"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-R1",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "DeepSeek-R1",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "deepseek-r1"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-R1",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "deepseek-r1",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 77,
+        "model_a": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "model_b": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 78,
+        "model_a": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 79,
+        "model_a": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 80,
+        "model_a": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 81,
+        "model_a": {
+          "id": 9,
+          "name": "DeepSeek-V3.1-Terminus"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "DeepSeek-V3.1-Terminus",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "deepseek-v3.1-terminus"
+          },
+          {
+            "game": 3,
+            "wei": "DeepSeek-V3.1-Terminus",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "deepseek-v3.1-terminus",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 82,
+        "model_a": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "model_b": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 2,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 83,
+        "model_a": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 84,
+        "model_a": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 85,
+        "model_a": {
+          "id": 10,
+          "name": "Qwen3-Next-80B-A3B-Instruct"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "Qwen3-Next-80B-A3B-Instruct",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "qwen3-next-80b-a3b-instruct"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Instruct",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "qwen3-next-80b-a3b-instruct",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 86,
+        "model_a": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "model_b": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-20b",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gpt-oss-20b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 87,
+        "model_a": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 88,
+        "model_a": {
+          "id": 11,
+          "name": "Qwen3-Next-80B-A3B-Thinking"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "Qwen3-Next-80B-A3B-Thinking",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "qwen3-next-80b-a3b-thinking"
+          },
+          {
+            "game": 3,
+            "wei": "Qwen3-Next-80B-A3B-Thinking",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "qwen3-next-80b-a3b-thinking",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 89,
+        "model_a": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "model_b": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-oss-20b",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 2,
+            "wei": "gpt-oss-120b",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-oss-20b",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "gpt-oss-120b",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 90,
+        "model_a": {
+          "id": 12,
+          "name": "gpt-oss-20b"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-oss-20b",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "gpt-oss-20b",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "gpt-oss-20b"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-oss-20b",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-oss-20b",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      },
+      {
+        "match_id": 91,
+        "model_a": {
+          "id": 13,
+          "name": "gpt-oss-120b"
+        },
+        "model_b": {
+          "id": 14,
+          "name": "llama-33-70b-instruct"
+        },
+        "games": [
+          {
+            "game": 1,
+            "wei": "gpt-oss-120b",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "llama-33-70b-instruct"
+          },
+          {
+            "game": 2,
+            "wei": "llama-33-70b-instruct",
+            "shu": "gpt-oss-120b",
+            "wei_model_id": "llama-33-70b-instruct",
+            "shu_model_id": "gpt-oss-120b"
+          },
+          {
+            "game": 3,
+            "wei": "gpt-oss-120b",
+            "shu": "llama-33-70b-instruct",
+            "wei_model_id": "gpt-oss-120b",
+            "shu_model_id": "llama-33-70b-instruct",
+            "condition": "tie_breaker"
+          }
+        ]
+      }
+    ]
+  }
+}
