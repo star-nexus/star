@@ -79,7 +79,13 @@ message <message> # 发送消息，message 消息为可用的动作
 list # 测试列出可用动作
 ```
 
+6. Run the tournament
 
+```bash
+./tournament.sh            # 有说明
+or 
+make help                  # 有说明
+```
 ## 项目概述
 
 STAR（战略战术代理推理基准）是一个专门用于评估大型语言模型（LLM）的对抗性推理和战略规划能力的基准测试平台。该项目采用模块化架构，系统地管理和评估 LLM 在动态多智能体对抗场景中的推理性能。
