@@ -81,7 +81,7 @@ Victory Conditions:
     )
 
     parser.add_argument(
-        "--env-id",
+        "--env_id",
         type=str,
         default="env_1",
         help="Environment ID for this instance (default: env_1)",
@@ -136,7 +136,7 @@ def main():
         print(f"scenario: {args.scenario}")
         print(f"players: {args.players}")
         print(f"headless: {args.headless}")
-        print(f"env-id: {args.env_id}")
+        print(f"env_id: {args.env_id}")
 
         # Create game engine
         engine = GameEngine(
@@ -164,7 +164,7 @@ def main():
 
             # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
-                "game", players=players_config, mode=game_mode, headless=True
+                "game", players=players_config, env_id=args.env_id, mode=game_mode, headless=True
             )
 
             print(f"Game mode: {args.mode}")
