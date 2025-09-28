@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Tournament Shell Script
-# 使用 ./tournament.sh X Y 的格式启动第X场比赛的第Y局
+# 使用 ./tournament.sh X Y [mode] 的格式启动第X场比赛的第Y局
 
 if [ "$#" -eq 0 ]; then
     echo "Tournament 启动脚本使用说明:"
@@ -15,17 +15,23 @@ if [ "$#" -eq 0 ]; then
     echo "  ./tournament.sh headless both       - 测试两种模式"
     echo ""
     echo "启动比赛:"
-    echo "  ./tournament.sh X Y             - 启动第X场比赛的第Y局"
+    echo "  ./tournament.sh X Y             - 启动第X场比赛的第Y局 (默认回合制)"
+    echo "  ./tournament.sh X Y turn        - 启动第X场比赛的第Y局 (回合制模式)"
+    echo "  ./tournament.sh X Y real        - 启动第X场比赛的第Y局 (实时制模式)"
     echo "                                    X: 场次 (1-91)"
     echo "                                    Y: 局数 (1-3)"
     echo ""
     echo "示例:"
-    echo "  ./tournament.sh 1 1             - 第1场第1局"
-    echo "  ./tournament.sh 15 2            - 第15场第2局"
-    echo "  ./tournament.sh 91 3            - 第91场第3局"
+    echo "  ./tournament.sh 1 1             - 第1场第1局 (默认回合制)"
+    echo "  ./tournament.sh 1 1 turn        - 第1场第1局 (回合制)"
+    echo "  ./tournament.sh 1 1 real        - 第1场第1局 (实时制)"
+    echo "  ./tournament.sh 15 2 turn       - 第15场第2局 (回合制)"
+    echo "  ./tournament.sh 91 3 real       - 第91场第3局 (实时制)"
     echo ""
     echo "干运行 (查看命令但不执行):"
-    echo "  ./tournament.sh 1 1 dry         - 查看第1场第1局的启动命令"
+    echo "  ./tournament.sh 1 1 dry         - 查看第1场第1局的启动命令 (默认回合制)"
+    echo "  ./tournament.sh 1 1 turn dry    - 查看第1场第1局的启动命令 (回合制)"
+    echo "  ./tournament.sh 1 1 real dry    - 查看第1场第1局的启动命令 (实时制)"
     echo ""
     echo "注意: 第3局只有在前两局1-1平局时才需要进行"
     exit 0
@@ -48,7 +54,7 @@ if [ "$1" = "headless" ]; then
         
         start_time=$(date +%s)
         # SDL_VIDEODRIVER=dummy 
-        uv run rotk_env/main.py --headless --mode turn_based --players ai_vs_ai
+        # uv run rotk_env/main.py --headless --mode turn_based --players ai_vs_ai
         end_time=$(date +%s)
         duration=$((end_time - start_time))
         
@@ -69,7 +75,7 @@ if [ "$1" = "headless" ]; then
         
         start_time=$(date +%s)
         # SDL_VIDEODRIVER=dummy 
-        uv run rotk_env/main.py --headless --mode real_time --players ai_vs_ai
+        # uv run rotk_env/main.py --headless --mode real_time --players ai_vs_ai --env_id env_
         end_time=$(date +%s)
         duration=$((end_time - start_time))
         
@@ -93,17 +99,43 @@ fi
 
 if [ "$#" -lt 2 ]; then
     echo "错误: 需要提供场次和局数"
-    echo "使用方法: ./tournament.sh X Y [dry]"
+    echo "使用方法: ./tournament.sh X Y [mode] [dry]"
+    echo "  X: 场次编号 (1-91)"
+    echo "  Y: 局数编号 (1-3)" 
+    echo "  mode: turn/real (可选，默认turn)"
+    echo "  dry: 干运行模式 (可选)"
     exit 1
 fi
 
 MATCH=$1
 GAME=$2
+MODE="turn_based"  # 默认模式
 DRY_RUN=""
 
-if [ "$3" = "dry" ]; then
-    DRY_RUN="--dry-run"
+# 解析第3个和第4个参数
+if [ "$#" -ge 3 ]; then
+    if [ "$3" = "turn" ]; then
+        MODE="turn_based"
+    elif [ "$3" = "real" ]; then
+        MODE="real_time"
+    elif [ "$3" = "dry" ]; then
+        DRY_RUN="--dry-run"
+    else
+        echo "错误: 无效的模式参数 '$3'"
+        echo "支持的模式: turn, real"
+        exit 1
+    fi
 fi
 
-echo "启动第 $MATCH 场比赛的第 $GAME 局..."
-python tournament_launcher.py --match $MATCH --game $GAME $DRY_RUN
+if [ "$#" -ge 4 ]; then
+    if [ "$4" = "dry" ]; then
+        DRY_RUN="--dry-run"
+    else
+        echo "错误: 无效的第4个参数 '$4'"
+        echo "第4个参数只能是 'dry'"
+        exit 1
+    fi
+fi
+
+echo "启动第 $MATCH 场比赛的第 $GAME 局 (模式: $MODE)..."
+uv run tournament_launcher.py --match $MATCH --game $GAME --mode $MODE $DRY_RUN

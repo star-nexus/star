@@ -1,11 +1,17 @@
-# Tournament Makefile - 简化版本
+# Tournament Makefile - 支持模式选择
 # 使用 make X-Y 的格式启动第X场比赛的第Y局
 
-# 环境启动
-turn:
+# 环境测试
+test-turn:
 	./tournament.sh headless turn
-real:
+test-real:
 	./tournament.sh headless real
+test-both:
+	./tournament.sh headless both
+
+# 环境启动 (GUI模式)
+env:
+	./tournament.sh env
 
 # 前20场比赛的快捷方式
 1-1: ; ./tournament.sh 1 1
@@ -69,47 +75,77 @@ real:
 20-2: ; ./tournament.sh 20 2
 20-3: ; ./tournament.sh 20 3
 
-# 通用规则 - 通过模式匹配处理其他场次
+# 通用规则 - 通过模式匹配处理其他场次 (默认回合制)
 %:
 	@echo "$@" | grep -E '^[0-9]+-[0-9]+$$' > /dev/null && \
 	match=$$(echo "$@" | cut -d'-' -f1) && \
 	game=$$(echo "$@" | cut -d'-' -f2) && \
-	./tournament.sh $$match $$game || \
+	./tournament.sh $$match $$game turn || \
 	(echo "无效的目标: $@" && echo "使用格式: make X-Y (X=1-91, Y=1-3)" && false)
 
-# 干运行规则
+# 实时制规则
+real-%:
+	@target=$$(echo "$@" | sed 's/^real-//') && \
+	echo "$$target" | grep -E '^[0-9]+-[0-9]+$$' > /dev/null && \
+	match=$$(echo "$$target" | cut -d'-' -f1) && \
+	game=$$(echo "$$target" | cut -d'-' -f2) && \
+	./tournament.sh $$match $$game real || \
+	(echo "无效的目标: $@" && echo "使用格式: make real-X-Y (X=1-91, Y=1-3)" && false)
+
+# 干运行规则 (实时制) - 必须在干运行规则(回合制)之前
+dry-real-%:
+	@target=$$(echo "$@" | sed 's/^dry-real-//') && \
+	echo "$$target" | grep -E '^[0-9]+-[0-9]+$$' > /dev/null && \
+	match=$$(echo "$$target" | cut -d'-' -f1) && \
+	game=$$(echo "$$target" | cut -d'-' -f2) && \
+	./tournament.sh $$match $$game real dry || \
+	(echo "无效的目标: $@" && echo "使用格式: make dry-real-X-Y (X=1-91, Y=1-3)" && false)
+
+# 干运行规则 (回合制)
 dry-%:
 	@target=$$(echo "$@" | sed 's/^dry-//') && \
 	echo "$$target" | grep -E '^[0-9]+-[0-9]+$$' > /dev/null && \
 	match=$$(echo "$$target" | cut -d'-' -f1) && \
 	game=$$(echo "$$target" | cut -d'-' -f2) && \
-	./tournament.sh $$match $$game dry || \
+	./tournament.sh $$match $$game turn dry || \
 	(echo "无效的目标: $@" && echo "使用格式: make dry-X-Y (X=1-91, Y=1-3)" && false)
 
 # 显示帮助
 help:
 	@echo "Tournament Makefile 使用说明:"
 	@echo ""
+	@echo "环境测试:"
+	@echo "  make test-turn          - 测试回合制AI vs AI"
+	@echo "  make test-real          - 测试实时制AI vs AI"
+	@echo "  make test-both          - 测试两种模式"
+	@echo ""
 	@echo "启动环境:"
-	@echo "  make env                - 启动游戏环境"
+	@echo "  make env                - 启动游戏环境(GUI模式)"
 	@echo ""  
-	@echo "启动比赛:"
-	@echo "  make X-Y                - 启动第X场比赛的第Y局"
+	@echo "启动比赛 (回合制模式):"
+	@echo "  make X-Y                - 启动第X场比赛的第Y局 (回合制)"
 	@echo "                            X: 场次 (1-91)"
 	@echo "                            Y: 局数 (1-3)"
 	@echo ""
+	@echo "启动比赛 (实时制模式):"
+	@echo "  make real-X-Y           - 启动第X场比赛的第Y局 (实时制)"
+	@echo ""
 	@echo "示例:"
-	@echo "  make 1-1                - 第1场第1局"
-	@echo "  make 15-2               - 第15场第2局" 
-	@echo "  make 91-3               - 第91场第3局"
+	@echo "  make 1-1                - 第1场第1局 (回合制)"
+	@echo "  make real-1-1           - 第1场第1局 (实时制)"
+	@echo "  make 15-2               - 第15场第2局 (回合制)" 
+	@echo "  make real-91-3          - 第91场第3局 (实时制)"
 	@echo ""
 	@echo "干运行 (查看命令但不执行):"
-	@echo "  make dry-1-1            - 查看第1场第1局的启动命令"
-	@echo "  make dry-50-2           - 查看第50场第2局的启动命令"
+	@echo "  make dry-1-1            - 查看第1场第1局的启动命令 (回合制)"
+	@echo "  make dry-real-1-1       - 查看第1场第1局的启动命令 (实时制)"
 	@echo ""
 	@echo "直接使用shell脚本:"
-	@echo "  ./tournament.sh X Y     - 启动第X场第Y局"
-	@echo "  ./tournament.sh X Y dry - 干运行第X场第Y局"
+	@echo "  ./tournament.sh X Y              - 启动第X场第Y局 (默认回合制)"
+	@echo "  ./tournament.sh X Y turn         - 启动第X场第Y局 (回合制)"
+	@echo "  ./tournament.sh X Y real         - 启动第X场第Y局 (实时制)"
+	@echo "  ./tournament.sh X Y turn dry     - 干运行第X场第Y局 (回合制)"
+	@echo "  ./tournament.sh X Y real dry     - 干运行第X场第Y局 (实时制)"
 	@echo ""
 	@echo "注意: 第3局只有在前两局1-1平局时才需要进行"
 
@@ -117,4 +153,4 @@ help:
 .DEFAULT_GOAL := help
 
 # 声明伪目标
-.PHONY: env help
+.PHONY: env help test-turn test-real test-both

@@ -68,6 +68,37 @@ def generate_agent_id(model_name, faction):
     return f"agent_{clean_name}_{faction}"
 
 
+def launch_env(match_data, game_data, mode = "turn_based",dry_run=False):
+    """启动游戏环境"""
+    env_id = f"env_match_{match_data['match_id']}_game_{game_data['game']}"
+    
+    # 环境启动命令
+    env_cmd = [
+        "uv", "run", "rotk_env/main.py",
+        "--headless",
+        "--mode", mode,
+        "--players", "ai_vs_ai",
+        "--env_id", env_id
+    ]
+    
+    print(f"\n=== 启动游戏环境 ===")
+    print(f"环境ID: {env_id}")
+    print(f"启动命令: {' '.join(env_cmd)}")
+    
+    if dry_run:
+        print("=== 干运行模式: 不实际启动环境 ===")
+        return None
+    else:
+        print(f"正在启动游戏环境...")
+        env_process = subprocess.Popen(env_cmd)
+        
+        print(f"游戏环境已启动! 进程ID: {env_process.pid}")
+        print(f"等待环境初始化...")
+        time.sleep(5)  # 等待环境完全启动
+        
+        return env_process
+
+
 def launch_agents(match_data, game_data, dry_run=False):
     """启动对战的两个agent"""
     wei_model = game_data["wei"]
@@ -87,7 +118,7 @@ def launch_agents(match_data, game_data, dry_run=False):
     # Wei阵营启动命令
     wei_cmd = [
         "uv", "run", "rotk_agent/qwen3_agent.py",
-        "--env-id", "env_1",
+        "--env-id", f"env_match_{match_data['match_id']}_game_{game_data['game']}",
         "--agent-id", wei_agent_id,
         "--faction", "wei",
         "--provider", "infinigence",
@@ -97,7 +128,7 @@ def launch_agents(match_data, game_data, dry_run=False):
     # Shu阵营启动命令
     shu_cmd = [
         "uv", "run", "rotk_agent/qwen3_agent.py",
-        "--env-id", "env_1", 
+        "--env-id", f"env_match_{match_data['match_id']}_game_{game_data['game']}",
         "--agent-id", shu_agent_id,
         "--faction", "shu",
         "--provider", "infinigence",
@@ -140,6 +171,8 @@ def launch_agents(match_data, game_data, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description="启动锦标赛对战")
+    # parser.add_argument("--headless", action="store_true", help="以无头模式运行环境")
+    parser.add_argument("--mode", choices=["turn_based", "real_time"], default="turn_based", help="游戏模式")
     parser.add_argument("--match", type=int, required=True, help="场次编号 (1-91)")
     parser.add_argument("--game", type=int, required=True, help="游戏编号 (1-3)")
     parser.add_argument("--dry-run", action="store_true", help="只显示命令，不实际启动")
@@ -164,6 +197,8 @@ def main():
         sys.exit(1)
     
     match_data, game_data = result
+
+
     
     # 检查是否是加时赛
     if game_data.get("condition") == "tie_breaker":
@@ -173,12 +208,24 @@ def main():
         #     sys.exit(0)
         pass
     
-    # 启动agents
+    # 启动环境和agents
     if args.dry_run:
         print("=== 干运行模式 ===")
+        launch_env(match_data, game_data, mode=args.mode, dry_run=True)
         launch_agents(match_data, game_data, dry_run=True)
     else:
-        launch_agents(match_data, game_data)
+        env_process = launch_env(match_data, game_data, mode=args.mode, dry_run=False)
+        try:
+            launch_agents(match_data, game_data)
+        finally:
+            # 确保环境进程被清理
+            if env_process and env_process.poll() is None:
+                print("\n正在清理环境进程...")
+                env_process.terminate()
+                try:
+                    env_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    env_process.kill()
 
 
 if __name__ == "__main__":
