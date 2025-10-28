@@ -56,15 +56,19 @@ class MovementPoints(Component):
     has_moved: bool = False  # 是否已移动
 
     def get_effective_movement(self, unit_count) -> int:
-        """获取考虑人数的有效移动力"""
-        # 每少20%人数移动力-1（最低1）
-        if unit_count:
-            ratio = unit_count.ratio
-            penalty = max(0, int((1 - ratio) / 0.2))
-            return max(1, self.base_mp - penalty)
-        else:
-            # 如果没有单位数量组件，返回基础移动力
+        """获取考虑人数的有效移动力（分区间弱化，仅重伤罚机动）"""
+        if not unit_count:
             return self.base_mp
+
+        ratio = getattr(unit_count, "ratio", 1.0)
+
+        if ratio > 0.2:
+            penalty = 0
+        else:
+            penalty = 1
+
+        effective = self.base_mp - penalty
+        return max(2, effective)
 
     def can_move(self, cost: int) -> bool:
         """检查是否有足够移动力"""
