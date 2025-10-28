@@ -100,7 +100,7 @@ class LLMClient:
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
         elif config.provider == "deepseek":
-            self.base_url = "https://api.deepseek.com/chat/completions"
+            self.base_url = config.base_url
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1/chat/completions"
         elif config.provider == "siliconflow":
@@ -645,9 +645,9 @@ class RoTKChatAgent:
             result = await self.tool_manager.execute_tool(function_name, arguments)
             filtered_result = self._filter_tool_result(function_name, result, arguments)
 
-            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
-            console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
+            # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
+            # console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
 
             tool_message = Message(
                 role="tool",
@@ -1512,7 +1512,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
+        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
         tmpl = Template(raw_prompt)
         system_prompt = tmpl.safe_substitute(
             faction=faction,
@@ -1526,8 +1526,9 @@ class AgentDemo:
 - **我方势力**: {faction_info["name"]} ({faction})
 - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
+- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。
         """
+# - 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势.
 
         count = 0
         while True:
@@ -1844,30 +1845,32 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent.register_tool(
             name="perform_action",
             function=perform_action,
-            description="在游戏环境中执行一个特定的动作。",
+            description="Execute a specific action in the game environment.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "要执行的动作的名称。",
+                        "description": "The name of the action to execute.",
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "description": "指定动作所需的参数字典。",
+                        "description": "Parameters object for the specified action.",
                         "oneOf": [
                             {
                                 "type": "object",
+                                "description": "Move a unit to a target position. Consumes Movement Points (MP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Friendly unit identifier."},
                                     "target_position": {
                                         "type": "object",
+                                        "description": "Target position in flat-topped even-q offset coordinates.",
                                         "additionalProperties": False,
                                         "properties": {
-                                            "col": {"type": "integer", "minimum": -7, "maximum": 7},
-                                            "row": {"type": "integer", "minimum": -7, "maximum": 7}
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target column (even-q offset), range -7 to 7."},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target row (even-q offset), range -7 to 7."}
                                         },
                                         "required": ["col", "row"]
                                     }
@@ -1877,19 +1880,21 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                             },
                             {
                                 "type": "object",
+                                "description": "Attack a target unit with a friendly unit. Consumes 1 Action Point (AP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
-                                    "target_id": {"type": "integer", "minimum": 0}
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Attacking friendly unit identifier."},
+                                    "target_id": {"type": "integer", "minimum": 0, "description": "Target enemy unit identifier."}
                                 },
                                 "required": ["unit_id", "target_id"],
                                 "title": "attack"
                             },
                             {
                                 "type": "object",
+                                "description": "Retrieve the status of the specified faction, including unit positions, HP, remaining AP and MP. Does not consume any points.",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"], "description": "Faction to query (one of: wei, shu, wu)."}
                                 },
                                 "required": ["faction"],
                                 "title": "get_faction_state"
