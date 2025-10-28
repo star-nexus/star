@@ -3,6 +3,7 @@
 """
 
 from dataclasses import dataclass, field
+import math
 from typing import Set, Optional, Dict
 from framework import Component
 from ..prefabs.config import UnitType, Faction, UnitState, ActionType
@@ -76,6 +77,16 @@ class Combat(Component):
     attack_range: int = 1
     has_attacked: bool = False
 
+    def attack_multiplier(self, h, A_m=0.92, p=0.5550325, s=0.035):
+        # h should be in [0,1]
+        if h <= 0.0:
+            return 0.0
+        w = 1.0 / (1.0 + math.exp(-(h - 0.3) / s))
+        L = A_m + (1.0 - A_m) / 0.7 * (h - 0.3)
+        P = A_m * (h / 0.3) ** p
+        return w * L + (1.0 - w) * P
+
+
     def get_effective_stats(
         self, unit_count: UnitCount, status: UnitStatus, terrain_coeff: float = 1.0
     ) -> tuple:
@@ -84,7 +95,8 @@ class Combat(Component):
 
         # 动态攻防公式：基础值 × (N/M)^0.7 × 状态系数 × 地形系数
         ratio = unit_count.ratio
-        attack_modifier = ratio**0.3
+        # sigmoid-like modifier
+        attack_modifier = self.attack_multiplier(ratio)
         defense_modifier = 1.0
         status_modifier = GameConfig.STATE_COEFFICIENTS.get(status.current_status, 1.0)
 
