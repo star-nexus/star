@@ -100,7 +100,7 @@ class LLMClient:
         if config.provider == "openai":
             self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
         elif config.provider == "deepseek":
-            self.base_url = "https://api.deepseek.com/chat/completions"
+            self.base_url = config.base_url
         elif config.provider == "infinigence":
             self.base_url = "https://cloud.infini-ai.com/maas/v1/chat/completions"
         elif config.provider == "siliconflow":
@@ -378,6 +378,7 @@ class RoTKChatAgent:
         self._agent_registered: bool = False
         
         self._strategy_last_ping_ts: float = 0.0
+        self._game_end_reported: bool = False  # 防止重复上报
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -1026,6 +1027,13 @@ class RoTKChatAgent:
 
     async def _report_llm_stats(self):
         """Report LLM API interaction statistics to ENV"""
+        # 防止重复上报
+        if self._game_end_reported:
+            console.print("⚠️ LLM stats already reported, skipping duplicate", style="yellow")
+            return
+        
+        self._game_end_reported = True
+        
         try:
             api_stats = self.llm_client.get_api_stats()
             console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
@@ -1167,7 +1175,7 @@ class RoTKChatAgent:
                     self.conversation_history.append(
                         Message(
                             role="user", 
-                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them.")
+                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation.")
                     )
                     continue
 
@@ -1226,6 +1234,7 @@ class AgentDemo:
         self.agent_id = agent_id
         self.agent_client = None
         self.messages = []
+        self.current_agent = None  # 用于存储当前运行的 agent 实例
 
         self.init_client()
 
@@ -1237,6 +1246,17 @@ class AgentDemo:
         # Initialize state
         RemoteContext.set_status({"self_status": {}, "env_status": {}})
 
+    async def _trigger_immediate_report(self):
+        """立即触发 LLM 统计上报（在收到 game_end 通知时调用）"""
+        if self.current_agent is not None:
+            console.print("🚀 Triggering immediate LLM stats report from game_end notification", style="green bold")
+            try:
+                await self.current_agent._report_llm_stats()
+            except Exception as e:
+                console.print(f"❌ Immediate report failed: {e}", style="red")
+        else:
+            console.print("⚠️ Cannot trigger immediate report: agent instance not set", style="yellow")
+    
     def setup_hub_listeners(self):
         """Set event listeners"""
 
@@ -1268,7 +1288,7 @@ class AgentDemo:
                 message += f"\n   结果: {outcome}, 结果类型: {outcome_type}"
             elif msg_type == "game_end_notification":
                 # 🆕 Handle game end notification
-                console.print("🏁 Received game end notification, preparing to report LLM stats and exit", style="yellow bold")
+                console.print("🏁 Received game end notification, immediately triggering LLM stats report", style="yellow bold")
                 # 🔧 Fix: update status instead of replace, keep existing status fields
                 try:
                     current_status = RemoteContext.get_status() or {}
@@ -1277,6 +1297,12 @@ class AgentDemo:
                 current_status.update({"game_ended": True})
                 RemoteContext.set_status(current_status)
                 console.print(f"🔧 State updated: {current_status}", style="cyan")  # 🆕 Debug information
+                
+                # 🚀 立即启动后台任务上报 LLM 统计信息，不等待下一次迭代
+                # 需要获取 agent 实例来调用 _report_llm_stats
+                # 由于 on_message 是 AgentDemo 的方法，需要从 demo 访问 agent
+                asyncio.create_task(self._trigger_immediate_report())
+                
                 message += f"\n    Game end notification: {msg_data}"
             # console.print(message, style="blue")
             self.messages.append(message)
@@ -1348,7 +1374,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_cn")
+        raw_prompt = self.load_prompt(name="system_prompt_realtime_cn")
         tmpl = Template(raw_prompt)
         system_prompt = tmpl.safe_substitute(
             faction=faction,
@@ -1362,7 +1388,7 @@ class AgentDemo:
 - **我方势力**: {faction_info["name"]} ({faction})
 - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
+- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。
         """
 
         count = 0
@@ -1370,7 +1396,8 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                # 传入 self 以便 create_agent 可以设置 current_agent
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, demo_instance=self))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1652,7 +1679,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", demo_instance=None):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1662,6 +1689,10 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        
+        # 如果提供了 demo_instance，将 agent 设置到 demo 中以支持立即上报
+        if demo_instance is not None:
+            demo_instance.current_agent = agent
         
         # Register tools
         # agent.register_tool(
@@ -1674,30 +1705,32 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent.register_tool(
             name="perform_action",
             function=perform_action,
-            description="在游戏环境中执行一个特定的动作。",
+            description="Execute a specific action in the game environment.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "要执行的动作的名称。",
+                        "description": "The name of the action to execute.",
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "description": "指定动作所需的参数字典。",
+                        "description": "Parameters object for the specified action.",
                         "oneOf": [
                             {
                                 "type": "object",
+                                "description": "Move a unit to a target position. Consumes Movement Points (MP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Friendly unit identifier."},
                                     "target_position": {
                                         "type": "object",
+                                        "description": "Target position in flat-topped even-q offset coordinates.",
                                         "additionalProperties": False,
                                         "properties": {
-                                            "col": {"type": "integer", "minimum": -7, "maximum": 7},
-                                            "row": {"type": "integer", "minimum": -7, "maximum": 7}
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target column (even-q offset), range -7 to 7."},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target row (even-q offset), range -7 to 7."}
                                         },
                                         "required": ["col", "row"]
                                     }
@@ -1707,19 +1740,21 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                             },
                             {
                                 "type": "object",
+                                "description": "Attack a target unit with a friendly unit. Consumes 1 Action Point (AP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
-                                    "target_id": {"type": "integer", "minimum": 0}
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Attacking friendly unit identifier."},
+                                    "target_id": {"type": "integer", "minimum": 0, "description": "Target enemy unit identifier."}
                                 },
                                 "required": ["unit_id", "target_id"],
                                 "title": "attack"
                             },
                             {
                                 "type": "object",
+                                "description": "Retrieve the status of the specified faction, including unit positions, HP, remaining AP and MP. Does not consume any points.",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"], "description": "Faction to query (one of: wei, shu, wu)."}
                                 },
                                 "required": ["faction"],
                                 "title": "get_faction_state"
@@ -1731,15 +1766,15 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             },
         )
         
-        async def reset_ap():
+        async def reset_ap_mp():
             """Take a rest"""
             await asyncio.sleep(3)
-            return {"result": "AP has been restored, you can continue."}
+            return {"result": "AP and MP have been restored, you can continue."}
         
         agent.register_tool(
-            name="reset_ap",
-            function=reset_ap,
-            description="休息完毕，行动力已恢复，请继续进行。",
+            name="reset_ap_mp",
+            function=reset_ap_mp,
+            description="Rest and restore AP and MP.",
             parameters={"type": "object", "properties": {}, "required": []},
         )
 
