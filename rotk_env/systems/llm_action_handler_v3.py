@@ -310,9 +310,8 @@ class LLMActionHandlerV3:
                 {
                     "unit_id": unit_id,
                     "current_movement_points": current_mp,
-                    "max_movement_points": movement_points.max_mp,
                     "movement_point_info": component_info.get("movement_points", {}),
-                    "suggestion": "Wait for movement points to recover",
+                    "suggestion": "Use end_turn tool or wait for movement points to recover",
                 },
             )
         print(f"[MOVE_ACTION] MP check passed: {current_mp}/{movement_points.max_mp}")
@@ -1985,10 +1984,10 @@ class LLMActionHandlerV3:
                     "vision_range": 2,
                 },
                 "turn_resources": {
-                    "action_points": 0,
-                    "max_action_points": 2,
-                    "movement_points": 0,
-                    "max_movement_points": 3,
+                    "remaining_action_points": 0,
+                    # "max_action_points": 2,
+                    "remaining_movement_points": 0,
+                    # "max_movement_points": 3,
                 },
                 "long_rest_resources": {
                     "construction_points": 0,
@@ -1998,16 +1997,16 @@ class LLMActionHandlerV3:
 
             if movement_points:
                 try:
-                    capabilities_info["turn_resources"]["movement_points"] = (
+                    capabilities_info["turn_resources"]["remaining_movement_points"] = (
                         int(movement_points.current_mp)
                         if hasattr(movement_points, "current_mp")
                         else 0
                     )
-                    capabilities_info["turn_resources"]["max_movement_points"] = (
-                        int(movement_points.max_mp)
-                        if hasattr(movement_points, "max_mp")
-                        else 3
-                    )
+                    # capabilities_info["turn_resources"]["max_movement_points"] = (
+                    #     int(movement_points.max_mp)
+                    #     if hasattr(movement_points, "max_mp")
+                    #     else 3
+                    # )
                 except (AttributeError, ValueError, TypeError):
                     pass
 
@@ -2044,16 +2043,16 @@ class LLMActionHandlerV3:
                 try:
                     capabilities_info["turn_resources"].update(
                         {
-                            "action_points": (
+                            "remaining_action_points": (
                                 int(action_points.current_ap)
                                 if hasattr(action_points, "current_ap")
                                 else 0
                             ),
-                            "max_action_points": (
-                                int(action_points.max_ap)
-                                if hasattr(action_points, "max_ap")
-                                else 2
-                            ),
+                            # "max_action_points": (
+                            #     int(action_points.max_ap) # not used
+                            #     if hasattr(action_points, "max_ap")
+                            #     else 2
+                            # ),
                         }
                     )
                 except (AttributeError, ValueError, TypeError):
@@ -2124,10 +2123,10 @@ class LLMActionHandlerV3:
                         "vision_range": 2,
                     },
                     "turn_resources": {
-                        "action_points": 0,
-                        "max_action_points": 2,
-                        "movement_points": 0,
-                        "max_movement_points": 3,
+                        "remaining_action_points": 0,
+                        # "max_action_points": 2,
+                        "remaining_movement_points": 0,
+                        # "max_movement_points": 3,
                     },
                     "long_rest_resources": {
                         "construction_points": 0,
@@ -2755,7 +2754,7 @@ class LLMActionHandlerV3:
                 "reachable": False,
                 "reason": "missing_movement_components",
                 "movement_cost": -1,
-                "remaining_movement": 0,
+                "remaining_movement_points": 0,
             }
 
         if current_pos == target_pos:
@@ -2763,7 +2762,7 @@ class LLMActionHandlerV3:
                 "reachable": True,
                 "reason": "current_position",
                 "movement_cost": 0,
-                "remaining_movement": movement_points.current_mp,
+                "remaining_movement_points": movement_points.current_mp,
                 "is_current_position": True,
             }
 
@@ -2775,7 +2774,7 @@ class LLMActionHandlerV3:
                 "reachable": False,
                 "reason": "position_occupied",
                 "movement_cost": -1,
-                "remaining_movement": movement_points.current_mp,
+                "remaining_movement_points": movement_points.current_mp,
                 "blocked_by": "other_unit",
             }
 
@@ -2809,7 +2808,7 @@ class LLMActionHandlerV3:
                     "reachable": False,
                     "reason": "no_valid_path",
                     "movement_cost": -1,
-                    "remaining_movement": movement_points.current_mp,
+                    "remaining_movement_points": movement_points.current_mp,
                     "effective_movement_range": effective_movement,
                 }
         except Exception as e:
@@ -2817,7 +2816,7 @@ class LLMActionHandlerV3:
                 "reachable": False,
                 "reason": f"path_calculation_error",
                 "movement_cost": -1,
-                "remaining_movement": movement_points.current_mp,
+                "remaining_movement_points": movement_points.current_mp,
                 "error": str(e),
             }
 
