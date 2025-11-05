@@ -44,8 +44,8 @@ class RealtimeSystem(System):
         if self._check_game_over():
             return
 
-        # 实时恢复单位行动力
-        self._regenerate_action_points(delta_time)
+        # 处理战斗冷却
+        self._handle_attack_cooldowns(delta_time)
 
         # 实时AI决策更新
         self._update_ai_decisions(delta_time)
@@ -102,36 +102,12 @@ class RealtimeSystem(System):
                 return system
         return None
 
-    def _regenerate_action_points(self, delta_time: float) -> None:
-        """实时恢复单位行动点数"""
-        from ..components import ActionPoints
-
-        regen_rate = 0.4  # 每秒恢复的行动点数比例
-
-        # 恢复移动力
-        for entity in self.world.query().with_component(MovementPoints).entities():
-            movement = self.world.get_component(entity, MovementPoints)
-            unit_count = self.world.get_component(entity, UnitCount)
-
-            if movement and unit_count:
-                max_movement = movement.get_effective_movement(unit_count)
-                if movement.current_mp < max_movement:
-                    movement.current_mp = min(
-                        max_movement,
-                        movement.current_mp + max_movement * regen_rate * delta_time,
-                    )
-                    # 如果移动力恢复到足够，重置已移动标志
-                    if movement.current_mp >= max_movement * 0.7:
-                        movement.has_moved = False
-
-        # 恢复攻击能力和行动力
+    def _handle_attack_cooldowns(self, delta_time: float) -> None:
+        """处理战斗相关的冷却逻辑"""
         for entity in self.world.query().with_component(Combat).entities():
             combat = self.world.get_component(entity, Combat)
-            action_points = self.world.get_component(entity, ActionPoints)
 
-            # 恢复攻击能力
             if combat and combat.has_attacked:
-                # 添加攻击冷却时间
                 if not hasattr(combat, "attack_cooldown"):
                     combat.attack_cooldown = 0.5  # 0.5秒攻击冷却，提高攻击频率
                 else:
@@ -139,14 +115,6 @@ class RealtimeSystem(System):
                     if combat.attack_cooldown <= 0:
                         combat.has_attacked = False
                         combat.attack_cooldown = 0.0
-
-            # 恢复行动力
-            if action_points and action_points.current_ap < action_points.max_ap:
-                action_points.current_ap = min(
-                    action_points.max_ap,
-                    action_points.current_ap
-                    + action_points.max_ap * regen_rate * delta_time,
-                )
 
     def _update_ai_decisions(self, delta_time: float) -> None:
         """实时模式下的AI决策更新"""

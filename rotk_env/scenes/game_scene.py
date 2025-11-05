@@ -460,9 +460,6 @@ class GameScene(Scene):
         self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
         self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
 
-        # Add movement points component
-        self.world.add_component(unit_entity, ActionPoints(current_ap=2, max_ap=2))
-
         # Add skill component
         self.world.add_component(unit_entity, UnitSkills())
 
