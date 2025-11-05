@@ -83,7 +83,7 @@ class UnitFactory:
         )
 
         # 添加多层次资源组件
-        world.add_component(entity, ActionPoints(current_ap=2, max_ap=2))
+        world.add_component(entity, ActionPoints())
         world.add_component(
             entity, AttackPoints(normal_attacks=1, max_normal_attacks=1)
         )
