@@ -421,11 +421,16 @@ class GameScene(Scene):
                 max_mp=unit_stats.movement,
             ),
         )
+
+        game_mode_comp = self.world.get_singleton_component(GameModeComponent)
+        is_turn_based = game_mode_comp and game_mode_comp.mode == GameMode.TURN_BASED
+        ap = 2 if is_turn_based else 1
+
         self.world.add_component(
             unit_entity,
             ActionPoints(
-                current_ap=2,  # Default action points
-                max_ap=2,
+                current_ap=ap,
+                max_ap=ap,
             ),
         )
         self.world.add_component(
