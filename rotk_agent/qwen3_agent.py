@@ -74,6 +74,9 @@ class ErrorStatsCollector:
         self.tool_in_content = 0
         self.tool_invalid_tool = 0
         self.tool_param_error = 0
+        
+        # LLM 能力错误（空间感知等）
+        self.spatial_awareness_error = 0
     
     def add_http_connect_error(self):
         self.http_connect_error += 1
@@ -102,6 +105,9 @@ class ErrorStatsCollector:
     def add_tool_param_error(self):
         self.tool_param_error += 1
     
+    def add_spatial_awareness_error(self):
+        self.spatial_awareness_error += 1
+    
     def get_http_errors_total(self) -> int:
         """获取 HTTP 错误总数"""
         return (self.http_connect_error + self.http_timeout + self.http_4xx + 
@@ -110,6 +116,10 @@ class ErrorStatsCollector:
     def get_tool_call_gen_errors_total(self) -> int:
         """获取 Tool Call 生成错误总数"""
         return self.tool_in_content + self.tool_invalid_tool + self.tool_param_error
+    
+    def get_llm_capability_errors_total(self) -> int:
+        """获取 LLM 能力错误总数"""
+        return self.spatial_awareness_error
     
     def get_error_breakdown(self) -> Dict[str, Any]:
         """获取错误分类详情"""
@@ -128,6 +138,10 @@ class ErrorStatsCollector:
                 "tool_in_content": self.tool_in_content,
                 "tool_invalid_tool": self.tool_invalid_tool,
                 "tool_param_error": self.tool_param_error
+            },
+            "llm_capability_errors_total": self.get_llm_capability_errors_total(),
+            "llm_capability": {
+                "spatial_awareness_error": self.spatial_awareness_error
             }
         }
 
@@ -582,6 +596,59 @@ class RoTKChatAgent:
         
         await asyncio.gather(*tasks)
     
+    def _is_spatial_awareness_error(self, result: Dict[str, Any]) -> bool:
+        """
+        检测是否是空间感知错误（LLM对距离、位置判断错误）
+        
+        Args:
+            result: 工具调用返回的结果
+            
+        Returns:
+            bool: True 表示是空间感知错误
+        """
+        if not isinstance(result, dict):
+            return False
+        
+        # 获取错误信息（可能在 details 或 message 字段）
+        error_text = ""
+        if "details" in result:
+            error_text = str(result["details"]).lower()
+        elif "message" in result:
+            error_text = str(result["message"]).lower()
+        
+        if not error_text:
+            return False
+        
+        # 空间感知错误的关键词模式
+        spatial_patterns = [
+            # 距离判断错误
+            "out of attack range",
+            "out of range",
+            "not in range",
+            "distance",
+            "too far",
+            # 移动范围错误
+            "out of movement range",
+            "cannot reach",
+            "unreachable",
+            "not reachable",
+            # 位置判断错误
+            "invalid position",
+            "position not available",
+            "occupied",
+            # 视野判断错误
+            "not visible",
+            "out of sight",
+            "cannot see"
+        ]
+        
+        # 检查是否匹配任何空间感知错误模式
+        for pattern in spatial_patterns:
+            if pattern in error_text:
+                return True
+        
+        return False
+    
     async def _execute_single_tool_call(self, tool_call: Dict[str, Any]):
         """Execute single tool call"""
         tool_call_id = tool_call["id"]
@@ -618,9 +685,17 @@ class RoTKChatAgent:
             # 检查 ENV 返回的错误信息，判断是否是工具调用错误
             if isinstance(result, dict):
                 # 检查是否包含错误信息
-                if result.get("success") is False or result.get("result") is False:                    
-                    self.error_stats.add_tool_invalid_tool()
-                    console.print(f"📊 Tool call error: tool_invalid_tool (total: {self.error_stats.tool_invalid_tool})", style="yellow")
+                if result.get("success") is False or result.get("result") is False:
+                    # 检查是否是空间感知错误（距离判断错误）
+                    is_spatial_error = self._is_spatial_awareness_error(result)
+                    
+                    if is_spatial_error:
+                        self.error_stats.add_spatial_awareness_error()
+                        console.print(f"📊 Spatial awareness error detected (total: {self.error_stats.spatial_awareness_error})", style="yellow")
+                        console.print(f"   └─ Error details: {result.get('details', result.get('message', 'unknown'))}", style="dim yellow")
+                    else:
+                        self.error_stats.add_tool_invalid_tool()
+                        console.print(f"📊 Tool call error: tool_invalid_tool (total: {self.error_stats.tool_invalid_tool})", style="yellow")
             
             filtered_result = self._filter_tool_result(function_name, result, arguments) 
 
@@ -1158,10 +1233,12 @@ class RoTKChatAgent:
             api_stats = self.llm_client.get_api_stats()
             toolcall_error_total = self.error_stats.get_tool_call_gen_errors_total()
             http_error_total = self.error_stats.get_http_errors_total()
+            spatial_error_total = self.error_stats.spatial_awareness_error
             
             console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
-            console.print(f"📊 Report error total HTTP: {http_error_total}", style="cyan")
-            console.print(f"📊 Report error total: {toolcall_error_total}", style="cyan")
+            console.print(f"📊 Report HTTP errors total: {http_error_total}", style="cyan")
+            console.print(f"📊 Report tool call gen errors total: {toolcall_error_total}", style="cyan")
+            console.print(f"📊 Report spatial awareness errors: {spatial_error_total}", style="cyan")
 
             result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "report_llm_stats",
@@ -1170,6 +1247,7 @@ class RoTKChatAgent:
                     "api_stats": api_stats,
                     "toolcall_error_total": toolcall_error_total,
                     "http_error_total": http_error_total,
+                    "spatial_awareness_error": spatial_error_total,
                     "provider": self.llm_client.config.provider,
                     "model_id": self.llm_client.config.model_id
                 }
