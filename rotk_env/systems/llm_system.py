@@ -336,15 +336,19 @@ class LLMSystem(System):
             - successful_calls: int - Number of successful calls  
             - failed_calls: int - Number of failed calls
             - success_rate: float - Success rate
+          - toolcall_error_total: int - Total tool call generation errors
+          - http_error_total: int - Total HTTP errors
           - provider: str - LLM provider
           - model_id: str - Model ID
         """
         try:
             faction_key = params.get("faction")
             api_stats = params.get("api_stats", {})
+            toolcall_error_total = params.get("toolcall_error_total", 0)
+            http_error_total = params.get("http_error_total", 0)
             provider = params.get("provider", "unknown")
             model_id = params.get("model_id", "unknown")
-            
+
             if not faction_key:
                 return {"success": False, "message": "Missing faction"}
             
@@ -380,6 +384,8 @@ class LLMSystem(System):
             stats.llm_api_stats[faction] = {
                 "total_calls": api_stats.get("total_calls", 0),
                 "successful_calls": api_stats.get("successful_calls", 0),
+                "toolcall_error_total": toolcall_error_total,
+                "http_error_total": http_error_total,
                 "failed_calls": api_stats.get("failed_calls", 0),
                 "success_rate": api_stats.get("success_rate", 0.0),
                 "provider": provider,
@@ -388,6 +394,7 @@ class LLMSystem(System):
             }
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
+            print(f"[LLMSystem] 📊 错误统计 - HTTP错误: {http_error_total}, Tool Call错误: {toolcall_error_total}")
 
             # 🆕 基于集合的收齐判断
             try:
@@ -408,7 +415,9 @@ class LLMSystem(System):
                 "success": True,
                 "message": "LLM stats received",
                 "faction": faction_key,
-                "stats": api_stats
+                "stats": api_stats,
+                "toolcall_error_total": toolcall_error_total,
+                "http_error_total": http_error_total
             }
             
         except Exception as e:
