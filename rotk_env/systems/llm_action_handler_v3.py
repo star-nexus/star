@@ -332,43 +332,43 @@ class LLMActionHandlerV3:
         print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
 
         # 检查目标位置是否被占用
-        if target_pos in obstacles:
-            # Find the unit occupying the target tile
-            occupying_unit_id = None
-            occupying_unit_info = None
-            for entity in self.world.query().with_all(HexPosition, Unit).entities():
-                if entity == unit_id:
-                    continue  # skip the moving unit itself
-                pos = self.world.get_component(entity, HexPosition)
-                if pos and (pos.col, pos.row) == target_pos:
-                    occupying_unit_id = entity
-                    unit_comp = self.world.get_component(entity, Unit)
-                    if unit_comp:
-                        occupying_unit_info = {
-                            "unit_id": entity,
-                            "unit_type": unit_comp.unit_type.value,
-                            "faction": unit_comp.faction.value,
-                        }
-                    break
+        # if target_pos in obstacles:
+        #     # Find the unit occupying the target tile
+        #     occupying_unit_id = None
+        #     occupying_unit_info = None
+        #     for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        #         if entity == unit_id:
+        #             continue  # skip the moving unit itself
+        #         pos = self.world.get_component(entity, HexPosition)
+        #         if pos and (pos.col, pos.row) == target_pos:
+        #             occupying_unit_id = entity
+        #             unit_comp = self.world.get_component(entity, Unit)
+        #             if unit_comp:
+        #                 occupying_unit_info = {
+        #                     "unit_id": entity,
+        #                     "unit_type": unit_comp.unit_type.value,
+        #                     "faction": unit_comp.faction.value,
+        #                 }
+        #             break
 
-            error_msg = (
-                f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
-            )
-            print(f"[MOVE_ACTION] Target position occupied: {error_msg}")
-            return self._create_error_response(
-                error_msg,
-                {
-                    "unit_id": unit_id,
-                    "target_position": target_pos,
-                    "occupying_unit_id": occupying_unit_id,
-                    "occupying_unit_info": occupying_unit_info,
-                    "current_position": current_pos,
-                    "suggestion": "Choose an unoccupied adjacent position",
-                    "adjacent_positions": self._get_adjacent_free_positions(
-                        current_pos, obstacles
-                    ),
-                },
-            )
+        #     error_msg = (
+        #         f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
+        #     )
+        #     print(f"[MOVE_ACTION] Target position occupied: {error_msg}")
+        #     return self._create_error_response(
+        #         error_msg,
+        #         {
+        #             "unit_id": unit_id,
+        #             "target_position": target_pos,
+        #             "occupying_unit_id": occupying_unit_id,
+        #             "occupying_unit_info": occupying_unit_info,
+        #             "current_position": current_pos,
+        #             "suggestion": "Choose an unoccupied adjacent position",
+        #             "adjacent_positions": self._get_adjacent_free_positions(
+        #                 current_pos, obstacles
+        #             ),
+        #         },
+        #     )
 
         from ..utils.hex_utils import PathFinding
 
@@ -590,8 +590,8 @@ class LLMActionHandlerV3:
             result = {
                 "success": True,
                 "result": True,
-                "message": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
-                "details": f"Unit {unit_id} has started moving from {current_pos} to {target_pos}.",
+                "message": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
+                "details": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
                 "action_status": "in_progress",
                 "movement_descriptions": {
                     "start_position": {"col": current_pos[0], "row": current_pos[1]},
@@ -763,33 +763,6 @@ class LLMActionHandlerV3:
                 },
             )
 
-        # === Layer 6: unit status validation ===
-        print(f"[ATTACK_ACTION] Checking unit status...")
-
-        # Prohibit attacking when strength ≤ 10%
-        if attacker_count.ratio <= 0.1:
-            return self._create_error_response(
-                f"Unit {unit_id} has too few troops to attack: {attacker_count.current_count}/{attacker_count.max_count} ({attacker_count.ratio*100:.1f}%)",
-                {
-                    "unit_id": unit_id,
-                    "current_count": attacker_count.current_count,
-                    "max_count": attacker_count.max_count,
-                    "ratio_percentage": round(attacker_count.ratio * 100, 1),
-                    "minimum_required_percentage": 10.0,
-                    "suggestion": "Unit needs more than 10% of original strength to attack",
-                },
-            )
-
-        # Allow multiple attacks per turn as long as AP allow (no single-attack cap)
-        # if attacker_combat.has_attacked:
-        #     return self._create_error_response(
-        #         f"Unit {unit_id} has already attacked this turn",
-        #         {
-        #             "unit_id": unit_id,
-        #             "suggestion": "Each unit can only attack once per turn",
-        #         },
-        #     )
-
         # Target must be alive
         if target_count.current_count <= 0:
             return self._create_error_response(
@@ -848,15 +821,20 @@ class LLMActionHandlerV3:
         # Invoke CombatSystem
         attack_result = combat_system.execute_attack(unit_id, target_id)
 
-        if not attack_result:
+        if not attack_result.get("success", False):
             return self._create_error_response(
-                "Attack execution failed",
-                {
-                    "unit_id": unit_id,
-                    "target_id": target_id,
-                    "suggestion": "Attack validation passed but execution failed - possible game state conflict",
-                },
+                attack_result.get("message", "Attack execution failed"),
+                attack_result.get(
+                    "details",
+                    {
+                        "unit_id": unit_id,
+                        "target_id": target_id,
+                        "suggestion": "Attack validation passed but execution failed - possible game state conflict",
+                    },
+                ),
             )
+
+        battle_result = attack_result.get("battle_result", {})
 
         # === Layer 9: format result ===
         print(f"[ATTACK_ACTION] Attack executed successfully.")
@@ -902,7 +880,7 @@ class LLMActionHandlerV3:
                     "position": target_current_pos,
                     "terrain": target_terrain.value,
                 },
-                "battle_result": attack_result,
+                "battle_result": battle_result,
                 "casualties_inflicted": casualties_inflicted,
                 "target_destroyed": target_destroyed,
                 "distance": distance,
@@ -1850,15 +1828,11 @@ class LLMActionHandlerV3:
                             "attack_power": 10,
                             "vision_range": 2,
                         },
-                        "turn_resources": {
+                        "unit_resources": {
                             "action_points": 0,
                             "max_action_points": 2,
                             "movement_points": 0,
                             "max_movement_points": 3,
-                        },
-                        "long_rest_resources": {
-                            "construction_points": 0,
-                            "skill_points": 0,
                         },
                     },
                     "available_skills": [],
@@ -1896,15 +1870,11 @@ class LLMActionHandlerV3:
                             "attack_power": 10,
                             "vision_range": 2,
                         },
-                        "turn_resources": {
+                        "unit_resources": {
                             "action_points": 0,
                             "max_action_points": 2,
                             "movement_points": 0,
                             "max_movement_points": 3,
-                        },
-                        "long_rest_resources": {
-                            "construction_points": 0,
-                            "skill_points": 0,
                         },
                     },
                     "available_skills": [],
@@ -1983,30 +1953,21 @@ class LLMActionHandlerV3:
                     "attack_power": 10,  # 默认攻击力
                     "vision_range": 2,
                 },
-                "turn_resources": {
+                "unit_resources": {
                     "remaining_action_points": 0,
                     # "max_action_points": 2,
                     "remaining_movement_points": 0,
                     # "max_movement_points": 3,
                 },
-                "long_rest_resources": {
-                    "construction_points": 0,
-                    "skill_points": 0,
-                },
             }
 
             if movement_points:
                 try:
-                    capabilities_info["turn_resources"]["remaining_movement_points"] = (
+                    capabilities_info["unit_resources"]["remaining_movement_points"] = (
                         int(movement_points.current_mp)
                         if hasattr(movement_points, "current_mp")
                         else 0
                     )
-                    # capabilities_info["turn_resources"]["max_movement_points"] = (
-                    #     int(movement_points.max_mp)
-                    #     if hasattr(movement_points, "max_mp")
-                    #     else 3
-                    # )
                 except (AttributeError, ValueError, TypeError):
                     pass
 
@@ -2041,7 +2002,7 @@ class LLMActionHandlerV3:
 
             if action_points:
                 try:
-                    capabilities_info["turn_resources"].update(
+                    capabilities_info["unit_resources"].update(
                         {
                             "remaining_action_points": (
                                 int(action_points.current_ap)
@@ -2059,24 +2020,12 @@ class LLMActionHandlerV3:
                     pass
 
             if construction_points:
-                try:
-                    capabilities_info["long_rest_resources"]["construction_points"] = (
-                        int(construction_points.current_cp)
-                        if hasattr(construction_points, "current_cp")
-                        else 0
-                    )
-                except (AttributeError, ValueError, TypeError):
-                    pass
+
+                pass
 
             if skill_points:
-                try:
-                    capabilities_info["long_rest_resources"]["skill_points"] = (
-                        int(skill_points.current_sp)
-                        if hasattr(skill_points, "current_sp")
-                        else 0
-                    )
-                except (AttributeError, ValueError, TypeError):
-                    pass
+                pass
+
 
             available_skills = []
             if unit_skills:
@@ -2122,15 +2071,11 @@ class LLMActionHandlerV3:
                         "attack_power": 10,
                         "vision_range": 2,
                     },
-                    "turn_resources": {
+                    "unit_resources": {
                         "remaining_action_points": 0,
                         # "max_action_points": 2,
                         "remaining_movement_points": 0,
                         # "max_movement_points": 3,
-                    },
-                    "long_rest_resources": {
-                        "construction_points": 0,
-                        "skill_points": 0,
                     },
                 },
                 "available_skills": [],

@@ -201,13 +201,13 @@ class MockLLMAISystem(System):
         """为单位执行策略 - 通过LLM Action Handler V3"""
 
         capabilities = unit_info.get("capabilities", {})
-        turn_resources = capabilities.get("turn_resources", {})
+        unit_resources = capabilities.get("unit_resources", {})
         properties = capabilities.get("properties", {})
         position = unit_info.get("position", {})
         unit_status = unit_info.get("unit_status", {})
 
-        action_points = turn_resources.get("action_points", 0)
-        movement_points = turn_resources.get("movement_points", 0)
+        action_points = unit_resources.get("action_points", 0)
+        movement_points = unit_resources.get("movement_points", 0)
         health_percentage = unit_status.get("health_percentage", 0)
 
         print(
