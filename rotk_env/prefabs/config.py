@@ -230,7 +230,7 @@ class GameConfig:
     UNIT_BASE_STATS: Dict[UnitType, UnitBaseStats] = {
         UnitType.INFANTRY: UnitBaseStats(
             max_count=100,
-            movement=5,
+            movement=4,
             base_attack=10,
             base_defense=10,
             attack_range=1,
@@ -246,7 +246,7 @@ class GameConfig:
         ),
         UnitType.ARCHER: UnitBaseStats(
             max_count=100,
-            movement=5,
+            movement=4,
             base_attack=12,
             base_defense=6,
             attack_range=3,
