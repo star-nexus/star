@@ -7,6 +7,7 @@ import asyncio
 import json
 import time
 from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass
 
 from rich import print_json
 from framework import System, World
@@ -40,6 +41,70 @@ from protocol.star_client_v2 import (
 # from .llm_action_handler_v2 import LLMActionHandlerV2 as LLMActionHandler
 from .llm_action_handler_v3 import LLMActionHandlerV3 as LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
+
+
+# ==================== Action Request Data Structure ====================
+
+@dataclass
+class ActionRequest:
+    """Encapsulates an action request from an LLM agent"""
+    agent_id: str
+    action_id: int
+    action_name: str
+    parameters: Dict[str, Any]
+    timestamp: float
+
+
+# ==================== Action Executor ====================
+
+class ActionExecutor:
+    """
+    Handles the execution logic for LLM actions.
+    Decouples action reception from action execution.
+    """
+    
+    def __init__(self, llm_system):
+        """
+        Initialize the ActionExecutor with a reference to the LLMSystem.
+        
+        Args:
+            llm_system: Reference to the parent LLMSystem instance
+        """
+        self.llm_system = llm_system
+        self.world = llm_system.world
+        
+    def execute(self, request: ActionRequest) -> Dict[str, Any]:
+        """
+        Execute a single action request and return the result.
+        
+        Args:
+            request: The ActionRequest to execute
+            
+        Returns:
+            Dict containing the execution result
+        """
+        action = request.action_name
+        params = request.parameters
+        
+        # 1. 检查是否为系统级动作
+        if action in self.llm_system.system_actions:
+            result = self.llm_system.system_actions[action](params)
+            
+        # 2. 检查是否为单位动作 (委托给ActionHandler)
+        elif action in self.llm_system.action_handler.action_handlers:
+            result = self.llm_system.action_handler.execute_action(action, params)
+            
+        # 3. 检查是否为观测动作 (委托给ObservationSystem)
+        elif self.llm_system._is_observation_action(action):
+            result = self.llm_system._handle_observation_action(action, params)
+            
+        # 4. 未知动作
+        else:
+            result = self.llm_system._create_system_error_response(
+                action, f"UNKNOWN ACTION: {action}", 2010
+            )
+            
+        return result
 
 
 class SyncEnvClient(SyncWebSocketClient):
@@ -103,6 +168,9 @@ class LLMSystem(System):
         # 初始化委托对象
         self.action_handler = LLMActionHandler(world)
         self.observation_system = LLMObservationSystem(world)
+
+        # 🆕 初始化 ActionExecutor
+        self.action_executor = ActionExecutor(self)
 
         # 使用同步客户端
         self.client = SyncEnvClient(
@@ -338,6 +406,7 @@ class LLMSystem(System):
             - success_rate: float - Success rate
           - toolcall_error_total: int - Total tool call generation errors
           - http_error_total: int - Total HTTP errors
+          - spatial_awareness_error: int - Spatial awareness errors (LLM capability)
           - provider: str - LLM provider
           - model_id: str - Model ID
         """
@@ -346,6 +415,7 @@ class LLMSystem(System):
             api_stats = params.get("api_stats", {})
             toolcall_error_total = params.get("toolcall_error_total", 0)
             http_error_total = params.get("http_error_total", 0)
+            spatial_awareness_error = params.get("spatial_awareness_error", 0)
             provider = params.get("provider", "unknown")
             model_id = params.get("model_id", "unknown")
 
@@ -386,6 +456,7 @@ class LLMSystem(System):
                 "successful_calls": api_stats.get("successful_calls", 0),
                 "toolcall_error_total": toolcall_error_total,
                 "http_error_total": http_error_total,
+                "spatial_awareness_error": spatial_awareness_error,
                 "failed_calls": api_stats.get("failed_calls", 0),
                 "success_rate": api_stats.get("success_rate", 0.0),
                 "provider": provider,
@@ -394,7 +465,7 @@ class LLMSystem(System):
             }
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
-            print(f"[LLMSystem] 📊 错误统计 - HTTP错误: {http_error_total}, Tool Call错误: {toolcall_error_total}")
+            print(f"[LLMSystem] 📊 错误统计 - HTTP错误: {http_error_total}, Tool Call错误: {toolcall_error_total}, 空间感知错误: {spatial_awareness_error}")
 
             # 🆕 基于集合的收齐判断
             try:
@@ -417,7 +488,8 @@ class LLMSystem(System):
                 "faction": faction_key,
                 "stats": api_stats,
                 "toolcall_error_total": toolcall_error_total,
-                "http_error_total": http_error_total
+                "http_error_total": http_error_total,
+                "spatial_awareness_error": spatial_awareness_error
             }
             
         except Exception as e:
@@ -647,23 +719,17 @@ class LLMSystem(System):
             # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
             self._record_interaction(agent_id, params)
             
-            # 1. 检查是否为系统级动作
-            if action in self.system_actions:
-                result = self.system_actions[action](params)
-
-            # 2. 检查是否为单位动作 (委托给ActionHandler)
-            elif action in self.action_handler.action_handlers:
-                result = self.action_handler.execute_action(action, params)
-
-            # 3. 检查是否为观测动作 (委托给ObservationSystem)
-            elif self._is_observation_action(action):
-                result = self._handle_observation_action(action, params)
-
-            # 4. 未知动作
-            else:
-                result = self._create_system_error_response(
-                    action, f"UNKOWN ACTION: {action}", 2010
-                )
+            # 🆕 创建 ActionRequest 对象
+            request = ActionRequest(
+                agent_id=agent_id,
+                action_id=action_id,
+                action_name=action,
+                parameters=params,
+                timestamp=start_time
+            )
+            
+            # 🆕 使用 ActionExecutor 执行动作
+            result = self.action_executor.execute(request)
 
             # 标准化响应格式
             execution_time = time.time() - start_time

@@ -521,6 +521,9 @@ class SettlementReportSystem(System):
                             "successful_calls": 0, 
                             "failed_calls": 0,
                             "success_rate": 0.0,
+                            "toolcall_error_total": 0,
+                            "http_error_total": 0,
+                            "spatial_awareness_error": 0,
                             "provider": "unknown",
                             "model_id": "unknown"
                         }
@@ -764,5 +767,23 @@ class SettlementReportSystem(System):
         for terrain, count in map_stats["terrain_distribution"].items():
             percentage = count / map_stats["total_tiles"] * 100
             print(f"     {terrain}: {count} tiles ({percentage:.1f}%)")
+        
+        # LLM API Statistics
+        if "llm_api_stats" in report_data and report_data["llm_api_stats"]:
+            print(f"\n🤖 LLM API Statistics:")
+            for faction_key in ["wei", "shu"]:
+                if faction_key in report_data["llm_api_stats"]:
+                    stats = report_data["llm_api_stats"][faction_key]
+                    # Only show if there are actual calls
+                    if stats.get("total_calls", 0) > 0:
+                        print(f"   {faction_key.upper()} Faction:")
+                        print(f"     Provider: {stats.get('provider', 'unknown')}")
+                        print(f"     Model: {stats.get('model_id', 'unknown')}")
+                        print(f"     Total API calls: {stats.get('total_calls', 0)}")
+                        print(f"     Successful calls: {stats.get('successful_calls', 0)}")
+                        print(f"     Success rate: {stats.get('success_rate', 0.0):.2f}%")
+                        print(f"     HTTP errors: {stats.get('http_error_total', 0)}")
+                        print(f"     Tool call errors: {stats.get('toolcall_error_total', 0)}")
+                        print(f"     Spatial awareness errors: {stats.get('spatial_awareness_error', 0)}")
         
         print("=" * 80)
