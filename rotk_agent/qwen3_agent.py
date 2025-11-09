@@ -58,6 +58,80 @@ class ToolDefinition:
     function: Callable
 
 
+class ErrorStatsCollector:
+    """错误统计收集器 - 用于统计 HTTP 错误和 Tool Call 生成错误"""
+    
+    def __init__(self):
+        # HTTP 错误细分
+        self.http_connect_error = 0
+        self.http_timeout = 0
+        self.http_4xx = 0
+        self.http_5xx = 0
+        self.http_bad_json = 0
+        self.http_other = 0
+        
+        # Tool Call 生成错误
+        self.tool_in_content = 0
+        self.tool_invalid_tool = 0
+        self.tool_param_error = 0
+    
+    def add_http_connect_error(self):
+        self.http_connect_error += 1
+    
+    def add_http_timeout(self):
+        self.http_timeout += 1
+    
+    def add_http_4xx(self):
+        self.http_4xx += 1
+    
+    def add_http_5xx(self):
+        self.http_5xx += 1
+    
+    def add_http_bad_json(self):
+        self.http_bad_json += 1
+    
+    def add_http_other(self):
+        self.http_other += 1
+    
+    def add_tool_in_content(self):
+        self.tool_in_content += 1
+    
+    def add_tool_invalid_tool(self):
+        self.tool_invalid_tool += 1
+    
+    def add_tool_param_error(self):
+        self.tool_param_error += 1
+    
+    def get_http_errors_total(self) -> int:
+        """获取 HTTP 错误总数"""
+        return (self.http_connect_error + self.http_timeout + self.http_4xx + 
+                self.http_5xx + self.http_bad_json + self.http_other)
+    
+    def get_tool_call_gen_errors_total(self) -> int:
+        """获取 Tool Call 生成错误总数"""
+        return self.tool_in_content + self.tool_invalid_tool + self.tool_param_error
+    
+    def get_error_breakdown(self) -> Dict[str, Any]:
+        """获取错误分类详情"""
+        return {
+            "http_errors_total": self.get_http_errors_total(),
+            "http": {
+                "connect_error": self.http_connect_error,
+                "timeout": self.http_timeout,
+                "http_4xx": self.http_4xx,
+                "http_5xx": self.http_5xx,
+                "bad_json": self.http_bad_json,
+                "other": self.http_other
+            },
+            "tool_call_gen_errors_total": self.get_tool_call_gen_errors_total(),
+            "tool_call_gen": {
+                "tool_in_content": self.tool_in_content,
+                "tool_invalid_tool": self.tool_invalid_tool,
+                "tool_param_error": self.tool_param_error
+            }
+        }
+
+
 class ToolManager:
     """Tool Manager"""
     
@@ -92,6 +166,9 @@ class LLMClient:
     _global_api_call_count = 0
     _global_api_success_count = 0
     _global_api_error_count = 0
+    
+    # global error stats collector
+    _global_error_stats = ErrorStatsCollector()
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -218,6 +295,13 @@ class LLMClient:
                 
                 # Count failed API calls
                 LLMClient._global_api_error_count += 1
+                
+                # 统计 HTTP 错误类型
+                if 400 <= response.status_code < 500:
+                    LLMClient._global_error_stats.add_http_4xx()
+                elif 500 <= response.status_code < 600:
+                    LLMClient._global_error_stats.add_http_5xx()
+                
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
                 
             response_data = response.json()
@@ -228,6 +312,7 @@ class LLMClient:
         except httpx.ConnectError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_connect_error()
             error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
             console.print(f"Please check network connection and API server status", style="yellow")
@@ -236,6 +321,7 @@ class LLMClient:
         except httpx.TimeoutException as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_timeout()
             error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
@@ -244,13 +330,27 @@ class LLMClient:
         except httpx.HTTPStatusError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_other()
             error_msg = f"{self.config.provider} API HTTP error: {e.response.status_code}"
             console.print(f"🌐 HTTP error: {error_msg}", style="red")
+            raise Exception(error_msg) from e
+            
+        except json.JSONDecodeError as e:
+            # JSON 解析错误
+            LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_bad_json()
+            error_msg = f"Failed to parse JSON response from {self.config.provider}: {str(e)}"
+            console.print(f"📋 JSON parse error: {error_msg}", style="red")
             raise Exception(error_msg) from e
             
         except Exception as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            # 检查是否是 JSON 相关错误
+            if "json" in str(e).lower():
+                LLMClient._global_error_stats.add_http_bad_json()
+            else:
+                LLMClient._global_error_stats.add_http_other()
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
             console.print(f"Request URL: {self.base_url}/chat/completions", style="yellow")
@@ -380,6 +480,9 @@ class RoTKChatAgent:
         self._strategy_last_ping_ts: float = 0.0
         self._game_end_reported: bool = False  # 防止重复上报
         
+        # 获取全局错误统计器的引用（与 LLMClient 共享）
+        self.error_stats = LLMClient._global_error_stats
+        
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
         tool = ToolDefinition(
@@ -491,17 +594,34 @@ class RoTKChatAgent:
         
         try:
             # Parse parameters
-            arguments = json.loads(arguments_str) if arguments_str else {}
+            try:
+                arguments = json.loads(arguments_str) if arguments_str else {}
+            except json.JSONDecodeError as e:
+                # 统计参数错误（arguments 本身解析失败）
+                self.error_stats.add_tool_param_error()
+                console.print(f"📊 Tool call error: tool_param_error (arguments JSON decode failed, total: {self.error_stats.tool_param_error})", style="yellow")
+                raise ValueError(f"Failed to parse tool call arguments as JSON: {arguments_str}. Error: {e}")
             
             if 'params' in arguments and isinstance(arguments['params'], str):
                 console.print("⚠️ 'params' is a string, trying to decode again...", style="yellow")
                 try:
                     arguments['params'] = json.loads(arguments['params'])
                 except json.JSONDecodeError as e:
+                    # 统计参数错误
+                    self.error_stats.add_tool_param_error()
+                    console.print(f"📊 Tool call error: tool_param_error (params JSON decode failed, total: {self.error_stats.tool_param_error})", style="yellow")
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
             
             # Execute tool
             result = await self.tool_manager.execute_tool(function_name, arguments)
+            
+            # 检查 ENV 返回的错误信息，判断是否是工具调用错误
+            if isinstance(result, dict):
+                # 检查是否包含错误信息
+                if result.get("success") is False or result.get("result") is False:                    
+                    self.error_stats.add_tool_invalid_tool()
+                    console.print(f"📊 Tool call error: tool_invalid_tool (total: {self.error_stats.tool_invalid_tool})", style="yellow")
+            
             filtered_result = self._filter_tool_result(function_name, result, arguments) 
 
             console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
@@ -1036,13 +1156,20 @@ class RoTKChatAgent:
         
         try:
             api_stats = self.llm_client.get_api_stats()
-            console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
+            toolcall_error_total = self.error_stats.get_tool_call_gen_errors_total()
+            http_error_total = self.error_stats.get_http_errors_total()
             
+            console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
+            console.print(f"📊 Report error total HTTP: {http_error_total}", style="cyan")
+            console.print(f"📊 Report error total: {toolcall_error_total}", style="cyan")
+
             result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "report_llm_stats",
                 "params": {
                     "faction": self.faction,
                     "api_stats": api_stats,
+                    "toolcall_error_total": toolcall_error_total,
+                    "http_error_total": http_error_total,
                     "provider": self.llm_client.config.provider,
                     "model_id": self.llm_client.config.model_id
                 }
@@ -1106,8 +1233,8 @@ class RoTKChatAgent:
 
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
-                if len(self.conversation_history) > 40:
-                    await self._shrink_history(window=10)
+                if len(self.conversation_history) > 50:
+                    await self._shrink_history(window=20)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
                 # Get LLM response
@@ -1115,6 +1242,8 @@ class RoTKChatAgent:
                     messages=self.conversation_history,
                     tools=self.tool_manager.get_tool_definitions()
                 )
+
+                await _rpm_limit_interval()
 
                 choice = response["choices"][0]
                 message = choice["message"]
@@ -1144,7 +1273,10 @@ class RoTKChatAgent:
                     console.print(f"🔧 Detecting text-based tool calls in content @iteration {iterations}: {message['content']}", style="cyan")
                     parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
                     if parsed_tool_calls:
+                        # 统计 tool_in_content 错误
+                        self.error_stats.add_tool_in_content()
                         console.print("🔧 Detected text-based tool calls, converting to standard format @iteration {iterations}", style="cyan")
+                        console.print(f"📊 Tool call error: tool_in_content (total: {self.error_stats.tool_in_content})", style="yellow")
                         self.conversation_history.append(
                             Message(
                                 role="user", 
@@ -1172,11 +1304,11 @@ class RoTKChatAgent:
 
                 # 3) Normal terminal cases
                 if finish_reason in ("stop"):
-                    self.conversation_history.append(
-                        Message(
-                            role="user", 
-                            content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation.")
-                    )
+                    # self.conversation_history.append(
+                    #     Message(
+                    #         role="user", 
+                    #         content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation.")
+                    # )
                     continue
 
                 # 4) Normal terminal cases
@@ -1388,7 +1520,9 @@ class AgentDemo:
 - **我方势力**: {faction_info["name"]} ({faction})
 - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。
+- 尽可能每次回复中调动你的所有单位，鼓励一次性下达多个单位的协同指令。
+- 你无需等待AP恢复，可以立即进行攻击。
+- 游戏为即时制，你和敌方指挥官同时操作，所以你需要积极进攻，否则就会被敌方消灭。
         """
 
         count = 0
@@ -1771,12 +1905,12 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             await asyncio.sleep(3)
             return {"result": "AP and MP have been restored, you can continue."}
         
-        agent.register_tool(
-            name="reset_ap_mp",
-            function=reset_ap_mp,
-            description="Rest and restore AP and MP.",
-            parameters={"type": "object", "properties": {}, "required": []},
-        )
+        # agent.register_tool(
+        #     name="reset_ap_mp",
+        #     function=reset_ap_mp,
+        #     description="Rest and restore AP and MP.",
+        #     parameters={"type": "object", "properties": {}, "required": []},
+        # )
 
         # Execute chat task
         result = await agent.chat(user_prompt)
@@ -1791,7 +1925,11 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         traceback.print_exc()
 
 
-
+async def _rpm_limit_interval():
+    """Limit the interval time based on the RPM limit"""
+    interval = float(os.environ.get("INTERVAL", "0"))
+    console_system.print(f"🕒 Interval: {interval}s", style="bold blue")
+    await asyncio.sleep(interval)
 
 def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
     """
@@ -1916,6 +2054,9 @@ async def main():
         choices=["wei", "shu", "wu"],
         help="faction to control (default: wei)"
     )
+    parser.add_argument(
+        "--interval", type=float, default=0, help="Interval time (default: 0)"
+    )
 
     args = parser.parse_args()
 
@@ -1924,11 +2065,13 @@ async def main():
     console_system.print(f"🆔 Agent ID: {args.agent_id}")
     console_system.print(f"🔧 Provider: {args.provider}")
     console_system.print(f"⚔️ Faction: {args.faction}", style="bold red")
+    console_system.print(f"🕒 Interval: {args.interval}s", style="bold blue")
     console_system.print("=" * 60)
 
     # Set environment variables
     os.environ["LLM_PROVIDER"] = args.provider
     os.environ["AGENT_FACTION"] = args.faction
+    os.environ["INTERVAL"] = str(args.interval)
 
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
