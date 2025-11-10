@@ -67,7 +67,6 @@ class LLMActionHandlerV3:
             # System
             "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # added end_turn
-            "register_agent_info": self.handle_register_agent_info,
         }
 
     def execute_action(
@@ -2797,95 +2796,3 @@ class LLMActionHandlerV3:
         #     # "range_status": "in_range" if in_range else "out_of_range",
         # }
         return in_range
-
-    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Register agent information for a faction (provider/model/base_url/etc)."""
-        try:
-            # Validate required parameters
-            required_params = ["faction", "provider", "model_id", "base_url"]
-            for param in required_params:
-                if param not in params:
-                    return {
-                        "success": False,
-                        "result": False,
-                        "message": f"Missing required parameter: {param}",
-                        "details": f"Missing required parameter: {param}",
-                    }
-
-            faction = params["faction"]
-            provider = params["provider"]
-            model_id = params["model_id"]
-            base_url = params["base_url"]
-            # Optional features
-            enable_thinking = params.get("enable_thinking", False)
-
-            # Create AgentInfo
-            from ..components.agent_info import AgentInfo, AgentInfoRegistry
-
-            agent_info = AgentInfo(
-                provider=provider,
-                model_id=model_id,
-                base_url=AgentInfoRegistry.sanitize_url(base_url),
-                agent_id=params.get("agent_id"),
-                version=params.get("version"),
-                note=params.get("note"),
-                # pass through optional thinking flag
-                enable_thinking=enable_thinking,
-            )
-
-            # Get or create registry
-            registry = self.world.get_singleton_component(AgentInfoRegistry)
-            if not registry:
-                registry = AgentInfoRegistry()
-                self.world.add_singleton_component(registry)
-
-            # Register
-            success = registry.register_agent(faction, agent_info)
-
-            # Maintain registered_factions set in GameStats
-            try:
-                from ..components.state import GameStats
-
-                stats = self.world.get_singleton_component(GameStats)
-                if stats is None:
-                    stats = GameStats()
-                    self.world.add_singleton_component(stats)
-                from ..prefabs.config import Faction as _Faction
-
-                reg_faction = _Faction(faction)
-                stats.registered_factions.add(reg_faction)
-            except Exception as _e:
-                print(
-                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
-                )
-
-            if success:
-                return {
-                    "success": True,
-                    "result": True,
-                    "details": f"Agent info registered for faction: {faction}",
-                    "message": f"Agent info registered for faction: {faction}",
-                    "registered_info": {
-                        "faction": faction,
-                        "provider": provider,
-                        "model_id": model_id,
-                        "base_url_sanitized": agent_info.base_url,
-                        # include thinking flag in response
-                        "enable_thinking": enable_thinking,
-                    },
-                }
-            else:
-                return {
-                    "success": False,
-                    "result": False,
-                    "message": "Failed to register agent info",
-                    "details": "Failed to register agent info",
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "result": False,
-                "details": f"Error registering agent info: {str(e)}",
-                "message": f"Error registering agent info: {str(e)}",
-            }
