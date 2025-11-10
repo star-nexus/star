@@ -50,6 +50,45 @@ class AgentClient(AsyncWebSocketClient):
         else:
             raise Exception("Failed to send action")
 
+    async def send_actions(self, actions: List[Dict[str, Any]]) -> int:
+        """Send multiple actions to the environment in one batch message.
+
+        Each item in `actions` should be a dict with:
+          - action: str (required)
+          - parameters: dict (optional, defaults to {})
+          - id: Union[str, int] (optional; will be generated if missing)
+
+        Returns the generated batch message id.
+        """
+        prepared_actions: List[Dict[str, Any]] = []
+        request_id = gen_id()
+        for item in actions:
+            name = item.get("action")
+            params = item.get("parameters", {}) or {}
+            if not name:
+                raise ValueError("Each action item must include an 'action' field")
+            item_id = item.get("id") or gen_id() # function tool call ID
+            prepared_actions.append(
+                {
+                    "id": item_id,
+                    "action": name,
+                    "parameters": params,
+                }
+            )
+        success = await self.send_message(
+            MessageType.MESSAGE.value,
+            {
+                "type": "action_batch",
+                "id": request_id,
+                "actions": prepared_actions,
+            },
+            target={"type": "env", "id": self.env_id},
+        )
+        if success:
+            return request_id
+        else:
+            raise Exception("Failed to send action batch")
+
 
 class EnvironmentClient(AsyncWebSocketClient):
     """Environment client."""
