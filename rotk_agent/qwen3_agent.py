@@ -632,10 +632,28 @@ class RoTKChatAgent:
             # Send batch
             resp = await perform_multiple_actions(actions_payload, None)
             console.print(f"🔧 Received responses from ENV: {resp}", style="cyan")
-            # console.print(f"{json.dumps({resp}, indent=2, ensure_ascii=False)}", style="cyan")
+
+            # 🆕 Handle ENV cooldown (error_code=2011). If detected, wait and retry once.
+            try:
+                is_cd = isinstance(resp, dict) and (
+                    resp.get("error_code") == 2011
+                    or ("Cooldown" in str(resp.get("message", "")) and "Retry in" in str(resp.get("message", "")))
+                )
+                if is_cd:
+                    import re as _re
+                    msg = str(resp.get("message", ""))
+                    m = _re.search(r"Retry in\s+([0-9.]+)s", msg)
+                    wait_secs = float(m.group(1)) if m else 1.0
+                    console.print(f"⏱️ Cooldown hit, retrying after {wait_secs:.2f}s ...", style="yellow")
+                    await asyncio.sleep(wait_secs + 0.05)
+                    resp = await perform_multiple_actions(actions_payload, None)
+                    console.print(f"🔁 Retried responses from ENV: {resp}", style="cyan")
+            except Exception as _e:
+                console.print(f"⚠️ Cooldown handling failed, proceed without retry: {_e}", style="yellow")
+
             # Expect shape: { "results": [ { "id", "action", "response", "success" } ], "count": N }
             results = (resp or {}).get("results", [])
-            # console.print(f"🔧 Results: {json.dumps({results}, indent=2, ensure_ascii=False)}", style="cyan")
+            
             # Map each result back to a tool message
             for item in results:
                 tc_id = item.get("id")

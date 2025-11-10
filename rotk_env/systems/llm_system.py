@@ -147,6 +147,9 @@ class LLMSystem(System):
         
         # 🆕 游戏结束通知状态
         self.game_end_notified = False
+        # 🆕 消息级冷却（鼓励批量发送）
+        self.message_cooldown_seconds: float = 0.5
+        self._agent_last_message_ts: Dict[str, float] = {}
 
         # 系统级错误代码
         self.system_error_codes = {
@@ -160,6 +163,7 @@ class LLMSystem(System):
             2008: "系统状态异常",
             2009: "网络连接错误",
             2010: "内部服务错误",
+            2011: "操作频率过高",
         }
 
     def initialize(self, world):
@@ -191,6 +195,7 @@ class LLMSystem(System):
             "strategy_ping": self.handle_strategy_ping,
             "report_llm_stats": self.handle_report_llm_stats,
             "retrieve_game_status": self.handle_retrieve_game_status,
+            "register_agent_info": self.handle_register_agent_info,
         }
 
     def add_listener(self):
@@ -230,6 +235,19 @@ class LLMSystem(System):
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
+                # 🆕 消息级冷却检查（仅当批量中包含非系统级动作时生效；纯系统级动作跳过冷却）
+                try:
+                    has_non_system_action = False
+                    for _item in (actions or []):
+                        _act = (_item or {}).get("action")
+                        if not _act or _act not in self.system_actions:
+                            has_non_system_action = True
+                            break
+                except Exception:
+                    has_non_system_action = True
+                if has_non_system_action:
+                    if not self._enforce_message_cooldown(agent_id, batch_id):
+                        return
 
                 try:
                     size = len(actions)
@@ -298,6 +316,40 @@ class LLMSystem(System):
             print(f"消息处理错误: {e}")
             if "sender" in locals():
                 self.send_error_response(sender, f"Message processing error: {e}")
+    
+    def _enforce_message_cooldown(self, agent_id: Optional[str], message_id: Union[int, str]) -> bool:
+        """简单易行的消息级冷却：限制同一 Agent 发送消息的频率，鼓励一次消息内批量 action。"""
+        try:
+            if not agent_id:
+                return True
+            now = time.time()
+            last_ts = self._agent_last_message_ts.get(agent_id)
+            if last_ts is not None:
+                elapsed = now - last_ts
+                if elapsed < self.message_cooldown_seconds:
+                    remaining = max(0.0, self.message_cooldown_seconds - elapsed)
+                    error_result = self._create_system_error_response(
+                        "message",
+                        (
+                            f"Message frequency too high. Cooldown {self.message_cooldown_seconds:.2f}s; "
+                            f"please batch multiple actions into one message. Retry in {remaining:.2f}s."
+                        ),
+                        2011,
+                    )
+                    print(
+                        f"[LLMSystem] ⏱️ Message rejected due to cooldown: agent_id={agent_id}, remaining={remaining:.2f}s"
+                    )
+                    # 用消息ID回包
+                    self.client.response_to_agent(agent_id, message_id, error_result, "str")
+                    # 统一计数
+                    self._record_interaction(agent_id, None)
+                    return False
+            # 通过，记录时间戳
+            self._agent_last_message_ts[agent_id] = now
+            return True
+        except Exception as _e:
+            print(f"[LLMSystem] 冷却检查异常: {_e}")
+            return True
 
     def on_connect(self, message):
         print("LLMSystem connected", message)
@@ -626,6 +678,98 @@ class LLMSystem(System):
             }
         except Exception as e:
             return {"success": False, "message": f"Report game status failed: {e}"}
+
+    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Register agent information for a faction (provider/model/base_url/etc)."""
+        try:
+            # Validate required parameters
+            required_params = ["faction", "provider", "model_id", "base_url"]
+            for param in required_params:
+                if param not in params:
+                    return {
+                        "success": False,
+                        "result": False,
+                        "message": f"Missing required parameter: {param}",
+                        "details": f"Missing required parameter: {param}",
+                    }
+
+            faction = params["faction"]
+            provider = params["provider"]
+            model_id = params["model_id"]
+            base_url = params["base_url"]
+            # Optional features
+            enable_thinking = params.get("enable_thinking", False)
+
+            # Create AgentInfo
+            from ..components.agent_info import AgentInfo, AgentInfoRegistry
+
+            agent_info = AgentInfo(
+                provider=provider,
+                model_id=model_id,
+                base_url=AgentInfoRegistry.sanitize_url(base_url),
+                agent_id=params.get("agent_id"),
+                version=params.get("version"),
+                note=params.get("note"),
+                # pass through optional thinking flag
+                enable_thinking=enable_thinking,
+            )
+
+            # Get or create registry
+            registry = self.world.get_singleton_component(AgentInfoRegistry)
+            if not registry:
+                registry = AgentInfoRegistry()
+                self.world.add_singleton_component(registry)
+
+            # Register
+            success = registry.register_agent(faction, agent_info)
+
+            # Maintain registered_factions set in GameStats
+            try:
+                from ..components.state import GameStats
+
+                stats = self.world.get_singleton_component(GameStats)
+                if stats is None:
+                    stats = GameStats()
+                    self.world.add_singleton_component(stats)
+                from ..prefabs.config import Faction as _Faction
+
+                reg_faction = _Faction(faction)
+                stats.registered_factions.add(reg_faction)
+            except Exception as _e:
+                print(
+                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
+                )
+
+            if success:
+                return {
+                    "success": True,
+                    "result": True,
+                    "details": f"Agent info registered for faction: {faction}",
+                    "message": f"Agent info registered for faction: {faction}",
+                    "registered_info": {
+                        "faction": faction,
+                        "provider": provider,
+                        "model_id": model_id,
+                        "base_url_sanitized": agent_info.base_url,
+                        # include thinking flag in response
+                        "enable_thinking": enable_thinking,
+                    },
+                }
+            else:
+                return {
+                    "success": False,
+                    "result": False,
+                    "message": "Failed to register agent info",
+                    "details": "Failed to register agent info",
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "result": False,
+                "details": f"Error registering agent info: {str(e)}",
+                "message": f"Error registering agent info: {str(e)}",
+            }
 
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
