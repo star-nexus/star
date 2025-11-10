@@ -2,6 +2,7 @@ import asyncio
 import argparse
 from contextvars import ContextVar
 from datetime import datetime
+import time
 import os
 import sys
 import json
@@ -160,7 +161,7 @@ class ToolManager:
         """Get all tool definitions"""
         return list(self.tools.values())
     
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def execute_single_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute tool"""
         if tool_name not in self.tools:
             raise ValueError(f"Tool {tool_name} does not exist")
@@ -261,9 +262,9 @@ class LLMClient:
             "Authorization": f"Bearer {self.config.api_key}",
         }
         
-        console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
-        console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-        console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        # console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
+        # console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+        # console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
@@ -576,8 +577,8 @@ class RoTKChatAgent:
         )
         
         if parallel_execution:
-            console.print("⚡ Multiple perform_action calls detected, using parallel execution mode", style="cyan")
-            await self._handle_tool_calls_parallel(tool_calls)
+            console.print("⚡ Multiple perform_action calls detected, using batched send mode", style="cyan")
+            await self._handle_tool_calls_batched(tool_calls)
         else:
             console.print("🔄 Using sequential execution mode", style="cyan")
             await self._handle_tool_calls_sequential(tool_calls)
@@ -595,6 +596,65 @@ class RoTKChatAgent:
             tasks.append(task)
         
         await asyncio.gather(*tasks)
+    
+    async def _handle_tool_calls_batched(self, tool_calls: List[Dict[str, Any]]):
+        """Batch multiple perform_action tool calls into a single ENV message"""
+        console.print("🔧 Batching multiple perform_action tool calls into a single ENV message", style="cyan")
+        console.print(f"🔧 Tool calls: {tool_calls}", style="cyan")
+        try:
+            # Build actions payload with tool_call ids
+            actions_payload: List[Dict[str, Any]] = []
+            id_to_arguments: Dict[str, Dict[str, Any]] = {}
+            for tool_call in tool_calls:
+                tool_call_id = tool_call.get("id")
+                fn = tool_call.get("function", {}).get("name")
+                args_str = tool_call.get("function", {}).get("arguments", "")
+                if fn != "perform_action":
+                    raise ValueError("Only perform_action can be batched")
+                try:
+                    args = json.loads(args_str) if args_str else {}
+                except json.JSONDecodeError as e:
+                    # fall back to single execution error pathway
+                    raise ValueError(f"Invalid JSON arguments for tool_call {tool_call_id}: {e}")
+                action_name = args.get("action")
+                params = args.get("params", {})
+                if not action_name:
+                    raise ValueError(f"Missing 'action' in tool_call {tool_call_id}")
+                actions_payload.append(
+                    {
+                        "id": tool_call_id,  # use tool call id for alignment
+                        "action": action_name,
+                        "parameters": params,
+                    }
+                )
+                id_to_arguments[tool_call_id] = args
+            
+            # Send batch
+            resp = await perform_multiple_actions(actions_payload, None)
+            console.print(f"🔧 Received responses from ENV: {resp}", style="cyan")
+            # console.print(f"{json.dumps({resp}, indent=2, ensure_ascii=False)}", style="cyan")
+            # Expect shape: { "results": [ { "id", "action", "response", "success" } ], "count": N }
+            results = (resp or {}).get("results", [])
+            # console.print(f"🔧 Results: {json.dumps({results}, indent=2, ensure_ascii=False)}", style="cyan")
+            # Map each result back to a tool message
+            for item in results:
+                tc_id = item.get("id")
+                action_name = item.get("action")
+                result_payload = item.get("response")
+                # Apply filtering for perform_action results
+                filtered = self._filter_tool_result("perform_action", result_payload, id_to_arguments.get(tc_id, {}))
+                
+                tool_message = Message(
+                    role="tool",
+                    content=json.dumps(filtered, ensure_ascii=False),
+                    tool_call_id=tc_id,
+                )
+                async with self._history_lock:
+                    self.conversation_history.append(tool_message)
+        except Exception as e:
+            console.print(f"❌ Batched tool calls execution error: {e}", style="red")
+            # On failure, fallback to sequential execution for robustness
+            await self._handle_tool_calls_sequential(tool_calls)
     
     def _is_spatial_awareness_error(self, result: Dict[str, Any]) -> bool:
         """
@@ -680,7 +740,7 @@ class RoTKChatAgent:
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
             
             # Execute tool
-            result = await self.tool_manager.execute_tool(function_name, arguments)
+            result = await self.tool_manager.execute_single_tool(function_name, arguments)
             
             # 检查 ENV 返回的错误信息，判断是否是工具调用错误
             if isinstance(result, dict):
@@ -951,7 +1011,7 @@ class RoTKChatAgent:
         if len(evidence) > 120:
             evidence = evidence[:117] + "..."
         try:
-            await self.tool_manager.execute_tool("perform_action", {
+            await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "strategy_ping",
                 "params": {
                     "faction": self.faction,
@@ -1207,7 +1267,7 @@ class RoTKChatAgent:
                 "enable_thinking": config.enable_thinking
             }
             
-            result = await self.tool_manager.execute_tool("perform_action", {
+            result = await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
             })
@@ -1240,7 +1300,7 @@ class RoTKChatAgent:
             console.print(f"📊 Report tool call gen errors total: {toolcall_error_total}", style="cyan")
             console.print(f"📊 Report spatial awareness errors: {spatial_error_total}", style="cyan")
 
-            result = await self.tool_manager.execute_tool("perform_action", {
+            result = await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "report_llm_stats",
                 "params": {
                     "faction": self.faction,
@@ -1844,6 +1904,81 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
         
         await asyncio.sleep(0.1)  # Waiting for response
 
+
+async def perform_multiple_actions(
+    actions: List[Any],
+    params: Optional[List[Dict[str, Any]]] = None,
+) -> Any:
+    """Perform multiple actions in a single message.
+
+    Supports the following calling patterns:
+      1. actions=[{"id": "...", "action": "...", "parameters": {...}}, ...]
+         (params should be omitted)
+      2. actions=["move", "attack"], params=[{...}, {...}]
+         (per-action ids will be auto-generated)
+    """
+    try:
+        if not actions:
+            return {"results": [], "count": 0}
+
+        if params is None and actions and isinstance(actions[0], dict):
+            action_requests: List[Dict[str, Any]] = []
+            for item in actions:
+                if "action" not in item:
+                    raise ValueError("Each action dict must include an 'action' field")
+                action_id = item.get("id") or f"toolcall_{int(time.time() * 1e6)}"
+                action_requests.append(
+                    {
+                        "id": action_id,
+                        "action": item["action"],
+                        "parameters": item.get("parameters")
+                        or item.get("params")
+                        or {},
+                    }
+                )
+        else:
+            if params is None:
+                raise ValueError("params must be provided when actions are not action dicts")
+            if len(actions) != len(params):
+                raise ValueError("actions and params must have the same length")
+            timestamp = int(time.time() * 1e6)
+            action_requests = []
+            for idx, (action_name, param) in enumerate(zip(actions, params)):
+                action_requests.append(
+                    {
+                        "id": f"toolcall_{timestamp}_{idx}",
+                        "action": action_name,
+                        "parameters": param or {},
+                    }
+                )
+
+        client = RemoteContext.get_client()
+        request_id = await client.send_actions(action_requests)
+        responses = await get_env_response(request_id, timeout_seconds=5)
+
+        return responses
+
+    except TimeoutError as e:
+        console.print(f"⏰ [perform_multiple_actions] Action execution timeout: {e}", style="red")
+        handle_error_with_logging(
+            e,
+            function_name="perform_multiple_actions",
+            action=actions,
+            params=params,
+            request_id=getattr(e, "request_id", "unknown"),
+            elapsed_time=getattr(e, "elapsed_time", "unknown"),
+            timeout_seconds=getattr(e, "timeout_seconds", "unknown"),
+        )
+        raise e
+    except Exception as e:
+        console.print(f"❌ [perform_multiple_actions] Action execution error: {e}", style="red")
+        handle_error_with_logging(
+            e,
+            function_name="perform_multiple_actions",
+            action=actions,
+            params=params,
+        )
+        raise e
 
 async def perform_action(action: str, params: Any):
     """Execute action"""
