@@ -58,13 +58,29 @@ class CombatSystem(System):
     ) -> Optional[Dict[str, Any]]:
         """Execute an attack and return detailed combat result (for LLM layer)"""
         # Basic validation (LLM layer is responsible; keep final guard here)
-        if not self._validate_attack(attacker_entity, target_entity):
-            return None
+        valid, reason, context = self._validate_attack(attacker_entity, target_entity)
+        if not valid:
+            return {
+                "success": False,
+                "error": reason or "invalid_attack",
+                "message": "Attack validation failed",
+                "details": context or {},
+            }
 
         # Check action points (LLM layer is responsible; final guard here)
         action_points = self.world.get_component(attacker_entity, ActionPoints)
         if not action_points or not action_points.can_perform_action(ActionType.ATTACK):
-            return None
+            return {
+                "success": False,
+                "error": "insufficient_action_points",
+                "message": "Insufficient action points for attack",
+                "details": {
+                    "attacker_entity": attacker_entity,
+                    "current_ap": action_points.current_ap if action_points else None,
+                    "required_ap": 1,
+                    "suggestion": "Wait for action points to recover before attacking",
+                },
+            }
 
         # Snapshot pre-battle state
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
@@ -145,8 +161,10 @@ class CombatSystem(System):
             self._create_miss_display(target_entity)
             self._record_miss_to_systems(attacker_entity, target_entity)
             action_points.consume_ap(ActionType.ATTACK)
-
-            return battle_result
+            return {
+                "success": True,
+                "battle_result": battle_result,
+            }
 
         # 2) Calculate base damage
         damage = self._calculate_damage(
@@ -248,12 +266,16 @@ class CombatSystem(System):
             }
         )
 
-        return battle_result
+        return {
+            "success": True,
+            "battle_result": battle_result,
+        }
 
     def attack(self, attacker_entity: int, target_entity: int) -> bool:
         """Execute attack (full rules implementation)"""
         # Basic validation
-        if not self._validate_attack(attacker_entity, target_entity):
+        valid, _, _ = self._validate_attack(attacker_entity, target_entity)
+        if not valid:
             return False
 
         # Check action points
@@ -378,7 +400,9 @@ class CombatSystem(System):
 
         return True
 
-    def _validate_attack(self, attacker_entity: int, target_entity: int) -> bool:
+    def _validate_attack(
+        self, attacker_entity: int, target_entity: int
+    ) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
         """Validate whether an attack is valid"""
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
         target_pos = self.world.get_component(target_entity, HexPosition)
@@ -387,21 +411,29 @@ class CombatSystem(System):
         attacker_unit = self.world.get_component(attacker_entity, Unit)
         target_unit = self.world.get_component(target_entity, Unit)
 
-        if not all(
-            [
-                attacker_pos,
-                target_pos,
-                attacker_combat,
-                attacker_count,
-                attacker_unit,
-                target_unit,
-            ]
-        ):
-            return False
+        components = {
+            "attacker_pos": attacker_pos,
+            "target_pos": target_pos,
+            "attacker_combat": attacker_combat,
+            "attacker_count": attacker_count,
+            "attacker_unit": attacker_unit,
+            "target_unit": target_unit,
+        }
 
-        # Check unit count requirement (N ≤ 10% cannot initiate attack)
-        if attacker_count.ratio <= 0.1:
-            return False
+        missing = [name for name, comp in components.items() if comp is None]
+        if missing:
+            return (
+                False,
+                "missing_components",
+                {
+                    "missing": missing,
+                    "attacker_entity": attacker_entity,
+                    "target_entity": target_entity,
+                    "suggestion": "Ensure both attacker and target units exist and are initialized correctly",
+                },
+            )
+
+
 
         # Disabled single-attack-per-turn check - allow multiple attacks (if AP allows)
         # if attacker_combat.has_attacked:
@@ -412,13 +444,33 @@ class CombatSystem(System):
             (attacker_pos.col, attacker_pos.row), (target_pos.col, target_pos.row)
         )
         if distance > attacker_combat.attack_range:
-            return False
+            return (
+                False,
+                "target_out_of_range",
+                {
+                    "attacker_entity": attacker_entity,
+                    "target_entity": target_entity,
+                    "distance": distance,
+                    "attack_range": attacker_combat.attack_range,
+                    "suggestion": "Move closer to the target before attacking",
+                },
+            )
 
         # Ensure target is enemy
         if attacker_unit.faction == target_unit.faction:
-            return False
+            return (
+                False,
+                "friendly_fire",
+                {
+                    "attacker_entity": attacker_entity,
+                    "target_entity": target_entity,
+                    "attacker_faction": attacker_unit.faction.value,
+                    "target_faction": target_unit.faction.value,
+                    "suggestion": "Select an enemy unit instead of a friendly unit",
+                },
+            )
 
-        return True
+        return True, None, None
 
     def _roll_hit(
         self,

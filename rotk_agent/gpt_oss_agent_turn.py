@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
 from openai import AsyncOpenAI, OpenAI
 from openai import APIConnectionError, APITimeoutError, APIStatusError
+from string import Template
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -142,7 +143,7 @@ class LLMClient:
                 stream=False,
                 parallel_tool_calls=True,
                 tool_choice="auto",
-                reasoning={"effort": "medium"},
+                reasoning={"effort": "low"},
             )
             
             console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
@@ -1507,15 +1508,21 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
-        system_prompt = raw_prompt.format(faction=faction, faction_name=faction_info["name"], opponent=faction_info["enemy"], opponent_name=opponent_info["name"])
+        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
+        tmpl = Template(raw_prompt)
+        system_prompt = tmpl.safe_substitute(
+            faction=faction,
+            faction_name=faction_info["name"],
+            opponent=faction_info["enemy"],
+            opponent_name=opponent_info["name"],
+        )
 
         user_prompt = f"""
 **当前配置**:
 - **我方势力**: {faction_info["name"]} ({faction})
 - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
+- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。
         """
 
         count = 0
@@ -1831,20 +1838,61 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent.register_tool(
             name="perform_action",
             function=perform_action,
-            description="在游戏环境中执行一个特定的动作。",
+            description="Execute a specific action in the game environment.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "要执行的动作的名称。",
+                        "description": "The name of the action to execute.",
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "type": "object",
-                        "description": "指定动作所需的参数字典。",
-                        "additionalProperties": True,
+                        "description": "Parameters object for the specified action.",
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "description": "Move a unit to a target position. Consumes Movement Points (MP).",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Friendly unit identifier."},
+                                    "target_position": {
+                                        "type": "object",
+                                        "description": "Target position in flat-topped even-q offset coordinates.",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target column (even-q offset), range -7 to 7."},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target row (even-q offset), range -7 to 7."}
+                                        },
+                                        "required": ["col", "row"]
+                                    }
+                                },
+                                "required": ["unit_id", "target_position"],
+                                "title": "move"
+                            },
+                            {
+                                "type": "object",
+                                "description": "Attack a target unit with a friendly unit. Consumes 1 Action Point (AP).",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Attacking friendly unit identifier."},
+                                    "target_id": {"type": "integer", "minimum": 0, "description": "Target enemy unit identifier."}
+                                },
+                                "required": ["unit_id", "target_id"],
+                                "title": "attack"
+                            },
+                            {
+                                "type": "object",
+                                "description": "Retrieve the status of the specified faction, including unit positions, HP, remaining AP and MP. Does not consume any points.",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"], "description": "Faction to query (one of: wei, shu, wu)."}
+                                },
+                                "required": ["faction"],
+                                "title": "get_faction_state"
+                            }
+                        ]
                     },
                 },
                 "required": ["action", "params"],
@@ -1858,8 +1906,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                 request_id = await client.send_action("end_turn", {"faction": faction})
                 response = await get_env_response(request_id, timeout_seconds=5)
 
-                # Only close the turn gate when ENV confirms success (result == True)
-                if isinstance(response, dict) and response.get("success", False):
+                # Only close the turn gate when ENV confirms success
+                # Accept either response["success"] == True or response["result"] == True
+                resp_success = False
+                if isinstance(response, dict):
+                    resp_success = bool(response.get("success") is True or response.get("result") is True)
+
+                if resp_success:
                     agent._clear_turn_gate("end_turn")
                     # Clear old turn_start event to avoid duplicate processing
                     try:
@@ -1871,6 +1924,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                     except Exception as e:
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
+                else:
+                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
                 # return response
                 return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
@@ -1880,7 +1935,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent.register_tool(
             name="end_turn",
             function=end_turn,
-            description="结束本回合，恢复行动力和移动力。",
+            description="End the current turn to recover Action Points (AP) and Movement Points (MP).",
             parameters={"type": "object", "properties": {}, "required": []},
         )
 

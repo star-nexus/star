@@ -16,7 +16,7 @@ from .unit import (
 )
 
 # 导入原有Movement组件用于向后兼容
-from .unit import Movement as LegacyMovement, ActionPoints as LegacyActionPoints
+from .unit import Movement as LegacyMovement
 
 # 导入新的多层次资源组件
 from .multilayer_resources import (
@@ -95,7 +95,6 @@ __all__ = [
     "SkillPoints",
     # 向后兼容组件
     "LegacyMovement",
-    "LegacyActionPoints",
     # 地形组件
     "Terrain",
     "TerrainModifier",

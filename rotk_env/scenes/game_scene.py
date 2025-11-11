@@ -38,6 +38,7 @@ from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
+from ..utils.hex_utils import HexMath
 from ..components.settlement_report import SettlementReport
 from ..components import (
     GameState,
@@ -257,13 +258,18 @@ class GameScene(Scene):
                 continue
 
             player = self.world.get_component(player_entity, Player)
-            center_q, center_r = faction_centers[faction]
+            center_col, center_row = faction_centers[faction]
 
             # Generate all unit positions for this faction
-            positions = self._generate_unit_positions(center_q, center_r, sum(count))
+            positions = self._generate_unit_positions_simple(
+                center_col, center_row, sum(count), faction
+            )
 
             # Generate diverse unit types
             unit_types = self._generate_unit_types(count)
+            if len(unit_types) > 1 and faction == Faction.WEI:
+                unit_types[0], unit_types[1] = unit_types[1], unit_types[0]
+                unit_types[2], unit_types[-1] = unit_types[-1], unit_types[2]
 
             for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
                 unit_entity = self._create_unit(
@@ -274,17 +280,31 @@ class GameScene(Scene):
                 )
                 player.units.add(unit_entity)
 
+
+    def _generate_unit_positions_simple(
+        self, center_col: int, center_row: int, count: int, faction: Faction
+    ) -> list:
+        if faction == Faction.WEI:
+            return [(1, 3), (2, 3), (1, 4), (2, 4), (3, 3)]
+        elif faction == Faction.SHU:
+            return [(-2,-3), (-1,-4), (-3,-4), (-2,-4), (-1, -5)]
+        elif faction == Faction.WU:
+            return [(1, -3), (2, -3), (1, -4), (2, -4), (3, -3)]
+
+
     def _generate_unit_positions(
-        self, center_q: int, center_r: int, count: int
+        self, center_col: int, center_row: int, count: int
     ) -> list:
         """Generate unit positions - based on the center point, spiral distribution"""
         positions = []
+        if count == 0:
+            return []
 
         if count == 1:
-            return [(center_q, center_r)]
+            return [(center_col, center_row)]
 
         # The first unit is placed in the center
-        positions.append((center_q, center_r))
+        positions.append((center_col, center_row))
         remaining = count - 1
 
         # Six hexagon directions (flat-top orientation)
@@ -299,8 +319,8 @@ class GameScene(Scene):
             for i in range(positions_in_ring):
                 if i < 6:  # First layer (6 directions each)
                     dq, dr = hex_directions[i]
-                    q = center_q + dq * radius
-                    r = center_r + dr * radius
+                    col = center_col + dq * radius
+                    row = center_row + dr * radius
                 else:  # Fill edges
                     # Add extra positions on the hexagon edges
                     side = (i - 6) // radius
@@ -312,12 +332,12 @@ class GameScene(Scene):
 
                         # Interpolate on the edges
                         t = (pos_on_side + 1) / (radius + 1)
-                        q = center_q + int(dq1 * radius * (1 - t) + dq2 * radius * t)
-                        r = center_r + int(dr1 * radius * (1 - t) + dr2 * radius * t)
+                        col = center_col + int(dq1 * radius * (1 - t) + dq2 * radius * t)
+                        row = center_row + int(dr1 * radius * (1 - t) + dr2 * radius * t)
                     else:
                         break
 
-                positions.append((q, r))
+                positions.append((col, row))
                 remaining -= 1
 
                 if remaining <= 0:
@@ -401,11 +421,16 @@ class GameScene(Scene):
                 max_mp=unit_stats.movement,
             ),
         )
+
+        game_mode_comp = self.world.get_singleton_component(GameModeComponent)
+        is_turn_based = game_mode_comp and game_mode_comp.mode == GameMode.TURN_BASED
+        ap = 2 if is_turn_based else 1
+
         self.world.add_component(
             unit_entity,
             ActionPoints(
-                current_ap=2,  # Default action points
-                max_ap=2,
+                current_ap=ap,
+                max_ap=ap,
             ),
         )
         self.world.add_component(
@@ -439,9 +464,6 @@ class GameScene(Scene):
         )
         self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
         self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
-
-        # Add movement points component
-        self.world.add_component(unit_entity, ActionPoints(current_ap=2, max_ap=2))
 
         # Add skill component
         self.world.add_component(unit_entity, UnitSkills())

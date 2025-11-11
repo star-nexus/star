@@ -3,6 +3,7 @@
 """
 
 from dataclasses import dataclass, field
+import math
 from typing import Set, Optional, Dict
 from framework import Component
 from ..prefabs.config import UnitType, Faction, UnitState, ActionType
@@ -76,6 +77,16 @@ class Combat(Component):
     attack_range: int = 1
     has_attacked: bool = False
 
+    def attack_multiplier(self, h, A_m=0.92, p=0.5550325, s=0.035):
+        # h should be in [0,1]
+        if h <= 0.0:
+            return 0.0
+        w = 1.0 / (1.0 + math.exp(-(h - 0.3) / s))
+        L = A_m + (1.0 - A_m) / 0.7 * (h - 0.3)
+        P = A_m * (h / 0.3) ** p
+        return w * L + (1.0 - w) * P
+
+
     def get_effective_stats(
         self, unit_count: UnitCount, status: UnitStatus, terrain_coeff: float = 1.0
     ) -> tuple:
@@ -84,7 +95,8 @@ class Combat(Component):
 
         # 动态攻防公式：基础值 × (N/M)^0.7 × 状态系数 × 地形系数
         ratio = unit_count.ratio
-        attack_modifier = ratio**0.3
+        # sigmoid-like modifier
+        attack_modifier = self.attack_multiplier(ratio)
         defense_modifier = 1.0
         status_modifier = GameConfig.STATE_COEFFICIENTS.get(status.current_status, 1.0)
 
@@ -139,41 +151,3 @@ class UnitSkills(Component):
         """使用技能"""
         if skill_name in self.available_skills:
             self.skill_cooldowns[skill_name] = cooldown
-
-
-@dataclass
-class ActionPoints(Component):
-    """行动力组件"""
-
-    current_ap: int = 2  # 当前行动力
-    max_ap: int = 2  # 最大行动力
-
-    def can_perform_action(self, action_type: ActionType) -> bool:
-        """检查是否有足够行动力执行动作"""
-        cost = self._get_action_cost(action_type)
-        return self.current_ap >= cost
-
-    def consume_ap(self, action_type: ActionType) -> bool:
-        """消耗行动力"""
-        cost = self._get_action_cost(action_type)
-        if self.current_ap >= cost:
-            self.current_ap -= cost
-            return True
-        return False
-
-    def _get_action_cost(self, action_type: ActionType) -> int:
-        """获取动作消耗的行动点（决策层级）"""
-        action_costs = {
-            # ActionType.MOVE: 1,  # 移动决策：固定1点
-            ActionType.ATTACK: 1,  # 攻击决策：固定1点
-            ActionType.GARRISON: 1,  # 驻扎决策：固定1点
-            ActionType.REST: 0,  # 待命：无消耗
-            ActionType.SKILL: 1,  # 技能决策：固定1点
-            ActionType.OCCUPY: 1,  # 占领决策：固定1点
-            ActionType.FORTIFY: 1,  # 建造决策：固定1点
-        }
-        return action_costs.get(action_type, 1)
-
-    def reset(self):
-        """重置行动力（回合开始时）"""
-        self.current_ap = self.max_ap

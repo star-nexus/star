@@ -6,7 +6,8 @@ LLM系统 - 游戏全局控制接口
 import asyncio
 import json
 import time
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union
+from dataclasses import dataclass
 
 from rich import print_json
 from framework import System, World
@@ -40,6 +41,70 @@ from protocol.star_client_v2 import (
 # from .llm_action_handler_v2 import LLMActionHandlerV2 as LLMActionHandler
 from .llm_action_handler_v3 import LLMActionHandlerV3 as LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
+
+
+# ==================== Action Request Data Structure ====================
+
+@dataclass
+class ActionRequest:
+    """Encapsulates an action request from an LLM agent"""
+    agent_id: Optional[str]
+    action_id: Union[int, str]
+    action_name: str
+    parameters: Dict[str, Any]
+    timestamp: float
+
+
+# ==================== Action Executor ====================
+
+class ActionExecutor:
+    """
+    Handles the execution logic for LLM actions.
+    Decouples action reception from action execution.
+    """
+    
+    def __init__(self, llm_system):
+        """
+        Initialize the ActionExecutor with a reference to the LLMSystem.
+        
+        Args:
+            llm_system: Reference to the parent LLMSystem instance
+        """
+        self.llm_system = llm_system
+        self.world = llm_system.world
+        
+    def execute(self, request: ActionRequest) -> Dict[str, Any]:
+        """
+        Execute a single action request and return the result.
+        
+        Args:
+            request: The ActionRequest to execute
+            
+        Returns:
+            Dict containing the execution result
+        """
+        action = request.action_name
+        params = request.parameters
+        
+        # 1. 检查是否为系统级动作
+        if action in self.llm_system.system_actions:
+            result = self.llm_system.system_actions[action](params)
+            
+        # 2. 检查是否为单位动作 (委托给ActionHandler)
+        elif action in self.llm_system.action_handler.action_handlers:
+            result = self.llm_system.action_handler.execute_action(action, params)
+            
+        # 3. 检查是否为观测动作 (委托给ObservationSystem)
+        elif self.llm_system._is_observation_action(action):
+            result = self.llm_system._handle_observation_action(action, params)
+            
+        # 4. 未知动作
+        else:
+            result = self.llm_system._create_system_error_response(
+                action, f"UNKNOWN ACTION: {action}", 2010
+            )
+            
+        return result
 
 
 class SyncEnvClient(SyncWebSocketClient):
@@ -104,6 +169,9 @@ class LLMSystem(System):
         self.action_handler = LLMActionHandler(world)
         self.observation_system = LLMObservationSystem(world)
 
+        # 🆕 初始化 ActionExecutor
+        self.action_executor = ActionExecutor(self)
+
         # 使用同步客户端
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
@@ -154,6 +222,73 @@ class LLMSystem(System):
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
                 self.exec_action(envelope)
+                return
+            elif payload.get("type") == "action_batch":
+                # 批量处理动作消息
+                actions = payload.get("actions", [])
+                batch_id = payload.get("id") or int(time.time() * 1e9)
+                agent_id = sender.get("id") if sender.get("type") == "agent" else None
+                if agent_id:
+                    self.client.connected_agents[agent_id] = sender
+
+                try:
+                    size = len(actions)
+                except Exception:
+                    size = 0
+                print(f"处理批量动作消息: count={size}")
+
+                batch_results: List[Dict[str, Any]] = []
+                for idx, item in enumerate(actions):
+                    action_name = item.get("action")
+                    action_request_id = item.get("id") or f"{batch_id}_{idx}"
+                    if not action_name:
+                        error_result = self._create_system_error_response(
+                            "unknown",
+                            "Missing action name in batch item",
+                            2007,
+                        )
+                        batch_results.append(
+                            {
+                                "id": action_request_id,
+                                "action": action_name,
+                                "response": error_result,
+                                "success": False,
+                            }
+                        )
+                        continue
+
+                    params = self._prepare_parameters(item.get("parameters", {}))
+
+                    result = self._process_action_request(
+                        agent_id=agent_id,
+                        action_id=action_request_id,
+                        action=action_name,
+                        params=params,
+                        send_response=False,
+                    )
+                    success_flag = True
+                    if isinstance(result, dict):
+                        success_flag = result.get("success", True)
+                    batch_results.append(
+                        {
+                            "id": action_request_id,
+                            "action": action_name,
+                            "response": result,
+                            "success": success_flag,
+                        }
+                    )
+
+                if agent_id:
+                    batch_outcome = {
+                        "results": batch_results,
+                        "count": len(batch_results),
+                    }
+                    self.client.response_to_agent(
+                        agent_id,
+                        batch_id,
+                        batch_outcome,
+                        "json",
+                    )
                 return
             else:
                 # 处理其他消息类型
@@ -235,6 +370,28 @@ class LLMSystem(System):
         except Exception as _e:
             # 统计失败不影响主流程
             print(f"Record ENV <-> Agent interaction error: {_e}")
+
+    @staticmethod
+    def _prepare_parameters(raw_params: Any) -> Dict[str, Any]:
+        """Normalize parameters payload into a dictionary."""
+        if isinstance(raw_params, dict):
+            return raw_params
+        if isinstance(raw_params, str):
+            if raw_params == "":
+                return {}
+            try:
+                return json.loads(raw_params)
+            except Exception:
+                print(f"Parse params error: {raw_params}")
+                print("Use empty params instead.")
+                return {}
+        if raw_params is None:
+            return {}
+        # Fallback: attempt to cast to dict if possible
+        try:
+            return dict(raw_params)
+        except Exception:
+            return {}
 
     # === 策略评分：Agent 端主动打点 ===
     def handle_strategy_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -336,15 +493,21 @@ class LLMSystem(System):
             - successful_calls: int - Number of successful calls  
             - failed_calls: int - Number of failed calls
             - success_rate: float - Success rate
+          - toolcall_error_total: int - Total tool call generation errors
+          - http_error_total: int - Total HTTP errors
+          - spatial_awareness_error: int - Spatial awareness errors (LLM capability)
           - provider: str - LLM provider
           - model_id: str - Model ID
         """
         try:
             faction_key = params.get("faction")
             api_stats = params.get("api_stats", {})
+            toolcall_error_total = params.get("toolcall_error_total", 0)
+            http_error_total = params.get("http_error_total", 0)
+            spatial_awareness_error = params.get("spatial_awareness_error", 0)
             provider = params.get("provider", "unknown")
             model_id = params.get("model_id", "unknown")
-            
+
             if not faction_key:
                 return {"success": False, "message": "Missing faction"}
             
@@ -380,6 +543,9 @@ class LLMSystem(System):
             stats.llm_api_stats[faction] = {
                 "total_calls": api_stats.get("total_calls", 0),
                 "successful_calls": api_stats.get("successful_calls", 0),
+                "toolcall_error_total": toolcall_error_total,
+                "http_error_total": http_error_total,
+                "spatial_awareness_error": spatial_awareness_error,
                 "failed_calls": api_stats.get("failed_calls", 0),
                 "success_rate": api_stats.get("success_rate", 0.0),
                 "provider": provider,
@@ -388,6 +554,7 @@ class LLMSystem(System):
             }
             
             print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
+            print(f"[LLMSystem] 📊 错误统计 - HTTP错误: {http_error_total}, Tool Call错误: {toolcall_error_total}, 空间感知错误: {spatial_awareness_error}")
 
             # 🆕 基于集合的收齐判断
             try:
@@ -408,7 +575,10 @@ class LLMSystem(System):
                 "success": True,
                 "message": "LLM stats received",
                 "faction": faction_key,
-                "stats": api_stats
+                "stats": api_stats,
+                "toolcall_error_total": toolcall_error_total,
+                "http_error_total": http_error_total,
+                "spatial_awareness_error": spatial_awareness_error
             }
             
         except Exception as e:
@@ -561,106 +731,106 @@ class LLMSystem(System):
         pass
 
     # === ENV 方法 ===
-    def exec_action(self, message):
-        """智能委托执行动作 - 统一动作入口"""
-        sender = message.get("sender", {})
-        payload = message.get("payload", {})
-
-        agent_id = sender.get("id") if sender.get("type") == "agent" else None
-        action_id = payload.get("id")
-        action = payload.get("action")
-        params = payload.get("parameters", {})
-        
-        
-        if isinstance(params, dict):
-            params = params
-        elif isinstance(params, str):
-            if params == "":
-                params = {}
-            else:
-                try:
-                    params = json.loads(params)
-                except Exception:
-                    print(f"Parse params error: {params}")
-                    print("Use empty params instead.")
-                    params = {}
-
+    def _process_action_request(
+        self,
+        agent_id: Optional[str],
+        action_id: Union[int, str],
+        action: Optional[str],
+        params: Dict[str, Any],
+        *,
+        send_response: bool,
+    ) -> Dict[str, Any]:
+        """Core routine to validate, execute and optionally respond to an action."""
         start_time = time.time()
+        standardized_result: Dict[str, Any] | None = None
+
+        stats = self.world.get_singleton_component(GameStats)
+        if stats is None:
+            stats = GameStats()
+            self.world.add_singleton_component(stats)
+        if not hasattr(stats, "agent_id_to_faction"):
+            stats.agent_id_to_faction = {}
+        if not hasattr(stats, "registered_factions"):
+            stats.registered_factions = set()
+
+        if not action:
+            error_result = self._create_system_error_response(
+                "unknown", "Missing action name", 2007
+            )
+            if send_response and agent_id:
+                self.client.response_to_agent(agent_id, action_id, error_result, "str")
+            return error_result
 
         try:
-            # 🆕 统一注册校验（按 agent_id 强约束）：除注册外的动作必须先完成注册绑定
-            stats = self.world.get_singleton_component(GameStats)
-            if stats is None:
-                stats = GameStats()
-                self.world.add_singleton_component(stats)
-
             if action != "register_agent_info":
-                mapped_faction = stats.agent_id_to_faction.get(agent_id)
+                mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
                 if mapped_faction is None:
                     error_result = self._create_system_error_response(
                         action,
                         "Agent not registered. Please call register_agent_info first.",
                         2005,
                     )
-                    print(f"[LLMSystem] ❌ Action rejected due to unregistered Agent_ID: action={action}, agent_id={agent_id}")
-                    self.client.response_to_agent(agent_id, action_id, error_result, "str")
-                    return
+                    print(
+                        f"[LLMSystem] ❌ Action rejected due to unregistered Agent_ID: action={action}, agent_id={agent_id}"
+                    )
+                    if send_response and agent_id:
+                        self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                    return error_result
 
-                # 🆕 Check consistency between agent_id mapping and registered faction
                 if isinstance(params, dict) and "faction" in params:
-                    # 🆕 Special exemption: get_faction_state action allows querying other faction intelligence
                     if action == "get_faction_state":
-                        # Allow querying any faction, but log the query
                         try:
                             from ..prefabs.config import Faction as _Faction
+
                             reported_faction = _Faction(params["faction"])
                             if mapped_faction != reported_faction:
-                                print(f"[LLMSystem] ℹ️ Intelligence gathering: agent_id={agent_id} (registered={mapped_faction.value}) queries {reported_faction.value} faction info")
+                                print(
+                                    f"[LLMSystem] ℹ️ Intelligence gathering: agent_id={agent_id} (registered={mapped_faction.value}) queries {reported_faction.value} faction info"
+                                )
                         except Exception as _e:
-                            print(f"[LLMSystem] ⚠️ Faction parsing failed in get_faction_state: {_e}")
+                            print(
+                                f"[LLMSystem] ⚠️ Faction parsing failed in get_faction_state: {_e}"
+                            )
                     else:
-                        # Other actions must have consistent factions
                         try:
                             from ..prefabs.config import Faction as _Faction
+
                             reported_faction = _Faction(params["faction"])
                             if mapped_faction != reported_faction:
                                 error_result = self._create_system_error_response(
                                     action,
-                                    f"Agent {agent_id} is registered to {mapped_faction.value} faction, but action specifies {reported_faction.value}. Please use your registered faction or re-register.",
+                                    (
+                                        f"Agent {agent_id} is registered to {mapped_faction.value} faction, "
+                                        f"but action specifies {reported_faction.value}. "
+                                        "Please use your registered faction or re-register."
+                                    ),
                                     2005,
                                 )
-                                print(f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}")
-                                self.client.response_to_agent(agent_id, action_id, error_result, "str")
-                                return
+                                print(
+                                    f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}"
+                                )
+                                if send_response and agent_id:
+                                    self.client.response_to_agent(
+                                        agent_id, action_id, error_result, "str"
+                                    )
+                                return error_result
                         except Exception as _e:
                             print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
-            
-            # 🆕 Count the number of interactions at the beginning of the method to ensure all requests are recorded
+
+            # Count interaction before execution
             self._record_interaction(agent_id, params)
-            
-            # 1. 检查是否为系统级动作
-            if action in self.system_actions:
-                result = self.system_actions[action](params)
 
-            # 2. 检查是否为单位动作 (委托给ActionHandler)
-            elif action in self.action_handler.action_handlers:
-                result = self.action_handler.execute_action(action, params)
+            request = ActionRequest(
+                agent_id=agent_id,
+                action_id=action_id,
+                action_name=action,
+                parameters=params,
+                timestamp=start_time,
+            )
 
-            # 3. 检查是否为观测动作 (委托给ObservationSystem)
-            elif self._is_observation_action(action):
-                result = self._handle_observation_action(action, params)
-
-            # 4. 未知动作
-            else:
-                result = self._create_system_error_response(
-                    action, f"UNKOWN ACTION: {action}", 2010
-                )
-
-            # 标准化响应格式
-            execution_time = time.time() - start_time
+            result = self.action_executor.execute(request)
             standardized_result = result
 
-            # 🆕 如果是 end_turn，通知新当前玩家开始回合
             if action == "end_turn" and isinstance(result, dict) and result.get("success"):
                 try:
                     game_state = self.world.get_singleton_component(GameState)
@@ -691,7 +861,9 @@ class LLMSystem(System):
                             # 2) 通过统计映射收集所有注册到该阵营的 agent_id
                             if stats and getattr(stats, "agent_id_to_faction", None):
                                 try:
-                                    for mapped_agent_id, mapped_faction in stats.agent_id_to_faction.items():
+                                    for mapped_agent_id, mapped_faction in (
+                                        stats.agent_id_to_faction.items()
+                                    ):
                                         if mapped_faction == current_faction:
                                             target_agent_ids.add(mapped_agent_id)
                                 except Exception as _e:
@@ -699,7 +871,9 @@ class LLMSystem(System):
 
                             # 仅向当前已连接的 agent 发送
                             connected_ids = set(self.client.connected_agents.keys())
-                            target_agent_ids = [aid for aid in target_agent_ids if aid in connected_ids]
+                            target_agent_ids = [
+                                aid for aid in target_agent_ids if aid in connected_ids
+                            ]
 
                             if target_agent_ids:
                                 notification = {
@@ -707,7 +881,7 @@ class LLMSystem(System):
                                     "faction": faction_key,
                                     "turn_number": getattr(game_state, "turn_number", None),
                                     "timestamp": time.time(),
-                                    "message": "Your turn starts."
+                                    "message": "Your turn starts.",
                                 }
                                 for target_agent_id in target_agent_ids:
                                     try:
@@ -716,8 +890,12 @@ class LLMSystem(System):
                                             target={"type": "agent", "id": target_agent_id},
                                         )
                                         # 计入一次 ENV->Agent 交互
-                                        self._record_interaction(target_agent_id, {"faction": faction_key})
-                                        print(f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合")
+                                        self._record_interaction(
+                                            target_agent_id, {"faction": faction_key}
+                                        )
+                                        print(
+                                            f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合"
+                                        )
                                     except Exception as _e:
                                         print(f"[LLMSystem] ❌ 发送回合开始通知失败: {_e}")
                             else:
@@ -725,36 +903,61 @@ class LLMSystem(System):
                 except Exception as _e:
                     print(f"[LLMSystem] ⚠️ end_turn 后通知当前玩家失败: {_e}")
 
-            # 🆕 若是注册动作成功，补充登记集合与映射
-            if action == "register_agent_info" and isinstance(result, dict) and result.get("success"):
+            if (
+                action == "register_agent_info"
+                and isinstance(result, dict)
+                and result.get("success")
+            ):
                 try:
                     reg_faction_key = params.get("faction")
                     if reg_faction_key:
                         from ..prefabs.config import Faction as _Faction
+
                         reg_faction = _Faction(reg_faction_key)
-                        # 记录映射
                         if agent_id:
                             stats.agent_id_to_faction[agent_id] = reg_faction
-                        # 记录已注册集合
                         stats.registered_factions.add(reg_faction)
-                        # 同步期望数量（以注册集合为准）
                         stats.expected_llm_stats_count = len(stats.registered_factions)
-                        print(f"[LLMSystem] 📝 已注册阵营集合: {[f.value for f in stats.registered_factions]} (期望统计数={stats.expected_llm_stats_count})")
+                        print(
+                            f"[LLMSystem] 📝 已注册阵营集合: {[f.value for f in stats.registered_factions]} (期望统计数={stats.expected_llm_stats_count})"
+                        )
                 except Exception as _e:
                     print(f"[LLMSystem] ⚠️ 注册后维护集合失败: {_e}")
 
             print(f"{action} response: {standardized_result}")
-            self.client.response_to_agent(
-                agent_id, action_id, standardized_result, "str"
-            )
+            if send_response and agent_id:
+                self.client.response_to_agent(
+                    agent_id, action_id, standardized_result, "str"
+                )
 
+            return standardized_result
         except Exception as e:
             print(f"执行动作 {action} 时出错: {e}")
             error_result = self._create_system_error_response(action, str(e), 2010)
-            try:
-                self.client.response_to_agent(agent_id, action_id, error_result, "str")
-            except Exception as response_error:
-                print(f"发送错误响应失败: {response_error}")
+            if send_response and agent_id:
+                try:
+                    self.client.response_to_agent(agent_id, action_id, error_result, "str")
+                except Exception as response_error:
+                    print(f"发送错误响应失败: {response_error}")
+            return error_result
+
+    def exec_action(self, message):
+        """智能委托执行动作 - 统一动作入口"""
+        sender = message.get("sender", {})
+        payload = message.get("payload", {})
+
+        agent_id = sender.get("id") if sender.get("type") == "agent" else None
+        action_id = payload.get("id") or int(time.time() * 1e9)
+        action = payload.get("action")
+        params = self._prepare_parameters(payload.get("parameters", {}))
+
+        self._process_action_request(
+            agent_id=agent_id,
+            action_id=action_id,
+            action=action,
+            params=params,
+            send_response=True,
+        )
 
     def _is_observation_action(self, action: str) -> bool:
         """判断是否为观测动作"""
