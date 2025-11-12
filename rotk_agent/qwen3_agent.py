@@ -63,6 +63,9 @@ class ErrorStatsCollector:
     """错误统计收集器 - 用于统计 HTTP 错误和 Tool Call 生成错误"""
     
     def __init__(self):
+        # Total API call count
+        self.total_api_call_count = 0
+
         # HTTP 错误细分
         self.http_connect_error = 0
         self.http_timeout = 0
@@ -79,6 +82,9 @@ class ErrorStatsCollector:
         # LLM 能力错误（空间感知等）
         self.spatial_awareness_error = 0
     
+    def add_total_api_call_count(self):
+        self.total_api_call_count += 1
+
     def add_http_connect_error(self):
         self.http_connect_error += 1
     
@@ -109,22 +115,39 @@ class ErrorStatsCollector:
     def add_spatial_awareness_error(self):
         self.spatial_awareness_error += 1
     
+    def get_total_api_call_count(self) -> int:
+        """Total API call count"""
+        return self.total_api_call_count
+
     def get_http_errors_total(self) -> int:
-        """获取 HTTP 错误总数"""
+        """HTTP error count"""
         return (self.http_connect_error + self.http_timeout + self.http_4xx + 
                 self.http_5xx + self.http_bad_json + self.http_other)
     
     def get_tool_call_gen_errors_total(self) -> int:
-        """获取 Tool Call 生成错误总数"""
+        """Tool Call generation error count"""
         return self.tool_in_content + self.tool_invalid_tool + self.tool_param_error
     
     def get_llm_capability_errors_total(self) -> int:
-        """获取 LLM 能力错误总数"""
+        """LLM capability error count"""
         return self.spatial_awareness_error
     
+    def get_error_api_call_count(self) -> int:
+        """Error API call count"""
+        return self.get_http_errors_total() + self.get_tool_call_gen_errors_total() + self.get_llm_capability_errors_total()
+
+    def get_successful_api_call_count(self) -> int:
+        """Successful API call count"""
+        return self.get_total_api_call_count() - self.get_error_api_call_count()
+
     def get_error_breakdown(self) -> Dict[str, Any]:
-        """获取错误分类详情"""
+        """Error breakdown"""
         return {
+            "total_api_call_count": self.get_total_api_call_count(),
+            "error_api_call_count": self.get_error_api_call_count(),
+            "successful_api_call_count": self.get_successful_api_call_count(),
+            "error_rate": round(self.get_error_api_call_count() / self.get_total_api_call_count() * 100, 2) if self.get_total_api_call_count() > 0 else 0.0,
+            "successful_rate": round(self.get_successful_api_call_count() / self.get_total_api_call_count() * 100, 2) if self.get_total_api_call_count() > 0 else 0.0,
             "http_errors_total": self.get_http_errors_total(),
             "http": {
                 "connect_error": self.http_connect_error,
@@ -176,12 +199,7 @@ class ToolManager:
 
 class LLMClient:
     """Independent LLM Client, directly call various LLM APIs"""
-    
-    # global LLM API Call count
-    _global_api_call_count = 0
-    _global_api_success_count = 0
-    _global_api_error_count = 0
-    
+
     # global error stats collector
     _global_error_stats = ErrorStatsCollector()
 
@@ -268,8 +286,8 @@ class LLMClient:
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
-        LLMClient._global_api_call_count += 1
-        print(f"🔍 API call count: {LLMClient._global_api_call_count}")
+        LLMClient._global_error_stats.add_total_api_call_count()
+        print(f"🔍 API call count: {LLMClient._global_error_stats.get_total_api_call_count()}")
         
         try:
             response = await self.client.post(
@@ -309,7 +327,7 @@ class LLMClient:
                 print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
                 
                 # Count failed API calls
-                LLMClient._global_api_error_count += 1
+                LLMClient._global_error_stats.add_http_other()
                 
                 # 统计 HTTP 错误类型
                 if 400 <= response.status_code < 500:
@@ -320,13 +338,11 @@ class LLMClient:
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
                 
             response_data = response.json()
-            # Count successful API calls
-            LLMClient._global_api_success_count += 1
+            
             return response_data
             
         except httpx.ConnectError as e:
             # Count failed API calls
-            LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_connect_error()
             error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
@@ -335,7 +351,6 @@ class LLMClient:
             
         except httpx.TimeoutException as e:
             # Count failed API calls
-            LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_timeout()
             error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
@@ -344,7 +359,6 @@ class LLMClient:
             
         except httpx.HTTPStatusError as e:
             # Count failed API calls
-            LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_other()
             error_msg = f"{self.config.provider} API HTTP error: {e.response.status_code}"
             console.print(f"🌐 HTTP error: {error_msg}", style="red")
@@ -352,7 +366,6 @@ class LLMClient:
             
         except json.JSONDecodeError as e:
             # JSON 解析错误
-            LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_bad_json()
             error_msg = f"Failed to parse JSON response from {self.config.provider}: {str(e)}"
             console.print(f"📋 JSON parse error: {error_msg}", style="red")
@@ -360,8 +373,6 @@ class LLMClient:
             
         except Exception as e:
             # Count failed API calls
-            LLMClient._global_api_error_count += 1
-            # 检查是否是 JSON 相关错误
             if "json" in str(e).lower():
                 LLMClient._global_error_stats.add_http_bad_json()
             else:
@@ -389,10 +400,11 @@ class LLMClient:
     def get_api_stats(self) -> Dict[str, int]:
         """Get API call statistics"""
         return {
-            "total_calls": LLMClient._global_api_call_count,
-            "successful_calls": LLMClient._global_api_success_count,
-            "failed_calls": LLMClient._global_api_error_count,
-            "success_rate": round(LLMClient._global_api_success_count / LLMClient._global_api_call_count * 100, 2) if LLMClient._global_api_call_count > 0 else 0.0
+            "total_calls": LLMClient._global_error_stats.get_total_api_call_count(),
+            "successful_calls": LLMClient._global_error_stats.get_successful_api_call_count(),
+            "failed_calls": LLMClient._global_error_stats.get_error_api_call_count(),
+            "success_rate": round(LLMClient._global_error_stats.get_successful_api_call_count() / LLMClient._global_error_stats.get_total_api_call_count() * 100, 2) if LLMClient._global_error_stats.get_total_api_call_count() > 0 else 0.0,
+            "error_rate": round(LLMClient._global_error_stats.get_error_api_call_count() / LLMClient._global_error_stats.get_total_api_call_count() * 100, 2) if LLMClient._global_error_stats.get_total_api_call_count() > 0 else 0.0,
         }
     
     async def close(self):
@@ -571,13 +583,13 @@ class RoTKChatAgent:
         console.print(f"🔧 Handling {len(tool_calls)} tool calls", style="cyan")
         
         # Support parallel execution of multiple tool calls
-        parallel_execution = len(tool_calls) > 1 and all(
+        parallel_execution = len(tool_calls) >= 1 and all(
             tool_call["function"]["name"] == "perform_action" 
             for tool_call in tool_calls
         )
         
         if parallel_execution:
-            console.print("⚡ Multiple perform_action calls detected, using batched send mode", style="cyan")
+            console.print("⚡ At least one perform_action call detected, using batched send mode", style="cyan")
             await self._handle_tool_calls_batched(tool_calls)
         else:
             console.print("🔄 Using sequential execution mode", style="cyan")
@@ -659,6 +671,44 @@ class RoTKChatAgent:
                 tc_id = item.get("id")
                 action_name = item.get("action")
                 result_payload = item.get("response")
+
+                payload_dict = result_payload if isinstance(result_payload, dict) else None
+                error_context = None
+
+                if item.get("success") is False:
+                    error_context = payload_dict if payload_dict is not None else {}
+                elif payload_dict and (
+                    payload_dict.get("success") is False
+                    or payload_dict.get("result") is False
+                ):
+                    error_context = payload_dict
+
+                if error_context is not None:
+                    if not error_context:
+                        message_text = (
+                            item.get("error")
+                            or item.get("message")
+                            or (str(result_payload) if result_payload is not None else None)
+                        )
+                        if message_text:
+                            error_context = {"message": str(message_text)}
+                    if self._is_spatial_awareness_error(error_context):
+                        self.error_stats.add_spatial_awareness_error()
+                        console.print(
+                            f"📊 Spatial awareness error detected (total: {self.error_stats.spatial_awareness_error})",
+                            style="yellow",
+                        )
+                        console.print(
+                            f"   └─ Error details: {error_context.get('details', error_context.get('message', 'unknown'))}",
+                            style="dim yellow",
+                        )
+                    else:
+                        self.error_stats.add_tool_invalid_tool()
+                        console.print(
+                            f"📊 Tool call error: tool_invalid_tool (total: {self.error_stats.tool_invalid_tool})",
+                            style="yellow",
+                        )
+
                 # Apply filtering for perform_action results
                 filtered = self._filter_tool_result("perform_action", result_payload, id_to_arguments.get(tc_id, {}))
                 
@@ -815,16 +865,40 @@ class RoTKChatAgent:
         
         # Strategy keywords
         zh_keys = [
-            "策略", "战略", "战术", "推进", "收缩", "防守", "进攻", "包抄", "侧翼", "伏击", "牵制",
-            "佯攻", "撤退", "补给", "集结", "兵力部署", "路线", "优先级", "据点", "卡位", "占领",
-            "固守", "视野", "地形优势", "补给线", "防线", "桥头堡", "绕后", "夹击", "高地", "chokepoint",
-            "协同", "集火", "分兵"
+            "包抄", "侧翼", "伏击", "牵制",
+            "佯攻", "集结", "兵力部署",
+            "固守", "地形优势", "防线", "绕后", "夹击",
+            "协同", "集火", "集中火力"
         ]
         en_keys = [
-            "strategy", "strategic", "tactic", "tactical", "plan", "objective", "priority",
-            "advance", "retreat", "hold", "defend", "attack", "flank", "ambush", "harass",
-            "pin down", "fix-in-place", "regroup", "supply", "chokepoint", "terrain advantage",
-            "strongpoint", "encircle"
+            # 包抄 (encircle, outflank)
+            "encircle", "outflank", "flank",
+            # 侧翼 (flank)
+            # 伏击 (ambush)
+            "ambush",
+            # 牵制 (pin down, contain)
+            "pin down", "contain", "tie down",
+            # 佯攻 (feint)
+            "feint", "feigned attack",
+            # 集结 (regroup, assemble, concentrate)
+            "regroup", "assemble", "concentrate",
+            # 兵力部署 (deployment)
+            "deployment", "troop deployment",
+            # 固守 (hold, defend)
+            "hold", "defend", "hold position",
+            # 地形优势 (terrain advantage)
+            "terrain advantage",
+            # 防线 (defense line)
+            "defense line", "defensive line",
+            # 绕后 (outflank, flank)
+            # 夹击 (pincer, encircle)
+            "pincer", "pincer attack",
+            # 协同 (coordinate, cooperation)
+            "coordinate", "cooperation", "cooperate",
+            # 集火 (concentrate fire, focus fire)
+            "concentrate fire", "focus fire",
+            # 集中火力 (concentrated fire, massed fire)
+            "concentrated fire", "massed fire"
         ]
         
         # Structure words
@@ -900,11 +974,11 @@ class RoTKChatAgent:
             context = source_text[context_start:context_end].lower()
             return any(neg in context for neg in negation_zh + negation_en)
 
-        # Expanded regex patterns (20 -> 40 characters window)
+        # Expanded regex patterns (narrower window; keep only move -> attack direction)
         zh_patterns = [
-            r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,40}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
-            r"(位置|坐标).{0,40}(攻击|开火|打击|交战)",
-            r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,40}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
+            r"(移动|前进|靠近|靠拢|调整|转移|推进|到达).{0,25}(攻击|开火|打击|交战|冲锋|压制|集火|歼灭|突击)",
+            r"(位置|坐标).{0,25}(攻击|开火|打击|交战)",
+            r"(攻击|开火|打击|交战|冲锋|压制|集火|突击).{0,25}(移动|前进|靠近|靠拢|调整|转移|撤退|推进|到达)",
         ]
         en_patterns = [
             r"(move|advance|relocate|close in|position).{0,40}(attack|engage|fire|strike|assault)",
@@ -922,9 +996,9 @@ class RoTKChatAgent:
                     return True
 
         # Extended sentence sequence detection (check up to 2 sentences ahead)
-        move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达", "位置", "坐标", "观察", "侦查"]
+        move_terms_zh = ["移动", "前进", "靠近", "靠拢", "调整", "转移", "推进", "到达"]
         attack_terms_zh = ["攻击", "开火", "打击", "交战", "冲锋", "压制", "集火", "歼灭", "突击", "支援", "协同", "集中火力"]
-        move_terms_en = ["move", "advance", "relocate", "close in", "position", "coordinate", "retreat"]
+        move_terms_en = ["move", "advance", "relocate", "close in", "retreat"]
         attack_terms_en = ["attack", "engage", "fire", "strike", "assault", "charge", "suppress"]
 
         def has_terms_without_negation(seg: str, terms_zh: list[str], terms_en: list[str]) -> bool:
@@ -999,7 +1073,7 @@ class RoTKChatAgent:
         attack_positions = find_terms_positions(text, attack_terms_zh + attack_terms_en)
         
         # Adaptive threshold based on text length
-        base_threshold = 80
+        base_threshold = 40
         text_length_factor = min(len(text) / 200, 2.0)  # Scale with text length, max 2x
         adaptive_threshold = int(base_threshold * text_length_factor)
         
@@ -1311,7 +1385,7 @@ class RoTKChatAgent:
             api_stats = self.llm_client.get_api_stats()
             toolcall_error_total = self.error_stats.get_tool_call_gen_errors_total()
             http_error_total = self.error_stats.get_http_errors_total()
-            spatial_error_total = self.error_stats.spatial_awareness_error
+            spatial_error_total = self.error_stats.get_llm_capability_errors_total()
             
             console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
             console.print(f"📊 Report HTTP errors total: {http_error_total}", style="cyan")
@@ -1671,14 +1745,14 @@ class AgentDemo:
             opponent_name=opponent_info["name"],
         )
 
+
+# **当前配置**:
+# - **我方势力**: {faction_info["name"]} ({faction})
+# - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
         user_prompt = f"""
-**当前配置**:
-- **我方势力**: {faction_info["name"]} ({faction})
-- **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
-- 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 尽可能每次回复中调动你的所有单位，鼓励一次性下达多个单位的协同指令。
+- 建议你利用游戏规则和兵种特性思考进攻战术，附加决策说明，以增加决策分指标。
+- 你要下达多个单位的协同指令，所以每次回复中要多个工具同时调用，以提高效率。
 - 你无需等待AP恢复，可以立即进行攻击。
-- 游戏为即时制，你和敌方指挥官同时操作，所以你需要积极进攻，否则就会被敌方消灭。
         """
 
         count = 0

@@ -2,6 +2,7 @@ import asyncio
 import argparse
 from contextvars import ContextVar
 from datetime import datetime
+import time
 import os
 import sys
 import json
@@ -59,6 +60,94 @@ class ToolDefinition:
     function: Callable
 
 
+class ErrorStatsCollector:
+    """错误统计收集器 - 用于统计 HTTP 错误和 Tool Call 生成错误"""
+    
+    def __init__(self):
+        # HTTP 错误细分
+        self.http_connect_error = 0
+        self.http_timeout = 0
+        self.http_4xx = 0
+        self.http_5xx = 0
+        self.http_bad_json = 0
+        self.http_other = 0
+        
+        # Tool Call 生成错误
+        self.tool_in_content = 0
+        self.tool_invalid_tool = 0
+        self.tool_param_error = 0
+        
+        # LLM 能力错误（空间感知等）
+        self.spatial_awareness_error = 0
+    
+    def add_http_connect_error(self):
+        self.http_connect_error += 1
+    
+    def add_http_timeout(self):
+        self.http_timeout += 1
+    
+    def add_http_4xx(self):
+        self.http_4xx += 1
+    
+    def add_http_5xx(self):
+        self.http_5xx += 1
+    
+    def add_http_bad_json(self):
+        self.http_bad_json += 1
+    
+    def add_http_other(self):
+        self.http_other += 1
+    
+    def add_tool_in_content(self):
+        self.tool_in_content += 1
+    
+    def add_tool_invalid_tool(self):
+        self.tool_invalid_tool += 1
+    
+    def add_tool_param_error(self):
+        self.tool_param_error += 1
+    
+    def add_spatial_awareness_error(self):
+        self.spatial_awareness_error += 1
+    
+    def get_http_errors_total(self) -> int:
+        """获取 HTTP 错误总数"""
+        return (self.http_connect_error + self.http_timeout + self.http_4xx + 
+                self.http_5xx + self.http_bad_json + self.http_other)
+    
+    def get_tool_call_gen_errors_total(self) -> int:
+        """获取 Tool Call 生成错误总数"""
+        return self.tool_in_content + self.tool_invalid_tool + self.tool_param_error
+    
+    def get_llm_capability_errors_total(self) -> int:
+        """获取 LLM 能力错误总数"""
+        return self.spatial_awareness_error
+    
+    def get_error_breakdown(self) -> Dict[str, Any]:
+        """获取错误分类详情"""
+        return {
+            "http_errors_total": self.get_http_errors_total(),
+            "http": {
+                "connect_error": self.http_connect_error,
+                "timeout": self.http_timeout,
+                "http_4xx": self.http_4xx,
+                "http_5xx": self.http_5xx,
+                "bad_json": self.http_bad_json,
+                "other": self.http_other
+            },
+            "tool_call_gen_errors_total": self.get_tool_call_gen_errors_total(),
+            "tool_call_gen": {
+                "tool_in_content": self.tool_in_content,
+                "tool_invalid_tool": self.tool_invalid_tool,
+                "tool_param_error": self.tool_param_error
+            },
+            "llm_capability_errors_total": self.get_llm_capability_errors_total(),
+            "llm_capability": {
+                "spatial_awareness_error": self.spatial_awareness_error
+            }
+        }
+
+
 class ToolManager:
     """Tool Manager"""
     
@@ -73,7 +162,7 @@ class ToolManager:
         """Get all tool definitions"""
         return list(self.tools.values())
     
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def execute_single_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute tool"""
         if tool_name not in self.tools:
             raise ValueError(f"Tool {tool_name} does not exist")
@@ -94,6 +183,9 @@ class LLMClient:
     _global_api_success_count = 0
     _global_api_error_count = 0
     
+    # global error stats collector
+    _global_error_stats = ErrorStatsCollector()
+
     def __init__(self, config: LLMConfig):
         self.config = config
         
@@ -148,7 +240,47 @@ class LLMClient:
             console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
             console.print(f"│ {json.dumps(response.model_dump(), indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
             console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
-            
+
+            if response.status_code != 200:
+                error_details = {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "url": str(response.url),
+                    "request_payload": input_items,
+                    "config": {
+                        "provider": self.config.provider,
+                        "model_id": self.config.model_id,
+                        "base_url": self.base_url
+                    }
+                }
+                
+                try:
+                    response_data = response.json()
+                    error_details["response_json"] = response_data
+                    error_message = response_data.get("error", {}).get("message", response.text)
+                except:
+                    error_details["response_text"] = response.text
+                    error_message = response.text
+                
+                console.print("🚨 LLM API error details:", style="red bold")
+                console.print(f"Status code: {error_details['status_code']}", style="red")
+                console.print(f"URL: {error_details['url']}", style="red")
+                console.print(f"Provider: {error_details['config']['provider']}", style="red")
+                console.print(f"Model: {error_details['config']['model_id']}", style="red")
+                console.print("Response content:", style="red")
+                print_json(data=error_details.get("response_json", error_details.get("response_text", "")), indent=2)
+                
+                # Count failed API calls
+                LLMClient._global_api_error_count += 1
+                
+                # 统计 HTTP 错误类型
+                if 400 <= response.status_code < 500:
+                    LLMClient._global_error_stats.add_http_4xx()
+                elif 500 <= response.status_code < 600:
+                    LLMClient._global_error_stats.add_http_5xx()
+                
+                raise Exception(f"LLM API error: {response.status_code} - {error_message}")
+
             # Count successful API calls
             LLMClient._global_api_success_count += 1
             return response
@@ -156,7 +288,8 @@ class LLMClient:
         except APIConnectionError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
-            error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url} {self.client.base_url}"
+            LLMClient._global_error_stats.add_http_connect_error()
+            error_msg = f"Cannot connect to {self.config.provider} API server: {self.base_url}"
             console.print(f"🔌 Connection error: {error_msg}", style="red")
             console.print(f"Please check network connection and API server status", style="yellow")
             raise Exception(error_msg) from e
@@ -164,6 +297,7 @@ class LLMClient:
         except APITimeoutError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_timeout()
             error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
@@ -172,19 +306,32 @@ class LLMClient:
         except APIStatusError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
-            error_msg = f"{self.config.provider} API HTTP error: {e.status_code}"
+            LLMClient._global_error_stats.add_http_other()
+            error_msg = f"{self.config.provider} API HTTP error: {e.response.status_code}"
             console.print(f"🌐 HTTP error: {error_msg}", style="red")
-            console.print(f"Error details: {e.message}", style="red")
+            raise Exception(error_msg) from e
+            
+        except json.JSONDecodeError as e:
+            # JSON 解析错误
+            LLMClient._global_api_error_count += 1
+            LLMClient._global_error_stats.add_http_bad_json()
+            error_msg = f"Failed to parse JSON response from {self.config.provider}: {str(e)}"
+            console.print(f"📋 JSON parse error: {error_msg}", style="red")
             raise Exception(error_msg) from e
             
         except Exception as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
+            # 检查是否是 JSON 相关错误
+            if "json" in str(e).lower():
+                LLMClient._global_error_stats.add_http_bad_json()
+            else:
+                LLMClient._global_error_stats.add_http_other()
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
-            console.print(f"Request URL: {self.base_url} {self.client.base_url}", style="yellow")
+            console.print(f"Request URL: {self.base_url} ", style="yellow")
             console.print(f"Provider: {self.config.provider}", style="yellow")
-            console.print(payload, style="cyan")
+            console.print(input_items, style="cyan")
             raise Exception(error_msg) from e
       
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
@@ -315,6 +462,10 @@ class RoTKChatAgent:
         self._agent_registered: bool = False
         
         self._strategy_last_ping_ts: float = 0.0
+        self._game_end_reported: bool = False  # 防止重复上报
+        
+        # 获取全局错误统计器的引用（与 LLMClient 共享）
+        self.error_stats = LLMClient._global_error_stats
         
     def register_tool(self, name: str, function: Callable, description: str, parameters: Dict[str, Any]):
         """Register tool"""
@@ -396,8 +547,8 @@ class RoTKChatAgent:
         parallel_execution = len(tool_calls) > 1 and all(get_name(tc) == "perform_action" for tc in tool_calls)
 
         if parallel_execution:
-            console.print("⚡ Multiple perform_action calls detected, using parallel execution mode", style="cyan")
-            return await self._handle_tool_calls_parallel(tool_calls)
+            console.print("⚡ Multiple perform_action calls detected, using batched send mode", style="cyan")
+            return await self._handle_tool_calls_batched(tool_calls)
         else:
             console.print("🔄 Using sequential execution mode", style="cyan")
             return await self._handle_tool_calls_sequential(tool_calls)
@@ -419,7 +570,169 @@ class RoTKChatAgent:
             tasks.append(task)
         results = await asyncio.gather(*tasks)
         return [r for r in results if r]
+
+
+    async def _handle_tool_calls_batched(self, tool_calls) -> List[Dict[str, Any]]:
+        """Batch multiple perform_action tool calls into a single ENV message, returning function_call_output items."""
+        console.print("🔧 Batching multiple perform_action tool calls into a single ENV message", style="cyan")
+        console.print(f"🔧 Tool calls: {tool_calls}", style="cyan")
+        try:
+            # Build actions payload with tool_call ids
+            actions_payload: List[Dict[str, Any]] = []
+            id_to_arguments: Dict[str, Dict[str, Any]] = {}
+            id_to_tool_call = {}
+            for tool_call in tool_calls:
+                tool_call_id = getattr(tool_call, "call_id", None) or getattr(tool_call, "id", None)
+                fn = getattr(tool_call, "name", None)
+                args_raw = getattr(tool_call, "arguments", None)
+                if not tool_call_id:
+                    raise ValueError("Tool call is missing call_id")
+                if fn != "perform_action":
+                    raise ValueError("Only perform_action can be batched")
+
+                if isinstance(args_raw, str):
+                    try:
+                        args = json.loads(args_raw) if args_raw else {}
+                    except json.JSONDecodeError as e:
+                        raise ValueError(f"Invalid JSON arguments for tool_call {tool_call_id}: {e}")
+                elif isinstance(args_raw, dict):
+                    args = args_raw
+                else:
+                    args = {}
+
+                action_name = args.get("action")
+                params = args.get("params", {})
+                if not action_name:
+                    raise ValueError(f"Missing 'action' in tool_call {tool_call_id}")
+
+                actions_payload.append(
+                    {
+                        "id": tool_call_id,  # use tool call id for alignment
+                        "action": action_name,
+                        "parameters": params,
+                    }
+                )
+                id_to_arguments[str(tool_call_id)] = args
+                id_to_tool_call[str(tool_call_id)] = tool_call
+
+            # Send batch
+            resp = await perform_multiple_actions(actions_payload, None)
+            console.print(f"🔧 Received responses from ENV: {resp}", style="cyan")
+
+            # 🆕 Handle ENV cooldown (error_code=2011). If detected, wait and retry once.
+            try:
+                is_cd = isinstance(resp, dict) and (
+                    resp.get("error_code") == 2011
+                    or ("Cooldown" in str(resp.get("message", "")) and "Retry in" in str(resp.get("message", "")))
+                )
+                if is_cd:
+                    import re as _re
+                    msg = str(resp.get("message", ""))
+                    m = _re.search(r"Retry in\s+([0-9.]+)s", msg)
+                    wait_secs = float(m.group(1)) if m else 1.0
+                    console.print(f"⏱️ Cooldown hit, retrying after {wait_secs:.2f}s ...", style="yellow")
+                    await asyncio.sleep(wait_secs + 0.05)
+                    resp = await perform_multiple_actions(actions_payload, None)
+                    console.print(f"🔁 Retried responses from ENV: {resp}", style="cyan")
+            except Exception as _e:
+                console.print(f"⚠️ Cooldown handling failed, proceed without retry: {_e}", style="yellow")
+
+            # Expect shape: { "results": [ { "id", "action", "response", "success" } ], "count": N }
+            results = []
+            if isinstance(resp, dict):
+                results = resp.get("results", [])
+
+            result_map = {}
+            for item in results:
+                rid = str(item.get("id"))
+                result_map[rid] = item
+
+            outputs: List[Dict[str, Any]] = []
+            for tool_call in tool_calls:
+                tool_call_id = str(getattr(tool_call, "call_id", None) or getattr(tool_call, "id", ""))
+                args = id_to_arguments.get(tool_call_id, {})
+                result_payload = None
+                if tool_call_id in result_map:
+                    result_payload = result_map[tool_call_id].get("response")
+                else:
+                    console.print(
+                        f"⚠️ No aggregated result returned for tool call {tool_call_id}, providing fallback error.",
+                        style="yellow",
+                    )
+                    result_payload = {
+                        "success": False,
+                        "details": f"No aggregated result returned for tool call {tool_call_id}",
+                    }
+
+                filtered = self._filter_tool_result("perform_action", result_payload, args)
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": json.dumps(filtered, ensure_ascii=False),
+                    }
+                )
+
+            return outputs
+
+        except Exception as e:
+            console.print(f"❌ Batched tool calls execution error: {e}", style="red")
+            # On failure, fallback to sequential execution for robustness
+            return await self._handle_tool_calls_sequential(tool_calls)
     
+    def _is_spatial_awareness_error(self, result: Dict[str, Any]) -> bool:
+        """
+        检测是否是空间感知错误（LLM对距离、位置判断错误）
+        
+        Args:
+            result: 工具调用返回的结果
+            
+        Returns:
+            bool: True 表示是空间感知错误
+        """
+        if not isinstance(result, dict):
+            return False
+        
+        # 获取错误信息（可能在 details 或 message 字段）
+        error_text = ""
+        if "details" in result:
+            error_text = str(result["details"]).lower()
+        elif "message" in result:
+            error_text = str(result["message"]).lower()
+        
+        if not error_text:
+            return False
+        
+        # 空间感知错误的关键词模式
+        spatial_patterns = [
+            # 距离判断错误
+            "out of attack range",
+            "out of range",
+            "not in range",
+            "distance",
+            "too far",
+            # 移动范围错误
+            "out of movement range",
+            "cannot reach",
+            "unreachable",
+            "not reachable",
+            # 位置判断错误
+            "invalid position",
+            "position not available",
+            "occupied",
+            # 视野判断错误
+            "not visible",
+            "out of sight",
+            "cannot see"
+        ]
+        
+        # 检查是否匹配任何空间感知错误模式
+        for pattern in spatial_patterns:
+            if pattern in error_text:
+                return True
+        
+        return False
+
     async def _execute_single_tool_call(self, tool_call) -> Optional[Dict[str, Any]]:
         """Execute single tool call and return a function_call_output item for Responses API."""
         # Responses API format: tool_call is a Pydantic model object with direct attributes
@@ -443,7 +756,7 @@ class RoTKChatAgent:
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
 
             # Execute tool
-            result = await self.tool_manager.execute_tool(function_name, arguments)
+            result = await self.tool_manager.execute_single_tool(function_name, arguments)
             filtered_result = self._filter_tool_result(function_name, result, arguments)
 
             # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
@@ -690,7 +1003,7 @@ class RoTKChatAgent:
         if len(evidence) > 120:
             evidence = evidence[:117] + "..."
         try:
-            await self.tool_manager.execute_tool("perform_action", {
+            await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "strategy_ping",
                 "params": {
                     "faction": self.faction,
@@ -958,7 +1271,7 @@ class RoTKChatAgent:
                 "enable_thinking": config.enable_thinking
             }
             
-            result = await self.tool_manager.execute_tool("perform_action", {
+            result = await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
             })
@@ -973,15 +1286,32 @@ class RoTKChatAgent:
 
     async def _report_llm_stats(self):
         """Report LLM API interaction statistics to ENV"""
+        # 防止重复上报
+        if self._game_end_reported:
+            console.print("⚠️ LLM stats already reported, skipping duplicate", style="yellow")
+            return
+        
+        self._game_end_reported = True
+        
         try:
             api_stats = self.llm_client.get_api_stats()
-            console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
+            toolcall_error_total = self.error_stats.get_tool_call_gen_errors_total()
+            http_error_total = self.error_stats.get_http_errors_total()
+            spatial_error_total = self.error_stats.spatial_awareness_error
             
-            result = await self.tool_manager.execute_tool("perform_action", {
+            console.print(f"📊 Report LLM API statistics: {api_stats}", style="cyan")
+            console.print(f"📊 Report HTTP errors total: {http_error_total}", style="cyan")
+            console.print(f"📊 Report tool call gen errors total: {toolcall_error_total}", style="cyan")
+            console.print(f"📊 Report spatial awareness errors: {spatial_error_total}", style="cyan")
+
+            result = await self.tool_manager.execute_single_tool("perform_action", {
                 "action": "report_llm_stats",
                 "params": {
                     "faction": self.faction,
                     "api_stats": api_stats,
+                    "toolcall_error_total": toolcall_error_total,
+                    "http_error_total": http_error_total,
+                    "spatial_awareness_error": spatial_error_total,
                     "provider": self.llm_client.config.provider,
                     "model_id": self.llm_client.config.model_id
                 }
@@ -1216,6 +1546,7 @@ class AgentDemo:
         self.agent_id = agent_id
         self.agent_client = None
         self.messages = []
+        self.current_agent = None  # 用于存储当前运行的 agent 实例
 
         self.init_client()
 
@@ -1227,6 +1558,17 @@ class AgentDemo:
         # Initialize state
         RemoteContext.set_status({"self_status": {}, "env_status": {}})
 
+    async def _trigger_immediate_report(self):
+        """立即触发 LLM 统计上报（在收到 game_end 通知时调用）"""
+        if self.current_agent is not None:
+            console.print("🚀 Triggering immediate LLM stats report from game_end notification", style="green bold")
+            try:
+                await self.current_agent._report_llm_stats()
+            except Exception as e:
+                console.print(f"❌ Immediate report failed: {e}", style="red")
+        else:
+            console.print("⚠️ Cannot trigger immediate report: agent instance not set", style="yellow")
+    
     def setup_hub_listeners(self):
         """Set event listeners"""
 
@@ -1258,7 +1600,7 @@ class AgentDemo:
                 message += f"\n   结果: {outcome}, 结果类型: {outcome_type}"
             elif msg_type == "game_end_notification":
                 # 🆕 Handle game end notification
-                console.print("🏁 Received game end notification, preparing to report LLM stats and exit", style="yellow bold")
+                console.print("🏁 Received game end notification, immediately triggering LLM stats report", style="yellow bold")
                 # 🔧 Fix: update status instead of replace, keep existing status fields
                 try:
                     current_status = RemoteContext.get_status() or {}
@@ -1267,6 +1609,12 @@ class AgentDemo:
                 current_status.update({"game_ended": True})
                 RemoteContext.set_status(current_status)
                 console.print(f"🔧 State updated: {current_status}", style="cyan")  # 🆕 Debug information
+                
+                # 🚀 立即启动后台任务上报 LLM 统计信息，不等待下一次迭代
+                # 需要获取 agent 实例来调用 _report_llm_stats
+                # 由于 on_message 是 AgentDemo 的方法，需要从 demo 访问 agent
+                asyncio.create_task(self._trigger_immediate_report())
+                
                 message += f"\n    Game end notification: {msg_data}"
             # console.print(message, style="blue")
             self.messages.append(message)
@@ -1338,7 +1686,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
+        raw_prompt = self.load_prompt(name="system_prompt_realtime_cn")
         tmpl = Template(raw_prompt)
         system_prompt = tmpl.safe_substitute(
             faction=faction,
@@ -1352,7 +1700,9 @@ class AgentDemo:
 - **我方势力**: {faction_info["name"]} ({faction})
 - **主要敌人**: {opponent_info["name"]} ({faction_info["enemy"]})
 - 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。
-- 多用perform_action: "arguments": "{{"action":"get_faction_state","params":{{"faction":"wei"|"shu"|"wu"}}}}"了解当前敌我态势，然后调动所有单位积极进攻，消灭敌人。
+- 尽可能每次回复中调动你的所有单位，鼓励一次性下达多个单位的协同指令。
+- 你无需等待AP恢复，可以立即进行攻击。
+- 游戏为即时制，你和敌方指挥官同时操作，所以你需要积极进攻，否则就会被敌方消灭。
         """
 
         count = 0
@@ -1360,7 +1710,8 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                # 传入 self 以便 create_agent 可以设置 current_agent
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, demo_instance=self))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1596,6 +1947,81 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
         await asyncio.sleep(0.1)  # Waiting for response
 
 
+async def perform_multiple_actions(
+    actions: List[Any],
+    params: Optional[List[Dict[str, Any]]] = None,
+) -> Any:
+    """Perform multiple actions in a single message.
+
+    Supports the following calling patterns:
+      1. actions=[{"id": "...", "action": "...", "parameters": {...}}, ...]
+         (params should be omitted)
+      2. actions=["move", "attack"], params=[{...}, {...}]
+         (per-action ids will be auto-generated)
+    """
+    try:
+        if not actions:
+            return {"results": [], "count": 0}
+
+        if params is None and actions and isinstance(actions[0], dict):
+            action_requests: List[Dict[str, Any]] = []
+            for item in actions:
+                if "action" not in item:
+                    raise ValueError("Each action dict must include an 'action' field")
+                action_id = item.get("id") or f"toolcall_{int(time.time() * 1e6)}"
+                action_requests.append(
+                    {
+                        "id": action_id,
+                        "action": item["action"],
+                        "parameters": item.get("parameters")
+                        or item.get("params")
+                        or {},
+                    }
+                )
+        else:
+            if params is None:
+                raise ValueError("params must be provided when actions are not action dicts")
+            if len(actions) != len(params):
+                raise ValueError("actions and params must have the same length")
+            timestamp = int(time.time() * 1e6)
+            action_requests = []
+            for idx, (action_name, param) in enumerate(zip(actions, params)):
+                action_requests.append(
+                    {
+                        "id": f"toolcall_{timestamp}_{idx}",
+                        "action": action_name,
+                        "parameters": param or {},
+                    }
+                )
+
+        client = RemoteContext.get_client()
+        request_id = await client.send_actions(action_requests)
+        responses = await get_env_response(request_id, timeout_seconds=5)
+
+        return responses
+
+    except TimeoutError as e:
+        console.print(f"⏰ [perform_multiple_actions] Action execution timeout: {e}", style="red")
+        handle_error_with_logging(
+            e,
+            function_name="perform_multiple_actions",
+            action=actions,
+            params=params,
+            request_id=getattr(e, "request_id", "unknown"),
+            elapsed_time=getattr(e, "elapsed_time", "unknown"),
+            timeout_seconds=getattr(e, "timeout_seconds", "unknown"),
+        )
+        raise e
+    except Exception as e:
+        console.print(f"❌ [perform_multiple_actions] Action execution error: {e}", style="red")
+        handle_error_with_logging(
+            e,
+            function_name="perform_multiple_actions",
+            action=actions,
+            params=params,
+        )
+        raise e
+
 async def perform_action(action: str, params: Any):
     """Execute action"""
     try:
@@ -1642,7 +2068,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", demo_instance=None):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1652,6 +2078,10 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
         agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        
+        # 如果提供了 demo_instance，将 agent 设置到 demo 中以支持立即上报
+        if demo_instance is not None:
+            demo_instance.current_agent = agent
         
         # Register tools
         # agent.register_tool(
@@ -1664,30 +2094,32 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         agent.register_tool(
             name="perform_action",
             function=perform_action,
-            description="在游戏环境中执行一个特定的动作。",
+            description="Execute a specific action in the game environment.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "要执行的动作的名称。",
+                        "description": "The name of the action to execute.",
                         "enum": ["move", "attack", "get_faction_state"],
                     },
                     "params": {
-                        "description": "指定动作所需的参数字典。",
+                        "description": "Parameters object for the specified action.",
                         "oneOf": [
                             {
                                 "type": "object",
+                                "description": "Move a unit to a target position. Consumes Movement Points (MP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Friendly unit identifier."},
                                     "target_position": {
                                         "type": "object",
+                                        "description": "Target position in flat-topped even-q offset coordinates.",
                                         "additionalProperties": False,
                                         "properties": {
-                                            "col": {"type": "integer", "minimum": -7, "maximum": 7},
-                                            "row": {"type": "integer", "minimum": -7, "maximum": 7}
+                                            "col": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target column (even-q offset), range -7 to 7."},
+                                            "row": {"type": "integer", "minimum": -7, "maximum": 7, "description": "Target row (even-q offset), range -7 to 7."}
                                         },
                                         "required": ["col", "row"]
                                     }
@@ -1697,19 +2129,21 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                             },
                             {
                                 "type": "object",
+                                "description": "Attack a target unit with a friendly unit. Consumes 1 Action Point (AP).",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "unit_id": {"type": "integer", "minimum": 0},
-                                    "target_id": {"type": "integer", "minimum": 0}
+                                    "unit_id": {"type": "integer", "minimum": 0, "description": "Attacking friendly unit identifier."},
+                                    "target_id": {"type": "integer", "minimum": 0, "description": "Target enemy unit identifier."}
                                 },
                                 "required": ["unit_id", "target_id"],
                                 "title": "attack"
                             },
                             {
                                 "type": "object",
+                                "description": "Retrieve the status of the specified faction, including unit positions, HP, remaining AP and MP. Does not consume any points.",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"]}
+                                    "faction": {"type": "string", "enum": ["wei", "shu", "wu"], "description": "Faction to query (one of: wei, shu, wu)."}
                                 },
                                 "required": ["faction"],
                                 "title": "get_faction_state"
@@ -1721,14 +2155,15 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
             },
         )
         
-        # async def stop_running():
-        #     """Game over detected, agent should stop"""
-        #     return {"message": "You chose to stop running. Take a reset and start again."}
+        async def reset_ap_mp():
+            """Take a rest"""
+            await asyncio.sleep(3)
+            return {"result": "AP and MP have been restored, you can continue."}
         
         # agent.register_tool(
-        #     name="stop_running",
-        #     function=stop_running,
-        #     description="暂停一回合以恢复行动力。行动力已恢复，请继续进行。",
+        #     name="reset_ap_mp",
+        #     function=reset_ap_mp,
+        #     description="Rest and restore AP and MP.",
         #     parameters={"type": "object", "properties": {}, "required": []},
         # )
 
@@ -1745,7 +2180,11 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         traceback.print_exc()
 
 
-
+async def _rpm_limit_interval():
+    """Limit the interval time based on the RPM limit"""
+    interval = float(os.environ.get("INTERVAL", "0"))
+    console_system.print(f"🕒 Interval: {interval}s", style="bold blue")
+    await asyncio.sleep(interval)
 
 def _calculate_action_delay(action: str, params: Any, response: Any) -> float:
     """
@@ -1870,6 +2309,9 @@ async def main():
         choices=["wei", "shu", "wu"],
         help="faction to control (default: wei)"
     )
+    parser.add_argument(
+        "--interval", type=float, default=0, help="Interval time (default: 0)"
+    )
 
     args = parser.parse_args()
 
@@ -1878,11 +2320,13 @@ async def main():
     console_system.print(f"🆔 Agent ID: {args.agent_id}")
     console_system.print(f"🔧 Provider: {args.provider}")
     console_system.print(f"⚔️ Faction: {args.faction}", style="bold red")
+    console_system.print(f"🕒 Interval: {args.interval}s", style="bold blue")
     console_system.print("=" * 60)
 
     # Set environment variables
     os.environ["LLM_PROVIDER"] = args.provider
     os.environ["AGENT_FACTION"] = args.faction
+    os.environ["INTERVAL"] = str(args.interval)
 
     # Create demo instance
     demo = AgentDemo(args.hub_url, args.env_id, args.agent_id)
