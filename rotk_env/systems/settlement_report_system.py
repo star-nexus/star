@@ -457,7 +457,8 @@ class SettlementReportSystem(System):
         agent_endpoints = {}
         # enable_thinking capture
         enable_thinking_by_faction = {}
-        response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+        action_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+        interaction_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
 
         if registry:
             print(f"[SettlementReport] 📋 Agent registry found, registered factions: {list(registry.agents.keys())}")
@@ -485,24 +486,31 @@ class SettlementReportSystem(System):
                 # default
                 enable_thinking_by_faction[faction] = None
 
-        # Aggregate response count per faction
+        # Aggregate action & interaction counts per faction
         try:
             if game_stats:
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
-                    response_times[f.value] = game_stats.response_times_by_faction.get(f, 0)
+                    action_counts[f.value] = game_stats.action_counts_by_faction.get(f, 0)
+                    interaction_counts[f.value] = game_stats.interaction_counts_by_faction.get(f, 0)
             else:
-                print("[SettlementReport] ⚠️ GameStats missing, response_times default to 0")
+                print("[SettlementReport] ⚠️ GameStats missing, action/interaction counts default to 0")
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ Failed to read response_times: {e}")
+            print(f"[SettlementReport] ⚠️ Failed to read action/interaction counts: {e}")
 
         # Strategy scores
         strategy_scores: Dict[str, float] = {"wei": 0.0, "shu": 0.0, "wu": 0.0}
+        strategy_evidence: Dict[str, List[str]] = {"wei": [], "shu": [], "wu": []}
         try:
             if game_stats and hasattr(game_stats, "strategy_scores_by_faction"):
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     strategy_scores[f.value] = float(game_stats.strategy_scores_by_faction.get(f, 0.0))
+                    if hasattr(game_stats, "strategy_evidence"):
+                        evidence_list = game_stats.strategy_evidence.get(f, [])
+                        if evidence_list:
+                            # copy to avoid accidental mutation downstream
+                            strategy_evidence[f.value] = list(evidence_list)
         except Exception as e:
             print(f"[SettlementReport] ⚠️ Failed to read strategy_scores: {e}")
 
@@ -536,8 +544,10 @@ class SettlementReportSystem(System):
             "model_info": model_info,
             "agent_endpoints": agent_endpoints,
             "strategy_scores": {**strategy_scores},
+            "strategy_evidence": {**strategy_evidence},
             "enable_thinking": enable_thinking_by_faction,
-            "response_times": response_times,
+            "action_counts": action_counts,
+            "interaction_counts": interaction_counts,
             "llm_api_stats": llm_api_stats
         }
     

@@ -406,10 +406,16 @@ class SettlementReportRenderSystem(System):
         screen.blit(thinking_surface, (40, y_offset))
         y_offset += 20
         
-        # Response count
-        response_text = f"   Response count: {report.response_times}"
-        response_surface = content_font.render(response_text, True, (150, 150, 150))
-        screen.blit(response_surface, (40, y_offset))
+        # Action count
+        action_text = f"   Action count: {report.action_counts}"
+        action_surface = content_font.render(action_text, True, (150, 150, 150))
+        screen.blit(action_surface, (40, y_offset))
+        y_offset += 25
+
+        # Interaction count (message level)
+        interaction_text = f"   Interaction count: {report.interaction_counts}"
+        interaction_surface = content_font.render(interaction_text, True, (150, 150, 150))
+        screen.blit(interaction_surface, (40, y_offset))
         y_offset += 25
         
         # Update max scroll distance
