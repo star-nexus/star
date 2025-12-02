@@ -280,9 +280,9 @@ class LLMClient:
             "Authorization": f"Bearer {self.config.api_key}",
         }
         
-        # console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
-        # console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-        # console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
+        console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+        console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
@@ -583,14 +583,15 @@ class RoTKChatAgent:
         console.print(f"🔧 Handling {len(tool_calls)} tool calls", style="cyan")
         
         # Support parallel execution of multiple tool calls
-        parallel_execution = len(tool_calls) >= 1 and all(
+        parallel_execution = len(tool_calls) > 1 and all(
             tool_call["function"]["name"] == "perform_action" 
             for tool_call in tool_calls
         )
         
         if parallel_execution:
-            console.print("⚡ At least one perform_action call detected, using batched send mode", style="cyan")
-            await self._handle_tool_calls_batched(tool_calls)
+            console.print("⚡ At least one perform_action call detected, using parallel send mode", style="cyan")
+            # await self._handle_tool_calls_batched(tool_calls)
+            await self._handle_tool_calls_parallel(tool_calls)
         else:
             console.print("🔄 Using sequential execution mode", style="cyan")
             await self._handle_tool_calls_sequential(tool_calls)
@@ -1463,6 +1464,9 @@ class RoTKChatAgent:
 
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
+                console.print(f"🔍 API CALL COUNT:  {self.error_stats.get_total_api_call_count()}", style="cyan")
+                # perc = len(self.conversation_history) / self.error_stats.get_total_api_call_count()
+                # console.print(f"🔍 Average lenght per API CALL COUNT:  {perc}", style="cyan")
                 if len(self.conversation_history) > 50:
                     await self._shrink_history(window=20)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
