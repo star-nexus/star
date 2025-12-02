@@ -216,17 +216,24 @@ class LLMSystem(System):
             recipient = envelope.get("recipient", {})
             payload = envelope.get("payload", {})
             message_type = envelope.get("type", "")
-
+            now = time.time()
             if payload.get("type") == "action":
                 # 处理动作消息
 
-                print(f"处理动作消息: {payload}")
+                print(f"[LLM SYSTEM] 处理动作消息: {payload}")
 
                 # 提取 agent 信息
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
                 # 记录一次消息级交互（单动作消息）
+
+                last_ts = self._agent_last_message_ts.get(agent_id)
+                if last_ts is not None:
+                    elapsed = now - last_ts
+                    print(f"[LLMSystem] Agent ID: {agent_id} action sending interval: {elapsed}")
+                self._agent_last_message_ts[agent_id] = now
+                
                 self.exec_action(envelope)
                 self._record_message(agent_id, payload.get("parameters"))
                 return
@@ -1087,7 +1094,7 @@ class LLMSystem(System):
                 except Exception as _e:
                     print(f"[LLMSystem] ⚠️ 注册后维护集合失败: {_e}")
 
-            print(f"{action} response: {standardized_result}")
+            # print(f"{action} response: {standardized_result}")
             if send_response and agent_id:
                 self.client.response_to_agent(
                     agent_id, action_id, standardized_result, "str"
