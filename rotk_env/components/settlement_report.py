@@ -36,6 +36,9 @@ class SettlementReport(SingletonComponent):
     
     agent_endpoints: Dict[str, str] = field(default_factory=dict)  # agent endpoint by faction
     
+    providers: Dict[str, Optional[str]] = field(default_factory=dict)  # LLM provider per faction
+    providers_slug: str = ""  # sanitized provider slug used in filenames
+    
     strategy_scores: Dict[str, float] = field(default_factory=dict)  # strategy scores by faction
     
     strategy_evidence: Dict[str, List[str]] = field(default_factory=dict)  # recent strategy evidence snippets by faction
