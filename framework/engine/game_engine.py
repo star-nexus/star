@@ -1,6 +1,8 @@
 import pygame
 import time
 import sys
+import os
+import tomllib
 from typing import Any, Optional
 
 from .scenes import SceneManager
@@ -29,6 +31,25 @@ class GameEngine:
         if hasattr(self, "_initialized"):
             return
 
+        # Load config to check for headless mode
+        self.headless = False
+        try:
+            # Check environment variable first
+            env_headless = os.environ.get("HEADLESS")
+            if env_headless is not None:
+                self.headless = env_headless.lower() in ("1", "true", "yes", "on")
+            else:
+                config_path = ".configs.toml"
+                if os.path.exists(config_path):
+                    with open(config_path, "rb") as f:
+                        config = tomllib.load(f)
+                        self.headless = config.get("default", {}).get("headless", False)
+        except Exception as e:
+            print(f"Warning: Failed to load config for headless mode: {e}")
+
+        if self.headless:
+            print("Running in HEADLESS mode")
+
         # Basic configuration
         self.title = title
         self.width = width
@@ -50,8 +71,14 @@ class GameEngine:
     def _init_pygame(self) -> None:
         """Initialize Pygame context and screen."""
         pygame.init()
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption(self.title)
+        if self.headless:
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
+            # Set a minimal screen size for headless mode
+            self.screen = pygame.display.set_mode((1, 1))
+        else:
+            self.screen = pygame.display.set_mode((self.width, self.height))
+            pygame.display.set_caption(self.title)
+            
         self.clock = pygame.time.Clock()
 
     # def _init_world(self) -> None:
@@ -107,8 +134,9 @@ class GameEngine:
         """Update one frame of game logic and rendering."""
         profiler.start_frame()
 
-        with profiler.time_system("screen_fill"):
-            self.screen.fill((135, 141, 106))  # clear screen
+        if not self.headless:
+            with profiler.time_system("screen_fill"):
+                self.screen.fill((135, 141, 106))  # clear screen
 
         with profiler.time_system("input_system"):
             self.input_manager.update()
@@ -116,11 +144,12 @@ class GameEngine:
         with profiler.time_system("scene_update"):
             self.scene_manager.update(self.delta_time)
 
-        with profiler.time_system("render_engine"):
-            self.render_manager.update()
+        if not self.headless:
+            with profiler.time_system("render_engine"):
+                self.render_manager.update()
 
-        with profiler.time_system("display_flip"):
-            pygame.display.flip()
+            with profiler.time_system("display_flip"):
+                pygame.display.flip()
 
         # Print profiling stats every ~5 seconds
         if hasattr(self, '_last_stats_time'):
