@@ -148,7 +148,11 @@ def main():
 
             # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
-                "game", players=players_config, game_mode=args.mode, headless=True
+                "game", 
+                players=players_config, 
+                mode=args.mode, 
+                headless=True,
+                scenario=args.scenario
             )
 
             print(f"Game mode: {args.mode}")

@@ -106,6 +106,11 @@ class GameScene(Scene):
         )
 
         mode = kwargs.get("mode", GameMode.TURN_BASED)
+        if isinstance(mode, str):
+            try:
+                mode = GameMode(mode)
+            except ValueError:
+                mode = GameMode.TURN_BASED
         self.game_mode = mode
 
         headless = kwargs.get("headless", False)
@@ -284,12 +289,17 @@ class GameScene(Scene):
     def _generate_unit_positions_simple(
         self, center_col: int, center_row: int, count: int, faction: Faction
     ) -> list:
+        """Generate unit positions based on count - uses spiral distribution from center"""
+        # Use the existing _generate_unit_positions method which properly handles count
         if faction == Faction.WEI:
             return [(1, 3), (2, 3), (1, 4), (2, 4), (3, 3)]
         elif faction == Faction.SHU:
             return [(-2,-3), (-1,-4), (-3,-4), (-2,-4), (-1, -5)]
         elif faction == Faction.WU:
             return [(1, -3), (2, -3), (1, -4), (2, -4), (3, -3)]
+        else:
+            return self._generate_unit_positions(center_col, center_row, count)
+        # return self._generate_unit_positions(center_col, center_row, count)
 
 
     def _generate_unit_positions(
