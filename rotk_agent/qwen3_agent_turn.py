@@ -1335,6 +1335,17 @@ class RoTKChatAgent:
                 # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
+                if _is_account_balance_error(e, error_details):
+                    console.print("🛑 Account balance error detected, stopping agent", style="red bold")
+                    await self.stop()
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_details": error_details,
+                        "iterations": iterations,
+                        "reason": "account_balance_insufficient"
+                    }
+
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
@@ -1512,7 +1523,7 @@ class AgentDemo:
         faction_info = self.get_faction_info(faction)
         opponent_info = self.get_faction_info(faction_info["enemy"])
 
-        raw_prompt = self.load_prompt(name="system_prompt_turn_en")
+        raw_prompt = self.load_prompt(name="system_prompt_turn_cn")
         tmpl = Template(raw_prompt)
         system_prompt = tmpl.safe_substitute(
             faction=faction,
@@ -2054,6 +2065,18 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
         pass
 
     return False
+
+
+def _is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
+    context = f"{exc}"
+    if error_details:
+        context = f"{context}\n{error_details}"
+    lowered = context.lower()
+    return (
+        ("balance" in lowered and "insufficient" in lowered)
+        or "account balance" in lowered
+        or "30001" in lowered
+    )
 
 
 def _validate_action_payload(action: str, params: Any) -> None:
