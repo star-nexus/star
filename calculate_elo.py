@@ -60,20 +60,30 @@ class ReportAnalyzer:
         self.beta = 0.5   # 时间权重
         self.bootstrap_iterations = 1000  # 蒙特卡洛模拟次数
 
-    def load_reports(self):
-        """加载所有报告"""
+    def load_reports_by_mode(self):
+        """加载报告并按模式分类"""
         files = glob.glob(os.path.join(self.report_dir, "*.json"))
-        reports = []
+        reports_by_mode = defaultdict(list)
         
         for f in files:
             try:
                 with open(f, 'r', encoding='utf-8') as f_obj:
                     data = json.load(f_obj)
                     if "winner_faction" in data and "model_info" in data:
-                        reports.append(data)
+                        # 获取游戏模式，默认为 'unknown'
+                        mode = data.get("game_mode", "unknown")
+                        
+                        if "real" in mode.lower():
+                            mode_key = "real_time"
+                        elif "turn" in mode.lower():
+                            mode_key = "turn_based"
+                        else:
+                            mode_key = "unknown"
+                            
+                        reports_by_mode[mode_key].append(data)
             except Exception as e:
                 print(f"[Warning] Failed to load {f}: {e}")
-        return reports
+        return reports_by_mode
 
     def calculate_pw_multiplier(self, report):
         """计算 PW-Elo 的表现乘数 M"""
@@ -124,32 +134,36 @@ class ReportAnalyzer:
 
         return elo_system.ratings.copy(), elo_system.games_played.copy()
 
-    def run_bootstrap_analysis(self):
-        reports = self.load_reports()
-        print(f"Loaded {len(reports)} match reports.")
-        print(f"Running {self.bootstrap_iterations} bootstrap iterations to stabilize ratings...")
+    def run_bootstrap_analysis(self, reports, mode_name="General"):
+        if not reports:
+            print(f"[{mode_name}] No reports found.")
+            return [], []
+
+        print(f"[{mode_name}] Loaded {len(reports)} match reports.")
+        print(f"[{mode_name}] Running {self.bootstrap_iterations} bootstrap iterations...")
         
         std_elo = EloSystem(k_factor=32, initial_rating=1000)
         pw_elo = EloSystem(k_factor=32, initial_rating=1000)
 
-        # 存储所有轮次的结果： model -> list of ratings
+        # 存储所有轮次的结果
         std_results = defaultdict(list)
         pw_results = defaultdict(list)
-        games_counts = defaultdict(int) # 场次是固定的，取一次就行
+        games_counts = defaultdict(int)
 
         # 1. 蒙特卡洛模拟
         for i in range(self.bootstrap_iterations):
-            # 随机打乱报告顺序
-            random.shuffle(reports)
+            # 随机打乱报告顺序 (创建副本以免影响原列表)
+            shuffled_reports = list(reports)
+            random.shuffle(shuffled_reports)
             
             # 计算 Standard Elo
-            ratings_std, counts = self.process_reports_sequence(reports, std_elo, is_pw=False)
+            ratings_std, counts = self.process_reports_sequence(shuffled_reports, std_elo, is_pw=False)
             for m, r in ratings_std.items():
                 std_results[m].append(r)
                 if i == 0: games_counts[m] = counts[m]
 
             # 计算 PW-Elo
-            ratings_pw, _ = self.process_reports_sequence(reports, pw_elo, is_pw=True)
+            ratings_pw, _ = self.process_reports_sequence(shuffled_reports, pw_elo, is_pw=True)
             for m, r in ratings_pw.items():
                 pw_results[m].append(r)
 
@@ -192,6 +206,10 @@ class ReportAnalyzer:
 
 def print_leaderboard(stats, title="Leaderboard"):
     print(f"\n=== {title} ===")
+    if not stats:
+        print("No data available.")
+        return
+
     # 按分数降序排列
     stats.sort(key=lambda x: x["rating"], reverse=True)
     
@@ -204,10 +222,26 @@ def print_leaderboard(stats, title="Leaderboard"):
 
 if __name__ == "__main__":
     analyzer = ReportAnalyzer()
-    stats_std, stats_pw = analyzer.run_bootstrap_analysis()
-
-    print_leaderboard(stats_std, "Standard Elo (Bootstrap Mean)")
-    print_leaderboard(stats_pw, "PW-Elo (Bootstrap Mean)")
     
-    analyzer.save_leaderboard_csv(stats_std, "leaderboard_standard.csv")
-    analyzer.save_leaderboard_csv(stats_pw, "leaderboard_pw.csv")
+    # 1. 加载并分类
+    reports_map = analyzer.load_reports_by_mode()
+    
+    # 2. 针对 Turn-Based 模式计算
+    print("\n>>> Processing Turn-Based Mode <<<")
+    tb_reports = reports_map.get("turn_based", [])
+    tb_stats_std, tb_stats_pw = analyzer.run_bootstrap_analysis(tb_reports, "Turn-Based")
+    
+    print_leaderboard(tb_stats_std, "Turn-Based: Standard Elo (Bootstrap)")
+    print_leaderboard(tb_stats_pw, "Turn-Based: PW-Elo (Bootstrap)")
+    analyzer.save_leaderboard_csv(tb_stats_std, "leaderboard_turn_based_std.csv")
+    analyzer.save_leaderboard_csv(tb_stats_pw, "leaderboard_turn_based_pw.csv")
+
+    # 3. 针对 Real-Time 模式计算
+    print("\n>>> Processing Real-Time Mode <<<")
+    rt_reports = reports_map.get("real_time", [])
+    rt_stats_std, rt_stats_pw = analyzer.run_bootstrap_analysis(rt_reports, "Real-Time")
+    
+    print_leaderboard(rt_stats_std, "Real-Time: Standard Elo (Bootstrap)")
+    print_leaderboard(rt_stats_pw, "Real-Time: PW-Elo (Bootstrap)")
+    analyzer.save_leaderboard_csv(rt_stats_std, "leaderboard_real_time_std.csv")
+    analyzer.save_leaderboard_csv(rt_stats_pw, "leaderboard_real_time_pw.csv")
