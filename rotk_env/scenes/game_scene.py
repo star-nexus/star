@@ -165,17 +165,32 @@ class GameScene(Scene):
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)
             InputHandlingSystem(),  # Input system (priority 10)
-            UnitActionButtonSystem(),  # Unit action button system (priority 4)
+            # UnitActionButtonSystem(),  # Unit action button system (priority 4) - Moved to conditional
             # Render systems are split into multiple independent systems (from lowest to highest layer)
-            MapRenderSystem(),  # Map render system (lowest layer)
-            UnitRenderSystem(),  # Unit render system (above map)
-            EffectRenderSystem(),  # Effect render system (above unit)
-            PanelRenderSystem(),  # Panel render system (above effect)
-            UIButtonSystem(),  # Improved UI button system (priority 2)
-            UIRenderSystem(),  # Improved UI render system (top layer)
-            MiniMapSystem(),  # MiniMap system (priority 5)
+            # MapRenderSystem(),  # Map render system (lowest layer) - Moved to conditional
+            # UnitRenderSystem(),  # Unit render system (above map) - Moved to conditional
+            # EffectRenderSystem(),  # Effect render system (above unit) - Moved to conditional
+            # PanelRenderSystem(),  # Panel render system (above effect) - Moved to conditional
+            # UIButtonSystem(),  # Improved UI button system (priority 2) - Moved to conditional
+            # UIRenderSystem(),  # Improved UI render system (top layer) - Moved to conditional
+            # MiniMapSystem(),  # MiniMap system (priority 5) - Moved to conditional
             SettlementReportSystem(),  # Settlement report system (priority 200, executed after game ends)
         ]
+
+        # Add UI and Render systems only if NOT in headless mode
+        if not self.headless:
+            # Add UI logic systems
+            systems.insert(-1, UnitActionButtonSystem())
+            systems.insert(-1, UIButtonSystem())
+            
+            # Add render systems
+            systems.insert(-1, MapRenderSystem())
+            systems.insert(-1, UnitRenderSystem())
+            systems.insert(-1, EffectRenderSystem())
+            systems.insert(-1, PanelRenderSystem())
+            systems.insert(-1, UIRenderSystem())
+            systems.insert(-1, MiniMapSystem())
+        
         if self.game_mode == GameMode.REAL_TIME:
             systems.append(RealtimeSystem())
         else:
