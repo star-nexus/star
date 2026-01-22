@@ -617,6 +617,9 @@ class GameScene(Scene):
         if self.headless:
             # Print statistics data in headless mode
             print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
+            # In headless mode, exit the game directly
+            print("[GameScene] Headless mode: Exiting game...")
+            self.engine.quit()
         else:
             SMS.switch_to("game_over", winner=game_state.winner, statistics=statistics)
 
