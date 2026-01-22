@@ -95,6 +95,7 @@ class GameScene(Scene):
         # 🆕 Game end waiting state
         self.game_end_wait_start = None
         self.game_end_wait_timeout = 15.0  # Maximum wait time for 5 seconds
+        self._headless_exit_triggered = False
 
     def enter(self, **kwargs):
         """Called when entering the scene"""
@@ -617,9 +618,11 @@ class GameScene(Scene):
         if self.headless:
             # Print statistics data in headless mode
             print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
-            # In headless mode, exit the game directly
-            print("[GameScene] Headless mode: Exiting game...")
-            self.engine.quit()
+            # In headless mode, stop the main loop and let GameEngine cleanup
+            if not self._headless_exit_triggered:
+                self._headless_exit_triggered = True
+                print("[GameScene] Headless mode: Stopping game loop...")
+                self.engine.stop(None)
         else:
             SMS.switch_to("game_over", winner=game_state.winner, statistics=statistics)
 
