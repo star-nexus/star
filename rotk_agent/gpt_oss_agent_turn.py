@@ -304,7 +304,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", max_api_calls_per_turn: int = 50):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
@@ -321,6 +321,10 @@ class RoTKChatAgent:
         # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
         self._turn_gate: asyncio.Event = asyncio.Event()
         self._turn_gate.set()
+        
+        # 🆕 每回合 LLM API 调用预算，防止弱模型无限调用不结束回合；turn_start 时重置
+        self.max_api_calls_per_turn: int = max_api_calls_per_turn
+        self._api_calls_this_turn: int = 0
         
     # ======== Turn Gate Control Functions ========
     # These functions are used to control and record the turn gate status for LLM API calls,
@@ -407,6 +411,7 @@ class RoTKChatAgent:
                         async with self._history_lock:
                             self.conversation_history.append(Message(role="user", content=hint))
                         self._last_turn_notified = evt_turn
+                        self._api_calls_this_turn = 0  # 新回合重置每回合 API 调用计数
                         console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn} [{context_name}]", style="green")
                         # 解除回合门控，允许 LLM API 调用
                         self._set_turn_gate(f"turn_start ({context_name})")
@@ -1220,6 +1225,15 @@ class RoTKChatAgent:
                 # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
                 if not await self._wait_for_turn_gate():
                     continue  # 门控未开启或异常，跳过 LLM API 调用
+                # 🆕 每回合 LLM API 调用预算：超过则强制 end_turn，防止弱模型无限调用不结束回合
+                if self._api_calls_this_turn >= self.max_api_calls_per_turn:
+                    console.print(f"🎫 Per-turn API call budget exhausted ({self.max_api_calls_per_turn}), triggering end_turn...", style="yellow")
+                    try:
+                        await self.tool_manager.execute_tool("end_turn", {})
+                    except Exception as e:
+                        console.print(f"⚠️ end_turn (budget) failed: {e}", style="yellow")
+                    continue
+                self._api_calls_this_turn += 1
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
                 if len(input_items) > 20:
