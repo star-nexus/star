@@ -150,6 +150,10 @@ class LLMSystem(System):
         # 🆕 消息级冷却（鼓励批量发送）
         self.message_cooldown_seconds: float = 0
         self._agent_last_message_ts: Dict[str, float] = {}
+        # 🆕 turn_start 可靠投递：等待 ACK 或重发。key=agent_id, value={turn_number, faction_key, next_retry_time, retry_count, notification}
+        self._pending_turn_start_ack: Dict[str, dict] = {}
+        self._turn_start_retry_interval: float = 8.0
+        self._turn_start_max_retries: int = 5
 
         # 系统级错误代码
         self.system_error_codes = {
@@ -891,7 +895,31 @@ class LLMSystem(System):
                     reason="game_completed"
                 )
                 self.game_end_notified = True
+                self._pending_turn_start_ack.clear()
                 print(f"[LLMSystem] ✅ 游戏结束通知完成，已通知 {agent_count} 个Agent")
+
+        # 🆕 turn_start 可靠投递：超时未收到 ACK 则重发，超过最大重试则放弃
+        game_state = self.world.get_singleton_component(GameState) if self.world else None
+        if game_state and not getattr(game_state, "game_over", False):
+            now = time.time()
+            for agent_id in list(self._pending_turn_start_ack.keys()):
+                entry = self._pending_turn_start_ack.get(agent_id)
+                if not entry or now < entry.get("next_retry_time", 0):
+                    continue
+                entry["retry_count"] = entry.get("retry_count", 0) + 1
+                if entry["retry_count"] > self._turn_start_max_retries:
+                    print(f"[LLMSystem] ⚠️ 放弃重发 turn_start 给 {agent_id}，已重试 {self._turn_start_max_retries} 次")
+                    self._pending_turn_start_ack.pop(agent_id, None)
+                    continue
+                try:
+                    self.send_message(
+                        entry["notification"],
+                        target={"type": "agent", "id": agent_id},
+                    )
+                    entry["next_retry_time"] = now + self._turn_start_retry_interval
+                    print(f"[LLMSystem] 🔄 重发 turn_start 给 {agent_id}（第 {entry['retry_count']} 次）")
+                except Exception as _e:
+                    print(f"[LLMSystem] ❌ 重发 turn_start 给 {agent_id} 失败: {_e}")
         
         # 原有的注释代码保持不变
         # print(f"LLMSystem update: {dt}")
@@ -934,7 +962,16 @@ class LLMSystem(System):
                 self.client.response_to_agent(agent_id, action_id, error_result, "str")
             return error_result
 
+        # 🆕 turn_start 可靠投递：Agent 收到 turn_start 后发 ACK，ENV 清除重发等待
+        if action == "turn_start_ack":
+            self._pending_turn_start_ack.pop(agent_id, None)
+            if send_response and agent_id:
+                self.client.response_to_agent(agent_id, action_id, {"success": True}, "str")
+            return {"success": True}
+
         try:
+            # 收到该 agent 的任意业务 action 视为已活跃，清除其 turn_start 重发等待
+            self._pending_turn_start_ack.pop(agent_id, None)
             if action != "register_agent_info":
                 mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
                 if mapped_faction is None:
@@ -1046,23 +1083,29 @@ class LLMSystem(System):
                             ]
 
                             if target_agent_ids:
+                                turn_number = getattr(game_state, "turn_number", None)
                                 notification = {
                                     "type": "turn_start",
                                     "faction": faction_key,
-                                    "turn_number": getattr(game_state, "turn_number", None),
+                                    "turn_number": turn_number,
                                     "timestamp": time.time(),
                                     "message": "Your turn starts.",
                                 }
+                                now = time.time()
                                 for target_agent_id in target_agent_ids:
                                     try:
                                         self.send_message(
                                             notification,
                                             target={"type": "agent", "id": target_agent_id},
                                         )
-                                        # 计入一次 ENV->Agent 交互
-                                        # self._record_interaction(
-                                        #     target_agent_id, {"faction": faction_key}
-                                        # )
+                                        # 可靠投递：等待 ACK 或按间隔重发，直至收到 ack/任意 action 或超过最大重试
+                                        self._pending_turn_start_ack[target_agent_id] = {
+                                            "turn_number": turn_number,
+                                            "faction_key": faction_key,
+                                            "next_retry_time": now + self._turn_start_retry_interval,
+                                            "retry_count": 0,
+                                            "notification": notification,
+                                        }
                                         print(
                                             f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合"
                                         )
