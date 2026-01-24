@@ -8,8 +8,13 @@ LLM Action Handler V3 - Minimal, robust, and efficient action gateway
 Designed for clarity and reliability when driven by language models.
 """
 
+import base64
+import io
 from typing import Dict, List, Any, Optional, Tuple, Set
+
+import pygame
 from framework import World
+from framework.engine.renders import RenderEngine
 from ..components import (
     Unit,
     UnitCount,
@@ -64,6 +69,7 @@ class LLMActionHandlerV3:
             "observation": self.handle_observation_action,
             # Faction info actions
             "get_faction_state": self.handle_faction_state,
+            "get_faction_state_vlm": self.handle_faction_state_vlm,
             # System
             "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # added end_turn
@@ -1314,6 +1320,79 @@ class LLMActionHandlerV3:
             ],  # 返回存活单位的详细信息
         }
 
+    def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Capture the current rendered frame from the display and return as base64 PNG.
+        For VLM: the agent can decode and pass to a vision model.
+
+        Returns:
+            (base64_str, None) on success; (None, error_message) on failure.
+        """
+        try:
+            re = RenderEngine()
+            screen = re.screen
+        except Exception as e:
+            return None, f"RenderEngine/screen not available: {e}"
+
+        try:
+            surf = screen.copy()
+        except Exception as e:
+            return None, f"Screen copy failed: {e}"
+
+        try:
+            buf = io.BytesIO()
+            pygame.image.save(surf, buf)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return b64, None
+        except Exception as e:
+            return None, f"Encode frame to base64 failed: {e}"
+
+    def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        VLM version of get_faction_state: returns the same state as
+        handle_faction_state, plus the current rendered frame as base64 PNG
+        (frame_base64) for vision-language models.
+        """
+        # Reuse validation and state logic from handle_faction_state
+        faction_str = params.get("faction")
+        if not faction_str:
+            return self._create_error_response("faction parameter required")
+        try:
+            faction = Faction(faction_str)
+            print(f"[FACTION_STATE_VLM] Handling for {faction.value}")
+        except ValueError:
+            return self._create_error_response(f"Invalid faction: {faction_str}")
+
+        faction_units = self._get_faction_units(faction)
+        total_units_count = len(faction_units)
+        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
+        alive_units_count = len(alive_units)
+        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
+        actionable_units_count = len(actionable_units)
+        faction_status = self._get_faction_status(faction)
+
+        # Capture rendered frame for VLM
+        frame_b64, frame_err = self._capture_frame_base64()
+        payload = {
+            "success": True,
+            "result": True,
+            "state": faction_status,
+            "faction": faction.value,
+            "total_units": total_units_count,
+            "alive_units": alive_units_count,
+            "actionable_units": actionable_units_count,
+            "units": [
+                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
+            ],
+            "frame_base64": frame_b64,
+            "frame_format": "png" if frame_b64 else None,
+        }
+        if frame_err is not None:
+            payload["frame_error"] = frame_err
+
+        print(f"[FACTION_STATE_VLM] Completed for {faction.value}, frame={'ok' if frame_b64 else 'failed'}")
+        return payload
+
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return concise documentation for available actions."""
         action_docs = {
@@ -1354,6 +1433,16 @@ class LLMActionHandlerV3:
                 },
                 "get_faction_state": {
                     "description": "Get state for a faction: surviving unit positions and remaining strength",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei | shu | wu)",
+                        }
+                    },
+                },
+                "get_faction_state_vlm": {
+                    "description": "VLM: Get faction state plus the current rendered frame as base64 PNG (frame_base64). Use for vision-language models.",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1601,6 +1690,29 @@ class LLMActionHandlerV3:
                     },
                     "prerequisites": ["Valid faction name"],
                 },
+                "get_faction_state_vlm": {
+                    "category": "faction_control",
+                    "description": "VLM: Get faction state plus current rendered frame as base64 PNG (frame_base64) for vision-language models.",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei/shu/wu)",
+                        }
+                    },
+                    "returns": {
+                        "result": {"type": "bool", "description": "Whether execution succeeded"},
+                        "state": {"type": "string", "description": "Faction state"},
+                        "faction": {"type": "string", "description": "Faction name"},
+                        "total_units": {"type": "int", "description": "Total unit count"},
+                        "alive_units": {"type": "int", "description": "Alive unit count"},
+                        "units": {"type": "array", "description": "Detailed unit info list"},
+                        "frame_base64": {"type": "string", "description": "Current frame as base64 PNG, or null if capture failed"},
+                        "frame_format": {"type": "string", "description": "'png' when frame_base64 is present"},
+                        "frame_error": {"type": "string", "description": "Error message when frame capture failed"},
+                    },
+                    "prerequisites": ["Valid faction name", "Display/screen available for frame capture"],
+                },
                 # System
                 "get_action_list": {
                     "category": "system",
@@ -1658,6 +1770,10 @@ class LLMActionHandlerV3:
                 },
                 "get_faction_overview": {
                     "action": "get_faction_state",
+                    "params": {"faction": "wei"},
+                },
+                "get_faction_overview_vlm": {
+                    "action": "get_faction_state_vlm",
                     "params": {"faction": "wei"},
                 },
                 "finish_turn": {
