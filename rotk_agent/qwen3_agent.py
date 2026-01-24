@@ -38,7 +38,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
-    enable_thinking: bool = False
+    enable_thinking: bool = True
 
 
 @dataclass
@@ -1572,6 +1572,11 @@ class RoTKChatAgent:
                         "reason": "account_balance_insufficient"
                     }
 
+                # 网络不可达（ConnectError/Timeout 等）：立即退出，避免无限重试 LLM API
+                if _is_network_unreachable_error(e, error_details):
+                    console.print("🛑 Network unreachable (LLM API): stopping agent to avoid infinite retries.", style="red bold")
+                    sys.exit(1)
+
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
@@ -2239,6 +2244,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         # # Clean up resources
         # await agent.stop()
         
+    except (ValueError, KeyError, FileNotFoundError) as e:
+        # 配置错误（如 Invalid provider、Model ID not found、配置文件缺失）：立即退出，避免无限重试
+        console_system.print(f"Fatal LLM config error: {e}", style="red bold")
+        console_system.print("Fix the provider name in match list or .configs.toml and retry. Exiting.", style="yellow")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
@@ -2358,6 +2370,25 @@ def _is_account_balance_error(exc: Exception, error_details: dict | None = None)
         or "account balance" in lowered
         or "30001" in lowered
     )
+
+
+def _is_network_unreachable_error(exc: Exception, error_details: dict | None = None) -> bool:
+    """网络不可达类错误：ConnectError、Timeout、连接拒绝等，应终止进程避免无限重试。"""
+    import httpx
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError)):
+        return True
+    d = error_details or {}
+    if any(k in d for k in ("connection_error", "timeout_error", "request_error")):
+        return True
+    msg = (d.get("exception_message") or str(exc)).lower()
+    for phrase in (
+        "cannot connect", "connection refused", "getaddrinfo failed",
+        "network is unreachable", "connection error", "timeout", "timed out",
+        "connecterror", "timeoutexception"
+    ):
+        if phrase in msg:
+            return True
+    return False
 
 
 async def main():
