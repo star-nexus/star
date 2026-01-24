@@ -37,7 +37,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
-    enable_thinking: bool = False
+    enable_thinking: bool = True
 
 
 @dataclass
@@ -150,13 +150,13 @@ class LLMClient:
             payload["top_k"] = self.config.top_k
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
-        # if self.config_thinking:
-        #     if self.config.provider == "siliconflow":
-        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        #     elif self.config.provider.startswith("vllm"):
-        #         payload["chat_template_kwargs"] = {
-        #                 "enable_thinking": bool(self.config.enable_thinking)
-        #             }
+        if self.config_thinking:
+            if self.config.provider == "siliconflow":
+                payload["enable_thinking"] = bool(self.config.enable_thinking)    
+            elif self.config.provider.startswith("vllm"):
+                payload["chat_template_kwargs"] = {
+                        "enable_thinking": bool(self.config.enable_thinking)
+                    }
         
         if tools:
             payload["tools"] = self._format_tools(tools)
@@ -345,7 +345,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     temperature = provider_config.get("temperature")
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")

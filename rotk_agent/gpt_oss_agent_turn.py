@@ -39,7 +39,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
-    enable_thinking: bool = False
+    enable_thinking: bool = True
 
 
 @dataclass
@@ -107,12 +107,23 @@ class LLMClient:
         )
 
         self.config_thinking = True
+        self.ROLE_TO_EFFORT = {
+            "planner": "high",
+            "critic": "medium",
+            "executor": "none",
+        }
+
+        self.reasoning_effort = (
+            self.ROLE_TO_EFFORT["planner"]
+            if config.enable_thinking and self.config_thinking
+            else "none"
+        )
 
         self.config.base_url = self.base_url
-        self.config.enable_thinking = config.enable_thinking and self.config_thinking
 
         console_system.print("=======================================", style="yellow")
         console_system.print(self.config, style="yellow") 
+        console_system.print(f"reasoning_effort: {self.reasoning_effort}", style="yellow")
         console_system.print("=======================================", style="yellow")
 
     async def chat_completion(
@@ -143,7 +154,11 @@ class LLMClient:
                 stream=False,
                 parallel_tool_calls=True,
                 tool_choice="auto",
-                reasoning={"effort": "low"},
+                reasoning = (
+                    {"effort": self.reasoning_effort}
+                    if self.reasoning_effort != "none"
+                    else None
+                )
             )
             
             console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
@@ -285,7 +300,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature")
     max_tokens = provider_config.get("max_tokens")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")
 
