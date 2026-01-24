@@ -1975,7 +1975,14 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
                 else:
-                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
+                    # 当 ENV 返回 "Not X's turn. Current turn: Y" 时，本阵营无法 end_turn，
+                    # 若不关闭门控，budget exhausted 会反复触发 end_turn → 失败 → continue → 无限循环。
+                    msg = (response.get("details") or response.get("message") or "")
+                    if "Current turn:" in msg or "current turn" in msg.lower():
+                        agent._clear_turn_gate("end_turn failed - not our turn")
+                        console.print(f"⏹️ end_turn rejected (not our turn). Gate CLOSED; waiting for our turn_start. Response: {response}", style="yellow")
+                    else:
+                        console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
                 # return response
                 return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
