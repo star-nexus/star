@@ -99,26 +99,32 @@ def run_match(
         print("  Skipping this match. Fix match_list and .configs.toml.")
         return
 
-    # 确保日志目录存在
-    os.makedirs("logs", exist_ok=True)
+    # 为本次对局生成唯一 env_id，避免多 shell 并行跑 auto_test 时与其它进程的 ENV 冲突。
+    # 同一 auto_test 进程内对局串行，同一时刻仅一个 ENV，故用进程 PID 即可。
+    pid = os.getpid()
+    env_id = f"env_{pid}"
+    # 日志按 run 隔离：logs/run_{pid}/，多进程并行时各写各目录，不互相覆盖
+    log_dir = f"logs/run_{pid}"
+    os.makedirs(log_dir, exist_ok=True)
 
-    # 1. 启动环境 (Headless)
+    # 1. 启动环境 (Headless)，通过 --env-id 显式传入，run_headless_env 透传 $@ 给 main.py
     env_cmd = [
         "./run_headless_env.sh",
+        "--env-id", env_id,
         "--players", players,
         "--mode", mode,
         "--scenario", "default"
     ]
     
-    env_log_path = f"logs/match_{match_index}_env.log"
-    wei_log_path = f"logs/match_{match_index}_wei.log"
-    shu_log_path = f"logs/match_{match_index}_shu.log"
+    env_log_path = f"{log_dir}/match_{match_index}_env.log"
+    wei_log_path = f"{log_dir}/match_{match_index}_wei.log"
+    shu_log_path = f"{log_dir}/match_{match_index}_shu.log"
     
     env_log = open(env_log_path, "w")
     wei_log = open(wei_log_path, "w")
     shu_log = open(shu_log_path, "w")
 
-    print(f"  Launching Environment (Log: {env_log_path})...")
+    print(f"  Launching Environment (Log: {env_log_path}, ENV_ID={env_id})...")
     start_time = time.time()
     env_vars = os.environ.copy()
     env_vars["PYTHONUNBUFFERED"] = "1"
@@ -140,13 +146,14 @@ def run_match(
         return
     
     # 2. 启动 Wei Agent
+    # agent_id 按 run 隔离，避免多 auto_test 并行时与同一 Hub 上其它 run 的 agent_id 冲突
+    wei_agent_id = f"agent_wei_{match_index}_{pid}"
+    shu_agent_id = f"agent_shu_{match_index}_{pid}"
     print(f"  Launching Wei Agent ({wei_model}) (Log: {wei_log_path})...")
-    wei_agent_id = f"agent_wei_{match_index}"
-    shu_agent_id = f"agent_shu_{match_index}"
 
     wei_cmd = [
         "./run_agent_generic.sh",
-        "env_1",       # ENV_ID
+        env_id,         # ENV_ID，与本次 ENV 的 ENV_ID 一致，确保连到同一局
         wei_agent_id,  # AGENT_ID
         "wei",         # FACTION
         wei_model,     # PROVIDER
@@ -159,7 +166,7 @@ def run_match(
     print(f"  Launching Shu Agent ({shu_model}) (Log: {shu_log_path})...")
     shu_cmd = [
         "./run_agent_generic.sh",
-        "env_1",       # ENV_ID
+        env_id,         # ENV_ID，与本次 ENV 的 ENV_ID 一致
         shu_agent_id,  # AGENT_ID
         "shu",         # FACTION
         shu_model,     # PROVIDER

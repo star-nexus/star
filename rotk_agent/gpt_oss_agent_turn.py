@@ -304,13 +304,14 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", max_api_calls_per_turn: int = 50):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1", max_api_calls_per_turn: int = 25):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
+        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -1099,13 +1100,12 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
@@ -1565,7 +1565,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, agent_id=self.agent_id))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1851,7 +1851,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1860,7 +1860,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
         
         # Register tools
         # agent.register_tool(
