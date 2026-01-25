@@ -5,6 +5,9 @@ Agent script is chosen by run_agent_generic.sh from the provider name:
   - provider contains 'nvidia' (e.g. vllm_nvidia_9b)  → nv_nemotron_agent / nv_nemotron_agent_turn
   - provider contains 'gpt' (e.g. vllm_gpt_oss)      → gpt_oss_agent / gpt_oss_agent_turn
   - otherwise (qwen, siliconflow, etc.)              → qwen3_agent / qwen3_agent_turn
+
+用户 Ctrl+C 中断时，会在当次 run 的 logs/run_{pid}/ 下写入 _INTERRUPTED 标记。
+筛出异常中断的目录: find logs -name _INTERRUPTED -exec dirname {} \\;
 """
 import subprocess
 import time
@@ -39,6 +42,16 @@ def _validate_providers(wei: str, shu: str, config_path: str = ".configs.toml") 
         if "model_id" not in entry:
             return False, f"Provider '{prov}' ({label}) has no 'model_id' in {config_path}."
     return True, ""
+
+
+def _mark_run_interrupted(log_dir: str) -> None:
+    """在 log_dir 下创建 _INTERRUPTED 标记文件。用户 Ctrl+C 中断后可用
+    find logs -name _INTERRUPTED 或 find logs -name _INTERRUPTED -exec dirname {} \\; 快速筛出异常中断的 run。"""
+    try:
+        if os.path.isdir(log_dir):
+            open(os.path.join(log_dir, "_INTERRUPTED"), "w").close()
+    except OSError:
+        pass
 
 
 def _find_recent_report(start_time: float) -> Optional[str]:
@@ -273,6 +286,7 @@ def run_match(
         env_process.kill()
     except KeyboardInterrupt:
         print("  Interrupted by user.")
+        _mark_run_interrupted(log_dir)
         cleanup(env_process, wei_process, shu_process)
         # 关闭文件句柄
         env_log.close()
@@ -328,31 +342,36 @@ def main():
 
     print(f"Loaded {len(matches)} matches from {args.list}.")
 
-    for i, match in enumerate(matches):
-        try:
-            parts = match.split(",")
-            if len(parts) >= 2:
-                wei = parts[0].strip()
-                shu = parts[1].strip()
-                run_match(
-                    wei,
-                    shu,
-                    i + 1,
-                    mode=args.mode,
-                    players=args.players,
-                    timeout=None if args.timeout <= 0 else args.timeout,
-                    report_wait=args.report_wait,
-                )
-                
-                # 局间休息，确保端口释放
-                print("  Cooling down for 5 seconds...")
-                time.sleep(5)
-            else:
+    try:
+        for i, match in enumerate(matches):
+            try:
+                parts = match.split(",")
+                if len(parts) >= 2:
+                    wei = parts[0].strip()
+                    shu = parts[1].strip()
+                    run_match(
+                        wei,
+                        shu,
+                        i + 1,
+                        mode=args.mode,
+                        players=args.players,
+                        timeout=None if args.timeout <= 0 else args.timeout,
+                        report_wait=args.report_wait,
+                    )
+                    
+                    # 局间休息，确保端口释放
+                    print("  Cooling down for 5 seconds...")
+                    time.sleep(5)
+                else:
+                    print(f"Skipping invalid line: {match}")
+                    
+            except ValueError:
                 print(f"Skipping invalid line: {match}")
-                
-        except ValueError:
-            print(f"Skipping invalid line: {match}")
-            continue
+                continue
+    except KeyboardInterrupt:
+        print("Interrupted by user.")
+        _mark_run_interrupted(f"logs/run_{os.getpid()}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
