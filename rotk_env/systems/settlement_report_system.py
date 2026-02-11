@@ -37,7 +37,7 @@ class SettlementReportSystem(System):
         super().__init__(priority=200)  # run late after game over
         self.report_generated = False
         self.game_end_time = None
-        self.timeout_seconds = 10.0  # timeout seconds
+        self.timeout_seconds = 60.0  # timeout seconds
         
     def initialize(self, world: World) -> None:
         self.world = world

@@ -5,6 +5,7 @@ LLM系统 - 游戏全局控制接口
 
 import asyncio
 import json
+import os
 import time
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
@@ -181,9 +182,11 @@ class LLMSystem(System):
         self.action_executor = ActionExecutor(self)
 
         # 使用同步客户端
+        # env_id: 从环境变量 ENV_ID 读取，便于 auto_test 多进程并行时隔离；默认 env_1
+        _env_id = os.environ.get("ENV_ID", "env_1")
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
-            env_id="env_1",
+            env_id=_env_id,
         )
         self.add_listener()
 

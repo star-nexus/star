@@ -80,6 +80,13 @@ Victory Conditions:
         help="Player configuration (default: human_vs_ai)",
     )
 
+    parser.add_argument(
+        "--env-id",
+        type=str,
+        default=None,
+        help="Environment ID for Hub/WebSocket (default: env_1, or ENV_ID env var if set)",
+    )
+
     return parser.parse_args()
 
 
@@ -122,6 +129,10 @@ def main():
         # Parse command line arguments
         args = parse_arguments()
 
+        # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
+        if args.env_id is not None:
+            os.environ["ENV_ID"] = args.env_id
+
         # Display welcome message
         print_welcome()
 
@@ -148,12 +159,18 @@ def main():
 
             # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
-                "game", players=players_config, game_mode=args.mode, headless=True
+                "game", 
+                players=players_config, 
+                mode=args.mode, 
+                headless=True,
+                scenario=args.scenario
             )
 
             print(f"Game mode: {args.mode}")
             print(f"Player configuration: {args.players}")
             print(f"Game scenario: {args.scenario}")
+            if args.env_id is not None:
+                print(f"Environment ID: {args.env_id}")
         else:
             # Default to start scene
             engine.scene_manager.switch_to("start")

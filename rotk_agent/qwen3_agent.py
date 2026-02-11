@@ -260,13 +260,13 @@ class LLMClient:
             payload["top_k"] = self.config.top_k
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
-        # if self.config_thinking:
-        #     if self.config.provider == "siliconflow":
-        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        #     elif self.config.provider.startswith("vllm"):
-        #         payload["chat_template_kwargs"] = {
-        #                 "enable_thinking": bool(self.config.enable_thinking)
-        #             }
+        if self.config_thinking:
+            if self.config.provider.startswith("siliconflow"):
+                payload["enable_thinking"] = bool(self.config.enable_thinking)    
+            elif self.config.provider.startswith("vllm"):
+                payload["chat_template_kwargs"] = {
+                        "enable_thinking": bool(self.config.enable_thinking)
+                    }
         
         if tools:
             payload["tools"] = self._format_tools(tools)
@@ -294,7 +294,7 @@ class LLMClient:
                 self.base_url,
                 json=payload,
                 headers=headers,
-                timeout=180.0
+                timeout=600.0
             )
             
             if response.status_code != 200:
@@ -352,7 +352,7 @@ class LLMClient:
         except httpx.TimeoutException as e:
             # Count failed API calls
             LLMClient._global_error_stats.add_http_timeout()
-            error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
+            error_msg = f"{self.config.provider} API request timeout (>600 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
             raise Exception(error_msg) from e
@@ -474,7 +474,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature")
     max_tokens = provider_config.get("max_tokens")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")
 
@@ -493,13 +493,14 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1"):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
+        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -1347,13 +1348,12 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
@@ -1467,8 +1467,8 @@ class RoTKChatAgent:
                 console.print(f"🔍 API CALL COUNT:  {self.error_stats.get_total_api_call_count()}", style="cyan")
                 # perc = len(self.conversation_history) / self.error_stats.get_total_api_call_count()
                 # console.print(f"🔍 Average lenght per API CALL COUNT:  {perc}", style="cyan")
-                if len(self.conversation_history) > 50:
-                    await self._shrink_history(window=20)
+                if len(self.conversation_history) > 25:
+                    await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
                 # Get LLM response
@@ -1780,8 +1780,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                # 传入 self 以便 create_agent 可以设置 current_agent
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, demo_instance=self))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, agent_id=self.agent_id))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -2138,7 +2137,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", demo_instance=None):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -2147,11 +2146,8 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
         
-        # 如果提供了 demo_instance，将 agent 设置到 demo 中以支持立即上报
-        if demo_instance is not None:
-            demo_instance.current_agent = agent
         
         # Register tools
         # agent.register_tool(
