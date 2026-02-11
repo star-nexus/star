@@ -1194,13 +1194,13 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
+
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
