@@ -37,7 +37,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
-    enable_thinking: bool = False
+    enable_thinking: bool = True
 
 
 @dataclass
@@ -151,13 +151,13 @@ class LLMClient:
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
         
-        # if self.config_thinking:
-        #     if self.config.provider == "siliconflow":
-        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        #     elif self.config.provider.startswith("vllm"):
-        #         payload["chat_template_kwargs"] = {
-        #                 "enable_thinking": bool(self.config.enable_thinking)
-        #             }
+        if self.config_thinking:
+            if self.config.provider == "siliconflow":
+                payload["enable_thinking"] = bool(self.config.enable_thinking)    
+            elif self.config.provider.startswith("vllm"):
+                payload["chat_template_kwargs"] = {
+                        "enable_thinking": bool(self.config.enable_thinking)
+                    }
         if tools:
             payload["tools"] = self._format_tools(tools)
             payload["tool_choice"] = "auto"
@@ -345,7 +345,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     
     api_key = provider_config.get("api_key", "EMPTY")
     base_url = provider_config.get("base_url", "")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     temperature = provider_config.get("temperature")
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")
@@ -366,12 +366,13 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1", max_api_calls_per_turn: int = 50):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
+        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -402,6 +403,10 @@ class RoTKChatAgent:
         # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
         self._turn_gate: asyncio.Event = asyncio.Event()
         self._turn_gate.set()
+        
+        # 🆕 每回合 LLM API 调用预算，防止弱模型无限调用不结束回合；turn_start 时重置
+        self.max_api_calls_per_turn: int = max_api_calls_per_turn
+        self._api_calls_this_turn: int = 0
         
     # ======== Turn Gate Control Functions ========
     # These functions are used to control and record the turn gate status for LLM API calls,
@@ -488,9 +493,16 @@ class RoTKChatAgent:
                         async with self._history_lock:
                             self.conversation_history.append(Message(role="user", content=hint))
                         self._last_turn_notified = evt_turn
+                        self._api_calls_this_turn = 0  # 新回合重置每回合 API 调用计数
                         console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn} [{context_name}]", style="green")
                         # 解除回合门控，允许 LLM API 调用
                         self._set_turn_gate(f"turn_start ({context_name})")
+                        # 可靠投递：向 ENV 发送 turn_start_ack，避免 ENV 重复重发
+                        try:
+                            c = RemoteContext.get_client()
+                            await c.send_action("turn_start_ack", {"faction": str(self.faction).lower(), "turn_number": evt_turn})
+                        except Exception as ack_err:
+                            console.print(f"⚠️ turn_start_ack send failed: {ack_err}", style="yellow")
                         return True
                     else:
                         if context_name:
@@ -1177,13 +1189,12 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
@@ -1282,6 +1293,15 @@ class RoTKChatAgent:
                 # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
                 if not await self._wait_for_turn_gate():
                     continue  # 门控未开启或异常，跳过 LLM API 调用
+                # 🆕 每回合 LLM API 调用预算：超过则强制 end_turn，防止弱模型无限调用不结束回合
+                if self._api_calls_this_turn >= self.max_api_calls_per_turn:
+                    console.print(f"🎫 Per-turn API call budget exhausted ({self.max_api_calls_per_turn}), triggering end_turn...", style="yellow")
+                    try:
+                        await self.tool_manager.execute_tool("end_turn", {})
+                    except Exception as e:
+                        console.print(f"⚠️ end_turn (budget) failed: {e}", style="yellow")
+                    continue
+                self._api_calls_this_turn += 1
                 # Check if the conversation_history is too long, trim it if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
                 if len(self.conversation_history) > 20:
@@ -1314,6 +1334,15 @@ class RoTKChatAgent:
                 )
 
                 # === Stage 2: produce actionable answer (with tools) ===
+                # 🆕 每回合 API 预算：Stage 2 前再次检查，超过则 end_turn（每轮有 Stage1+Stage2 两次调用）
+                if self._api_calls_this_turn >= self.max_api_calls_per_turn:
+                    console.print(f"🎫 Per-turn API call budget exhausted ({self.max_api_calls_per_turn}) before Stage-2, triggering end_turn...", style="yellow")
+                    try:
+                        await self.tool_manager.execute_tool("end_turn", {})
+                    except Exception as e:
+                        console.print(f"⚠️ end_turn (budget) failed: {e}", style="yellow")
+                    continue
+                self._api_calls_this_turn += 1
                 answer_budget = self._compute_answer_budget()
                 console.print(f"💬 Stage-2 answering with tokens: {answer_budget}", style="cyan")
 
@@ -1402,6 +1431,21 @@ class RoTKChatAgent:
                 # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
+                if _is_account_balance_error(e, error_details):
+                    console.print("🛑 Account balance error detected, stopping agent", style="red bold")
+                    await self.stop()
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_details": error_details,
+                        "iterations": iterations,
+                        "reason": "account_balance_insufficient"
+                    }
+
+                if _is_network_unreachable_error(e, error_details):
+                    console.print("🛑 Network unreachable (LLM API): stopping agent to avoid infinite retries.", style="red bold")
+                    sys.exit(1)
+
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
@@ -1601,7 +1645,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, agent_id=self.agent_id))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1888,7 +1932,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1897,7 +1941,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
         
         # Register tools
         # agent.register_tool(
@@ -1997,7 +2041,14 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
                 else:
-                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
+                    # 当 ENV 返回 "Not X's turn. Current turn: Y" 时，本阵营无法 end_turn，
+                    # 若不关闭门控，budget exhausted 会反复触发 end_turn → 失败 → continue → 无限循环。
+                    msg = (response.get("details") or response.get("message") or "")
+                    if "Current turn:" in msg or "current turn" in msg.lower():
+                        agent._clear_turn_gate("end_turn failed - not our turn")
+                        console.print(f"⏹️ end_turn rejected (not our turn). Gate CLOSED; waiting for our turn_start. Response: {response}", style="yellow")
+                    else:
+                        console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
                 # return response
                 return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
@@ -2018,6 +2069,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         # # Clean up resources
         # await agent.stop()
         
+    except (ValueError, KeyError, FileNotFoundError) as e:
+        # 配置错误（如 Invalid provider、Model ID not found、配置文件缺失）：立即退出，避免无限重试
+        console_system.print(f"Fatal LLM config error: {e}", style="red bold")
+        console_system.print("Fix the provider name in match list or .configs.toml and retry. Exiting.", style="yellow")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
@@ -2155,6 +2213,37 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
     except Exception:
         pass
 
+    return False
+
+
+def _is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
+    context = f"{exc}"
+    if error_details:
+        context = f"{context}\n{error_details}"
+    lowered = context.lower()
+    return (
+        ("balance" in lowered and "insufficient" in lowered)
+        or "account balance" in lowered
+        or "30001" in lowered
+    )
+
+
+def _is_network_unreachable_error(exc: Exception, error_details: dict | None = None) -> bool:
+    """网络不可达类错误：ConnectError、Timeout、连接拒绝等，应终止进程避免无限重试。"""
+    import httpx
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError)):
+        return True
+    d = error_details or {}
+    if any(k in d for k in ("connection_error", "timeout_error", "request_error")):
+        return True
+    msg = (d.get("exception_message") or str(exc)).lower()
+    for phrase in (
+        "cannot connect", "connection refused", "getaddrinfo failed",
+        "network is unreachable", "connection error", "timeout", "timed out",
+        "connecterror", "timeoutexception"
+    ):
+        if phrase in msg:
+            return True
     return False
 
 

@@ -94,7 +94,8 @@ class GameScene(Scene):
 
         # 🆕 Game end waiting state
         self.game_end_wait_start = None
-        self.game_end_wait_timeout = 15.0  # Maximum wait time for 5 seconds
+        self.game_end_wait_timeout = 60.0
+        self._headless_exit_triggered = False
 
     def enter(self, **kwargs):
         """Called when entering the scene"""
@@ -106,6 +107,11 @@ class GameScene(Scene):
         )
 
         mode = kwargs.get("mode", GameMode.TURN_BASED)
+        if isinstance(mode, str):
+            try:
+                mode = GameMode(mode)
+            except ValueError:
+                mode = GameMode.TURN_BASED
         self.game_mode = mode
 
         headless = kwargs.get("headless", False)
@@ -160,17 +166,32 @@ class GameScene(Scene):
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)
             InputHandlingSystem(),  # Input system (priority 10)
-            UnitActionButtonSystem(),  # Unit action button system (priority 4)
+            # UnitActionButtonSystem(),  # Unit action button system (priority 4) - Moved to conditional
             # Render systems are split into multiple independent systems (from lowest to highest layer)
-            MapRenderSystem(),  # Map render system (lowest layer)
-            UnitRenderSystem(),  # Unit render system (above map)
-            EffectRenderSystem(),  # Effect render system (above unit)
-            PanelRenderSystem(),  # Panel render system (above effect)
-            UIButtonSystem(),  # Improved UI button system (priority 2)
-            UIRenderSystem(),  # Improved UI render system (top layer)
-            MiniMapSystem(),  # MiniMap system (priority 5)
+            # MapRenderSystem(),  # Map render system (lowest layer) - Moved to conditional
+            # UnitRenderSystem(),  # Unit render system (above map) - Moved to conditional
+            # EffectRenderSystem(),  # Effect render system (above unit) - Moved to conditional
+            # PanelRenderSystem(),  # Panel render system (above effect) - Moved to conditional
+            # UIButtonSystem(),  # Improved UI button system (priority 2) - Moved to conditional
+            # UIRenderSystem(),  # Improved UI render system (top layer) - Moved to conditional
+            # MiniMapSystem(),  # MiniMap system (priority 5) - Moved to conditional
             SettlementReportSystem(),  # Settlement report system (priority 200, executed after game ends)
         ]
+
+        # Add UI and Render systems only if NOT in headless mode
+        if not self.headless:
+            # Add UI logic systems
+            systems.insert(-1, UnitActionButtonSystem())
+            systems.insert(-1, UIButtonSystem())
+            
+            # Add render systems
+            systems.insert(-1, MapRenderSystem())
+            systems.insert(-1, UnitRenderSystem())
+            systems.insert(-1, EffectRenderSystem())
+            systems.insert(-1, PanelRenderSystem())
+            systems.insert(-1, UIRenderSystem())
+            systems.insert(-1, MiniMapSystem())
+        
         if self.game_mode == GameMode.REAL_TIME:
             systems.append(RealtimeSystem())
         else:
@@ -284,12 +305,17 @@ class GameScene(Scene):
     def _generate_unit_positions_simple(
         self, center_col: int, center_row: int, count: int, faction: Faction
     ) -> list:
+        """Generate unit positions based on count - uses spiral distribution from center"""
+        # Use the existing _generate_unit_positions method which properly handles count
         if faction == Faction.WEI:
             return [(1, 3), (2, 3), (1, 4), (2, 4), (3, 3)]
         elif faction == Faction.SHU:
             return [(-2,-3), (-1,-4), (-3,-4), (-2,-4), (-1, -5)]
         elif faction == Faction.WU:
             return [(1, -3), (2, -3), (1, -4), (2, -4), (3, -3)]
+        else:
+            return self._generate_unit_positions(center_col, center_row, count)
+        # return self._generate_unit_positions(center_col, center_row, count)
 
 
     def _generate_unit_positions(
@@ -592,6 +618,11 @@ class GameScene(Scene):
         if self.headless:
             # Print statistics data in headless mode
             print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
+            # In headless mode, stop the main loop and let GameEngine cleanup
+            if not self._headless_exit_triggered:
+                self._headless_exit_triggered = True
+                print("[GameScene] Headless mode: Stopping game loop...")
+                self.engine.stop(None)
         else:
             SMS.switch_to("game_over", winner=game_state.winner, statistics=statistics)
 

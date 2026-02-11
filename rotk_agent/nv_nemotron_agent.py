@@ -366,13 +366,14 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1"):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
+        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -1033,13 +1034,12 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
@@ -1252,6 +1252,17 @@ class RoTKChatAgent:
                 # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
+                if _is_account_balance_error(e, error_details):
+                    console.print("🛑 Account balance error detected, stopping agent", style="red bold")
+                    await self.stop()
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_details": error_details,
+                        "iterations": iterations,
+                        "reason": "account_balance_insufficient"
+                    }
+
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
@@ -1435,7 +1446,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, agent_id=self.agent_id))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1717,7 +1728,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1726,7 +1737,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
         
         # Register tools
         # agent.register_tool(
@@ -1814,6 +1825,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         # # Clean up resources
         # await agent.stop()
         
+    except (ValueError, KeyError, FileNotFoundError) as e:
+        # 配置错误（如 Invalid provider、Model ID not found、配置文件缺失）：立即退出，避免无限重试
+        console_system.print(f"Fatal LLM config error: {e}", style="red bold")
+        console_system.print("Fix the provider name in match list or .configs.toml and retry. Exiting.", style="yellow")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
@@ -1917,6 +1935,18 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
         pass
 
     return False
+
+
+def _is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
+    context = f"{exc}"
+    if error_details:
+        context = f"{context}\n{error_details}"
+    lowered = context.lower()
+    return (
+        ("balance" in lowered and "insufficient" in lowered)
+        or "account balance" in lowered
+        or "30001" in lowered
+    )
 
 
 async def main():

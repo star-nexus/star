@@ -37,7 +37,7 @@ class SettlementReportSystem(System):
         super().__init__(priority=200)  # run late after game over
         self.report_generated = False
         self.game_end_time = None
-        self.timeout_seconds = 10.0  # timeout seconds
+        self.timeout_seconds = 60.0  # timeout seconds
         
     def initialize(self, world: World) -> None:
         self.world = world
@@ -457,7 +457,10 @@ class SettlementReportSystem(System):
         agent_endpoints = {}
         # enable_thinking capture
         enable_thinking_by_faction = {}
-        response_times: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+        action_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+        interaction_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
+        # provider 信息（用于文件名等）
+        providers: Dict[str, Optional[str]] = {"wei": None, "shu": None, "wu": None}
 
         if registry:
             print(f"[SettlementReport] 📋 Agent registry found, registered factions: {list(registry.agents.keys())}")
@@ -469,12 +472,15 @@ class SettlementReportSystem(System):
                     agent_endpoints[faction] = agent_info.base_url
                     # capture enable_thinking flag
                     enable_thinking_by_faction[faction] = agent_info.enable_thinking
+                    # provider 记录下来，用于后续文件名生成
+                    providers[faction] = agent_info.provider
                     print(f"[SettlementReport] ✅ {faction}: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
                 else:
                     model_info[faction] = "placeholder_model"
                     agent_endpoints[faction] = "unknown"
                     # default for unregistered faction
                     enable_thinking_by_faction[faction] = None
+                    providers[faction] = None
                     print(f"[SettlementReport] ⚠️ {faction}: Agent info not registered, using placeholder")
         else:
             print(f"[SettlementReport] ⚠️ Agent registry not found, using placeholders")
@@ -484,25 +490,33 @@ class SettlementReportSystem(System):
                 agent_endpoints[faction] = "unknown"
                 # default
                 enable_thinking_by_faction[faction] = None
+                providers[faction] = None
 
-        # Aggregate response count per faction
+        # Aggregate action & interaction counts per faction
         try:
             if game_stats:
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
-                    response_times[f.value] = game_stats.response_times_by_faction.get(f, 0)
+                    action_counts[f.value] = game_stats.action_counts_by_faction.get(f, 0)
+                    interaction_counts[f.value] = game_stats.interaction_counts_by_faction.get(f, 0)
             else:
-                print("[SettlementReport] ⚠️ GameStats missing, response_times default to 0")
+                print("[SettlementReport] ⚠️ GameStats missing, action/interaction counts default to 0")
         except Exception as e:
-            print(f"[SettlementReport] ⚠️ Failed to read response_times: {e}")
+            print(f"[SettlementReport] ⚠️ Failed to read action/interaction counts: {e}")
 
         # Strategy scores
         strategy_scores: Dict[str, float] = {"wei": 0.0, "shu": 0.0, "wu": 0.0}
+        strategy_evidence: Dict[str, List[str]] = {"wei": [], "shu": [], "wu": []}
         try:
             if game_stats and hasattr(game_stats, "strategy_scores_by_faction"):
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     strategy_scores[f.value] = float(game_stats.strategy_scores_by_faction.get(f, 0.0))
+                    if hasattr(game_stats, "strategy_evidence"):
+                        evidence_list = game_stats.strategy_evidence.get(f, [])
+                        if evidence_list:
+                            # copy to avoid accidental mutation downstream
+                            strategy_evidence[f.value] = list(evidence_list)
         except Exception as e:
             print(f"[SettlementReport] ⚠️ Failed to read strategy_scores: {e}")
 
@@ -536,10 +550,54 @@ class SettlementReportSystem(System):
             "model_info": model_info,
             "agent_endpoints": agent_endpoints,
             "strategy_scores": {**strategy_scores},
+            "strategy_evidence": {**strategy_evidence},
             "enable_thinking": enable_thinking_by_faction,
-            "response_times": response_times,
-            "llm_api_stats": llm_api_stats
+            "action_counts": action_counts,
+            "interaction_counts": interaction_counts,
+            "llm_api_stats": llm_api_stats,
+            # 参与对局的 provider 信息以及用于文件名的简短 slug
+            "providers": providers,
+            "providers_slug": self._build_providers_slug(providers),
         }
+    
+    def _build_providers_slug(self, providers: Dict[str, Optional[str]]) -> str:
+        """根据各阵营 provider 构造用于文件名的 slug。
+        
+        规则：
+        - 顺序固定为 wei、shu、wu（三方混战时依次追加）
+        - 跳过为空或 'unknown' 的 provider
+        - 全部转小写，并将非字母数字字符替换为 '-'
+        - 使用 '-vs-' 连接，如：'openai-vs-deepseek'、'openai-vs-deepseek-vs-grok'
+        - 如果最终没有任何有效 provider，则回退为 'agents'
+        """
+        ordered_factions = ["wei", "shu", "wu"]
+        name_parts: List[str] = []
+        
+        for faction in ordered_factions:
+            raw = providers.get(faction)
+            if not raw:
+                continue
+            name = str(raw).strip()
+            if not name:
+                continue
+            # 忽略 'unknown'（大小写不敏感）
+            if name.lower() == "unknown":
+                continue
+            # 构造文件名安全的段：只保留字母数字，其余替换为 '-'
+            safe_chars = []
+            for ch in name.lower():
+                if ch.isalnum():
+                    safe_chars.append(ch)
+                else:
+                    safe_chars.append("-")
+            sanitized = "".join(safe_chars).strip("-")
+            if not sanitized:
+                continue
+            name_parts.append(sanitized)
+        
+        if not name_parts:
+            return "agents"
+        return "-vs-".join(name_parts)
     
     def _get_map_type(self) -> str:
         """获取地图类型"""
@@ -606,7 +664,13 @@ class SettlementReportSystem(System):
                 json_safe_data = self._force_clean_data(report_data)
             
             # Save to JSON file
-            json_file = os.path.join(report_dir, f"settlement_{report_data['experiment_id']}.json")
+            # 文件名格式：report_<timestamp>_<providers>.json
+            timestamp = report_data.get("experiment_id", "unknown_time")
+            providers_slug = report_data.get("providers_slug")
+            if not isinstance(providers_slug, str) or not providers_slug.strip():
+                providers_slug = "agents"
+            providers_slug = providers_slug.strip()
+            json_file = os.path.join(report_dir, f"report_{timestamp}_{providers_slug}.json")
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(json_safe_data, f, ensure_ascii=False, indent=2)
             

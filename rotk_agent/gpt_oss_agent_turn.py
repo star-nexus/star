@@ -39,7 +39,7 @@ class LLMConfig:
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     top_k: Optional[int] = None
-    enable_thinking: bool = False
+    enable_thinking: bool = True
 
 
 @dataclass
@@ -107,12 +107,23 @@ class LLMClient:
         )
 
         self.config_thinking = True
+        self.ROLE_TO_EFFORT = {
+            "planner": "high",
+            "critic": "medium",
+            "executor": "none",
+        }
+
+        self.reasoning_effort = (
+            self.ROLE_TO_EFFORT["critic"]
+            if config.enable_thinking and self.config_thinking
+            else "none"
+        )
 
         self.config.base_url = self.base_url
-        self.config.enable_thinking = config.enable_thinking and self.config_thinking
 
         console_system.print("=======================================", style="yellow")
         console_system.print(self.config, style="yellow") 
+        console_system.print(f"reasoning_effort: {self.reasoning_effort}", style="yellow")
         console_system.print("=======================================", style="yellow")
 
     async def chat_completion(
@@ -143,7 +154,11 @@ class LLMClient:
                 stream=False,
                 parallel_tool_calls=True,
                 tool_choice="auto",
-                reasoning={"effort": "low"},
+                reasoning = (
+                    {"effort": self.reasoning_effort}
+                    if self.reasoning_effort != "none"
+                    else None
+                )
             )
             
             console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
@@ -184,8 +199,7 @@ class LLMClient:
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
             console.print(f"Request URL: {self.base_url} {self.client.base_url}", style="yellow")
-            console.print(f"Provider: {self.config.provider}", style="yellow")
-            console.print(payload, style="cyan")
+            console.print(f"Provider: {self.config.provider}, model: {self.config.model_id}", style="yellow")
             raise Exception(error_msg) from e
       
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
@@ -285,7 +299,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature")
     max_tokens = provider_config.get("max_tokens")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")
 
@@ -304,13 +318,14 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1", max_api_calls_per_turn: int = 25):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
+        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -321,6 +336,10 @@ class RoTKChatAgent:
         # 🆕 回合门控：控制 LLM API 调用开关（end_turn 后关闭，turn_start 到达后开启）
         self._turn_gate: asyncio.Event = asyncio.Event()
         self._turn_gate.set()
+        
+        # 🆕 每回合 LLM API 调用预算，防止弱模型无限调用不结束回合；turn_start 时重置
+        self.max_api_calls_per_turn: int = max_api_calls_per_turn
+        self._api_calls_this_turn: int = 0
         
     # ======== Turn Gate Control Functions ========
     # These functions are used to control and record the turn gate status for LLM API calls,
@@ -407,9 +426,16 @@ class RoTKChatAgent:
                         async with self._history_lock:
                             self.conversation_history.append(Message(role="user", content=hint))
                         self._last_turn_notified = evt_turn
+                        self._api_calls_this_turn = 0  # 新回合重置每回合 API 调用计数
                         console.print(f"📣 Injected turn_start hint for faction={self.faction}, turn={evt_turn} [{context_name}]", style="green")
                         # 解除回合门控，允许 LLM API 调用
                         self._set_turn_gate(f"turn_start ({context_name})")
+                        # 可靠投递：向 ENV 发送 turn_start_ack，避免 ENV 重复重发
+                        try:
+                            c = RemoteContext.get_client()
+                            await c.send_action("turn_start_ack", {"faction": str(self.faction).lower(), "turn_number": evt_turn})
+                        except Exception as ack_err:
+                            console.print(f"⚠️ turn_start_ack send failed: {ack_err}", style="yellow")
                         return True
                     else:
                         if context_name:
@@ -1088,13 +1114,12 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
-            
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
                 "model_id": config.model_id,
                 "base_url": config.base_url or "unknown",
-                "agent_id": getattr(self, 'agent_id', 'unknown'),
+                "agent_id": self.agent_id,
                 "version": "1.0.0",  # Agent version
                 "note": f"Agent using {config.provider}",
                 # 添加 enable_thinking 字段
@@ -1148,6 +1173,44 @@ class RoTKChatAgent:
         if isinstance(x, dict): return x.get(k, default)
         return getattr(x, k, default)
 
+    def _sanitize_assistant_content(self, text: str, max_len: int = 8000) -> str:
+        """Strip model special tokens that trigger vLLM/Responses API 400 (e.g. unexpected tokens
+        in message header, Unknown recipient). GPT-OSS and similar models can emit <|end|>,
+        <|start|>, <|channel|>, <|channel|>commentary in content; these must not be sent back in
+        input_items. Also truncate very long content to reduce vLLM parsing issues."""
+        if not text or not isinstance(text, str):
+            return text
+        s = text
+        # Truncate at first <|end|> or <|start|> to drop trailing malformed structure
+        for sep in ("<|end|>", "<|start|>"):
+            if sep in s:
+                s = s.split(sep)[0].strip()
+                break
+        # Remove known problematic tokens (compound first)
+        for token in ("<|channel|>commentary", "<|channel|>", "<|end|>", "<|start|>"):
+            s = s.replace(token, "")
+        s = s.strip()
+        if len(s) > max_len:
+            s = s[: max_len - 3] + "..."
+        return s
+
+    def _shrink_input_items(self, input_items: List, keep_tail: int = 6) -> None:
+        """In-place shrink: keep first user message and last keep_tail items to avoid vLLM
+        Responses API 400 on long multi-turn input."""
+        if len(input_items) <= 1 + keep_tail:
+            return
+        new_list = [input_items[0]] + list(input_items[-keep_tail:])
+        input_items.clear()
+        input_items.extend(new_list)
+
+    def _sanitize_input_items(self, input_items: List) -> None:
+        """In-place: sanitize assistant content in input_items to remove special tokens."""
+        for item in input_items:
+            if isinstance(item, dict) and item.get("role") == "assistant" and "content" in item:
+                c = item["content"]
+                if isinstance(c, str):
+                    item["content"] = self._sanitize_assistant_content(c)
+
     def _normalize_function_call(self, it) -> dict:
         name = self._get(it, "name")
         call_id = self._get(it, "call_id")
@@ -1190,6 +1253,7 @@ class RoTKChatAgent:
         input_items: List[Dict[str, Any]] = [
             {"role": "user", "content": user_prompt}
         ]
+        self._did_400_retry = False
 
         iterations = 0
         while iterations < self.max_iterations:
@@ -1220,11 +1284,21 @@ class RoTKChatAgent:
                 # 🆕 若处于等待下一回合期间，则暂停一切 LLM API 调用
                 if not await self._wait_for_turn_gate():
                     continue  # 门控未开启或异常，跳过 LLM API 调用
-                # Check if the conversation_history is too long, trim it if necessary
+                # 🆕 每回合 LLM API 调用预算：超过则强制 end_turn，防止弱模型无限调用不结束回合
+                if self._api_calls_this_turn >= self.max_api_calls_per_turn:
+                    console.print(f"🎫 Per-turn API call budget exhausted ({self.max_api_calls_per_turn}), triggering end_turn...", style="yellow")
+                    try:
+                        await self.tool_manager.execute_tool("end_turn", {})
+                    except Exception as e:
+                        console.print(f"⚠️ end_turn (budget) failed: {e}", style="yellow")
+                    continue
+                self._api_calls_this_turn += 1
+                # Check if the conversation_history or input_items is too long, trim if necessary
                 console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
                 if len(input_items) > 20:
                     await self._shrink_history(window=10)
-                    console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
+                    self._shrink_input_items(input_items, keep_tail=10)
+                    console.print("🧹 Context overflow detected, history and input_items have been trimmed and continued", style="cyan")   
 
                 response = await self.llm_client.chat_completion(
                     input_items=input_items,
@@ -1315,7 +1389,7 @@ class RoTKChatAgent:
                                         assistant_message_content += txt
                     
                     if assistant_message_content:
-                        input_items.append({"role": "assistant", "content": assistant_message_content})
+                        input_items.append({"role": "assistant", "content": self._sanitize_assistant_content(assistant_message_content)})
                     
                     input_items.append({"role": "user", "content": "You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them."})
                     continue
@@ -1331,12 +1405,40 @@ class RoTKChatAgent:
                 # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
+                if _is_account_balance_error(e, error_details):
+                    console.print("🛑 Account balance error detected, stopping agent", style="red bold")
+                    await self.stop()
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_details": error_details,
+                        "iterations": iterations,
+                        "reason": "account_balance_insufficient"
+                    }
+
+                if _is_network_unreachable_error(e, error_details):
+                    console.print("🛑 Network unreachable (LLM API): stopping agent to avoid infinite retries.", style="red bold")
+                    sys.exit(1)
+
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
                     console.print("🧹 Context overflow error detected, history has been trimmed and continued", style="cyan")
-                    continue                
-                
+                    continue
+
+                # vLLM/Responses API 400 (unexpected tokens, Unknown recipient, message header): shrink and
+                # sanitize input_items, then continue to retry with a clean history (once per chat).
+                if (
+                    _is_responses_api_400_error(e, error_details)
+                    and not getattr(self, "_did_400_retry", False)
+                    and len(input_items) > 4
+                ):
+                    self._did_400_retry = True
+                    self._shrink_input_items(input_items, keep_tail=6)
+                    self._sanitize_input_items(input_items)
+                    console.print("🔄 Responses API 400 (tokens/recipient): shrunk and sanitized input_items, continuing.", style="yellow")
+                    continue
+
                 # Record error log
                 log_file = log_error_to_file(error_details, display_console=True)
                 
@@ -1530,7 +1632,7 @@ class AgentDemo:
             count += 1
             console.print(f"🔄 Launch {count}th expedition...", style="bold cyan")
             try:
-                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt))
+                await asyncio.create_task(create_agent(faction, system_prompt, user_prompt, agent_id=self.agent_id))
                 await asyncio.sleep(0.1)  # Short delay to view results
 
             except KeyboardInterrupt:
@@ -1816,7 +1918,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = ""):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -1825,7 +1927,7 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
         
         # Register tools
         # agent.register_tool(
@@ -1925,7 +2027,14 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
                         console.print(f"⚠️ Failed to clear turn_start event: {e}", style="yellow")
                     console.print("⏹️ Turn ended. Pausing LLM calls until next turn_start...", style="yellow")
                 else:
-                    console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
+                    # 当 ENV 返回 "Not X's turn. Current turn: Y" 时，本阵营无法 end_turn，
+                    # 若不关闭门控，budget exhausted 会反复触发 end_turn → 失败 → continue → 无限循环。
+                    msg = (response.get("details") or response.get("message") or "")
+                    if "Current turn:" in msg or "current turn" in msg.lower():
+                        agent._clear_turn_gate("end_turn failed - not our turn")
+                        console.print(f"⏹️ end_turn rejected (not our turn). Gate CLOSED; waiting for our turn_start. Response: {response}", style="yellow")
+                    else:
+                        console.print(f"⚠️ end_turn response did not indicate success; gate remains OPEN. Response: {response}", style="yellow")
                 # return response
                 return {"result": "The current turn is over. Wait for the next turn_start to resume."}
             except Exception as e:
@@ -1946,6 +2055,13 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         # # Clean up resources
         # await agent.stop()
         
+    except (ValueError, KeyError, FileNotFoundError) as e:
+        # 配置错误（如 Invalid provider、Model ID not found、配置文件缺失）：立即退出，避免无限重试
+        console_system.print(f"Fatal LLM config error: {e}", style="red bold")
+        console_system.print("Fix the provider name in match list or .configs.toml and retry. Exiting.", style="yellow")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
@@ -2046,6 +2162,56 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
     except Exception:
         pass
 
+    return False
+
+
+def _is_responses_api_400_error(exc: Exception, error_details: dict | None = None) -> bool:
+    """Check for vLLM/Responses API 400: 'unexpected tokens in message header', 'Unknown recipient',
+    'content-type and recipient', etc. These can be mitigated by sanitizing and shrinking input_items."""
+    txt = str(exc) if exc else ""
+    blob = txt + " " + (error_details or {}).get("full_traceback", "")
+    if "400" not in blob:
+        return False
+    markers = [
+        "unexpected tokens",
+        "recipient",
+        "message header",
+        "content-type",
+        "unknown recipient",
+        "too many tokens remaining",
+        "parse header",
+    ]
+    return any(m in blob.lower() for m in markers)
+
+
+def _is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
+    context = f"{exc}"
+    if error_details:
+        context = f"{context}\n{error_details}"
+    lowered = context.lower()
+    return (
+        ("balance" in lowered and "insufficient" in lowered)
+        or "account balance" in lowered
+        or "30001" in lowered
+    )
+
+
+def _is_network_unreachable_error(exc: Exception, error_details: dict | None = None) -> bool:
+    """网络不可达类错误：ConnectError、Timeout、连接拒绝等，应终止进程避免无限重试。"""
+    import httpx
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError)):
+        return True
+    d = error_details or {}
+    if any(k in d for k in ("connection_error", "timeout_error", "request_error")):
+        return True
+    msg = (d.get("exception_message") or str(exc)).lower()
+    for phrase in (
+        "cannot connect", "connection refused", "getaddrinfo failed",
+        "network is unreachable", "connection error", "timeout", "timed out",
+        "connecterror", "timeoutexception"
+    ):
+        if phrase in msg:
+            return True
     return False
 
 

@@ -2,7 +2,6 @@ import asyncio
 import argparse
 from contextvars import ContextVar
 from datetime import datetime
-import time
 import os
 import sys
 import json
@@ -10,9 +9,8 @@ import httpx
 import toml
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable, Union
-from openai import AsyncOpenAI, OpenAI
-from openai import APIConnectionError, APITimeoutError, APIStatusError
 from string import Template
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from prompt_toolkit import PromptSession
@@ -162,7 +160,7 @@ class ToolManager:
         """Get all tool definitions"""
         return list(self.tools.values())
     
-    async def execute_single_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute tool"""
         if tool_name not in self.tools:
             raise ValueError(f"Tool {tool_name} does not exist")
@@ -188,44 +186,84 @@ class LLMClient:
 
     def __init__(self, config: LLMConfig):
         self.config = config
+        self.client = httpx.AsyncClient()
         
-        # Initialize OpenAI client
-        self.base_url = config.base_url
-       
-        self.client = AsyncOpenAI(
-            api_key=config.api_key,
-            base_url=self.base_url
-        )
+        if config.provider == "openai":
+            self.base_url = config.base_url or "https://api.openai.com/v1/chat/completions"
+        elif config.provider == "deepseek":
+            self.base_url = config.base_url
+        elif config.provider == "infinigence":
+            self.base_url = "https://cloud.infini-ai.com/maas/v1/chat/completions"
+        elif config.provider == "siliconflow":
+            self.base_url = "https://api.siliconflow.cn/v1/chat/completions"
+        elif config.provider == "vllm":
+            self.base_url = config.base_url
+        else:
+            self.base_url = config.base_url
 
-        self.ROLE_TO_EFFORT = {
-            "planner": "high",
-            "critic": "medium",
-            "executor": "none",
-        }
+        self.config_thinking = True
 
-        self.reasoning_effort = (
-            self.ROLE_TO_EFFORT["planner"]
-            if config.enable_thinking and self.config_thinking
-            else "none"
-        )
+        self.config.base_url = self.base_url
+        self.config.enable_thinking = config.enable_thinking and self.config_thinking
 
         console_system.print("=======================================", style="yellow")
         console_system.print(self.config, style="yellow") 
-        console_system.print(f"reasoning_effort: {self.reasoning_effort}", style="yellow")
         console_system.print("=======================================", style="yellow")
 
     async def chat_completion(
-        self,
-        input_items: List[Dict[str, Any]],
+        self, 
+        messages: List[Message], 
         tools: Optional[List[ToolDefinition]] = None,
-        instructions: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Send Responses API request"""   
+        """Send chat completion request"""
         
-        # console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
-        # console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
-        # console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
+        formatted_messages = []
+        for msg in messages:
+            message_dict = {"role": msg.role, "content": msg.content}
+            if msg.tool_calls:
+                message_dict["tool_calls"] = msg.tool_calls
+            if msg.tool_call_id:
+                message_dict["tool_call_id"] = msg.tool_call_id
+            formatted_messages.append(message_dict)
+        
+        payload = {
+            "model": self.config.model_id,
+            "messages": formatted_messages,
+            "stream": False,
+        }
+        
+        if self.config.temperature is not None:
+            payload["temperature"] = self.config.temperature
+        if self.config.top_p is not None:
+            payload["top_p"] = self.config.top_p
+        if self.config.top_k is not None:
+            payload["top_k"] = self.config.top_k
+        if self.config.max_tokens is not None:
+            payload["max_tokens"] = self.config.max_tokens
+        # if self.config_thinking:
+        #     if self.config.provider == "siliconflow":
+        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
+        #     elif self.config.provider.startswith("vllm"):
+        #         payload["chat_template_kwargs"] = {
+        #                 "enable_thinking": bool(self.config.enable_thinking)
+        #             }
+        
+        if tools:
+            payload["tools"] = self._format_tools(tools)
+            payload["tool_choice"] = "auto"
+            payload["parallel_tool_calls"] = True
+            
+        payload.update(kwargs)
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+        }
+        
+        console.print(f"╭─────────────────────────────────────────────────────── LLM request payload: ─────────────────────────────────────────────────╮", style="green")
+        console.print(f"│ {json.dumps(payload, indent=2, ensure_ascii=False)}", style="green", highlight=False)
+        console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="green")
 
         # Send request
         # Count API call (count before sending to ensure all calls are tracked)
@@ -233,32 +271,19 @@ class LLMClient:
         print(f"🔍 API call count: {LLMClient._global_api_call_count}")
         
         try:
-            response =  await self.client.responses.create(
-                model=self.config.model_id,
-                input=input_items,
-                tools=self._format_tools(tools),
-                instructions=instructions,
-                # max_output_tokens = 3000,
-                stream=False,
-                parallel_tool_calls=True,
-                tool_choice="auto",
-                reasoning = (
-                    {"effort": self.reasoning_effort}
-                    if self.reasoning_effort != "none"
-                    else None
-                )
+            response = await self.client.post(
+                self.base_url,
+                json=payload,
+                headers=headers,
+                timeout=180.0
             )
             
-            console.print(f"╭───────────────────────────────── LLM response: ───────────────────────────────────╮", style="magenta")
-            console.print(f"│ {json.dumps(response.model_dump(), indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
-            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
-
             if response.status_code != 200:
                 error_details = {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
                     "url": str(response.url),
-                    "request_payload": input_items,
+                    "request_payload": payload,
                     "config": {
                         "provider": self.config.provider,
                         "model_id": self.config.model_id,
@@ -292,12 +317,13 @@ class LLMClient:
                     LLMClient._global_error_stats.add_http_5xx()
                 
                 raise Exception(f"LLM API error: {response.status_code} - {error_message}")
-
+                
+            response_data = response.json()
             # Count successful API calls
             LLMClient._global_api_success_count += 1
-            return response
+            return response_data
             
-        except APIConnectionError as e:
+        except httpx.ConnectError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_connect_error()
@@ -306,7 +332,7 @@ class LLMClient:
             console.print(f"Please check network connection and API server status", style="yellow")
             raise Exception(error_msg) from e
             
-        except APITimeoutError as e:
+        except httpx.TimeoutException as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_timeout()
@@ -315,7 +341,7 @@ class LLMClient:
             console.print(f"Please check network status or try again", style="yellow")
             raise Exception(error_msg) from e
             
-        except APIStatusError as e:
+        except httpx.HTTPStatusError as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
             LLMClient._global_error_stats.add_http_other()
@@ -341,30 +367,22 @@ class LLMClient:
                 LLMClient._global_error_stats.add_http_other()
             error_msg = f"Unknown error occurred while sending API request: {str(e)}"
             console.print(f"❌ Unknown error: {error_msg}", style="red")
-            console.print(f"Request URL: {self.base_url} ", style="yellow")
+            console.print(f"Request URL: {self.base_url}/chat/completions", style="yellow")
             console.print(f"Provider: {self.config.provider}", style="yellow")
-            console.print(input_items, style="cyan")
             raise Exception(error_msg) from e
-      
+    
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
-        """Format tool definitions to Responses API format"""
+        """Format tool definitions to OpenAI format"""
         formatted_tools = []
         for tool in tools:
-            item = {
+            formatted_tools.append({
                 "type": "function",
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            }
-            # Enable strict mode when schema appears compatible
-            try:
-                params = tool.parameters or {}
-                if isinstance(params, dict) and params.get("type") == "object":
-                    if params.get("additionalProperties") is False and isinstance(params.get("required"), list):
-                        item["strict"] = True
-            except Exception:
-                pass
-            formatted_tools.append(item)
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters
+                }
+            })
         return formatted_tools
     
     def get_api_stats(self) -> Dict[str, int]:
@@ -378,7 +396,7 @@ class LLMClient:
     
     async def close(self):
         """Close client"""
-        await self.client.close()
+        await self.client.aclose()
         import sys
         sys.exit(0)
 
@@ -462,14 +480,13 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
 
 class RoTKChatAgent:
     
-    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = "", agent_id: str = "agent_1"):
+    def __init__(self, llm_config: LLMConfig, faction: str = "wei", system_prompt: str = ""):
         self.llm_client = LLMClient(llm_config)
         self.tool_manager = ToolManager()
         self.system_prompt = system_prompt
         self.conversation_history: List[Message] = []
         self.max_iterations = 1000
         self.faction = faction
-        self.agent_id = agent_id
         
         self._history_lock = asyncio.Lock()
         self._agent_registered: bool = False
@@ -548,150 +565,36 @@ class RoTKChatAgent:
         
         return tool_calls
 
-    async def _handle_tool_calls(self, tool_calls) -> List[Dict[str, Any]]:
-        """Handle tool calls and return function_call_output items for Responses API."""
+    async def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]]):
+        """Handle tool calls"""
         console.print(f"🔧 Handling {len(tool_calls)} tool calls", style="cyan")
-
-        def get_name(tc) -> str:
-            # Responses API: tool_call is a Pydantic model object with direct attributes
-            return tc.name
-
-        # Support parallel execution of multiple perform_action calls
-        parallel_execution = len(tool_calls) > 1 and all(get_name(tc) == "perform_action" for tc in tool_calls)
-
+        
+        # Support parallel execution of multiple tool calls
+        parallel_execution = len(tool_calls) > 1 and all(
+            tool_call["function"]["name"] == "perform_action" 
+            for tool_call in tool_calls
+        )
+        
         if parallel_execution:
-            console.print("⚡ Multiple perform_action calls detected, using batched send mode", style="cyan")
-            return await self._handle_tool_calls_batched(tool_calls)
+            console.print("⚡ Multiple perform_action calls detected, using parallel execution mode", style="cyan")
+            await self._handle_tool_calls_parallel(tool_calls)
         else:
             console.print("🔄 Using sequential execution mode", style="cyan")
-            return await self._handle_tool_calls_sequential(tool_calls)
+            await self._handle_tool_calls_sequential(tool_calls)
     
-    async def _handle_tool_calls_sequential(self, tool_calls) -> List[Dict[str, Any]]:
-        """Sequential execution of tool calls. Returns list of function_call_output items."""
-        outputs: List[Dict[str, Any]] = []
+    async def _handle_tool_calls_sequential(self, tool_calls: List[Dict[str, Any]]):
+        """Sequential execution of tool calls"""
         for tool_call in tool_calls:
-            out = await self._execute_single_tool_call(tool_call)
-            if out:
-                outputs.append(out)
-        return outputs
+            await self._execute_single_tool_call(tool_call)
     
-    async def _handle_tool_calls_parallel(self, tool_calls) -> List[Dict[str, Any]]:
-        """Parallel execution of tool calls. Returns list of function_call_output items."""
+    async def _handle_tool_calls_parallel(self, tool_calls: List[Dict[str, Any]]):
+        """Parallel execution of tool calls"""
         tasks = []
         for tool_call in tool_calls:
             task = asyncio.create_task(self._execute_single_tool_call(tool_call))
             tasks.append(task)
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r]
-
-
-    async def _handle_tool_calls_batched(self, tool_calls) -> List[Dict[str, Any]]:
-        """Batch multiple perform_action tool calls into a single ENV message, returning function_call_output items."""
-        console.print("🔧 Batching multiple perform_action tool calls into a single ENV message", style="cyan")
-        console.print(f"🔧 Tool calls: {tool_calls}", style="cyan")
-        try:
-            # Build actions payload with tool_call ids
-            actions_payload: List[Dict[str, Any]] = []
-            id_to_arguments: Dict[str, Dict[str, Any]] = {}
-            id_to_tool_call = {}
-            for tool_call in tool_calls:
-                tool_call_id = getattr(tool_call, "call_id", None) or getattr(tool_call, "id", None)
-                fn = getattr(tool_call, "name", None)
-                args_raw = getattr(tool_call, "arguments", None)
-                if not tool_call_id:
-                    raise ValueError("Tool call is missing call_id")
-                if fn != "perform_action":
-                    raise ValueError("Only perform_action can be batched")
-
-                if isinstance(args_raw, str):
-                    try:
-                        args = json.loads(args_raw) if args_raw else {}
-                    except json.JSONDecodeError as e:
-                        raise ValueError(f"Invalid JSON arguments for tool_call {tool_call_id}: {e}")
-                elif isinstance(args_raw, dict):
-                    args = args_raw
-                else:
-                    args = {}
-
-                action_name = args.get("action")
-                params = args.get("params", {})
-                if not action_name:
-                    raise ValueError(f"Missing 'action' in tool_call {tool_call_id}")
-
-                actions_payload.append(
-                    {
-                        "id": tool_call_id,  # use tool call id for alignment
-                        "action": action_name,
-                        "parameters": params,
-                    }
-                )
-                id_to_arguments[str(tool_call_id)] = args
-                id_to_tool_call[str(tool_call_id)] = tool_call
-
-            # Send batch
-            resp = await perform_multiple_actions(actions_payload, None)
-            console.print(f"🔧 Received responses from ENV: {resp}", style="cyan")
-
-            # 🆕 Handle ENV cooldown (error_code=2011). If detected, wait and retry once.
-            try:
-                is_cd = isinstance(resp, dict) and (
-                    resp.get("error_code") == 2011
-                    or ("Cooldown" in str(resp.get("message", "")) and "Retry in" in str(resp.get("message", "")))
-                )
-                if is_cd:
-                    import re as _re
-                    msg = str(resp.get("message", ""))
-                    m = _re.search(r"Retry in\s+([0-9.]+)s", msg)
-                    wait_secs = float(m.group(1)) if m else 1.0
-                    console.print(f"⏱️ Cooldown hit, retrying after {wait_secs:.2f}s ...", style="yellow")
-                    await asyncio.sleep(wait_secs + 0.05)
-                    resp = await perform_multiple_actions(actions_payload, None)
-                    console.print(f"🔁 Retried responses from ENV: {resp}", style="cyan")
-            except Exception as _e:
-                console.print(f"⚠️ Cooldown handling failed, proceed without retry: {_e}", style="yellow")
-
-            # Expect shape: { "results": [ { "id", "action", "response", "success" } ], "count": N }
-            results = []
-            if isinstance(resp, dict):
-                results = resp.get("results", [])
-
-            result_map = {}
-            for item in results:
-                rid = str(item.get("id"))
-                result_map[rid] = item
-
-            outputs: List[Dict[str, Any]] = []
-            for tool_call in tool_calls:
-                tool_call_id = str(getattr(tool_call, "call_id", None) or getattr(tool_call, "id", ""))
-                args = id_to_arguments.get(tool_call_id, {})
-                result_payload = None
-                if tool_call_id in result_map:
-                    result_payload = result_map[tool_call_id].get("response")
-                else:
-                    console.print(
-                        f"⚠️ No aggregated result returned for tool call {tool_call_id}, providing fallback error.",
-                        style="yellow",
-                    )
-                    result_payload = {
-                        "success": False,
-                        "details": f"No aggregated result returned for tool call {tool_call_id}",
-                    }
-
-                filtered = self._filter_tool_result("perform_action", result_payload, args)
-                outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call_id,
-                        "output": json.dumps(filtered, ensure_ascii=False),
-                    }
-                )
-
-            return outputs
-
-        except Exception as e:
-            console.print(f"❌ Batched tool calls execution error: {e}", style="red")
-            # On failure, fallback to sequential execution for robustness
-            return await self._handle_tool_calls_sequential(tool_calls)
+        
+        await asyncio.gather(*tasks)
     
     def _is_spatial_awareness_error(self, result: Dict[str, Any]) -> bool:
         """
@@ -745,53 +648,85 @@ class RoTKChatAgent:
                 return True
         
         return False
-
-    async def _execute_single_tool_call(self, tool_call) -> Optional[Dict[str, Any]]:
-        """Execute single tool call and return a function_call_output item for Responses API."""
-        # Responses API format: tool_call is a Pydantic model object with direct attributes
-        function_name = tool_call.name
-        arguments_str = tool_call.arguments
-        tool_call_id = tool_call.call_id
-
+    
+    async def _execute_single_tool_call(self, tool_call: Dict[str, Any]):
+        """Execute single tool call"""
+        tool_call_id = tool_call["id"]
+        function_name = tool_call["function"]["name"]
+        arguments_str = tool_call["function"]["arguments"]
+        
         console.print(f"╭───────────────────────────────── Executing tool '{function_name}' with arguments ───────────────────────────────────╮", style="magenta")
         console.print(f"│ {arguments_str}", style="magenta", highlight=False)
         console.print(f"╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
-
+        
         try:
             # Parse parameters
-            arguments = json.loads(arguments_str) if isinstance(arguments_str, str) and arguments_str else (arguments_str or {})
-
+            try:
+                arguments = json.loads(arguments_str) if arguments_str else {}
+            except json.JSONDecodeError as e:
+                # 统计参数错误（arguments 本身解析失败）
+                self.error_stats.add_tool_param_error()
+                console.print(f"📊 Tool call error: tool_param_error (arguments JSON decode failed, total: {self.error_stats.tool_param_error})", style="yellow")
+                raise ValueError(f"Failed to parse tool call arguments as JSON: {arguments_str}. Error: {e}")
+            
             if 'params' in arguments and isinstance(arguments['params'], str):
                 console.print("⚠️ 'params' is a string, trying to decode again...", style="yellow")
                 try:
                     arguments['params'] = json.loads(arguments['params'])
                 except json.JSONDecodeError as e:
+                    # 统计参数错误
+                    self.error_stats.add_tool_param_error()
+                    console.print(f"📊 Tool call error: tool_param_error (params JSON decode failed, total: {self.error_stats.tool_param_error})", style="yellow")
                     raise ValueError(f"LLM generated invalid JSON string for 'params': {arguments['params']}. Error: {e}")
-
+            
             # Execute tool
-            result = await self.tool_manager.execute_single_tool(function_name, arguments)
-            filtered_result = self._filter_tool_result(function_name, result, arguments)
+            result = await self.tool_manager.execute_tool(function_name, arguments)
+            
+            # 检查 ENV 返回的错误信息，判断是否是工具调用错误
+            if isinstance(result, dict):
+                # 检查是否包含错误信息
+                if result.get("success") is False or result.get("result") is False:
+                    # 检查是否是空间感知错误（距离判断错误）
+                    is_spatial_error = self._is_spatial_awareness_error(result)
+                    
+                    if is_spatial_error:
+                        self.error_stats.add_spatial_awareness_error()
+                        console.print(f"📊 Spatial awareness error detected (total: {self.error_stats.spatial_awareness_error})", style="yellow")
+                        console.print(f"   └─ Error details: {result.get('details', result.get('message', 'unknown'))}", style="dim yellow")
+                    else:
+                        self.error_stats.add_tool_invalid_tool()
+                        console.print(f"📊 Tool call error: tool_invalid_tool (total: {self.error_stats.tool_invalid_tool})", style="yellow")
+            
+            filtered_result = self._filter_tool_result(function_name, result, arguments) 
 
-            # console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
-            # console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
-            # console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
-
-
-            return {
-                "type": "function_call_output",
-                "call_id": tool_call_id,
-                "output":  json.dumps(filtered_result, ensure_ascii=False)
-            }
-
+            console.print(f"╭──────────────────────────────── Tool Result(filtered): {function_name} ────────────────────────────────╮", style="magenta")
+            console.print(f"│ {json.dumps(filtered_result, indent=2, ensure_ascii=False)}", style="magenta", highlight=False)
+            console.print(f"╰───────────────────────────────────────────────────────────────────────────────────────────────╯", style="magenta")
+                       
+            tool_message = Message(
+                role="tool",
+                content=json.dumps(filtered_result, ensure_ascii=False),
+                tool_call_id=tool_call_id
+            )
+            async with self._history_lock:
+                self.conversation_history.append(tool_message)
+            
         except Exception as e:
-            console.print(f"Tool execution error during tool call: {e}, function_name: {function_name}", style="red")
-            return {
-                "type": "function_call_output",
-                "call_id": tool_call_id,
-                "output": json.dumps({"error": str(e)}, ensure_ascii=False)
-            }
+            console.print(f"Tool execution error during tool call: {e}", style="red")
+            # Add error information to conversation history (using lock to protect parallel access)
+            error_message = Message(
+                role="tool",
+                content=json.dumps({"error": str(e)}, ensure_ascii=False),
+                tool_call_id=tool_call_id
+            )
+            # continue chat with LLM even if there is an error
+            async with self._history_lock:
+                self.conversation_history.append(error_message)
 
-    # ==================== Strategy keyword detection and reporting ====================
+    # ==================== Tool Calls Execution Functions End ====================
+
+
+    # ==================== Strategy keyword detection and reporting Start ====================
     def _contains_strategy_keywords(self, text: str) -> bool:
         """Detects basic strategy thinking: keywords + structure words within proximity, without negation."""
         if not text:
@@ -1016,7 +951,7 @@ class RoTKChatAgent:
         if len(evidence) > 120:
             evidence = evidence[:117] + "..."
         try:
-            await self.tool_manager.execute_single_tool("perform_action", {
+            await self.tool_manager.execute_tool("perform_action", {
                 "action": "strategy_ping",
                 "params": {
                     "faction": self.faction,
@@ -1058,21 +993,9 @@ class RoTKChatAgent:
         }
 
         if action_norm in action_map:
-            return self._replace_booleans_with_strings(action_map[action_norm](data))
+            return action_map[action_norm](data)
 
         return data
-        
-    
-    def _replace_booleans_with_strings(self, data: Any) -> Any:
-        """Recursively replace all boolean values with strings to avoid backend parsing issues"""
-        if isinstance(data, bool):
-            return "yes" if data else "no"
-        elif isinstance(data, dict):
-            return {k: self._replace_booleans_with_strings(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self._replace_booleans_with_strings(item) for item in data]
-        else:
-            return data
     
     def _filter_observation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter observation result, remove redundant fields"""
@@ -1082,8 +1005,8 @@ class RoTKChatAgent:
         if "unit_info" in filtered_result and isinstance(filtered_result["unit_info"], dict):
             unit_info = filtered_result["unit_info"]
             
-            if "unit_status" in unit_info and isinstance(unit_info["unit_status"], dict):
-                status = unit_info["unit_status"]
+            if "status" in unit_info and isinstance(unit_info["status"], dict):
+                status = unit_info["status"]
                 status.pop("morale", None)
                 status.pop("fatigue", None)
             
@@ -1191,7 +1114,7 @@ class RoTKChatAgent:
                 filtered.pop("action_status", None)
             return filtered
         except Exception:
-            return result
+            return result   
     
     def _filter_attack_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Filter attack result, keep only essential battle information to reduce token consumption"""
@@ -1271,6 +1194,7 @@ class RoTKChatAgent:
         """Register agent information to environment"""
         try:
             config = self.llm_client.config
+
             registration_params = {
                 "faction":  self.faction,
                 "provider": config.provider,
@@ -1283,7 +1207,7 @@ class RoTKChatAgent:
                 "enable_thinking": config.enable_thinking
             }
             
-            result = await self.tool_manager.execute_single_tool("perform_action", {
+            result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "register_agent_info",
                 "params": registration_params
             })
@@ -1316,7 +1240,7 @@ class RoTKChatAgent:
             console.print(f"📊 Report tool call gen errors total: {toolcall_error_total}", style="cyan")
             console.print(f"📊 Report spatial awareness errors: {spatial_error_total}", style="cyan")
 
-            result = await self.tool_manager.execute_single_tool("perform_action", {
+            result = await self.tool_manager.execute_tool("perform_action", {
                 "action": "report_llm_stats",
                 "params": {
                     "faction": self.faction,
@@ -1343,79 +1267,9 @@ class RoTKChatAgent:
         await self._report_llm_stats()
         await self.llm_client.close()
 
-    def _get(self, x, k, default=None):
-        if isinstance(x, dict): return x.get(k, default)
-        return getattr(x, k, default)
-
-    def _sanitize_assistant_content(self, text: str, max_len: int = 8000) -> str:
-        """Strip model special tokens that trigger vLLM/Responses API 400 (e.g. unexpected tokens
-        in message header, Unknown recipient). GPT-OSS and similar models can emit <|end|>,
-        <|start|>, <|channel|>, <|channel|>commentary in content; these must not be sent back in
-        input_items. Also truncate very long content to reduce vLLM parsing issues."""
-        if not text or not isinstance(text, str):
-            return text
-        s = text
-        # Truncate at first <|end|> or <|start|> to drop trailing malformed structure
-        for sep in ("<|end|>", "<|start|>"):
-            if sep in s:
-                s = s.split(sep)[0].strip()
-                break
-        # Remove known problematic tokens (compound first)
-        for token in ("<|channel|>commentary", "<|channel|>", "<|end|>", "<|start|>"):
-            s = s.replace(token, "")
-        s = s.strip()
-        if len(s) > max_len:
-            s = s[: max_len - 3] + "..."
-        return s
-
-    def _shrink_input_items(self, input_items: List, keep_tail: int = 6) -> None:
-        """In-place shrink: keep first user message and last keep_tail items to avoid vLLM
-        Responses API 400 on long multi-turn input."""
-        if len(input_items) <= 1 + keep_tail:
-            return
-        new_list = [input_items[0]] + list(input_items[-keep_tail:])
-        input_items.clear()
-        input_items.extend(new_list)
-
-    def _sanitize_input_items(self, input_items: List) -> None:
-        """In-place: sanitize assistant content in input_items to remove special tokens."""
-        for item in input_items:
-            if isinstance(item, dict) and item.get("role") == "assistant" and "content" in item:
-                c = item["content"]
-                if isinstance(c, str):
-                    item["content"] = self._sanitize_assistant_content(c)
-
-    def _normalize_function_call(self, it) -> dict:
-        name = self._get(it, "name")
-        call_id = self._get(it, "call_id")
-        args = self._get(it, "arguments")
-
-        # 清洗工具名（防止 "<|channel|>" 脏 token）
-        if name:
-            name = name.split("<|", 1)[0].strip()
-
-        # arguments 统一为字符串；为空就用 "{}"
-        if args is None:
-            args = "{}"
-        elif not isinstance(args, str):
-            args = json.dumps(args, ensure_ascii=False)
-
-        # 只保留 Harmony 接受的字段；其他统统不要
-        return {
-            "type": "function_call",
-            "name": name,
-            "call_id": call_id,
-            "arguments": args,
-        }
-
-    def _normalize_function_call_output(self, call_id: str, output: Any) -> dict:
-        # output 建议总是字符串（你可以传 JSON 字符串）
-        if not isinstance(output, str):
-            output = json.dumps(output, ensure_ascii=False)
-        return {"type": "function_call_output", "call_id": call_id, "output": output}
 
     async def chat(self, user_prompt: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
-        """Main chat loop (Responses API)"""
+        """Main chat loop"""
         if max_iterations:
             self.max_iterations = max_iterations
 
@@ -1423,11 +1277,13 @@ class RoTKChatAgent:
             await self._register_agent_info()
             self._agent_registered = True
         
-        # Initialize Responses API input items (do not put system into input; use instructions)
-        input_items: List[Dict[str, Any]] = [
-            {"role": "user", "content": user_prompt}
+        # Initialize conversation
+        self.conversation_history = [
+            Message(role="system", content=self.system_prompt)
         ]
-        self._did_400_retry = False
+        self.conversation_history.append(
+            Message(role="user", content=user_prompt)
+        )
 
         iterations = 0
         while iterations < self.max_iterations:
@@ -1452,149 +1308,110 @@ class RoTKChatAgent:
                 console.print(f"⚠️ Error checking game status: {status_error}", style="red")
             
             try:
-                # Check if conversation_history or input_items is too long, trim if necessary
-                console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
-                if len(input_items) > 20:
-                    await self._shrink_history(window=10)
-                    self._shrink_input_items(input_items, keep_tail=10)
-                    console.print("🧹 Context overflow detected, history and input_items have been trimmed and continued", style="cyan")
 
+                # Check if the conversation_history is too long, trim it if necessary
+                console.print(f"🔍 Conversation history length: {len(self.conversation_history)}", style="cyan")
+                console.print(f"🔍 API CALL COUNT:  {self.llm_client._global_api_call_count}", style="cyan")
+                if len(self.conversation_history) > 50:
+                    await self._shrink_history(window=20)
+                    console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
+
+                # Get LLM response
                 response = await self.llm_client.chat_completion(
-                    input_items=input_items,
-                    tools=self.tool_manager.get_tool_definitions(),
-                    instructions=self.system_prompt,
+                    messages=self.conversation_history,
+                    tools=self.tool_manager.get_tool_definitions()
                 )
 
-                reasoning_chunks = []
-                for it in response.output:
-                    if getattr(it, "type", None) == "reasoning":
-                        for c in it.content:
-                            if c.get("type") == "reasoning_text":
-                                reasoning_chunks.append(c["text"])
-                # if reasoning_chunks:
-                #     input_items.append({
-                #         "role": "assistant",
-                #         "content": "[REASONING-LOG:]\n".join(reasoning_chunks).strip()
-                #     })
+                await _rpm_limit_interval()
 
-
-
-                # ③ 没有 function_call：把 output_text 收集为最终文本/或历史
-                text_parts = []
-                for it in response.output:
-                    t = self._get(it, "type")
-                    if t == "message":
-                        for c in (self._get(it, "content") or []):
-                            if self._get(c, "type") == "output_text":
-                                txt = self._get(c, "text", "")
-                                if txt:
-                                    text_parts.append(txt)
-                    elif t == "output_text":
-                        for c in (self._get(it, "content") or []):
-                            txt = self._get(c, "text", "")
-                            if txt:
-                                text_parts.append(txt)
-
-                final_text = "".join(text_parts).strip()
-
-                # if final_text:
-                #     input_items.append({"role": "assistant", "content": final_text})              
+                choice = response["choices"][0]
+                message = choice["message"]
+                finish_reason = choice["finish_reason"]
                 
-                # 将 reasoning_chunks 和 final_text 合并为 assistant_texts
-                assistant_texts = []
-                if reasoning_chunks:
-                    assistant_texts.extend(reasoning_chunks)
-                if final_text:
-                    assistant_texts.append(final_text)
+                console.print(f"╭─────────────────────────────────────────────────────── LLM response @iteration {iterations}: ────────────────────────────────────────────────────────╮", style="yellow")
+                console.print(f"│ {json.dumps(response, indent=2, ensure_ascii=False)}", style="yellow", highlight=False)
+                console.print(f"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯", style="yellow")
 
-                if assistant_texts:
-                    asyncio.create_task(self._async_strategy_detection("\n".join(assistant_texts)))
+                # Add assistant response to history
+                assistant_message = Message(
+                    role="assistant",
+                    content=message.get("content", ""),
+                    tool_calls=message.get("tool_calls")
+                )
+                self.conversation_history.append(assistant_message)
 
-# ① 严格筛出 function_call，并做规范化（无论 resp.output 里是对象还是 dict）
-                raw_calls = [it for it in response.output if self._get(it, "type") == "function_call"]
+                # 🆕 Attempt strategy keyword detection and report after receiving LLM response
+                console.print("🔍 Attempting strategy detection @iteration {iterations}", style="cyan")
+                asyncio.create_task(self._async_strategy_detection(message.get("content", "")))
+                console.print("🔍 Strategy detection completed", style="cyan")
 
-                def _clean_tool_name(name: str) -> str:
-                    # 防止出现 perform_action<|channel|>commentary 之类脏 token
-                    return name.split("<|", 1)[0].strip()
+                # === Detect text-based tool calls ===
+                # Some models (like Qwen3-30B) put tool calls in content instead of tool_calls array
+                tool_calls_to_use = message.get("tool_calls", [])
+                if not tool_calls_to_use and message.get("content"):
+                    console.print(f"🔧 Detecting text-based tool calls in content @iteration {iterations}: {message['content']}", style="cyan")
+                    parsed_tool_calls = self._parse_text_based_tool_calls(message["content"])
+                    if parsed_tool_calls:
+                        # 统计 tool_in_content 错误
+                        self.error_stats.add_tool_in_content()
+                        console.print("🔧 Detected text-based tool calls, converting to standard format @iteration {iterations}", style="cyan")
+                        console.print(f"📊 Tool call error: tool_in_content (total: {self.error_stats.tool_in_content})", style="yellow")
+                        self.conversation_history.append(
+                            Message(
+                                role="user", 
+                                content="Note: You should not put the tool call information in the `content` field. You must follow the tool call format. Please try again.")
+                        )
+                        continue  # Only continue if tool calls are detected
+                    else:
+                        console.print("🔧 Undetected text-based tool calls. @iteration {iterations}", style="cyan")
 
-
-                if raw_calls:
-                    # 执行工具时用清洗后的名字
-                    cleaned_calls = []
-                    for it in raw_calls:
-                        # 构造一个"干净版"的 function_call item，用于回灌
-                        cleaned_calls.append(type(it)(
-                            **{**it.__dict__, "name": _clean_tool_name(it.name)}  # pydantic 对象/命名元组按你的响应结构调整
-                        ))
-
-                    # 先执行工具（内部也用清洗后的名字）
-                    results = await self._handle_tool_calls(cleaned_calls)
-
-                    if results:
-                        input_items.extend(cleaned_calls)
-                        input_items.extend(results)
-                        
-                
-                if assistant_texts and raw_calls:
+                # 1) If there are tool calls, handle them — no matter the finish_reason
+                if message.get("tool_calls"):
+                    console.print(f"🔧 Handling tool calls @iteration {iterations}: {message['tool_calls']}", style="cyan")
+                    await self._handle_tool_calls(message["tool_calls"])
                     continue
-                elif assistant_texts and not raw_calls:
-                    assistant_message_content = ""
-                    for it in response.output:
-                        if self._get(it, "type") == "message":
-                            for c in (self._get(it, "content") or []):
-                                if self._get(c, "type") == "output_text":
-                                    txt = self._get(c, "text", "")
-                                    if txt:
-                                        assistant_message_content += txt
-                    
-                    if assistant_message_content:
-                        input_items.append({"role": "assistant", "content": self._sanitize_assistant_content(assistant_message_content)})
-                    
-                    input_items.append({"role": "user", "content": "You are the commander. You decide the strategy and the action. Do not ask for confirmation. After you get the enemy's coordinates, you should move all your units to the enemy's position and attack them."})
+
+                # 2) Hit max length? Ask model to continue (or just continue loop)
+                if finish_reason == "length":
+                    # Option A: push a tiny user nudge to continue
+                    self.conversation_history.append(
+                        Message(
+                            role="user", 
+                            content="Note: The game is real time, you should think quickly and give only the critical information of your strategy.")
+                    )
                     continue
-                elif not assistant_texts and raw_calls:
+
+                # 3) Normal terminal cases
+                if finish_reason in ("stop"):
+                    # self.conversation_history.append(
+                    #     Message(
+                    #         role="user", 
+                    #         content="Note: You are the commander. You decide the strategy and the action. Do not ask for confirmation.")
+                    # )
                     continue
-                else:
-                    return {
-                        "success": True,
-                        "message": "LLM produced response without further tool calls",
-                        "iterations": iterations,
-                    }
+
+                # 4) Normal terminal cases
+                if finish_reason in ("content_filter"):
+                    print(f"success: True, response: {message.get('content', '')}, iterations: {iterations}, finish_reason: {finish_reason}")
+                    break
+
+                # 5) an unexpected finish reason
+                console.print(f"Unexpected finish reason @iteration {iterations}: {finish_reason}", style="red")
+                return {
+                    "success": False,
+                    "error": f"Unexpected finish reason: {finish_reason}",
+                    "iterations": iterations
+                }
             except Exception as e:
                 # Use global error logging function
                 error_details = create_error_details(e, iteration=iterations, function_name="RoTKChatAgent.chat")
                 
-                if _is_account_balance_error(e, error_details):
-                    console.print("🛑 Account balance error detected, stopping agent", style="red bold")
-                    await self.stop()
-                    return {
-                        "success": False,
-                        "error": str(e),
-                        "error_details": error_details,
-                        "iterations": iterations,
-                        "reason": "account_balance_insufficient"
-                    }
-
                 # Check if it is a context overflow error
                 if _is_context_overflow_error(e, error_details):
                     await self._shrink_history(window=40)
-                    self._shrink_input_items(input_items, keep_tail=10)
-                    console.print("🧹 Context overflow error detected, history and input_items have been trimmed and continued", style="cyan")
-                    continue
-
-                # vLLM/Responses API 400 (unexpected tokens, Unknown recipient, message header): shrink and
-                # sanitize input_items, then continue to retry with a clean history (once per chat).
-                if (
-                    _is_responses_api_400_error(e, error_details)
-                    and not getattr(self, "_did_400_retry", False)
-                    and len(input_items) > 4
-                ):
-                    self._did_400_retry = True
-                    self._shrink_input_items(input_items, keep_tail=6)
-                    self._sanitize_input_items(input_items)
-                    console.print("🔄 Responses API 400 (tokens/recipient): shrunk and sanitized input_items, continuing.", style="yellow")
-                    continue
-
+                    console.print("🧹 Context overflow error detected, history has been trimmed and continued", style="cyan")
+                    continue                
+                
                 # Record error log
                 log_file = log_error_to_file(error_details, display_console=True)
                 
@@ -2029,81 +1846,6 @@ async def get_env_response(request_id, timeout_seconds: float =60.0):
         await asyncio.sleep(0.1)  # Waiting for response
 
 
-async def perform_multiple_actions(
-    actions: List[Any],
-    params: Optional[List[Dict[str, Any]]] = None,
-) -> Any:
-    """Perform multiple actions in a single message.
-
-    Supports the following calling patterns:
-      1. actions=[{"id": "...", "action": "...", "parameters": {...}}, ...]
-         (params should be omitted)
-      2. actions=["move", "attack"], params=[{...}, {...}]
-         (per-action ids will be auto-generated)
-    """
-    try:
-        if not actions:
-            return {"results": [], "count": 0}
-
-        if params is None and actions and isinstance(actions[0], dict):
-            action_requests: List[Dict[str, Any]] = []
-            for item in actions:
-                if "action" not in item:
-                    raise ValueError("Each action dict must include an 'action' field")
-                action_id = item.get("id") or f"toolcall_{int(time.time() * 1e6)}"
-                action_requests.append(
-                    {
-                        "id": action_id,
-                        "action": item["action"],
-                        "parameters": item.get("parameters")
-                        or item.get("params")
-                        or {},
-                    }
-                )
-        else:
-            if params is None:
-                raise ValueError("params must be provided when actions are not action dicts")
-            if len(actions) != len(params):
-                raise ValueError("actions and params must have the same length")
-            timestamp = int(time.time() * 1e6)
-            action_requests = []
-            for idx, (action_name, param) in enumerate(zip(actions, params)):
-                action_requests.append(
-                    {
-                        "id": f"toolcall_{timestamp}_{idx}",
-                        "action": action_name,
-                        "parameters": param or {},
-                    }
-                )
-
-        client = RemoteContext.get_client()
-        request_id = await client.send_actions(action_requests)
-        responses = await get_env_response(request_id, timeout_seconds=5)
-
-        return responses
-
-    except TimeoutError as e:
-        console.print(f"⏰ [perform_multiple_actions] Action execution timeout: {e}", style="red")
-        handle_error_with_logging(
-            e,
-            function_name="perform_multiple_actions",
-            action=actions,
-            params=params,
-            request_id=getattr(e, "request_id", "unknown"),
-            elapsed_time=getattr(e, "elapsed_time", "unknown"),
-            timeout_seconds=getattr(e, "timeout_seconds", "unknown"),
-        )
-        raise e
-    except Exception as e:
-        console.print(f"❌ [perform_multiple_actions] Action execution error: {e}", style="red")
-        handle_error_with_logging(
-            e,
-            function_name="perform_multiple_actions",
-            action=actions,
-            params=params,
-        )
-        raise e
-
 async def perform_action(action: str, params: Any):
     """Execute action"""
     try:
@@ -2150,7 +1892,7 @@ async def get_available_actions() -> list[Dict[str, Any]]:
 
 # ==================== Command processing function ====================
 
-async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", agent_id: str = "agent_1"):
+async def create_agent(faction: str = "wei", system_prompt: str = "", user_prompt: str = "", demo_instance=None):
     # Load configuration and create independent chat agent
     try:
         config_path = os.path.join(os.getcwd(), ".configs.toml")
@@ -2159,8 +1901,11 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         
         provider = os.environ.get("LLM_PROVIDER", "openai")
         llm_config = load_config(config_path, provider=provider)
-        agent = RoTKChatAgent(llm_config, faction, system_prompt, agent_id=agent_id)
+        agent = RoTKChatAgent(llm_config, faction, system_prompt)
         
+        # 如果提供了 demo_instance，将 agent 设置到 demo 中以支持立即上报
+        if demo_instance is not None:
+            demo_instance.current_agent = agent
         
         # Register tools
         # agent.register_tool(
@@ -2253,13 +1998,6 @@ async def create_agent(faction: str = "wei", system_prompt: str = "", user_promp
         # # Clean up resources
         # await agent.stop()
         
-    except (ValueError, KeyError, FileNotFoundError) as e:
-        # 配置错误（如 Invalid provider、Model ID not found、配置文件缺失）：立即退出，避免无限重试
-        console_system.print(f"Fatal LLM config error: {e}", style="red bold")
-        console_system.print("Fix the provider name in match list or .configs.toml and retry. Exiting.", style="yellow")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
     except Exception as e:
         console_system.print(f"Chat process error: {e}", style="red")
         import traceback
@@ -2367,37 +2105,6 @@ def _is_context_overflow_error(exc: Exception, error_details: dict | None = None
         pass
 
     return False
-
-
-def _is_responses_api_400_error(exc: Exception, error_details: dict | None = None) -> bool:
-    """Check for vLLM/Responses API 400: 'unexpected tokens in message header', 'Unknown recipient',
-    'content-type and recipient', etc. These can be mitigated by sanitizing and shrinking input_items."""
-    txt = str(exc) if exc else ""
-    blob = txt + " " + (error_details or {}).get("full_traceback", "")
-    if "400" not in blob:
-        return False
-    markers = [
-        "unexpected tokens",
-        "recipient",
-        "message header",
-        "content-type",
-        "unknown recipient",
-        "too many tokens remaining",
-        "parse header",
-    ]
-    return any(m in blob.lower() for m in markers)
-
-
-def _is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
-    context = f"{exc}"
-    if error_details:
-        context = f"{context}\n{error_details}"
-    lowered = context.lower()
-    return (
-        ("balance" in lowered and "insufficient" in lowered)
-        or "account balance" in lowered
-        or "30001" in lowered
-    )
 
 
 async def main():

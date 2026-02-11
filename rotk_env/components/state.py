@@ -95,13 +95,19 @@ class GameStats(SingletonComponent):
     # 🆕 添加初始单位数记录
     initial_unit_counts: Dict[Faction, int] = field(default_factory=dict)
 
-    # 🆕 交互统计：ENV <-> Agent 的交互次数
+    # 🆕 动作统计：Agent -> ENV 提交的 action 总数
     # 按 Agent 统计（agent_id -> count）
-    response_times_by_agent: Dict[str, int] = field(default_factory=dict)
+    action_counts_by_agent: Dict[str, int] = field(default_factory=dict)
     # 按阵营统计（Faction -> count）
-    response_times_by_faction: Dict[Faction, int] = field(default_factory=dict)
+    action_counts_by_faction: Dict[Faction, int] = field(default_factory=dict)
     # 🆕 记录agent与阵营的映射（用于按阵营汇总）
     agent_id_to_faction: Dict[str, Faction] = field(default_factory=dict)
+
+    # 🆕 交互统计：Agent -> ENV 的消息包数量（一次消息即一次交互）
+    # 按 Agent 统计（agent_id -> message count）
+    interaction_counts_by_agent: Dict[str, int] = field(default_factory=dict)
+    # 按阵营统计（Faction -> message count）
+    interaction_counts_by_faction: Dict[Faction, int] = field(default_factory=dict)
 
     # 🆕 策略评分统计
     strategy_scores_by_faction: Dict[Faction, float] = field(default_factory=dict)

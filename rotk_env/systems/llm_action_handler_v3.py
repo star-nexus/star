@@ -8,8 +8,13 @@ LLM Action Handler V3 - Minimal, robust, and efficient action gateway
 Designed for clarity and reliability when driven by language models.
 """
 
+import base64
+import io
 from typing import Dict, List, Any, Optional, Tuple, Set
+
+import pygame
 from framework import World
+from framework.engine.renders import RenderEngine
 from ..components import (
     Unit,
     UnitCount,
@@ -64,10 +69,10 @@ class LLMActionHandlerV3:
             "observation": self.handle_observation_action,
             # Faction info actions
             "get_faction_state": self.handle_faction_state,
+            "get_faction_state_vlm": self.handle_faction_state_vlm,
             # System
             "get_action_list": self.handle_action_list,
             "end_turn": self.handle_end_turn,  # added end_turn
-            "register_agent_info": self.handle_register_agent_info,
         }
 
     def execute_action(
@@ -89,7 +94,7 @@ class LLMActionHandlerV3:
                 )
 
             # dispatch
-            print(f"Executing action: {action_type} with params: {params}")
+            print(f"[LLM ACTION HANDLER] Executing action: {action_type} with params: {params}")
             return self.action_handlers[action_type](params)
 
         except Exception as e:
@@ -155,9 +160,9 @@ class LLMActionHandlerV3:
             )
 
         # Check map bounds for target
-        print(
-            f"[MOVE_ACTION] Checking target within map bounds: ({target_col}, {target_row})"
-        )
+        # print(
+        #     f"[MOVE_ACTION] Checking target within map bounds: ({target_col}, {target_row})"
+        # )
         if not self._is_position_within_map_bounds(target_col, target_row):
             from ..prefabs.config import GameConfig
 
@@ -186,10 +191,10 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[MOVE_ACTION] Target within bounds: ({target_col}, {target_row})")
+        # print(f"[MOVE_ACTION] Target within bounds: ({target_col}, {target_row})")
 
         # Unit existence check
-        print(f"[MOVE_ACTION] Checking if unit {unit_id} exists...")
+        # print(f"[MOVE_ACTION] Checking if unit {unit_id} exists...")
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             error_msg = f"Unit {unit_id} not found in world"
@@ -202,22 +207,22 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(
-            f"[MOVE_ACTION] Unit {unit_id} exists, type: {unit.unit_type.value}, faction: {unit.faction.value}"
-        )
+        # print(
+        #     f"[MOVE_ACTION] Unit {unit_id} exists, type: {unit.unit_type.value}, faction: {unit.faction.value}"
+        # )
 
         # === 阵营回合权限验证 ===
-        print(f"[MOVE_ACTION] Checking faction turn permission for unit {unit_id}...")
+        # print(f"[MOVE_ACTION] Checking faction turn permission for unit {unit_id}...")
         permission_error = self._validate_faction_turn_permission(unit_id, "move")
         if permission_error:
             print(
                 f"[MOVE_ACTION] Faction permission denied: {permission_error['message']}"
             )
             return permission_error
-        print(f"[MOVE_ACTION] Faction permission granted for {unit.faction.value}")
+        # print(f"[MOVE_ACTION] Faction permission granted for {unit.faction.value}")
 
         # Required components
-        print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
+        # print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
         position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
@@ -232,7 +237,7 @@ class LLMActionHandlerV3:
             missing_components.append("HexPosition")
         else:
             component_info["position"] = {"col": position.col, "row": position.row}
-            print(f"[MOVE_ACTION] Current position: ({position.col}, {position.row})")
+            # print(f"[MOVE_ACTION] Current position: ({position.col}, {position.row})")
 
         if not movement_points:
             missing_components.append("MovementPoints")
@@ -242,9 +247,9 @@ class LLMActionHandlerV3:
                 "max_mp": movement_points.max_mp,
                 "recovery_rate": getattr(movement_points, "recovery_rate", "unknown"),
             }
-            print(
-                f"[MOVE_ACTION] Movement points: {movement_points.current_mp}/{movement_points.max_mp}"
-            )
+            # print(
+            #     f"[MOVE_ACTION] Movement points: {movement_points.current_mp}/{movement_points.max_mp}"
+            # )
 
         if not unit_count:
             missing_components.append("UnitCount")
@@ -256,9 +261,9 @@ class LLMActionHandlerV3:
                 / unit_count.max_count
                 * 100,
             }
-            print(
-                f"[MOVE_ACTION] Unit strength: {unit_count.current_count}/{unit_count.max_count}"
-            )
+            # print(
+            #     f"[MOVE_ACTION] Unit strength: {unit_count.current_count}/{unit_count.max_count}"
+            # )
 
         if missing_components:
             error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
@@ -280,7 +285,7 @@ class LLMActionHandlerV3:
 
         # Unit status check
         if unit_status:
-            print(f"[MOVE_ACTION] Unit status: {unit_status.current_status}")
+            # print(f"[MOVE_ACTION] Unit status: {unit_status.current_status}")
             if unit_status.current_status == UnitState.CONFUSION:
                 error_msg = f"Unit {unit_id} is confused and cannot move"
                 print(f"[MOVE_ACTION] Status blocks movement: {error_msg}")
@@ -299,7 +304,7 @@ class LLMActionHandlerV3:
 
         # === Movement points check (execution layer) ===
         # Note: Movement no longer requires action points, only movement points
-        print(f"[MOVE_ACTION] Checking movement points...")
+        # print(f"[MOVE_ACTION] Checking movement points...")
         current_mp = movement_points.current_mp
 
         if current_mp <= 0:
@@ -314,22 +319,22 @@ class LLMActionHandlerV3:
                     "suggestion": "Use end_turn tool or wait for movement points to recover",
                 },
             )
-        print(f"[MOVE_ACTION] MP check passed: {current_mp}/{movement_points.max_mp}")
+        # print(f"[MOVE_ACTION] MP check passed: {current_mp}/{movement_points.max_mp}")
 
         # Compute effective movement (consider strength)
         effective_movement = movement_points.get_effective_movement(unit_count)
         current_pos = (position.col, position.row)
         target_pos = (target_col, target_row)
 
-        print(
-            f"[MOVE_ACTION] Effective movement: {effective_movement} (base: {current_mp}, strength: {unit_count.current_count}/{unit_count.max_count})"
-        )
-        print(f"[MOVE_ACTION] Path planning: {current_pos} -> {target_pos}")
+        # print(
+        #     f"[MOVE_ACTION] Effective movement: {effective_movement} (base: {current_mp}, strength: {unit_count.current_count}/{unit_count.max_count})"
+        # )
+        # print(f"[MOVE_ACTION] Path planning: {current_pos} -> {target_pos}")
 
         # Path and reachability
-        print(f"[MOVE_ACTION] Gathering map obstacles...")
+        # print(f"[MOVE_ACTION] Gathering map obstacles...")
         obstacles = self._get_obstacles_excluding_unit(unit_id)  # exclude moving unit
-        print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
+        # print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
 
         # 检查目标位置是否被占用
         # if target_pos in obstacles:
@@ -372,19 +377,19 @@ class LLMActionHandlerV3:
 
         from ..utils.hex_utils import PathFinding
 
-        print(f"[MOVE_ACTION] Running pathfinding...")
-        print(f"[MOVE_ACTION] Start: {current_pos}")
-        print(f"[MOVE_ACTION] Target: {target_pos}")
-        print(f"[MOVE_ACTION] Effective movement range: {effective_movement}")
-        print(
-            f"[MOVE_ACTION] Obstacles (sample): {list(obstacles)[:10]}..."
-        )  # sample first 10
+        # print(f"[MOVE_ACTION] Running pathfinding...")
+        # print(f"[MOVE_ACTION] Start: {current_pos}")
+        # print(f"[MOVE_ACTION] Target: {target_pos}")
+        # print(f"[MOVE_ACTION] Effective movement range: {effective_movement}")
+        # print(
+        #     f"[MOVE_ACTION] Obstacles (sample): {list(obstacles)[:10]}..."
+        # )  # sample first 10
 
         path = PathFinding.find_path(
             current_pos, target_pos, obstacles, effective_movement
         )
 
-        print(f"[MOVE_ACTION] Path result: {path}")
+        # print(f"[MOVE_ACTION] Path result: {path}")
 
         if not path or len(path) < 2:
             # Provide details for pathfinding failure
@@ -448,12 +453,12 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[MOVE_ACTION] Path found, length: {len(path)}, path: {path}")
+        # print(f"[MOVE_ACTION] Path found, length: {len(path)}, path: {path}")
 
         # Total movement cost (terrain-aware)
-        print(f"[MOVE_ACTION] Calculating path movement cost...")
+        # print(f"[MOVE_ACTION] Calculating path movement cost...")
         total_movement_cost = self._calculate_total_movement_cost(path)
-        print(f"[MOVE_ACTION] Total cost: {total_movement_cost} MP")
+        # print(f"[MOVE_ACTION] Total cost: {total_movement_cost} MP")
 
         # Ensure current movement points suffice (using remaining MP)
         if total_movement_cost > current_mp:
@@ -553,12 +558,12 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(
-            f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
-        )
+        # print(
+        #     f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
+        # )
 
         # 执行移动
-        print(f"[MOVE_ACTION] Fetching MovementSystem...")
+        # print(f"[MOVE_ACTION] Fetching MovementSystem...")
         movement_system = self._get_movement_system()
         if not movement_system:
             error_msg = "Movement system not available"
@@ -572,11 +577,11 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[MOVE_ACTION] Executing move...")
+        # print(f"[MOVE_ACTION] Executing move...")
         success = movement_system.move_unit(unit_id, target_pos)
 
         if success:
-            print(f"[MOVE_ACTION] Move succeeded")
+            # print(f"[MOVE_ACTION] Move succeeded")
 
             # 从 MovementAnimation 组件获取默认速度，或者硬编码一个已知值
             # 这里我们使用在 rotk_env/components/animation.py 中定义的默认值 2.0
@@ -602,7 +607,7 @@ class LLMActionHandlerV3:
                 "estimated_duration_seconds": round(estimated_duration, 2),
                 "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
             }
-            print(f"[MOVE_ACTION] Move done, result: {result}")
+            # print(f"[MOVE_ACTION] Move done, result: {result}")
             return result
         else:
             error_msg = "Movement system failed to execute move"
@@ -643,7 +648,7 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[ATTACK_ACTION] Params ok: attacker={unit_id}, target={target_id}")
+        # print(f"[ATTACK_ACTION] Params ok: attacker={unit_id}, target={target_id}")
 
         # === Layer 2: attacker/target existence validation ===
         attacker_unit = self.world.get_component(unit_id, Unit)
@@ -666,21 +671,21 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(
-            f"[ATTACK_ACTION] Units exist: {attacker_unit.unit_type.value}({attacker_unit.faction.value}) -> {target_unit.unit_type.value}({target_unit.faction.value})"
-        )
+        # print(
+        #     f"[ATTACK_ACTION] Units exist: {attacker_unit.unit_type.value}({attacker_unit.faction.value}) -> {target_unit.unit_type.value}({target_unit.faction.value})"
+        # )
 
         # === Layer 3: 阵营回合权限验证 ===
-        print(f"[ATTACK_ACTION] Checking faction turn permission for unit {unit_id}...")
+        # print(f"[ATTACK_ACTION] Checking faction turn permission for unit {unit_id}...")
         permission_error = self._validate_faction_turn_permission(unit_id, "attack")
         if permission_error:
             print(
                 f"[ATTACK_ACTION] Faction permission denied: {permission_error['message']}"
             )
             return permission_error
-        print(
-            f"[ATTACK_ACTION] Faction permission granted for {attacker_unit.faction.value}"
-        )
+        # print(
+        #     f"[ATTACK_ACTION] Faction permission granted for {attacker_unit.faction.value}"
+        # )
 
         # === Layer 4: faction relation validation ===
         if attacker_unit.faction == target_unit.faction:
@@ -694,7 +699,7 @@ class LLMActionHandlerV3:
             )
 
         # === Layer 4: required components validation ===
-        print(f"[ATTACK_ACTION] Checking attacker components...")
+        # print(f"[ATTACK_ACTION] Checking attacker components...")
         attacker_pos = self.world.get_component(unit_id, HexPosition)
         attacker_combat = self.world.get_component(unit_id, Combat)
         attacker_action_points = self.world.get_component(unit_id, ActionPoints)
@@ -726,7 +731,7 @@ class LLMActionHandlerV3:
                 },
             )
 
-        print(f"[ATTACK_ACTION] Checking target components...")
+        # print(f"[ATTACK_ACTION] Checking target components...")
         target_pos = self.world.get_component(target_id, HexPosition)
         target_count = self.world.get_component(target_id, UnitCount)
 
@@ -748,7 +753,7 @@ class LLMActionHandlerV3:
             )
 
         # === Layer 5: action point validation ===
-        print(f"[ATTACK_ACTION] Checking action points...")
+        # print(f"[ATTACK_ACTION] Checking action points...")
         if not attacker_action_points.can_perform_action(ActionType.ATTACK):
             required_ap = 1  # requires 1 AP to attack
             current_ap = attacker_action_points.current_ap
@@ -775,13 +780,13 @@ class LLMActionHandlerV3:
             )
 
         # === Layer 7: range validation ===
-        print(f"[ATTACK_ACTION] Checking attack range...")
+        # print(f"[ATTACK_ACTION] Checking attack range...")
         attacker_current_pos = (attacker_pos.col, attacker_pos.row)
         target_current_pos = (target_pos.col, target_pos.row)
         distance = HexMath.hex_distance(attacker_current_pos, target_current_pos)
         attack_range = attacker_combat.attack_range
 
-        print(f"[ATTACK_ACTION] Distance={distance}, Attack range={attack_range}")
+        # print(f"[ATTACK_ACTION] Distance={distance}, Attack range={attack_range}")
 
         if distance > attack_range:
             return self._create_error_response(
@@ -800,7 +805,7 @@ class LLMActionHandlerV3:
             )
 
         # === Layer 8: execute attack ===
-        print(f"[ATTACK_ACTION] All validations passed, executing attack...")
+        # print(f"[ATTACK_ACTION] All validations passed, executing attack...")
         combat_system = self._get_combat_system()
         if not combat_system:
             return self._create_error_response(
@@ -837,7 +842,7 @@ class LLMActionHandlerV3:
         battle_result = attack_result.get("battle_result", {})
 
         # === Layer 9: format result ===
-        print(f"[ATTACK_ACTION] Attack executed successfully.")
+        # print(f"[ATTACK_ACTION] Attack executed successfully.")
 
         # Post-attack snapshot
         post_attack_state = {
@@ -1315,6 +1320,79 @@ class LLMActionHandlerV3:
             ],  # 返回存活单位的详细信息
         }
 
+    def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Capture the current rendered frame from the display and return as base64 PNG.
+        For VLM: the agent can decode and pass to a vision model.
+
+        Returns:
+            (base64_str, None) on success; (None, error_message) on failure.
+        """
+        try:
+            re = RenderEngine()
+            screen = re.screen
+        except Exception as e:
+            return None, f"RenderEngine/screen not available: {e}"
+
+        try:
+            surf = screen.copy()
+        except Exception as e:
+            return None, f"Screen copy failed: {e}"
+
+        try:
+            buf = io.BytesIO()
+            pygame.image.save(surf, buf)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return b64, None
+        except Exception as e:
+            return None, f"Encode frame to base64 failed: {e}"
+
+    def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        VLM version of get_faction_state: returns the same state as
+        handle_faction_state, plus the current rendered frame as base64 PNG
+        (frame_base64) for vision-language models.
+        """
+        # Reuse validation and state logic from handle_faction_state
+        faction_str = params.get("faction")
+        if not faction_str:
+            return self._create_error_response("faction parameter required")
+        try:
+            faction = Faction(faction_str)
+            print(f"[FACTION_STATE_VLM] Handling for {faction.value}")
+        except ValueError:
+            return self._create_error_response(f"Invalid faction: {faction_str}")
+
+        faction_units = self._get_faction_units(faction)
+        total_units_count = len(faction_units)
+        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
+        alive_units_count = len(alive_units)
+        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
+        actionable_units_count = len(actionable_units)
+        faction_status = self._get_faction_status(faction)
+
+        # Capture rendered frame for VLM
+        frame_b64, frame_err = self._capture_frame_base64()
+        payload = {
+            "success": True,
+            "result": True,
+            "state": faction_status,
+            "faction": faction.value,
+            "total_units": total_units_count,
+            "alive_units": alive_units_count,
+            "actionable_units": actionable_units_count,
+            "units": [
+                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
+            ],
+            "frame_base64": frame_b64,
+            "frame_format": "png" if frame_b64 else None,
+        }
+        if frame_err is not None:
+            payload["frame_error"] = frame_err
+
+        print(f"[FACTION_STATE_VLM] Completed for {faction.value}, frame={'ok' if frame_b64 else 'failed'}")
+        return payload
+
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return concise documentation for available actions."""
         action_docs = {
@@ -1355,6 +1433,16 @@ class LLMActionHandlerV3:
                 },
                 "get_faction_state": {
                     "description": "Get state for a faction: surviving unit positions and remaining strength",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei | shu | wu)",
+                        }
+                    },
+                },
+                "get_faction_state_vlm": {
+                    "description": "VLM: Get faction state plus the current rendered frame as base64 PNG (frame_base64). Use for vision-language models.",
                     "parameters": {
                         "faction": {
                             "type": "string",
@@ -1602,6 +1690,29 @@ class LLMActionHandlerV3:
                     },
                     "prerequisites": ["Valid faction name"],
                 },
+                "get_faction_state_vlm": {
+                    "category": "faction_control",
+                    "description": "VLM: Get faction state plus current rendered frame as base64 PNG (frame_base64) for vision-language models.",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei/shu/wu)",
+                        }
+                    },
+                    "returns": {
+                        "result": {"type": "bool", "description": "Whether execution succeeded"},
+                        "state": {"type": "string", "description": "Faction state"},
+                        "faction": {"type": "string", "description": "Faction name"},
+                        "total_units": {"type": "int", "description": "Total unit count"},
+                        "alive_units": {"type": "int", "description": "Alive unit count"},
+                        "units": {"type": "array", "description": "Detailed unit info list"},
+                        "frame_base64": {"type": "string", "description": "Current frame as base64 PNG, or null if capture failed"},
+                        "frame_format": {"type": "string", "description": "'png' when frame_base64 is present"},
+                        "frame_error": {"type": "string", "description": "Error message when frame capture failed"},
+                    },
+                    "prerequisites": ["Valid faction name", "Display/screen available for frame capture"],
+                },
                 # System
                 "get_action_list": {
                     "category": "system",
@@ -1659,6 +1770,10 @@ class LLMActionHandlerV3:
                 },
                 "get_faction_overview": {
                     "action": "get_faction_state",
+                    "params": {"faction": "wei"},
+                },
+                "get_faction_overview_vlm": {
+                    "action": "get_faction_state_vlm",
                     "params": {"faction": "wei"},
                 },
                 "finish_turn": {
@@ -2797,95 +2912,3 @@ class LLMActionHandlerV3:
         #     # "range_status": "in_range" if in_range else "out_of_range",
         # }
         return in_range
-
-    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Register agent information for a faction (provider/model/base_url/etc)."""
-        try:
-            # Validate required parameters
-            required_params = ["faction", "provider", "model_id", "base_url"]
-            for param in required_params:
-                if param not in params:
-                    return {
-                        "success": False,
-                        "result": False,
-                        "message": f"Missing required parameter: {param}",
-                        "details": f"Missing required parameter: {param}",
-                    }
-
-            faction = params["faction"]
-            provider = params["provider"]
-            model_id = params["model_id"]
-            base_url = params["base_url"]
-            # Optional features
-            enable_thinking = params.get("enable_thinking", False)
-
-            # Create AgentInfo
-            from ..components.agent_info import AgentInfo, AgentInfoRegistry
-
-            agent_info = AgentInfo(
-                provider=provider,
-                model_id=model_id,
-                base_url=AgentInfoRegistry.sanitize_url(base_url),
-                agent_id=params.get("agent_id"),
-                version=params.get("version"),
-                note=params.get("note"),
-                # pass through optional thinking flag
-                enable_thinking=enable_thinking,
-            )
-
-            # Get or create registry
-            registry = self.world.get_singleton_component(AgentInfoRegistry)
-            if not registry:
-                registry = AgentInfoRegistry()
-                self.world.add_singleton_component(registry)
-
-            # Register
-            success = registry.register_agent(faction, agent_info)
-
-            # Maintain registered_factions set in GameStats
-            try:
-                from ..components.state import GameStats
-
-                stats = self.world.get_singleton_component(GameStats)
-                if stats is None:
-                    stats = GameStats()
-                    self.world.add_singleton_component(stats)
-                from ..prefabs.config import Faction as _Faction
-
-                reg_faction = _Faction(faction)
-                stats.registered_factions.add(reg_faction)
-            except Exception as _e:
-                print(
-                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
-                )
-
-            if success:
-                return {
-                    "success": True,
-                    "result": True,
-                    "details": f"Agent info registered for faction: {faction}",
-                    "message": f"Agent info registered for faction: {faction}",
-                    "registered_info": {
-                        "faction": faction,
-                        "provider": provider,
-                        "model_id": model_id,
-                        "base_url_sanitized": agent_info.base_url,
-                        # include thinking flag in response
-                        "enable_thinking": enable_thinking,
-                    },
-                }
-            else:
-                return {
-                    "success": False,
-                    "result": False,
-                    "message": "Failed to register agent info",
-                    "details": "Failed to register agent info",
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "result": False,
-                "details": f"Error registering agent info: {str(e)}",
-                "message": f"Error registering agent info: {str(e)}",
-            }

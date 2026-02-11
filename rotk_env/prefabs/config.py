@@ -238,7 +238,7 @@ class GameConfig:
         ),
         UnitType.CAVALRY: UnitBaseStats(
             max_count=100,
-            movement=7,
+            movement=8,
             base_attack=14,
             base_defense=6,
             attack_range=1,

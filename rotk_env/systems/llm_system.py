@@ -5,6 +5,7 @@ LLM系统 - 游戏全局控制接口
 
 import asyncio
 import json
+import os
 import time
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
@@ -147,6 +148,13 @@ class LLMSystem(System):
         
         # 🆕 游戏结束通知状态
         self.game_end_notified = False
+        # 🆕 消息级冷却（鼓励批量发送）
+        self.message_cooldown_seconds: float = 0
+        self._agent_last_message_ts: Dict[str, float] = {}
+        # 🆕 turn_start 可靠投递：等待 ACK 或重发。key=agent_id, value={turn_number, faction_key, next_retry_time, retry_count, notification}
+        self._pending_turn_start_ack: Dict[str, dict] = {}
+        self._turn_start_retry_interval: float = 8.0
+        self._turn_start_max_retries: int = 5
 
         # 系统级错误代码
         self.system_error_codes = {
@@ -160,6 +168,7 @@ class LLMSystem(System):
             2008: "系统状态异常",
             2009: "网络连接错误",
             2010: "内部服务错误",
+            2011: "操作频率过高",
         }
 
     def initialize(self, world):
@@ -173,9 +182,11 @@ class LLMSystem(System):
         self.action_executor = ActionExecutor(self)
 
         # 使用同步客户端
+        # env_id: 从环境变量 ENV_ID 读取，便于 auto_test 多进程并行时隔离；默认 env_1
+        _env_id = os.environ.get("ENV_ID", "env_1")
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
-            env_id="env_1",
+            env_id=_env_id,
         )
         self.add_listener()
 
@@ -191,6 +202,7 @@ class LLMSystem(System):
             "strategy_ping": self.handle_strategy_ping,
             "report_llm_stats": self.handle_report_llm_stats,
             "retrieve_game_status": self.handle_retrieve_game_status,
+            "register_agent_info": self.handle_register_agent_info,
         }
 
     def add_listener(self):
@@ -211,17 +223,26 @@ class LLMSystem(System):
             recipient = envelope.get("recipient", {})
             payload = envelope.get("payload", {})
             message_type = envelope.get("type", "")
-
+            now = time.time()
             if payload.get("type") == "action":
                 # 处理动作消息
 
-                print(f"处理动作消息: {payload}")
+                print(f"[LLM SYSTEM] 处理动作消息: {payload}")
 
                 # 提取 agent 信息
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
+                # 记录一次消息级交互（单动作消息）
+
+                last_ts = self._agent_last_message_ts.get(agent_id)
+                if last_ts is not None:
+                    elapsed = now - last_ts
+                    print(f"[LLMSystem] Agent ID: {agent_id} action sending interval: {elapsed}")
+                self._agent_last_message_ts[agent_id] = now
+                
                 self.exec_action(envelope)
+                self._record_message(agent_id, payload.get("parameters"))
                 return
             elif payload.get("type") == "action_batch":
                 # 批量处理动作消息
@@ -230,6 +251,22 @@ class LLMSystem(System):
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
+                # 🆕 消息级冷却检查（仅当批量中包含非系统级动作时生效；纯系统级动作跳过冷却）
+                try:
+                    has_non_system_action = False
+                    for _item in (actions or []):
+                        _act = (_item or {}).get("action")
+                        if not _act or _act not in self.system_actions:
+                            has_non_system_action = True
+                            break
+                except Exception:
+                    has_non_system_action = True
+                if has_non_system_action:
+                    if not self._enforce_message_cooldown(agent_id, batch_id):
+                        return
+
+                # 通过冷却检查后，记录一次消息级交互（批量消息只记一次）
+                self._record_message(agent_id, None)
 
                 try:
                     size = len(actions)
@@ -298,6 +335,40 @@ class LLMSystem(System):
             print(f"消息处理错误: {e}")
             if "sender" in locals():
                 self.send_error_response(sender, f"Message processing error: {e}")
+    
+    def _enforce_message_cooldown(self, agent_id: Optional[str], message_id: Union[int, str]) -> bool:
+        """简单易行的消息级冷却：限制同一 Agent 发送消息的频率，鼓励一次消息内批量 action。"""
+        try:
+            if not agent_id:
+                return True
+            now = time.time()
+            last_ts = self._agent_last_message_ts.get(agent_id)
+            if last_ts is not None:
+                elapsed = now - last_ts
+                if elapsed < self.message_cooldown_seconds:
+                    remaining = max(0.0, self.message_cooldown_seconds - elapsed)
+                    error_result = self._create_system_error_response(
+                        "message",
+                        (
+                            f"Message frequency too high. Cooldown {self.message_cooldown_seconds:.2f}s; "
+                            f"please batch multiple actions into one message. Retry in {remaining:.2f}s."
+                        ),
+                        2011,
+                    )
+                    print(
+                        f"[LLMSystem] ⏱️ Message rejected due to cooldown: agent_id={agent_id}, remaining={remaining:.2f}s"
+                    )
+                    # 用消息ID回包
+                    self.client.response_to_agent(agent_id, message_id, error_result, "str")
+                    # 统一计数
+                    # self._record_interaction(agent_id, None)
+                    return False
+            # 通过，记录时间戳
+            self._agent_last_message_ts[agent_id] = now
+            return True
+        except Exception as _e:
+            print(f"[LLMSystem] 冷却检查异常: {_e}")
+            return True
 
     def on_connect(self, message):
         print("LLMSystem connected", message)
@@ -330,46 +401,63 @@ class LLMSystem(System):
         """执行动作 - 同步接口"""
         return self.client.response_to_agent(agent_id, action_id, outcome, outcome_type)
 
-    def _record_interaction(self, agent_id: str | None, params: Dict[str, Any] | None) -> None:
+    def _get_or_create_stats(self) -> GameStats:
+        stats = self.world.get_singleton_component(GameStats)
+        if stats is None:
+            stats = GameStats()
+            self.world.add_singleton_component(stats)
+        return stats
 
-        """ Record one interaction from ENV to Agent """
+    def _resolve_agent_faction(self, stats: GameStats, agent_id: Optional[str]) -> Optional[Faction]:
+        if not agent_id:
+            return None
+        return stats.agent_id_to_faction.get(agent_id)
+
+    def _record_action(self, agent_id: str | None, params: Dict[str, Any] | None) -> None:
+        """Record one processed action (Agent -> ENV)."""
         try:
-            stats = self.world.get_singleton_component(GameStats)
-            if stats is None:
-                stats = GameStats()
-                self.world.add_singleton_component(stats)
+            stats = self._get_or_create_stats()
 
-            # 按 agent 统计
             if agent_id:
-                stats.response_times_by_agent[agent_id] = (
-                    stats.response_times_by_agent.get(agent_id, 0) + 1
+                stats.action_counts_by_agent[agent_id] = (
+                    stats.action_counts_by_agent.get(agent_id, 0) + 1
                 )
 
-            # Using existing mapping or parsing from parameters
-            from ..prefabs.config import Faction as _Faction
-            mapped_faction = None
-
-            if agent_id and agent_id in stats.agent_id_to_faction:
-                mapped_faction = stats.agent_id_to_faction.get(agent_id)
-            else:
-                faction_key = None
-                if isinstance(params, dict):
-                    faction_key = params.get("faction")
-                if faction_key:
-                    try:
-                        mapped_faction = _Faction(faction_key)
-                        if agent_id:
-                            stats.agent_id_to_faction[agent_id] = mapped_faction
-                    except Exception:
-                        mapped_faction = None
-
+            mapped_faction = self._resolve_agent_faction(stats, agent_id)
             if mapped_faction:
-                stats.response_times_by_faction[mapped_faction] = (
-                    stats.response_times_by_faction.get(mapped_faction, 0) + 1
+                stats.action_counts_by_faction[mapped_faction] = (
+                    stats.action_counts_by_faction.get(mapped_faction, 0) + 1
+                )
+            elif agent_id:
+                raise ValueError(
+                    f"[LLMSystem. _record_action] Missing faction mapping for agent {agent_id}. "
+                    "Agents must call register_agent_info before issuing actions."
                 )
         except Exception as _e:
-            # 统计失败不影响主流程
-            print(f"Record ENV <-> Agent interaction error: {_e}")
+            raise RuntimeError(f"[LLMSystem. _record_action] Record ENV <-> Agent action error: {_e}") from _e
+
+    def _record_message(self, agent_id: Optional[str], _params: Dict[str, Any] | None) -> None:
+        """Record one inbound message (Agent -> ENV interaction)."""
+        try:
+            stats = self._get_or_create_stats()
+
+            if agent_id:
+                stats.interaction_counts_by_agent[agent_id] = (
+                    stats.interaction_counts_by_agent.get(agent_id, 0) + 1
+                )
+
+            mapped_faction = self._resolve_agent_faction(stats, agent_id)
+            if mapped_faction:
+                stats.interaction_counts_by_faction[mapped_faction] = (
+                    stats.interaction_counts_by_faction.get(mapped_faction, 0) + 1
+                )
+            elif agent_id:
+                raise ValueError(
+                    f"[LLMSystem. _record_message] Missing faction mapping for agent {agent_id}. "
+                    "Agents must register before sending messages."
+                )
+        except Exception as _e:
+            raise RuntimeError(f"[LLMSystem. _record_message] Record Agent -> ENV message error: {_e}") from _e
 
     @staticmethod
     def _prepare_parameters(raw_params: Any) -> Dict[str, Any]:
@@ -627,6 +715,98 @@ class LLMSystem(System):
         except Exception as e:
             return {"success": False, "message": f"Report game status failed: {e}"}
 
+    def handle_register_agent_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Register agent information for a faction (provider/model/base_url/etc)."""
+        try:
+            # Validate required parameters
+            required_params = ["faction", "provider", "model_id", "base_url"]
+            for param in required_params:
+                if param not in params:
+                    return {
+                        "success": False,
+                        "result": False,
+                        "message": f"Missing required parameter: {param}",
+                        "details": f"Missing required parameter: {param}",
+                    }
+
+            faction = params["faction"]
+            provider = params["provider"]
+            model_id = params["model_id"]
+            base_url = params["base_url"]
+            # Optional features
+            enable_thinking = params.get("enable_thinking", False)
+
+            # Create AgentInfo
+            from ..components.agent_info import AgentInfo, AgentInfoRegistry
+
+            agent_info = AgentInfo(
+                provider=provider,
+                model_id=model_id,
+                base_url=AgentInfoRegistry.sanitize_url(base_url),
+                agent_id=params.get("agent_id"),
+                version=params.get("version"),
+                note=params.get("note"),
+                # pass through optional thinking flag
+                enable_thinking=enable_thinking,
+            )
+
+            # Get or create registry
+            registry = self.world.get_singleton_component(AgentInfoRegistry)
+            if not registry:
+                registry = AgentInfoRegistry()
+                self.world.add_singleton_component(registry)
+
+            # Register
+            success = registry.register_agent(faction, agent_info)
+
+            # Maintain registered_factions set in GameStats
+            try:
+                from ..components.state import GameStats
+
+                stats = self.world.get_singleton_component(GameStats)
+                if stats is None:
+                    stats = GameStats()
+                    self.world.add_singleton_component(stats)
+                from ..prefabs.config import Faction as _Faction
+
+                reg_faction = _Faction(faction)
+                stats.registered_factions.add(reg_faction)
+            except Exception as _e:
+                print(
+                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
+                )
+
+            if success:
+                return {
+                    "success": True,
+                    "result": True,
+                    "details": f"Agent info registered for faction: {faction}",
+                    "message": f"Agent info registered for faction: {faction}",
+                    "registered_info": {
+                        "faction": faction,
+                        "provider": provider,
+                        "model_id": model_id,
+                        "base_url_sanitized": agent_info.base_url,
+                        # include thinking flag in response
+                        "enable_thinking": enable_thinking,
+                    },
+                }
+            else:
+                return {
+                    "success": False,
+                    "result": False,
+                    "message": "Failed to register agent info",
+                    "details": "Failed to register agent info",
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "result": False,
+                "details": f"Error registering agent info: {str(e)}",
+                "message": f"Error registering agent info: {str(e)}",
+            }
+
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
         """发送错误响应"""
         agent_id = sender.get("id") if sender.get("type") == "agent" else None
@@ -638,7 +818,7 @@ class LLMSystem(System):
             }
             self.send_message(error_response, target={"type": "agent", "id": agent_id})
             # 统一位置计数：显式错误响应也计数
-            self._record_interaction(agent_id, None)
+            # self._record_interaction(agent_id, None)
 
     def notify_game_end_to_all_agents(self, winner: Optional[Faction] = None, reason: str = "game_completed"):
         """向所有连接的Agent发送游戏结束通知"""
@@ -718,7 +898,31 @@ class LLMSystem(System):
                     reason="game_completed"
                 )
                 self.game_end_notified = True
+                self._pending_turn_start_ack.clear()
                 print(f"[LLMSystem] ✅ 游戏结束通知完成，已通知 {agent_count} 个Agent")
+
+        # 🆕 turn_start 可靠投递：超时未收到 ACK 则重发，超过最大重试则放弃
+        game_state = self.world.get_singleton_component(GameState) if self.world else None
+        if game_state and not getattr(game_state, "game_over", False):
+            now = time.time()
+            for agent_id in list(self._pending_turn_start_ack.keys()):
+                entry = self._pending_turn_start_ack.get(agent_id)
+                if not entry or now < entry.get("next_retry_time", 0):
+                    continue
+                entry["retry_count"] = entry.get("retry_count", 0) + 1
+                if entry["retry_count"] > self._turn_start_max_retries:
+                    print(f"[LLMSystem] ⚠️ 放弃重发 turn_start 给 {agent_id}，已重试 {self._turn_start_max_retries} 次")
+                    self._pending_turn_start_ack.pop(agent_id, None)
+                    continue
+                try:
+                    self.send_message(
+                        entry["notification"],
+                        target={"type": "agent", "id": agent_id},
+                    )
+                    entry["next_retry_time"] = now + self._turn_start_retry_interval
+                    print(f"[LLMSystem] 🔄 重发 turn_start 给 {agent_id}（第 {entry['retry_count']} 次）")
+                except Exception as _e:
+                    print(f"[LLMSystem] ❌ 重发 turn_start 给 {agent_id} 失败: {_e}")
         
         # 原有的注释代码保持不变
         # print(f"LLMSystem update: {dt}")
@@ -761,7 +965,16 @@ class LLMSystem(System):
                 self.client.response_to_agent(agent_id, action_id, error_result, "str")
             return error_result
 
+        # 🆕 turn_start 可靠投递：Agent 收到 turn_start 后发 ACK，ENV 清除重发等待
+        if action == "turn_start_ack":
+            self._pending_turn_start_ack.pop(agent_id, None)
+            if send_response and agent_id:
+                self.client.response_to_agent(agent_id, action_id, {"success": True}, "str")
+            return {"success": True}
+
         try:
+            # 收到该 agent 的任意业务 action 视为已活跃，清除其 turn_start 重发等待
+            self._pending_turn_start_ack.pop(agent_id, None)
             if action != "register_agent_info":
                 mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
                 if mapped_faction is None:
@@ -816,9 +1029,6 @@ class LLMSystem(System):
                                 return error_result
                         except Exception as _e:
                             print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
-
-            # Count interaction before execution
-            self._record_interaction(agent_id, params)
 
             request = ActionRequest(
                 agent_id=agent_id,
@@ -876,23 +1086,29 @@ class LLMSystem(System):
                             ]
 
                             if target_agent_ids:
+                                turn_number = getattr(game_state, "turn_number", None)
                                 notification = {
                                     "type": "turn_start",
                                     "faction": faction_key,
-                                    "turn_number": getattr(game_state, "turn_number", None),
+                                    "turn_number": turn_number,
                                     "timestamp": time.time(),
                                     "message": "Your turn starts.",
                                 }
+                                now = time.time()
                                 for target_agent_id in target_agent_ids:
                                     try:
                                         self.send_message(
                                             notification,
                                             target={"type": "agent", "id": target_agent_id},
                                         )
-                                        # 计入一次 ENV->Agent 交互
-                                        self._record_interaction(
-                                            target_agent_id, {"faction": faction_key}
-                                        )
+                                        # 可靠投递：等待 ACK 或按间隔重发，直至收到 ack/任意 action 或超过最大重试
+                                        self._pending_turn_start_ack[target_agent_id] = {
+                                            "turn_number": turn_number,
+                                            "faction_key": faction_key,
+                                            "next_retry_time": now + self._turn_start_retry_interval,
+                                            "retry_count": 0,
+                                            "notification": notification,
+                                        }
                                         print(
                                             f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合"
                                         )
@@ -924,11 +1140,14 @@ class LLMSystem(System):
                 except Exception as _e:
                     print(f"[LLMSystem] ⚠️ 注册后维护集合失败: {_e}")
 
-            print(f"{action} response: {standardized_result}")
+            # print(f"{action} response: {standardized_result}")
             if send_response and agent_id:
                 self.client.response_to_agent(
                     agent_id, action_id, standardized_result, "str"
                 )
+
+            # Count action
+            self._record_action(agent_id, params)
 
             return standardized_result
         except Exception as e:

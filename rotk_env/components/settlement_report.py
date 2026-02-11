@@ -36,11 +36,17 @@ class SettlementReport(SingletonComponent):
     
     agent_endpoints: Dict[str, str] = field(default_factory=dict)  # agent endpoint by faction
     
+    providers: Dict[str, Optional[str]] = field(default_factory=dict)  # LLM provider per faction
+    providers_slug: str = ""  # sanitized provider slug used in filenames
+    
     strategy_scores: Dict[str, float] = field(default_factory=dict)  # strategy scores by faction
+    
+    strategy_evidence: Dict[str, List[str]] = field(default_factory=dict)  # recent strategy evidence snippets by faction
     
     enable_thinking: Dict[str, Optional[bool]] = field(default_factory=dict)  # thinking mode enabled by faction
     
-    response_times: Dict[str, int] = field(default_factory=dict)  # response count by faction
+    action_counts: Dict[str, int] = field(default_factory=dict)  # agent->env action count by faction
+    interaction_counts: Dict[str, int] = field(default_factory=dict)  # agent->env message/interaction count by faction
     
     # LLM API statistics by faction
     llm_api_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
