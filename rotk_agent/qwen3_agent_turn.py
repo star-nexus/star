@@ -151,7 +151,7 @@ class LLMClient:
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
         if self.config_thinking:
-            if self.config.provider == "siliconflow":
+            if self.config.provider.startswith("siliconflow"):
                 payload["enable_thinking"] = bool(self.config.enable_thinking)    
             elif self.config.provider.startswith("vllm"):
                 payload["chat_template_kwargs"] = {
@@ -184,7 +184,7 @@ class LLMClient:
                 self.base_url,
                 json=payload,
                 headers=headers,
-                timeout=180.0
+                timeout=300.0
             )
             
             if response.status_code != 200:
@@ -236,7 +236,7 @@ class LLMClient:
         except httpx.TimeoutException as e:
             # Count failed API calls
             LLMClient._global_api_error_count += 1
-            error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
+            error_msg = f"{self.config.provider} API request timeout (>300 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
             raise Exception(error_msg) from e

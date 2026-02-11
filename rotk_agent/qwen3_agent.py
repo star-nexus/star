@@ -260,13 +260,13 @@ class LLMClient:
             payload["top_k"] = self.config.top_k
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
-        # if self.config_thinking:
-        #     if self.config.provider == "siliconflow":
-        #         payload["enable_thinking"] = bool(self.config.enable_thinking)    
-        #     elif self.config.provider.startswith("vllm"):
-        #         payload["chat_template_kwargs"] = {
-        #                 "enable_thinking": bool(self.config.enable_thinking)
-        #             }
+        if self.config_thinking:
+            if self.config.provider.startswith("siliconflow"):
+                payload["enable_thinking"] = bool(self.config.enable_thinking)    
+            elif self.config.provider.startswith("vllm"):
+                payload["chat_template_kwargs"] = {
+                        "enable_thinking": bool(self.config.enable_thinking)
+                    }
         
         if tools:
             payload["tools"] = self._format_tools(tools)
@@ -294,7 +294,7 @@ class LLMClient:
                 self.base_url,
                 json=payload,
                 headers=headers,
-                timeout=180.0
+                timeout=600.0
             )
             
             if response.status_code != 200:
@@ -352,7 +352,7 @@ class LLMClient:
         except httpx.TimeoutException as e:
             # Count failed API calls
             LLMClient._global_error_stats.add_http_timeout()
-            error_msg = f"{self.config.provider} API request timeout (>180 seconds)"
+            error_msg = f"{self.config.provider} API request timeout (>600 seconds)"
             console.print(f"⏱️ Timeout error: {error_msg}", style="red")
             console.print(f"Please check network status or try again", style="yellow")
             raise Exception(error_msg) from e
@@ -474,7 +474,7 @@ def load_config(config_path: str = ".configs.toml", provider: str = "vllm") -> L
     base_url = provider_config.get("base_url", "")
     temperature = provider_config.get("temperature")
     max_tokens = provider_config.get("max_tokens")
-    enable_thinking = provider_config.get("enable_thinking", False)
+    enable_thinking = provider_config.get("enable_thinking", True)
     top_p = provider_config.get("top_p")
     top_k = provider_config.get("top_k")
 
@@ -1467,8 +1467,8 @@ class RoTKChatAgent:
                 console.print(f"🔍 API CALL COUNT:  {self.error_stats.get_total_api_call_count()}", style="cyan")
                 # perc = len(self.conversation_history) / self.error_stats.get_total_api_call_count()
                 # console.print(f"🔍 Average lenght per API CALL COUNT:  {perc}", style="cyan")
-                if len(self.conversation_history) > 50:
-                    await self._shrink_history(window=20)
+                if len(self.conversation_history) > 25:
+                    await self._shrink_history(window=10)
                     console.print("🧹 Context overflow detected, history has been trimmed and continued", style="cyan")   
 
                 # Get LLM response
