@@ -94,7 +94,7 @@ class GameScene(Scene):
 
         # 🆕 Game end waiting state
         self.game_end_wait_start = None
-        self.game_end_wait_timeout = 15.0  # Maximum wait time for 5 seconds
+        self.game_end_wait_timeout = 60.0
         self._headless_exit_triggered = False
 
     def enter(self, **kwargs):

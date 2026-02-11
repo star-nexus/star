@@ -15,26 +15,32 @@ class ResourceRecoverySystem(System):
 
     def __init__(self):
         super().__init__(priority=50)  # 早期执行，确保资源状态正确
+        
         # 行动点（AP）恢复配置：默认每5秒恢复1点
-        self.ap_recovery_interval = 5.0
+        # 注意：如需防止spam，建议配合操作冷却系统使用（见AP_RECOVERY_IMPROVEMENT_PROPOSAL.md）
+        self.ap_recovery_interval = 1.0
         self.ap_recovery_amount = 1
-
+        
         # 移动力（MP）恢复配置：默认每10秒完全恢复
-        self.mp_recovery_interval = 10.0
+        self.mp_recovery_interval = 3.0
 
-        # 普通攻击次数恢复配置：默认每5秒重置
-        self.attack_recovery_interval = 5.0
+        # 普通攻击次数恢复配置：每5秒重置
+        self.attack_recovery_interval = 1.0
 
         # 技能冷却更新配置：与攻击恢复同步，默认每5秒更新一次
         self.skill_cooldown_interval = 5.0
 
-        # 记录每个实体的累计恢复时间，防止“刚消耗即恢复”现象
+        # 记录每个实体的累计恢复时间，防止"刚消耗即恢复"现象
         self.ap_elapsed: Dict[int, float] = {}
         self.mp_elapsed: Dict[int, float] = {}
         self.attack_elapsed: Dict[int, float] = {}
         self.skill_elapsed: Dict[int, float] = {}
         # 记录移动力最近一次观测的数值，用于检测新的移动操作
         self.mp_last_points: Dict[int, int] = {}
+        
+        # ===== 方案2：决策质量奖励（可选，需要配合ActionSystem实现）=====
+        # 记录每个单位的"决策质量分数"，用于加速资源恢复
+        # self.unit_decision_quality: Dict[int, float] = {}  # 0.0-1.0，1.0表示完美决策
 
     def initialize(self, world: World) -> None:
         self.world = world

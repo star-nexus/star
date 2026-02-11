@@ -227,7 +227,7 @@ def run_match(
                 print("  Both agents exited. Waiting for environment to finish...")
                 # 给ENV一些时间来完成结算和退出
                 try:
-                    env_process.wait(timeout=30)
+                    env_process.wait(timeout=65)
                 except subprocess.TimeoutExpired:
                     print("  Environment running too long after agents exited. Terminating...")
                     env_process.terminate()
