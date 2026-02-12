@@ -6,8 +6,6 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
-**Beyond Scaling: Bridging the Gap Between Strategic Reasoning and Real-Time Execution.**
-
 [Introduction](#introduction) • [The Trinity](#the-trinity) • [Architecture](#system-architecture) • [Quick Start](#quick-start) • [Citation](#citation)
 
 </div>
