@@ -1,298 +1,145 @@
-# Romance of the Three Kingdoms
+# STAR: Strategic Tactical Agent Reasoning
 
-A strategic Tactical Agent Reasoning Benchmark
+<div align="center">
 
-## Get Started
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
-1. Clone the repository
+**Beyond Scaling: Bridging the Gap Between Strategic Reasoning and Real-Time Execution.**
+
+[Introduction](#introduction) • [The Trinity](#the-trinity) • [Architecture](#system-architecture) • [Quick Start](#quick-start) • [Citation](#citation)
+
+</div>
+
+---
+
+## 🚀 Introduction
+
+**STAR (Strategic Tactical Agent Reasoning)** is a modular research framework for studying LLM-driven agents in dynamic multi-agent environments.
+
+STAR focuses on evaluating how large language models perform under **long-horizon strategic planning**, **partial observability**, and **real-time decision constraints**, providing a reproducible interface that integrates simulation, evaluation, and extensible agent interaction.
+
+## Overview
+
+Recent advances in language models have demonstrated strong reasoning ability in static settings, yet their behavior in interactive, dynamic environments remains less understood. STAR provides a standardized environment for investigating decision-making under uncertainty, adversarial interaction, and execution latency.
+
+The framework is designed to decouple simulation logic, agent reasoning, and communication protocols, enabling researchers to build new environments, integrate diverse agent runtimes, and evaluate strategies within a consistent experimental pipeline.
+
+## Components
+
+STAR is organized around three complementary components:
+
+### 🏗️ The Engine (`STAREngine`)
+A modular simulation core built on an Entity–Component–System (ECS) architecture.
+*   **Data-Oriented:** Data-oriented design for scalable execution.
+*   **LLM-friendly modular design:** The decoupling design enables LLMs to intuitively understand and refactor project mechanics without navigating complex inheritance trees.
+*   **Extensible:** Researchers can plug in new environments or swap agent backends (DeepSeek, Qwen, GPT-4) without reinventing the wheel.
+
+### 🏆 The Benchmark (`STARBench`)
+A benchmarking suite for strategic multi-agent scenarios.
+*   **Scenario:** *Romance of the Three Kingdoms (RoTK)* — A zero-sum competitive environment.
+*   **Modes:** Configurable real-time and turn-based execution modes.
+*   **Metrics:** Standardized evaluation metrics and reporting.
+
+### 🔌 The Protocol (`Star Protocol`)
+An asynchronous communication layer for integrating heterogeneous agents and ENVs.
+*   **Router Bridge:** Structured message interface between agents and environments
+*   **Remote Support:** Runtime-agnostic integration (local or remote)
+
+---
+
+## 🧩 System Architecture
+
+STAR adopts a hierarchical, modular architecture designed for scalability.
+
+![System Architecture](docs/architecture.jpg)
+
+| Layer | Component | Description |
+| :--- | :--- | :--- |
+| **Agent Layer** | *Decision Host* | Decision hosts implementing perception–planning–action loops. |
+| **Protocol Layer** | *Nexus Bridge* | Asynchronous protocol and communication abstraction. |
+| **Environment Layer** | *Simulation Logic* | Implements specific ENV rules (e.g., RoTK), physics, and vision systems. |
+| **Framework Layer** | *STAREngine* | Core ECS-based execution framework. |
+
+---
+
+## ✨ Key Features
+
+- Strategic multi-agent evaluation
+- Real-time and turn-based execution modes
+- Partial observability environments
+- Extensible environment and agent integration
+- Layered ECS runtime for scalable simulation
+
+---
+
+## 🛠️ Quick Start
+
+### Prerequisites
+*   Python 3.12+
+*   `uv` (recommended) or `pip`
+
+### Installation
 
 ```bash
-git clone https://github.com/yourusername/Romance-of-the-Three-Kingdoms.git
-cd Romance-of-the-Three-Kingdoms
-```
+# Clone the repository
+git clone https://github.com/star-nexus/star.git
 
-在项目根目录下，创建配置 configs.toml 文件
+cd star
 
-```toml
-[default]
-model_id = "model_id" # 模型ID，例如：us.anthropic.claude-sonnet-4-20250514-v1:0
-embed_id = "embed_id" # 嵌入模型ID，例如：text-embedding-3-small
-
-# 模型接口库全局配置
-# 文件路径：.configs.toml
-# AWS 配置段
-[aws]
-# 区域
-region_name = "region" # 例如：us-west-2
-# 访问密钥 ID
-aws_access_key_id = "access_key"
-# 访问密钥
-aws_secret_access_key = "secret-key"
-
-# OpenAI 配置段
-[openai]
-api_key = "api-key"
-
-# DeepSeek 配置段
-[deepseek]
-api_key = "api-key"
-
-# Poe 配置段
-[poe]
-api_key = "api-key"
-
-# Infinigence 配置段
-[infinigence]
-api_key = "api-key"
-```
-
-2. Install the required packages
-
-```bash
+# Install dependencies using uv (fastest)
 uv sync
 ```
 
-3. Run the game hub (must run first, tmux better)
+### Running a Demo (AI v.s. AI)
+
+Experience the *Romance of the Three Kingdoms* scenario directly:
 
 ```bash
-git clone https://github.com/Lounger-Habitat/GameServer.git
-cd GameServer
-make dev
-```
-
-4. Run the game
-
-```bash
+# Launch the RoTK environment in GUI mode
+# LLM Agents play as 'Wei' (Blue) and 'Shu' (Green).
 uv run rotk_env/main.py
+
+# Launch the first Agent
+uv run rotk_agent/qwen3_agent.py \
+    --env-id env_1 \
+    --agent-id agent_1 \
+    --faction "shu" \
+    --provider xxx 
+
+# Launch the second Agent
+uv run rotk_agent/qwen3_agent.py \
+    --env-id env_1 \
+    --agent-id agent_2 \
+    --faction "wei" \
+    --provider xxx 
 ```
 
-5. Run the agent
+### Running Agent Evaluation in Batch
+
+To run a headless evaluation between two LLM agents:
 
 ```bash
-uv run rotk_agent/simple_agent.py
+python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-wait 120 --list provider.txt
+
+# provider.txt:
+deepseek,glm_47
+glm_46,deepseek
+
+# You need to specify the providers in .config.toml:
+[glm_46]
+model_id = "deepseek"
+api_key = "xxx"
+base_url = "https://xxx/v1/chat/completions"
 ```
 
-当出现请输入命令时，您可以输入以下命令之一来与游戏进行交互：
-```bash
-chat <prompt> # 对agent进行指令，prompt 为您想要说的话，例如：chat "请帮我分析当前战局" ， # 需要安装menglong框架
-message <message> # 发送消息，message 消息为可用的动作
-list # 测试列出可用动作
-```
-
-
-## 项目概述
-
-STAR（战略战术代理推理基准）是一个专门用于评估大型语言模型（LLM）的对抗性推理和战略规划能力的基准测试平台。该项目采用模块化架构，系统地管理和评估 LLM 在动态多智能体对抗场景中的推理性能。
-
-## 目录结构
-
-```
-/rotk
-├── framework/                # 核心框架层，提供ECS架构基础设施
-│   ├── ecs/                 # 实体组件系统核心实现
-│   │   ├── component.py     # 组件基类定义
-│   │   ├── context.py       # ECS上下文，提供系统间通信
-│   │   ├── entity.py        # 实体管理
-│   │   ├── manager.py       # 实体、组件、系统管理器
-│   │   ├── query.py         # 组件查询系统
-│   │   ├── system.py        # 系统基类定义
-│   │   └── world.py         # 世界容器，管理所有实体和系统
-│   ├── engine/              # 游戏引擎核心
-│   │   ├── engine.py        # 主引擎循环和初始化
-│   │   ├── events.py        # 事件系统
-│   │   ├── inputs.py        # 输入处理
-│   │   ├── renders.py       # 渲染管理
-│   │   └── scenes.py        # 场景管理
-│   ├── ui/                  # 用户界面框架
-│   └── utils/               # 通用工具
-│       └── logging.py       # 日志系统
-│
-├── game/                    # 游戏实现层，包含具体游戏逻辑
-│   ├── assets/              # 游戏资源
-│   ├── components/          # 游戏组件定义
-│   │   ├── camera/          # 相机相关组件
-│   │   ├── map/             # 地图相关组件
-│   │   ├── status/          # 状态相关组件
-│   │   └── unit/            # 单位相关组件
-│   ├── config/              # 游戏配置
-│   ├── entities/            # 实体预设
-│   ├── managers/            # 游戏管理器
-│   ├── scenes/              # 游戏场景
-│   ├── systems/             # 游戏系统
-│   │   ├── ai/              # AI控制系统
-│   │   │   ├── llm_control_system.py  # LLM控制系统
-│   │   │   ├── logs/        # LLM日志
-│   │   │   └── prompts/     # LLM提示模板
-│   │   ├── camera/          # 相机系统
-│   │   ├── map/             # 地图系统
-│   │   ├── observability/   # 观察系统
-│   │   ├── player/          # 玩家控制系统
-│   │   ├── ui/              # UI系统
-│   │   └── unit/            # 单位系统
-│   └── utils/               # 游戏工具
-```
-
-## 目录结构解释
-
-### 框架层 (framework/)
-
-框架层提供了游戏开发的基础设施，采用实体组件系统（ECS）架构，实现了高效的游戏对象管理和逻辑分离。
-
-- **ecs/**: 实现了完整的实体组件系统
-
-  - `component.py`: 定义组件基类，所有游戏组件继承自此
-  - `entity.py`: 实体管理，实体本身只是一个 ID，不包含数据或逻辑
-  - `system.py`: 系统基类，包含游戏逻辑，操作特定组件的实体
-  - `world.py`: 世界容器，是 ECS 架构的中心点，协调实体和系统交互
-  - `context.py`: 提供系统间共享上下文，便于系统间通信
-  - `manager.py`: 提供实体、组件、系统的管理功能
-  - `query.py`: 实现高效的组件查询系统
-
-- **engine/**: 游戏引擎核心功能
-
-  - `engine.py`: 游戏主循环和初始化逻辑
-  - `events.py`: 事件系统，实现游戏内部通信
-  - `inputs.py`: 处理用户输入
-  - `renders.py`: 管理游戏渲染
-  - `scenes.py`: 场景管理，控制游戏流程
-
-- **utils/**: 通用工具函数和类
-  - `logging.py`: 日志系统，记录游戏运行信息
-
-### 游戏层 (game/)
-
-游戏层实现了具体的游戏逻辑，包括单位、地图、战斗等系统。
-
-- **components/**: 游戏组件定义
-
-  - `camera/`: 相机组件，控制游戏视角
-  - `map/`: 地图组件，包括地图数据和迷雾战争
-  - `status/`: 状态组件，如战场统计组件
-  - `unit/`: 单位组件，定义游戏单位属性
-
-- **systems/**: 游戏系统实现
-
-  - `ai/`: AI 控制系统
-    - `llm_control_system.py`: LLM 控制系统，使用大型语言模型进行决策
-    - `prompts/`: LLM 提示模板，定义与 LLM 交互的格式
-  - `unit/`: 单位系统，处理单位移动、攻击等行为
-  - `map/`: 地图系统，处理地图渲染和交互
-  - `player/`: 玩家控制系统，处理玩家输入
-  - `observability/`: 观察系统，收集战场信息
-
-- **scenes/**: 游戏场景
-  - `game_scene.py`: 主游戏场景
-  - `start_scene.py`: 开始场景
-  - `end_scene.py`: 结束场景
-
-## 架构图
-
-### 整体架构
-
-```mermaid
 ---
-config:
-  layout: dagre
-  theme: neo-dark
----
-flowchart TD
- subgraph subGraph0["框架层 (Framework)"]
-        Engine["游戏引擎"]
-        ECS["ECS系统"]
-        Events["事件管理"]
-        Render["渲染管理"]
-        Input["输入管理"]
-        Scene["场景管理"]
-  end
- subgraph subGraph2["游戏系统"]
-        UnitActionSystem["动作系统"]
-        EnvironmentalStatisticsSystem["环境系统"]
-  end
- subgraph subGraph1["游戏层 (Game)"]
-        subGraph2
-        Components["游戏组件"]
-        Scenes["游戏场景"]
-  end
- subgraph llm["AI决策层"]
-        Prompts["提示模板"]
-        LLM["大型语言模型"]
-        AgentControl["Agent控制系统"]
-  end
-    Engine --> ECS & Events & Render & Input & Scene
-    ECS --> Scenes
-    Events --> Scenes
-    Render --> Scenes
-    Input --> Scenes
-    Scene --> Scenes
-    Scenes --> subGraph2 & Components
-    LLM --> Prompts
-    Prompts --> AgentControl
-    AgentControl -- 动作 --> UnitActionSystem
-    UnitActionSystem -- 更新 --> EnvironmentalStatisticsSystem
-    EnvironmentalStatisticsSystem -- 观测 --> AgentControl
 
-```
+## 🗺️ Roadmap
 
-### ECS 架构
-
-```mermaid
----
-config:
-  theme: neo-dark
-  layout: dagre
-  look: neo
----
-flowchart TD
-    World["世界容器"] --> Scheduler["系统调度器"] & EntityManager["实体管理器"] & ECSContent["上下文管理器"]
-    EntityManager --> Add/RemoveECS["添加/移除实体、组件、系统"]
-    ECSContent --> QueryManager["查询管理器"]
-    QueryManager -- 查询 --> Entity["实体"]
-    Entity --> Component1["组件1"] & Component2["组件2"] & ComponentN["组件N"]
-    Scheduler -- 调度 --> System1["系统1"] & System2["系统2"] & SystemN["系统N"]
-
-```
-
-### LLM 与游戏引擎交互
-
-```mermaid
----
-config:
-  theme: neo-dark
----
-sequenceDiagram
-  participant Scene as 游戏场景
-  participant Stats as 环境系统
-  participant Action as 动作系统
-  participant AgentSystem as Agent控制系统
-  participant LLM as 大型语言模型
-  participant Events as 事件系统
-  Scene ->> Stats: 初始化
-  AgentSystem ->> Stats: 获取可观测环境状态信息
-  AgentSystem ->> LLM: 发送态势感知请求
-  LLM -->> AgentSystem: 返回态势感知推理结果
-  AgentSystem ->> LLM: 发送决策请求
-  LLM -->> AgentSystem: 返回行动决策
-  AgentSystem ->> Events: 发布单位动作事件
-  Events->> Action: 处理动作事件
-  Action -->> Stats: 动作作用于环境
-  Stats ->> Stats: 更新环境
-```
-
-## LLM 控制系统
-
-LLM 控制系统是 STAR 基准的核心，它实现了三种不同的 AI 决策模式：
-
-1. **单体决策 (Type 1)**: 一个 LLM 代理控制多个单位，独立作战。每个代理负责自己阵营的所有单位，通过 OODA 循环（观察-定向-决策-行动）进行决策。
-
-2. **群体决策 (Type 2)**: 多个 LLM 代理各自控制一个单位，但需要协作作战。代理之间可以通过共享信息进行协调。
-
-3. **混合决策 (Type 3)**: 一个主控 LLM 代理和多个执行 LLM 代理协同工作。主控代理负责战略规划，执行代理负责战术执行。
-
-LLM 控制系统通过以下步骤与游戏引擎交互：
-
-1. **观察 (Observe)**: 从战场统计组件收集战场信息
-2. **定向 (Orient)**: 将战场信息发送给 LLM 进行分析和思考
-3. **决策 (Decide)**: 基于思考结果，让 LLM 做出具体行动决策
-4. **行动 (Act)**: 将 LLM 的决策转换为游戏事件，如单位移动或攻击
-
-这种设计允许研究人员评估 LLM 在战略规划、战术执行和多智能体协作方面的能力，为 LLM 在复杂对抗性环境中的表现提供了系统化的评估框架。
+*   [x] **Core ECS Framework** & RoTK Environment.
+*   [x] **WebSocket Protocol** for remote agent connection.
+*   [x] **Real-Time Mode:** Moving from Turn-Based to RTS (Real-Time Strategy) constraints.
+*   [x] **Multi-Modal Agents:** allowing agents to consume the rendered map frame pixels instead of JSON text.
+*   [x] **Web Hub:** A centralized dashboard to spectate matches and view leaderboards.
