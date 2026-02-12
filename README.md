@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
-[Introduction](#introduction) • [The Trinity](#the-trinity) • [Architecture](#system-architecture) • [Quick Start](#quick-start) • [Citation](#citation)
+[Introduction](#introduction) • [Components](#Components) • [Architecture](#System-Architecture) • [Quick Start](#quick-start)
 
 </div>
 
@@ -47,7 +47,7 @@ An asynchronous communication layer for integrating heterogeneous agents and ENV
 
 ---
 
-## 🧩 System Architecture
+## System Architecture
 
 STAR adopts a hierarchical, modular architecture designed for scalability.
 
@@ -126,7 +126,7 @@ deepseek,glm_47
 glm_46,deepseek
 
 # You need to specify the providers in .config.toml:
-[glm_46]
+[deepseek]
 model_id = "deepseek"
 api_key = "xxx"
 base_url = "https://xxx/v1/chat/completions"
