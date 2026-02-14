@@ -151,8 +151,23 @@ base_url = "https://xxx/v1/chat/completions"
 
 ## 🗺️ Roadmap
 
-*   [x] **Core ECS Framework** & RoTK Environment.
-*   [x] **WebSocket Protocol** for remote agent connection.
-*   [x] **Real-Time Mode:** Moving from Turn-Based to RTS (Real-Time Strategy) constraints.
-*   [x] **Multi-Modal Agents:** allowing agents to consume the rendered map frame pixels instead of JSON text.
-*   [x] **Nexus Bridge:** A centralized dashboard to spectate matches and view leaderboards.
+### Core Infrastructure
+- [x] ECS-based simulation runtime with scene and entity lifecycle management
+- [x] Event-driven execution model and message abstraction
+- [x] Deterministic scheduling for reproducible experiments
+
+### Communication Layer
+- [x] Bidirectional agent–environment interface via structured message envelopes
+- [x] Decoupled hub-based routing between agents and environments
+- [x] Support for distributed and remote execution
+
+### STARBench (RoTK Scenario)
+- [x] Hex-grid zero-sum strategy environment
+- [x] Partial observability (fog-of-war) mechanics
+- [x] Turn-based and real-time execution modes
+- [x] LLM-driven control interface and standardized observation API
+
+### Agent Framework
+- [x] LLM-based decision agents with tool-to-action mapping
+- [x] Multi-provider backend support
+- [x] Fully decoupled from environment runtime via protocol abstraction
