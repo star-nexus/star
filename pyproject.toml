@@ -1,11 +1,10 @@
 [project]
-name = "star_bench"
-version = "0.1.0"
-description = "A benchmark for evaluating the performance of LLMs strategic game in a confrontation environment."
+name = "star"
+version = "1.0"
+description = "is a modular research framework for studying LLM-driven agents in dynamic multi-agent environments."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "menglong",
     "noise>=1.2.2",
     "numpy>=2.2.5",
     "pillow>=11.2.1",
@@ -16,6 +15,3 @@ dependencies = [
     "rich>=14.0.0",
     "websockets>=15.0.1",
 ]
-
-[tool.uv.sources]
-menglong = { path = "../MengLong" }

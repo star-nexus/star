@@ -75,7 +75,7 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 ## 🛠️ Quick Start
 
 ### Prerequisites
-*   Python 3.12+
+*   Python 3.13
 *   `uv` (recommended) or `pip`
 
 ### Installation
@@ -83,6 +83,7 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 ```bash
 # Clone the repository
 git clone https://github.com/star-nexus/star.git
+git clone https://github.com/star-nexus/GameServer.git
 
 cd star
 
@@ -94,23 +95,37 @@ uv sync
 
 Experience the *Romance of the Three Kingdoms* scenario directly:
 
+The project supports **three factions** (Wei, Shu, Wu). Each faction can run **multiple agents**, and each agent controls **units** in the env. The commands below start one agent per faction as an example; you can launch more agents per faction with different `--agent-id` values.
+
 ```bash
+# Launch the ENVs/Agents bridge
+cd GameServer
+uv run fastapi dev gameserver/main.py
+
 # Launch the RoTK environment in GUI mode
 # LLM Agents play as 'Wei' (Blue) and 'Shu' (Green).
+cd star
 uv run rotk_env/main.py
 
-# Launch the first Agent
+# Launch an agent for the first faction (Wei)
 uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_1 \
-    --faction "shu" \
+    --faction "wei" \
     --provider xxx 
 
-# Launch the second Agent
+# Launch an agent for the second faction (Shu)
 uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_2 \
-    --faction "wei" \
+    --faction "shu" \
+    --provider xxx 
+
+# Launch an agent for the third faction (Wu). Requires Three Kingdoms Epic mode.
+uv run rotk_agent/qwen3_agent.py \
+    --env-id env_1 \
+    --agent-id agent_3 \
+    --faction "wu" \
     --provider xxx 
 ```
 
@@ -140,4 +155,4 @@ base_url = "https://xxx/v1/chat/completions"
 *   [x] **WebSocket Protocol** for remote agent connection.
 *   [x] **Real-Time Mode:** Moving from Turn-Based to RTS (Real-Time Strategy) constraints.
 *   [x] **Multi-Modal Agents:** allowing agents to consume the rendered map frame pixels instead of JSON text.
-*   [x] **Web Hub:** A centralized dashboard to spectate matches and view leaderboards.
+*   [x] **Nexus Bridge:** A centralized dashboard to spectate matches and view leaderboards.
