@@ -7,7 +7,7 @@
 ### 🎮 双模式支持
 
 - **回合制模式**: 经典的回合制策略玩法
-- **实时模式**: 动态实时战斗体验（开发中）
+- **实时模式**: 动态实时战斗体验
 
 ### 🗺️ 六边形地图系统
 
@@ -15,7 +15,7 @@
 - 支持复杂的地形和移动路径
 - 优化的 A\*寻路算法
 
-### 🏔️ 多样化地形系统
+### 🏔️ 多样化地形系统(本功能暂时关闭)
 
 - **平原**: 无特殊效果，标准移动和战斗
 - **森林**: 提供隐蔽和防御加成，降低移动速度
@@ -48,39 +48,15 @@
 ## 游戏单位
 
 ### 步兵 (Infantry)
-
-- 生命值: 120
-- 攻击力: 25
-- 防御力: 20
-- 移动力: 3
-- 攻击范围: 1
 - 特点: 平衡的属性，适合占领和防守
 
 ### 骑兵 (Cavalry)
-
-- 生命值: 100
-- 攻击力: 30
-- 防御力: 15
-- 移动力: 5
-- 攻击范围: 1
 - 特点: 高机动性，适合快速突击
 
 ### 弓兵 (Archer)
-
-- 生命值: 80
-- 攻击力: 20
-- 防御力: 10
-- 移动力: 2
-- 攻击范围: 3
 - 特点: 远程攻击能力，需要保护
 
-### 攻城器械 (Siege)
-
-- 生命值: 150
-- 攻击力: 40
-- 防御力: 25
-- 移动力: 1
-- 攻击范围: 2
+### 攻城器械 (Siege)（TO DO）
 - 特点: 强大的攻击力，移动缓慢
 
 ## 三大阵营
@@ -130,7 +106,7 @@
 
 ### 环境要求
 
-- Python 3.8+
+- Python 3.13
 - pygame 2.0+
 - framework (项目自带)
 
@@ -144,26 +120,26 @@ pip install pygame
 
 ```bash
 # 基本运行
-python rotk/main.py
+uv run rotk/main.py
 
 # 指定游戏模式
-python rotk/main.py --mode turn_based
+uv run rotk/main.py --mode turn_based
 
 # AI对战模式
-python rotk/main.py --players ai_vs_ai
+uv run rotk/main.py --players ai_vs_ai
 
 # 三国鼎立模式
-python rotk/main.py --players three_kingdoms --scenario three_kingdoms
+uv run rotk/main.py --players three_kingdoms --scenario three_kingdoms
 
-# 赤壁之战场景
-python rotk/main.py --scenario chibi
+# 赤壁之战场景（注：--scenario 当前未实现差异化，仅与 default 相同）
+uv run rotk/main.py --scenario chibi
 ```
 
 ### 命令行选项
 
 - `--mode [turn_based|real_time]`: 游戏模式
 - `--players [human_vs_ai|ai_vs_ai|three_kingdoms]`: 玩家配置
-- `--scenario [default|chibi|three_kingdoms]`: 游戏场景
+- `--scenario [default|chibi|three_kingdoms]`: 游戏场景（当前仅接受参数并传入场景，尚未根据场景切换地图/单位配置，实际效果与 default 相同）
 - `--help`: 显示帮助信息
 
 ## 获胜条件
@@ -223,14 +199,14 @@ python rotk/main.py --scenario chibi
 - [x] 游戏统计界面
 - [x] 多种地形效果
 - [x] 图形用户界面
+- [x] 实时模式支持
+- [x] 小地图
+- [x] 更多单位类型
+- [x] 多人网络对战
 
 ### 计划中功能 🚧
 
-- [ ] 实时模式支持
-- [ ] 小地图
-- [ ] 更多单位类型
 - [ ] 技能和特殊能力
-- [ ] 多人网络对战
 - [ ] 地图编辑器
 - [ ] 战役模式
 - [ ] 音效和音乐
@@ -243,8 +219,8 @@ python rotk/main.py --scenario chibi
 ### 开发环境设置
 
 1. 克隆项目
-2. 安装依赖：`pip install pygame`
-3. 运行测试：`python rotk/main.py`
+2. 安装依赖：`uv pip install pygame`
+3. 运行测试：`uv run rotk/main.py`
 
 ### 代码结构
 
@@ -267,6 +243,3 @@ rotk/
 
 本项目基于 framework ECS 框架开发，感谢所有贡献者的努力！
 
----
-
-**享受策略游戏的乐趣！** 🎮
