@@ -150,21 +150,21 @@ uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_1 \
     --faction "wei" \
-    --provider xxx 
+    --provider deepseek 
 
 # Launch an agent for the second faction (Shu)
 uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_2 \
     --faction "shu" \
-    --provider xxx 
+    --provider deepseek 
 
 # Launch an agent for the third faction (Wu). Requires Three Kingdoms Epic mode.
 uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_3 \
     --faction "wu" \
-    --provider xxx 
+    --provider deepseek 
 ```
 
 ### Running Agent Evaluation in Batch
