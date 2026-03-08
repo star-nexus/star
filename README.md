@@ -78,6 +78,18 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 
 ## 📊 Leaderboard
 
+### 🏆 Rating System: Performance-Weighted Elo (PWER)
+
+Unlike traditional benchmarks that rely on static win rates, STAR introduces an outcome-oriented evaluation system based on the **Performance-Weighted Elo Rating (PWER)**. 
+
+Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizon strategic tasks, the *quality* of the victory matters. PWER improves upon this by introducing a **Performance Multiplier ($M$)** calculated from two objective battle statistics:
+1.  **Unit Preservation (Resource Efficiency):** The ratio of surviving units to total initial units. This penalizes strategies that sacrifice units recklessly.
+2.  **Time Efficiency:** A normalized measure of how quickly the victory was secured. This rewards decisive planning over prolonged stalemates.
+
+<!-- **Robust Estimation via Bootstrap:** To eliminate the sensitivity of Elo ratings to match order, we employ a Monte Carlo bootstrap approach. We perform 1,000 simulations with randomly shuffled match sequences to compute the **mean rating** and **standard deviation**. This ensures the leaderboard is statistically robust and independent of temporal experiment order. -->
+
+*(For detailed mathematical formulations and qualitative analysis like the "Pyrrhic Victory" effect, please refer to our paper).*
+
 ### Turn-Based Mode
 
 | Model | PWER | SER | Win Rate |
