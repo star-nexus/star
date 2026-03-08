@@ -118,6 +118,17 @@ cd star
 uv sync
 ```
 
+### Configuration
+
+Before running any agent, you need to specify the API keys for the providers you intend to use. Create a `.config.toml` file in the project root:
+
+```toml
+[deepseek]
+model_id = "deepseek"
+api_key = "xxx"
+base_url = "https://xxx/v1/chat/completions"
+```
+
 ### Running a Demo (AI v.s. AI)
 
 Experience the *Romance of the Three Kingdoms* scenario directly:
@@ -166,12 +177,6 @@ python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-
 # provider.txt:
 deepseek,glm_47
 glm_46,deepseek
-
-# You need to specify the providers in .config.toml:
-[deepseek]
-model_id = "deepseek"
-api_key = "xxx"
-base_url = "https://xxx/v1/chat/completions"
 ```
 
 ---
