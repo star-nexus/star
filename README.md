@@ -12,6 +12,10 @@
 
 ---
 
+<div align="center">
+  <img src="docs/rotk.jpg" alt="STAR Environment Demo" width="800" />
+</div>
+
 ## 🚀 Introduction
 
 **STAR (Strategic Tactical Agent Reasoning)** is a modular research framework for studying LLM-driven agents in dynamic multi-agent environments.
