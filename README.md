@@ -76,6 +76,29 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 
 ---
 
+## 📊 Leaderboard
+
+### Turn-Based Mode
+
+| Model | PWER | SER | Win Rate |
+| :--- | :--- | :--- | :--- |
+| Kimi-K2-Thinking | 1206.1 ± 7.3 | 1149.2 ± 3.7 | 1.000 |
+| GLM-4.7 | 1182.7 ± 9.5 | 1122.6 ± 5.2 | 0.857 |
+| DeepSeek-Chat | 1166.9 ± 16.8 | 1112.3 ± 9.5 | 0.812 |
+| GLM-4.6 | 1098.6 ± 14.2 | 1066.4 ± 7.1 | 0.714 |
+| MiniMax-M2.1 | 1078.8 ± 16.4 | 1053.9 ± 7.9 | 0.625 |
+| Qwen3-32B | 1006.8 ± 12.0 | 1012.8 ± 6.8 | 0.538 |
+| Qwen3-30B-A3B-Thinking | 1005.6 ± 11.4 | 998.5 ± 6.2 | 0.500 |
+| GPT-OSS-20B | 988.2 ± 12.1 | 988.0 ± 6.2 | 0.462 |
+| Qwen3-14B | 972.7 ± 14.9 | 979.1 ± 8.5 | 0.385 |
+| Qwen3-8B | 925.1 ± 9.1 | 952.9 ± 4.3 | 0.300 |
+| Qwen3-30B-A3B-Instruct | 877.3 ± 11.8 | 913.9 ± 5.2 | 0.231 |
+| Nemotron-Nano-9B-v2 | 865.6 ± 9.5 | 910.9 ± 4.1 | 0.182 |
+| Kimi-K2-Instruct | 834.9 ± 13.5 | 880.2 ± 6.5 | 0.143 |
+| Qwen3-8B-NoThinking | 790.7 ± 8.2 | 859.3 ± 3.9 | 0.077 |
+
+---
+
 ## 🛠️ Quick Start
 
 ### Prerequisites
