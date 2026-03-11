@@ -241,3 +241,20 @@ python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-
 - [x] LLM-based decision agents with tool-to-action mapping
 - [x] Multi-provider backend support
 - [x] Fully decoupled from environment runtime via protocol abstraction
+
+## Citation
+
+If you find this project useful in your research, please consider citing:
+
+```bibtex
+@misc{li2026scalingassessingstrategicreasoning,
+      title={Beyond Scaling: Assessing Strategic Reasoning and Rapid Decision-Making Capability of LLMs in Zero-sum Environments}, 
+      author={Yang Li and Xing Chen and Yutao Liu and Gege Qi and Yanxian BI and Zizhe Wang and Yunjian Zhang and Yao Zhu},
+      year={2026},
+      eprint={2603.09337},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2603.09337}, 
+}
+```
+
