@@ -117,6 +117,17 @@ Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizo
 *   Python 3.13
 *   `uv` (recommended) or `pip`
 
+```bash
+# You can install uv on macOS and Linux.
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# on Windows.
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# or with pip.
+pip install uv
+```
+
 ### Installation
 
 ```bash
@@ -132,13 +143,13 @@ uv sync
 
 ### Configuration
 
-Before running any agent, you need to specify the API keys for the providers you intend to use. Create a `.config.toml` file in the project root:
+Before running any agent, you need to specify the API keys for the providers you intend to use. Create a `.configs.toml` file in the project root:
 
 ```toml
 [deepseek]
-model_id = "deepseek"
-api_key = "xxx"
-base_url = "https://xxx/v1/chat/completions"
+model_id = "deepseek-chat"
+api_key = "YOUR_API_KEY"
+base_url = "https://api.deepseek.com/chat/completions"
 ```
 
 ### Running a Demo (AI v.s. AI)
@@ -147,17 +158,27 @@ Experience the *Romance of the Three Kingdoms* scenario directly:
 
 The project supports **three factions** (Wei, Shu, Wu). Each faction can run **multiple agents**, and each agent controls **units** in the env. The commands below start one agent per faction as an example; you can launch more agents per faction with different `--agent-id` values.
 
+First, launch the ENVs/Agents bridge
+
 ```bash
-# Launch the ENVs/Agents bridge
 cd GameServer
 uv run fastapi dev gameserver/main.py
+```
 
-# Launch the RoTK environment in GUI mode
-# LLM Agents play as 'Wei' (Blue) and 'Shu' (Green).
+Second, launch the RoTK environment.
+
+```bash
 cd star
 uv run rotk_env/main.py
+```
 
-# Launch an agent for the first faction (Wei)
+Choose the ENV modes: `Dynamic Real-Time` + `AI v.s. AI Battle`
+Click the `Star Game` button.
+
+Next, launch LLM Agents for different factions.
+
+```bash
+# Launch an agent for the first faction (Wei).
 uv run rotk_agent/qwen3_agent.py \
     --env-id env_1 \
     --agent-id agent_1 \
@@ -181,14 +202,19 @@ uv run rotk_agent/qwen3_agent.py \
 
 ### Running Agent Evaluation in Batch
 
-To run a headless evaluation between two LLM agents:
+If you want to evaluate agents in batch, you can run the headless evaluation mode:
 
+First, give the competitors in the `provider.txt` like:
+
+```bash
+deepseek,glm_47
+glm_46,deepseek
+```
+
+Then, start the script to launch the evaluation in batch.
 ```bash
 python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-wait 120 --list provider.txt
 
-# provider.txt:
-deepseek,glm_47
-glm_46,deepseek
 ```
 
 ---
