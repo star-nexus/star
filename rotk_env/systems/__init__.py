@@ -1,5 +1,5 @@
 """
-游戏系统模块
+Game systems module
 """
 
 from .map_system import MapSystem
@@ -20,7 +20,7 @@ from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem
 from .mock_llm_ai_system import MockLLMAISystem
 
-# 渲染系统拆分为多个独立系统
+# Render system split into multiple independent systems
 from .map_render_system import MapRenderSystem
 from .unit_render_system import UnitRenderSystem
 from .ui_render_system import UIRenderSystem
@@ -48,7 +48,7 @@ __all__ = [
     "LLMActionHandler",
     "LLMObservationSystem",
     "MockLLMAISystem",
-    # 新的渲染系统
+    # New render systems
     "MapRenderSystem",
     "UnitRenderSystem",
     "UIRenderSystem",

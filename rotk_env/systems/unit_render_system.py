@@ -11,7 +11,7 @@ Designed to minimize per-frame cost while keeping visuals informative.
 import pygame
 import os
 import math
-import time  # 添加time模块
+import time  # import time module
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from framework import System, RMS
@@ -28,11 +28,11 @@ from ..components import (
 from ..prefabs.config import GameConfig, HexOrientation, UnitType, Faction
 from ..utils.hex_utils import HexConverter
 
-# 导入性能分析器
+# Import performance profiler
 try:
     from performance_profiler import profiler
 except ImportError:
-    # 如果没有profiler，创建一个简单的替代
+    # If profiler is not available, create a simple stub
     class DummyProfiler:
         def time_system(self, name):
             return self
@@ -194,7 +194,7 @@ class UnitRenderSystem(System):
 
         if step_name in self.step_times:
             self.step_times[step_name].append(elapsed_time)
-            # 保持最近50次的数据
+            # Keep only the last 50 samples
             if len(self.step_times[step_name]) > 50:
                 self.step_times[step_name].pop(0)
 
@@ -548,7 +548,7 @@ class UnitRenderSystem(System):
             # Multiple units: simple ring layout
             radius = GameConfig.HEX_SIZE * zoom * 0.3
             for i, entity in enumerate(units):
-                if i < 6:  # 最多显示6个单位
+                if i < 6:  # display at most 6 units
                     angle = (2 * math.pi * i) / len(units)
                     offset_x = radius * math.cos(angle)
                     offset_y = radius * math.sin(angle)
@@ -866,7 +866,7 @@ class UnitRenderSystem(System):
         try:
             font = self._get_font(font_size)
             if font:
-                # 根据faction获取字体颜色
+                # Get text color based on faction
                 faction_color = GameConfig.FACTION_COLORS.get(faction, (255, 255, 255))
                 text_surface = font.render(symbol, True, faction_color)
                 text_rect = text_surface.get_rect(center=(int(screen_x), int(screen_y)))

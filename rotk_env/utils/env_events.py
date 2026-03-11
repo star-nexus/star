@@ -1,6 +1,6 @@
 """
-游戏事件模块
-定义游戏中的各种事件
+Game event module.
+Defines various in-game events.
 """
 
 from dataclasses import dataclass
@@ -11,21 +11,21 @@ from ..prefabs.config import Faction
 
 @dataclass
 class TurnStartEvent(Event):
-    """回合开始事件"""
+    """Turn start event."""
 
     faction: Faction
 
 
 @dataclass
 class TurnEndEvent(Event):
-    """回合结束事件"""
+    """Turn end event."""
 
     faction: Faction
 
 
 @dataclass
 class BattleEvent(Event):
-    """战斗事件"""
+    """Battle event."""
 
     attacker_entity: int
     target_entity: int
@@ -34,7 +34,7 @@ class BattleEvent(Event):
 
 @dataclass
 class UnitDeathEvent(Event):
-    """单位死亡事件"""
+    """Unit death event."""
 
     entity: int
     faction: Faction
@@ -42,7 +42,7 @@ class UnitDeathEvent(Event):
 
 @dataclass
 class UnitMoveEvent(Event):
-    """单位移动事件"""
+    """Unit move event."""
 
     entity: int
     from_pos: Tuple[int, int]
@@ -51,14 +51,14 @@ class UnitMoveEvent(Event):
 
 @dataclass
 class UnitSelectedEvent(Event):
-    """单位选中事件"""
+    """Unit selected event."""
 
     entity: int
 
 
 @dataclass
 class TileClickedEvent(Event):
-    """地块点击事件"""
+    """Tile clicked event."""
 
     position: Tuple[int, int]
     mouse_button: int
@@ -66,14 +66,14 @@ class TileClickedEvent(Event):
 
 @dataclass
 class GameOverEvent(Event):
-    """游戏结束事件"""
+    """Game over event."""
 
     winner: Optional[Faction]
 
 
 @dataclass
 class TerrainEffectEvent(Event):
-    """地形效果事件"""
+    """Terrain effect event."""
 
     entity: int
     terrain_type: str

@@ -1,5 +1,5 @@
 """
-工具模块
+# Utilities module
 """
 
 from .hex_utils import HexMath, HexConverter, PathFinding

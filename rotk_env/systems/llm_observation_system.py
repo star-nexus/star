@@ -1,6 +1,6 @@
 """
-LLM Observation System - 为LLM系统提供观测信息收集功能
-支持不同级别的观测：阵营视角、单个单位视角、上帝视角等
+LLM Observation System - Provides observation data collection for the LLM system
+Supports multiple observation levels: faction view, single-unit view, god view, and more
 """
 
 from typing import Dict, List, Any, Optional, Tuple, Set
@@ -26,16 +26,16 @@ from ..utils.hex_utils import HexMath
 
 
 class ObservationLevel:
-    """观测级别定义"""
+    """Observation level definitions"""
 
-    UNIT = "unit"  # 单个单位视角
-    FACTION = "faction"  # 阵营视角
-    GODVIEW = "godview"  # 上帝视角（全知）
-    LIMITED = "limited"  # 受限视角（基于雾战）
+    UNIT = "unit"  # Single unit view
+    FACTION = "faction"  # Faction view
+    GODVIEW = "godview"  # God view (omniscient)
+    LIMITED = "limited"  # Limited view (based on fog of war)
 
 
 class LLMObservationSystem:
-    """LLM观测系统 - 收集和提供不同级别的游戏观测信息"""
+    """LLM Observation System - Collects and provides game observation data at different levels"""
 
     def __init__(self, world: World):
         self.world = world
@@ -50,13 +50,13 @@ class LLMObservationSystem:
         unit_id: Optional[int] = None,
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
-        """获取观测信息
+        """Get observation data
 
         Args:
-            observation_level: 观测级别 (unit/faction/godview/limited)
-            faction: 阵营（faction级别时必需）
-            unit_id: 单位ID（unit级别时必需）
-            include_hidden: 是否包含隐藏信息（仅godview支持）
+            observation_level: Observation level (unit/faction/godview/limited)
+            faction: Faction (required for faction level)
+            unit_id: Unit ID (required for unit level)
+            include_hidden: Whether to include hidden information (godview only)
 
         Returns:
             Dict with 'success' field and either 'data' or 'error' information
@@ -66,7 +66,7 @@ class LLMObservationSystem:
 
             current_time = time.time()
 
-            # 参数验证
+            # Parameter validation
             if not observation_level:
                 return {
                     "success": False,
@@ -94,7 +94,7 @@ class LLMObservationSystem:
                     ],
                 }
 
-            # 特定级别的参数验证
+            # Level-specific parameter validation
             if observation_level == ObservationLevel.UNIT:
                 if unit_id is None:
                     return {
@@ -127,7 +127,7 @@ class LLMObservationSystem:
                         "observation_level": observation_level,
                     }
 
-            # 检查缓存
+            # Check cache
             cache_key = f"{observation_level}_{faction}_{unit_id}_{include_hidden}"
             if (
                 cache_key in self.cache
@@ -137,7 +137,7 @@ class LLMObservationSystem:
                 cached_result["from_cache"] = True
                 return cached_result
 
-            # 生成新的观测数据
+            # Generate new observation data
             observation_data = None
             if observation_level == ObservationLevel.UNIT:
                 observation_data = self._get_unit_observation(unit_id)
@@ -150,7 +150,7 @@ class LLMObservationSystem:
             elif observation_level == ObservationLevel.LIMITED:
                 observation_data = self._get_limited_observation(faction)
 
-            # 检查观测数据是否有错误
+            # Check if observation data has errors
             if observation_data and "error" in observation_data:
                 result = {
                     "success": False,
@@ -162,7 +162,7 @@ class LLMObservationSystem:
                     "observation_level": observation_level,
                 }
             else:
-                # 成功获取观测数据
+                # Successfully retrieved observation data
                 result = {
                     "success": True,
                     "data": observation_data,
@@ -181,7 +181,7 @@ class LLMObservationSystem:
                     "operation": "get_observation",
                 }
 
-            # 更新缓存
+            # Update cache
             self.cache[cache_key] = result
             self.cache_timestamp = current_time
 
@@ -202,7 +202,7 @@ class LLMObservationSystem:
             }
 
     def _get_unit_observation(self, unit_id: int) -> Dict[str, Any]:
-        """获取单个单位的观测信息"""
+        """Get observation data for a single unit"""
         try:
             if unit_id is None or not self.world.has_entity(unit_id):
                 return {
@@ -223,7 +223,7 @@ class LLMObservationSystem:
                     "error_code": "COMPONENT_MISSING",
                 }
 
-            # 单位自身信息
+            # Unit's own information
             unit_info = {
                 "id": unit_id,
                 "name": unit.name,
@@ -240,7 +240,7 @@ class LLMObservationSystem:
                 "position": {"col": position.col, "row": position.row},
             }
 
-            # 添加属性信息
+            # Add attribute information
             if unit_count:
                 unit_info["unit_count"] = {
                     "current": unit_count.current_count,
@@ -274,7 +274,7 @@ class LLMObservationSystem:
                     "can_attack": True,  # 只要有攻击能力就能攻击
                 }
 
-            # 单位视野内的信息
+            # Information within the unit's sight range
             visible_area = self._get_visible_area(unit_id)
             visible_units = self._get_visible_units(unit_id, visible_area)
             visible_terrain = self._get_visible_terrain(visible_area)
@@ -296,7 +296,7 @@ class LLMObservationSystem:
     def _get_faction_observation(
         self, faction: Faction, include_hidden: bool = False
     ) -> Dict[str, Any]:
-        """获取阵营观测信息"""
+        """Get faction observation data"""
         try:
             if not faction:
                 return {
@@ -304,7 +304,7 @@ class LLMObservationSystem:
                     "error_code": "MISSING_FACTION",
                 }
 
-            # 获取阵营所有单位
+            # Get all units of the faction
             faction_units = []
             for entity in self.world.query().with_all(Unit).entities():
                 unit = self.world.get_component(entity, Unit)
@@ -312,11 +312,11 @@ class LLMObservationSystem:
                     unit_obs = self._get_unit_summary(entity, include_hidden)
                     faction_units.append(unit_obs)
 
-            # 获取已知敌方单位
+            # Get known enemy units
             enemy_units = []
             visible_positions = set()
 
-            # 收集所有友方单位的视野
+            # Collect vision ranges of all friendly units
             for entity in (
                 self.world.query().with_all(Unit, Vision, HexPosition).entities()
             ):
@@ -325,7 +325,7 @@ class LLMObservationSystem:
                     visible_area = self._get_visible_area(entity)
                     visible_positions.update(visible_area)
 
-            # 获取视野内的敌方单位
+            # Get enemy units within visible area
             for entity in self.world.query().with_all(Unit, HexPosition).entities():
                 unit = self.world.get_component(entity, Unit)
                 position = self.world.get_component(entity, HexPosition)
@@ -337,10 +337,10 @@ class LLMObservationSystem:
                 ):
                     enemy_info = self._get_unit_summary(
                         entity, False
-                    )  # 敌方单位不显示隐藏信息
+                    )  # Do not reveal hidden info for enemy units
                     enemy_units.append(enemy_info)
 
-            # 战略信息
+            # Strategic information
             strategic_info = self._get_strategic_info(faction)
 
             return {
@@ -359,13 +359,13 @@ class LLMObservationSystem:
             }
 
     def _get_godview_observation(self) -> Dict[str, Any]:
-        """获取上帝视角观测信息（全知视角）"""
+        """Get god-view observation data (omniscient view)"""
         all_units = []
         for entity in self.world.query().with_all(Unit).entities():
             unit_info = self._get_unit_summary(entity, include_hidden=True)
             all_units.append(unit_info)
 
-        # 按阵营分组
+        # Group by faction
         units_by_faction = {}
         for unit in all_units:
             faction = unit.get("faction", "Unknown")
@@ -373,10 +373,10 @@ class LLMObservationSystem:
                 units_by_faction[faction] = []
             units_by_faction[faction].append(unit)
 
-        # 全地图信息
+        # Full map information
         map_info = self._get_full_map_info()
 
-        # 全局统计
+        # Global statistics
         global_stats = self._get_global_statistics()
 
         return {
@@ -388,17 +388,17 @@ class LLMObservationSystem:
         }
 
     def _get_limited_observation(self, faction: Faction) -> Dict[str, Any]:
-        """获取受限观测信息（基于雾战系统）"""
-        # 类似faction观测，但受雾战限制
+        """Get limited observation data (based on fog of war system)"""
+        # Similar to faction observation but constrained by fog of war
         fog_of_war = self.world.get_singleton_component(FogOfWar)
 
-        # 获取已探索区域
+        # Get explored areas
         explored_areas = set()
         if fog_of_war:
-            # TODO: 从雾战系统获取已探索区域
+            # TODO: get explored areas from the fog of war system
             pass
 
-        # 获取当前可见区域
+        # Get currently visible areas
         visible_areas = set()
         for entity in self.world.query().with_all(Unit, Vision, HexPosition).entities():
             unit = self.world.get_component(entity, Unit)

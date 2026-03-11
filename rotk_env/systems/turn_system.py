@@ -1,5 +1,5 @@
 """
-回合系统 - 管理回合制游戏的回合逻辑（按规则手册v1.2）
+Turn system - manages turn-based game logic (per rulebook v1.2).
 """
 
 from framework import System, World
@@ -19,20 +19,20 @@ from ..utils.env_events import TurnStartEvent
 
 
 class TurnSystem(System):
-    """回合系统 - 专注于回合制游戏的回合逻辑"""
+    """Turn system - focused on turn-based game-loop logic."""
 
     def __init__(self):
         super().__init__(required_components={Player}, priority=90)
         self.turn_timer = 0.0
-        self.auto_turn_duration = 30.0  # 自动回合时间（秒）
+        self.auto_turn_duration = 30.0  # auto-end-turn timeout in seconds
 
     def initialize(self, world: World) -> None:
         self.world = world
 
-        # 检查是否已经有游戏状态组件
+        # Check if a GameState component already exists.
         game_state = self.world.get_singleton_component(GameState)
         if not game_state:
-            # 如果没有，创建一个默认的游戏状态
+            # None found; create a default GameState.
             game_state = GameState(
                 current_player=Faction.WEI,
                 turn_number=1,
@@ -41,7 +41,7 @@ class TurnSystem(System):
             )
             self.world.add_singleton_component(game_state)
 
-        # 设置第一个玩家
+        # Set the first active player.
         self._start_next_turn()
 
     def subscribe_events(self):
@@ -51,7 +51,7 @@ class TurnSystem(System):
         game_mode = self.world.get_singleton_component(GameModeComponent)
         game_state = self.world.get_singleton_component(GameState)
 
-        # 只在回合制模式下工作
+        # Only runs in turn-based game mode.
         if not game_mode or not game_mode.is_turn_based():
             return
 
@@ -61,46 +61,46 @@ class TurnSystem(System):
         self._update_turn_based(delta_time)
 
     def _update_turn_based(self, delta_time: float) -> None:
-        """更新回合制模式"""
-        # 检查游戏结束条件
+        """Update turn-based mode logic."""
+        # Check win/loss conditions.
         if self._check_game_over():
             return
 
     def end_turn(self):
-        """结束当前回合"""
-        # 重置单位行动状态
+        """End the current turn."""
+        # Reset unit action states.
         self._reset_unit_actions()
 
-        # 检查游戏结束条件
+        # Check win/loss conditions.
         if self._check_game_over():
             return
 
-        # 开始下一个回合
+        # Advance to the next turn.
         self._start_next_turn()
 
     def agent_end_turn(self):
-        """结束当前阵营的行动，切换到下一个阵营"""
-        # 检查游戏结束条件
+        """End the current faction's actions and hand off to the next faction."""
+        # Check win/loss conditions.
         if self._check_game_over():
             return True
 
-        # 切换到下一个阵营（不重置单位状态）
+        # Switch to the next faction (without resetting unit states).
         self._switch_to_next_faction()
 
-        # 向下一个要行动的 agent 发送 start_turn 通知
+        # Notify the next agent that its turn has started.
         # self._notify_next_agent_turn()
 
         return True
 
     def _switch_to_next_faction(self):
-        """切换到下一个阵营（阵营轮转逻辑）"""
+        """Advance to the next faction in rotation."""
         game_state = self.world.get_singleton_component(GameState)
         players = list(self.world.query().with_component(Player).entities())
 
         if not players:
             return
 
-        # 获取下一个玩家
+        # Determine the next player.
         current_index = 0
         if game_state.current_player:
             for i, entity in enumerate(players):
@@ -109,7 +109,7 @@ class TurnSystem(System):
                     current_index = (i + 1) % len(players)
                     break
 
-        # 设置新的当前玩家
+        # Set the new active player.
         next_player_entity = players[current_index]
         next_player = self.world.get_component(next_player_entity, Player)
 
@@ -118,55 +118,55 @@ class TurnSystem(System):
             game_state.current_player = next_player.faction
 
             print(
-                f"🔄 阵营切换: {previous_faction.value} -> {next_player.faction.value}"
+                f"🔄 Faction turn: {previous_faction.value} -> {next_player.faction.value}"
             )
 
-            # 记录阵营变化到统计系统
+            # Record the faction change in the statistics system.
             statistics_system = self._get_statistics_system()
             if statistics_system:
                 statistics_system.record_turn_change(
                     previous_faction, next_player.faction
                 )
 
-            # 如果回到第一个玩家（索引0），说明所有阵营都行动完毕，开始新回合
+            # When we cycle back to the first player (index 0), all factions have acted — start a new round.
             if current_index == 0:
                 game_state.turn_number += 1
-                print(f"🔄 新回合开始: 第 {game_state.turn_number} 回合")
+                print(f"🔄 New round started: round {game_state.turn_number}")
 
-                # 只有在新回合开始时才重置所有单位的行动状态
+                # Only reset all units' action states at the start of a new round.
                 self._reset_unit_actions()
 
-            # 重置回合计时器
+            # Reset the turn timer.
             self.turn_timer = 0.0
 
-            # 发送回合开始事件
+            # Publish turn-start event.
             EBS.publish(TurnStartEvent(game_state.current_player))
 
     def _reset_unit_actions(self):
-        """重置所有单位的行动状态"""
-        # 获取行动系统来重置回合行动
+        """Reset all units' action states."""
+        # Retrieve ActionSystem to reset turn actions.
         action_system = self._get_action_system()
         if action_system:
             action_system.reset_turn_actions()
         else:
-            # 备用方案：直接重置
+            # Fallback: reset directly.
             self._manual_reset_actions()
 
     def _manual_reset_actions(self):
-        """手动重置行动状态"""
+        """Manually reset action states."""
         for entity in self.world.query().with_component(MovementPoints).entities():
             movement = self.world.get_component(entity, MovementPoints)
             unit_count = self.world.get_component(entity, UnitCount)
             action_points = self.world.get_component(entity, ActionPoints)
 
             if movement:
-                # 首先重置到最大移动力
+                # First restore movement to maximum.
                 movement.reset()
-                # 然后根据单位状况调整有效移动力
+                # Then scale by effective movement given unit count.
                 if unit_count:
                     effective_mp = movement.get_effective_movement(unit_count)
                     movement.current_mp = effective_mp
-                # movement.has_moved = False  # 移除单次移动限制
+                # movement.has_moved = False  # single-move restriction removed
 
             if action_points:
                 action_points.reset()
@@ -174,17 +174,17 @@ class TurnSystem(System):
         for entity in self.world.query().with_component(Combat).entities():
             combat = self.world.get_component(entity, Combat)
             if combat:
-                pass  # combat.has_attacked = False  # 移除单次攻击限制
+                pass  # combat.has_attacked = False  # single-attack restriction removed
 
     def _start_next_turn(self):
-        """开始下一个回合（完整的回合重置，用于游戏开始等情况）"""
+        """Start the next turn with a full reset (used at game start, etc.)."""
         game_state = self.world.get_singleton_component(GameState)
         players = list(self.world.query().with_component(Player).entities())
 
         if not players:
             return
 
-        # 获取下一个玩家
+        # Determine the next player.
         current_index = 0
         if game_state.current_player:
             for i, entity in enumerate(players):
@@ -193,7 +193,7 @@ class TurnSystem(System):
                     current_index = (i + 1) % len(players)
                     break
 
-        # 设置新的当前玩家
+        # Set the new active player.
         next_player_entity = players[current_index]
         next_player = self.world.get_component(next_player_entity, Player)
 
@@ -201,36 +201,36 @@ class TurnSystem(System):
             previous_faction = game_state.current_player
             game_state.current_player = next_player.faction
 
-            print(f"🎮 游戏开始: {game_state.current_player.value} 阵营先行动")
+            print(f"🎮 Game start: {game_state.current_player.value} acts first")
 
-            # 记录回合变化到统计系统
+            # Record the turn change in the statistics system.
             statistics_system = self._get_statistics_system()
             if statistics_system:
                 statistics_system.record_turn_change(
                     previous_faction, next_player.faction
                 )
 
-            # 如果回到第一个玩家，增加回合数
+            # If we've looped back to the first player, increment the round counter.
             if current_index == 0:
                 game_state.turn_number += 1
 
-            # 重置回合计时器
+            # Reset the turn timer.
             self.turn_timer = 0.0
 
-            # 发送回合开始事件
+            # Publish turn-start event.
             EBS.publish(TurnStartEvent(game_state.current_player))
 
     # def _notify_next_agent_turn(self):
-    #     """向下一个要行动的 agent 发送 start_turn 通知"""
+    #     """Notify the next agent that its turn has started."""
     #     game_state = self.world.get_singleton_component(GameState)
     #     if not game_state:
     #         return
 
-    #     # 获取 LLM 系统来发送通知
+    #     # Retrieve the LLM system to dispatch notifications.
     #     llm_system = self._get_llm_system()
     #     if llm_system and hasattr(llm_system, "client"):
     #         try:
-    #             # 构造 start_turn 消息
+    #             # Build the start_turn message.
     #             start_turn_message = {
     #                 "type": "start_turn",
     #                 "data": {
@@ -241,62 +241,62 @@ class TurnSystem(System):
     #                 },
     #             }
 
-    #             # 发送给所有连接的 agents
+    #             # Dispatch to all connected agents.
     #             for agent_id in llm_system.client.connected_agents:
     #                 llm_system.client.send_message(
     #                     start_turn_message, target={"type": "agent", "id": agent_id}
     #                 )
 
     #             print(
-    #                 f"📢 已向 agents 发送回合开始通知: {game_state.current_player.value}"
+    #                 f"📢 Turn-start notification sent to agents: {game_state.current_player.value}"
     #             )
 
     #         except Exception as e:
-    #             print(f"❌ 发送回合开始通知失败: {e}")
+    #             print(f"❌ Failed to send turn-start notification: {e}")
 
     def _get_current_timestamp(self):
-        """获取当前时间戳"""
+        """Return the current Unix timestamp."""
         import time
 
         return time.time()
 
     def _get_statistics_system(self):
-        """获取统计系统"""
+        """Get the StatisticsSystem instance."""
         for system in self.world.systems:
             if system.__class__.__name__ == "StatisticsSystem":
                 return system
         return None
 
     def _get_action_system(self):
-        """获取行动系统"""
+        """Get the ActionSystem instance."""
         for system in self.world.systems:
             if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 
     # def _get_llm_system(self):
-    #     """获取 LLM 系统"""
+    #     """Get the LLMSystem instance."""
     #     for system in self.world.systems:
     #         if system.__class__.__name__ == "LLMSystem":
     #             return system
     #     return None
 
     def _check_game_over(self) -> bool:
-        """检查游戏是否结束"""
+        """Check whether the game is over."""
         game_state = self.world.get_singleton_component(GameState)
 
-        # 检查回合数限制
+        # Check the turn limit.
         if game_state.turn_number > game_state.max_turns:
             game_state.game_over = True
             return True
 
-        # 检查是否只剩一个阵营有单位
+        # Check whether only one faction still has units.
         factions_with_units = set()
         for entity in self.world.query().with_component(Unit).entities():
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
 
-            # 只计算还有人数的单位
+            # Only count units with troops remaining.
             if unit and unit_count and unit_count.current_count > 0:
                 factions_with_units.add(unit.faction)
 

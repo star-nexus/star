@@ -37,31 +37,31 @@ class SettlementReportRenderSystem(System):
         if not settlement_report:
             return
             
-        # 渲染报告背景
+        # Render report background
         self._render_report_background(screen)
         
-        # 渲染报告标题
+        # Render report title
         self._render_report_title(screen)
         
-        # 渲染基本信息
+        # Render basic info
         self._render_basic_info(screen, settlement_report)
         
-        # 渲染游戏结果
+        # Render game result
         self._render_game_result(screen, settlement_report)
         
-        # 渲染单位统计
+        # Render unit statistics
         self._render_units_statistics(screen, settlement_report)
         
-        # 渲染战斗统计
+        # Render battle statistics
         self._render_battle_statistics(screen, settlement_report)
         
-        # 渲染地图统计
+        # Render map statistics
         self._render_map_statistics(screen, settlement_report)
         
-        # 渲染占位信息（待实现功能）
+        # Render placeholder info (features pending implementation)
         self._render_placeholder_info(screen, settlement_report)
         
-        # 渲染滚动条
+        # Render scrollbar
         self._render_scrollbar(screen)
     
     def _render_report_background(self, screen: pygame.Surface) -> None:

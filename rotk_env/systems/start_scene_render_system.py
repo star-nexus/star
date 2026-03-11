@@ -116,7 +116,7 @@ class StartSceneRenderSystem(System):
 
     def update(self, dt: float) -> None:
         """Update the system"""
-        # 清空屏幕
+        # Clear screen
 
         # Render each part
         self._render_background()

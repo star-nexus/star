@@ -1,5 +1,5 @@
 """
-动画系统 - 处理单位移动动画和视觉效果
+Animation system - handles unit movement animations and visual effects
 """
 
 from pathlib import Path
@@ -22,10 +22,10 @@ from ..prefabs.config import GameConfig, HexOrientation
 
 
 class AnimationSystem(System):
-    """动画系统"""
+    """Animation system"""
 
     def __init__(self):
-        super().__init__(priority=15)  # 在渲染前处理动画
+        super().__init__(priority=15)  # Processes animations before rendering
         self.hex_converter = HexConverter(
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
@@ -33,7 +33,7 @@ class AnimationSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
-        # 初始化字体
+        # Initialize font
         # pygame.font.init()
         self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.damage_font = pygame.font.Font(self.font_file_path, 24)
@@ -43,7 +43,7 @@ class AnimationSystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新动画系统"""
+        """Update the animation system"""
         self._update_movement_animations(delta_time)
         self._update_attack_animations(delta_time)
         self._update_projectile_animations(delta_time)
@@ -52,7 +52,7 @@ class AnimationSystem(System):
         self._update_damage_numbers(delta_time)
 
     def _update_movement_animations(self, delta_time: float):
-        """更新移动动画"""
+        """Update movement animations"""
         for entity in (
             self.world.query().with_all(HexPosition, MovementAnimation).entities()
         ):
@@ -63,38 +63,38 @@ class AnimationSystem(System):
                 continue
 
             if not anim.path or anim.current_target_index >= len(anim.path):
-                # 移动完成
+                # Movement complete
                 anim.is_moving = False
                 anim.progress = 0.0
                 anim.current_target_index = 0
                 anim.path.clear()
                 continue
 
-            # 更新移动进度
+            # Update movement progress
             anim.progress += anim.speed * delta_time
 
             if anim.progress >= 1.0:
-                # 到达当前目标点
+                # Reached current target point
                 target_hex = anim.path[anim.current_target_index]
                 pos.col, pos.row = target_hex
                 anim.current_target_index += 1
                 anim.progress = 0.0
 
                 if anim.current_target_index >= len(anim.path):
-                    # 全部路径完成
+                    # All path segments complete
                     anim.is_moving = False
                 else:
-                    # 设置下一段移动的起始和目标像素坐标
+                    # Set start and target pixel coordinates for the next segment
                     self._setup_movement_segment(anim, pos)
 
     def _setup_movement_segment(self, anim: MovementAnimation, pos: HexPosition):
-        """设置移动片段的像素坐标"""
+        """Set pixel coordinates for a movement segment"""
         if anim.current_target_index < len(anim.path):
-            # 当前位置
+            # Current position
             start_x, start_y = self.hex_converter.hex_to_pixel(pos.col, pos.row)
             anim.start_pixel_pos = (start_x, start_y)
 
-            # 目标位置
+            # Target position
             target_hex = anim.path[anim.current_target_index]
             target_x, target_y = self.hex_converter.hex_to_pixel(
                 target_hex[0], target_hex[1]
@@ -102,7 +102,7 @@ class AnimationSystem(System):
             anim.target_pixel_pos = (target_x, target_y)
 
     def _update_unit_status(self, delta_time: float):
-        """更新单位状态"""
+        """Update unit status"""
         for entity in self.world.query().with_all(UnitStatus).entities():
             status = self.world.get_component(entity, UnitStatus)
             if not status:
@@ -110,7 +110,7 @@ class AnimationSystem(System):
 
             status.status_duration += delta_time
 
-            # 检查移动状态
+            # Check movement status
             anim = self.world.get_component(entity, MovementAnimation)
             if anim and anim.is_moving:
                 status.current_status = "moving"
@@ -118,7 +118,7 @@ class AnimationSystem(System):
                 status.current_status = "idle"
 
     def _update_damage_numbers(self, delta_time: float):
-        """更新伤害数字显示"""
+        """Update damage number display"""
         entities_to_remove = []
 
         for entity in self.world.query().with_all(DamageNumber).entities():
@@ -132,17 +132,17 @@ class AnimationSystem(System):
                 entities_to_remove.append(entity)
                 continue
 
-            # 更新位置
+            # Update position
             new_x = damage_num.position[0] + damage_num.velocity[0] * delta_time
             new_y = damage_num.position[1] + damage_num.velocity[1] * delta_time
             damage_num.position = (new_x, new_y)
 
-        # 移除过期的伤害数字
+        # Remove expired damage numbers
         for entity in entities_to_remove:
             self.world.destroy_entity(entity)
 
     def render_damage_numbers(self):
-        """渲染伤害数字"""
+        """Render damage numbers"""
         if not self.damage_font:
             return
 
@@ -157,25 +157,25 @@ class AnimationSystem(System):
             if not damage_num:
                 continue
 
-            # 计算透明度（随时间淡出）
+            # Calculate alpha (fade out over time)
             alpha_ratio = 1.0 - (damage_num.elapsed_time / damage_num.lifetime)
             alpha = int(255 * alpha_ratio)
 
             if alpha <= 0:
                 continue
 
-            # 创建带透明度的颜色
+            # Create color with alpha
             color = (*damage_num.color, alpha)
 
-            # 渲染文字
+            # Render text
             text = damage_num.text
 
-            # 根据字体大小创建字体（如果需要）
+            # Create a font for the given size if needed
             font_to_use = self.damage_font
             if hasattr(damage_num, "font_size") and damage_num.font_size != 24:
                 try:
                     if damage_num.font_size not in self.font_dict:
-                        # 如果字体大小不在缓存中，创建新的字体
+                        # If font size is not in cache, create a new font
                         if not self.font_file_path.exists():
                             raise FileNotFoundError(
                                 f"Font file not found: {self.font_file_path}"
@@ -189,28 +189,28 @@ class AnimationSystem(System):
 
             text_surface = font_to_use.render(text, True, damage_num.color)
 
-            # 应用透明度
+            # Apply alpha
             if alpha < 255:
                 text_surface.set_alpha(alpha)
 
-            # 计算屏幕位置
+            # Calculate screen position
             screen_x = damage_num.position[0] + camera_offset[0]
             screen_y = damage_num.position[1] + camera_offset[1]
 
             RMS.draw(text_surface, (screen_x, screen_y))
 
     def get_unit_render_position(self, entity: int) -> Optional[Tuple[float, float]]:
-        """获取单位的渲染位置（考虑移动和攻击动画）"""
+        """Get the render position of a unit (accounting for movement and attack animations)"""
         pos = self.world.get_component(entity, HexPosition)
         if not pos:
             return None
 
-        # 优先检查攻击动画
+        # Check attack animation first
         attack_anim = self.world.get_component(entity, AttackAnimation)
         if attack_anim and attack_anim.is_attacking and attack_anim.current_render_pos:
             return attack_anim.current_render_pos
 
-        # 检查移动动画
+        # Check movement animation
         move_anim = self.world.get_component(entity, MovementAnimation)
         if (
             not move_anim
@@ -218,10 +218,10 @@ class AnimationSystem(System):
             or not move_anim.start_pixel_pos
             or not move_anim.target_pixel_pos
         ):
-            # 没有动画，返回静态位置
+            # No animation: return static position
             return self.hex_converter.hex_to_pixel(pos.col, pos.row)
 
-        # 插值计算当前渲染位置
+        # Interpolate current render position
         start_x, start_y = move_anim.start_pixel_pos
         target_x, target_y = move_anim.target_pixel_pos
 
@@ -231,7 +231,7 @@ class AnimationSystem(System):
         return (current_x, current_y)
 
     def start_unit_movement(self, entity: int, path: list):
-        """开始单位移动动画"""
+        """Start unit movement animation"""
         if not path or len(path) < 2:
             return
 
@@ -239,38 +239,38 @@ class AnimationSystem(System):
         if not pos:
             return
 
-        # 获取或创建移动动画组件
+        # Get or create movement animation component
         anim = self.world.get_component(entity, MovementAnimation)
         if not anim:
             anim = MovementAnimation()
             self.world.add_component(entity, anim)
 
-        # 设置路径（跳过起始点）
-        anim.path = path[1:]  # 跳过当前位置
+        # Set path (skip the starting position)
+        anim.path = path[1:]  # skip current position
         anim.current_target_index = 0
         anim.progress = 0.0
         anim.is_moving = True
 
-        # 设置第一段移动
+        # Set up the first movement segment
         self._setup_movement_segment(anim, pos)
 
     def start_attack_animation(
         self, attacker_entity: int, target_entity: int, attack_type: str = "melee"
     ):
-        """开始攻击动画"""
+        """Start an attack animation."""
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
         target_pos = self.world.get_component(target_entity, HexPosition)
 
         if not attacker_pos or not target_pos:
             return
 
-        # 获取或创建攻击动画组件
+        # Get or create attack animation component
         anim = self.world.get_component(attacker_entity, AttackAnimation)
         if not anim:
             anim = AttackAnimation()
             self.world.add_component(attacker_entity, anim)
 
-        # 设置目标位置
+        # Set target position
         anim.target_position = (target_pos.col, target_pos.row)
         anim.attack_type = attack_type
         anim.is_attacking = True
@@ -279,7 +279,7 @@ class AnimationSystem(System):
         anim.show_aim_line = False
         anim.aim_line_alpha = 0.0
 
-        # 计算世界像素坐标
+        # Compute world pixel coordinates
         start_x, start_y = self.hex_converter.hex_to_pixel(
             attacker_pos.col, attacker_pos.row
         )
@@ -291,32 +291,32 @@ class AnimationSystem(System):
         anim.target_pixel_pos = (target_x, target_y)
         anim.current_render_pos = (start_x, start_y)
 
-        # 根据攻击类型调整动画参数
+        # Tune animation parameters based on attack type
         if attack_type == "ranged":
-            anim.speed = 5.0  # 远程攻击稍慢
+            anim.speed = 5.0  # ranged attacks are slightly slower
             anim.total_duration = 1.0
             anim.prepare_ratio = 0.15
-            anim.aim_ratio = 0.25  # 更长的瞄准时间
+            anim.aim_ratio = 0.25  # longer aim phase
             anim.strike_ratio = 0.45
             anim.return_ratio = 0.15
-            anim.aim_line_color = (255, 100, 100)  # 红色瞄准线
+            anim.aim_line_color = (255, 100, 100)  # red aim line
         else:  # melee
             anim.speed = 8.0
             anim.total_duration = 0.8
             anim.prepare_ratio = 0.2
-            anim.aim_ratio = 0.15  # 较短的瞄准时间
+            anim.aim_ratio = 0.15  # shorter aim phase
             anim.strike_ratio = 0.45
             anim.return_ratio = 0.2
-            anim.aim_line_color = (255, 255, 100)  # 黄色瞄准线
+            anim.aim_line_color = (255, 255, 100)  # yellow aim line
 
-        # 重置投射物创建标志
+        # Reset projectile-created flag
         if hasattr(anim, "_projectile_created"):
             delattr(anim, "_projectile_created")
 
     def create_attack_effect(
         self, world_pos: Tuple[float, float], effect_type: str = "slash"
     ):
-        """创建攻击特效"""
+        """Create an attack visual effect."""
         entity = self.world.create_entity()
 
         effect = EffectAnimation(
@@ -333,7 +333,7 @@ class AnimationSystem(System):
         self.world.add_component(entity, effect)
 
     def _update_attack_animations(self, delta_time: float):
-        """更新攻击动画"""
+        """Update all active attack animations."""
         entities_to_complete = []
 
         for entity in (
@@ -345,11 +345,11 @@ class AnimationSystem(System):
             if not pos or not anim or not anim.is_attacking:
                 continue
 
-            # 更新动画进度
+            # Advance animation progress
             anim.progress += anim.speed * delta_time
 
             if anim.progress >= anim.total_duration:
-                # 攻击动画完成
+                # Attack animation complete
                 anim.is_attacking = False
                 anim.progress = 0.0
                 anim.phase = "prepare"
@@ -357,67 +357,67 @@ class AnimationSystem(System):
                 entities_to_complete.append(entity)
                 continue
 
-            # 计算当前阶段和在该阶段的进度
+            # Determine current phase and phase-relative progress
             self._update_attack_phase(anim)
 
-        # 移除完成的攻击动画组件
+        # Remove completed attack animation components
         for entity in entities_to_complete:
             if self.world.has_component(entity, AttackAnimation):
                 self.world.remove_component(entity, AttackAnimation)
 
     def _update_attack_phase(self, anim: AttackAnimation):
-        """更新攻击动画的阶段和位置"""
+        """Update the current attack animation phase and rendered position."""
         progress_ratio = anim.progress / anim.total_duration
 
         if progress_ratio <= anim.prepare_ratio:
-            # 准备阶段：轻微向目标移动
+            # Prepare phase: slight forward movement toward target
             anim.phase = "prepare"
             phase_progress = progress_ratio / anim.prepare_ratio
             if anim.attack_type == "melee":
-                self._calculate_attack_position(anim, phase_progress * 0.1)  # 轻微移动
+                self._calculate_attack_position(anim, phase_progress * 0.1)  # slight shift
             else:
-                # 远程攻击不移动，只是准备姿态
+                # Ranged attack: no movement, just ready stance
                 self._calculate_attack_position(anim, 0)
             anim.show_aim_line = False
 
         elif progress_ratio <= anim.prepare_ratio + anim.aim_ratio:
-            # 瞄准阶段：显示攻击指示线
+            # Aim phase: show attack indicator line
             anim.phase = "aim"
             aim_start = anim.prepare_ratio
             phase_progress = (progress_ratio - aim_start) / anim.aim_ratio
 
-            # 显示瞄准线，透明度渐增
+            # Show aim line with increasing opacity
             anim.show_aim_line = True
             anim.aim_line_alpha = min(1.0, phase_progress * 2.0)
 
             if anim.attack_type == "melee":
-                self._calculate_attack_position(anim, 0.1)  # 保持准备位置
+                self._calculate_attack_position(anim, 0.1)  # hold prepare position
             else:
                 self._calculate_attack_position(anim, 0)
 
         elif progress_ratio <= anim.prepare_ratio + anim.aim_ratio + anim.strike_ratio:
-            # 打击/射击阶段
+            # Strike/shoot phase
             anim.phase = "strike" if anim.attack_type == "melee" else "shoot"
             strike_start = anim.prepare_ratio + anim.aim_ratio
             phase_progress = (progress_ratio - strike_start) / anim.strike_ratio
 
-            anim.show_aim_line = False  # 隐藏瞄准线
+            anim.show_aim_line = False  # hide aim line
 
             if anim.attack_type == "melee":
-                # 近战：快速冲向目标
+                # Melee: rush toward the target
                 eased_progress = self._ease_out_back(phase_progress)
                 self._calculate_attack_position(
                     anim, 0.1 + eased_progress * 0.7
-                )  # 从10%到80%
+                )  # from 10% to 80%
             else:
-                # 远程：创建投射物并保持位置
+                # Ranged: spawn projectile and hold position
                 if phase_progress == 0 or not hasattr(anim, "_projectile_created"):
                     self._create_projectile(anim)
                     anim._projectile_created = True
                 self._calculate_attack_position(anim, 0)
 
         else:
-            # 返回阶段：回到原位
+            # Return phase: return to original position
             anim.phase = "return"
             return_start = anim.prepare_ratio + anim.aim_ratio + anim.strike_ratio
             phase_progress = (progress_ratio - return_start) / anim.return_ratio
@@ -425,40 +425,40 @@ class AnimationSystem(System):
             anim.show_aim_line = False
 
             if anim.attack_type == "melee":
-                # 使用缓动函数使返回更平滑
+                # Use easing for a smoother return
                 eased_progress = self._ease_in_out(phase_progress)
                 self._calculate_attack_position(
                     anim, 0.8 - eased_progress * 0.8
-                )  # 从80%回到0%
+                )  # from 80% back to 0%
             else:
                 self._calculate_attack_position(anim, 0)
 
     def _calculate_attack_position(self, anim: AttackAnimation, progress: float):
-        """计算攻击动画的当前位置"""
+        """Calculate the current rendered position for the attack animation."""
         if not anim.start_pixel_pos or not anim.target_pixel_pos:
             return
 
         start_x, start_y = anim.start_pixel_pos
         target_x, target_y = anim.target_pixel_pos
 
-        # 根据进度插值计算位置
+        # Interpolate position based on progress
         current_x = start_x + (target_x - start_x) * progress
         current_y = start_y + (target_y - start_y) * progress
 
         anim.current_render_pos = (current_x, current_y)
 
     def _ease_out_back(self, t: float) -> float:
-        """回弹缓动函数（适合打击效果）"""
+        """Overshoot/bounce ease-out (well-suited for strike impact feel)."""
         c1 = 1.70158
         c3 = c1 + 1
         return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2)
 
     def _ease_in_out(self, t: float) -> float:
-        """平滑缓动函数"""
+        """Smooth ease-in-out (SmoothStep)."""
         return t * t * (3.0 - 2.0 * t)
 
     def _update_effect_animations(self, delta_time: float):
-        """更新特效动画"""
+        """Update all active effect animations."""
         entities_to_remove = []
 
         for entity in self.world.query().with_all(EffectAnimation).entities():
@@ -472,12 +472,12 @@ class AnimationSystem(System):
             if effect.elapsed_time >= effect.duration:
                 entities_to_remove.append(entity)
 
-        # 移除完成的特效
+        # Remove completed effects
         for entity in entities_to_remove:
             self.world.destroy_entity(entity)
 
     def _update_projectile_animations(self, delta_time: float):
-        """更新投射物动画"""
+        """Update all active projectile animations."""
         entities_to_remove = []
 
         for entity in self.world.query().with_all(ProjectileAnimation).entities():
@@ -485,7 +485,7 @@ class AnimationSystem(System):
             if not projectile or not projectile.is_flying:
                 continue
 
-            # 计算飞行距离
+            # Compute flight distance
             start_x, start_y = projectile.start_pos
             target_x, target_y = projectile.target_pos
             total_distance = (
@@ -496,45 +496,45 @@ class AnimationSystem(System):
                 entities_to_remove.append(entity)
                 continue
 
-            # 更新飞行进度
+            # Advance flight progress
             distance_per_second = projectile.flight_speed
             progress_per_second = distance_per_second / total_distance
             projectile.flight_progress += progress_per_second * delta_time
 
             if projectile.flight_progress >= 1.0:
-                # 投射物到达目标
+                # Projectile reached target
                 projectile.is_flying = False
                 entities_to_remove.append(entity)
                 continue
 
-            # 计算当前位置（带抛物线效果）
+            # Calculate current position with arc trajectory
             self._calculate_projectile_position(projectile)
 
-        # 移除完成的投射物
+        # Remove completed projectiles
         for entity in entities_to_remove:
             self.world.destroy_entity(entity)
 
     def _calculate_projectile_position(self, projectile: ProjectileAnimation):
-        """计算投射物的当前位置（包含抛物线效果）"""
+        """Calculate the current position of a projectile with arc trajectory."""
         start_x, start_y = projectile.start_pos
         target_x, target_y = projectile.target_pos
         progress = projectile.flight_progress
 
-        # 线性插值基础位置
+        # Linear interpolation base position
         current_x = start_x + (target_x - start_x) * progress
         current_y = start_y + (target_y - start_y) * progress
 
-        # 添加抛物线效果（在飞行中点达到最高）
+        # Apply arc offset (peaks at mid-flight)
         arc_offset = projectile.arc_height * 4 * progress * (1 - progress)
         current_y -= arc_offset
 
         projectile.current_pos = (current_x, current_y)
 
-        # 计算旋转角度（面向飞行方向）
+        # Calculate rotation angle to face the direction of flight
         import math
 
         if progress < 1.0:
-            # 计算下一帧的位置来确定方向
+            # Sample a slightly ahead position to determine heading
             next_progress = min(1.0, progress + 0.01)
             next_x = start_x + (target_x - start_x) * next_progress
             next_y = (
@@ -548,21 +548,21 @@ class AnimationSystem(System):
             projectile.rotation = math.atan2(dy, dx)
 
     def _create_projectile(self, attack_anim: AttackAnimation):
-        """创建投射物实体"""
+        """Create a projectile entity for a ranged attack."""
         if not attack_anim.start_pixel_pos or not attack_anim.target_pixel_pos:
             return
 
         entity = self.world.create_entity()
 
-        # 根据攻击类型确定投射物属性
+        # Determine projectile properties based on attack type
         if attack_anim.attack_type == "ranged":
             projectile_type = "arrow"
-            color = (139, 69, 19)  # 棕色箭矢
+            color = (139, 69, 19)  # brown arrow
             arc_height = 30.0
             speed = 600.0
         else:
             projectile_type = "bolt"
-            color = (192, 192, 192)  # 银色弩箭
+            color = (192, 192, 192)  # silver bolt
             arc_height = 20.0
             speed = 800.0
 
@@ -583,60 +583,60 @@ class AnimationSystem(System):
         self.world.add_component(entity, projectile)
 
     def create_damage_number(self, damage: int, world_pos: Tuple[float, float]):
-        """创建伤害数字显示"""
+        """Spawn a floating damage number at world_pos."""
         entity = self.world.create_entity()
 
         damage_num = DamageNumber(
             text=str(damage),
             position=world_pos,
             lifetime=2.0,
-            velocity=(0, -50),  # 向上移动
-            color=(255, 0, 0) if damage > 0 else (0, 255, 0),  # 红色伤害，绿色治疗
+            velocity=(0, -50),  # float upward
+            color=(255, 0, 0) if damage > 0 else (0, 255, 0),  # red for damage, green for healing
             font_size=24,
         )
 
         self.world.add_component(entity, damage_num)
 
     def create_miss_indicator(self, world_pos: Tuple[float, float]):
-        """创建未命中指示"""
+        """Spawn a floating MISS indicator at world_pos."""
         entity = self.world.create_entity()
 
         miss_indicator = DamageNumber(
             text="MISS",
             position=world_pos,
             lifetime=1.5,
-            velocity=(0, -30),  # 稍慢的向上移动
-            color=(128, 128, 128),  # 灰色
+            velocity=(0, -30),  # float upward slowly
+            color=(128, 128, 128),  # grey
             font_size=20,
         )
 
         self.world.add_component(entity, miss_indicator)
 
     def create_crit_indicator(self, world_pos: Tuple[float, float]):
-        """创建暴击指示"""
+        """Spawn a floating CRIT! indicator at world_pos."""
         entity = self.world.create_entity()
 
         crit_indicator = DamageNumber(
             text="CRIT!",
             position=world_pos,
             lifetime=2.5,
-            velocity=(0, -60),  # 更快的向上移动
-            color=(255, 255, 0),  # 黄色
+            velocity=(0, -60),  # float upward quickly
+            color=(255, 255, 0),  # yellow
             font_size=28,
         )
 
         self.world.add_component(entity, crit_indicator)
 
     def create_healing_number(self, healing: int, world_pos: Tuple[float, float]):
-        """创建治疗数字显示"""
+        """Spawn a floating healing number at world_pos."""
         entity = self.world.create_entity()
 
         healing_num = DamageNumber(
             text=f"+{healing}",
             position=world_pos,
             lifetime=2.0,
-            velocity=(0, -40),  # 向上移动
-            color=(0, 255, 0),  # 绿色治疗
+            velocity=(0, -40),  # float upward
+            color=(0, 255, 0),  # green healing
             font_size=24,
         )
 
@@ -651,7 +651,7 @@ class AnimationSystem(System):
         lifetime: float = 2.0,
         velocity: Tuple[float, float] = (0, -50),
     ):
-        """创建通用文本指示器"""
+        """Spawn a generic floating text indicator at world_pos."""
         entity = self.world.create_entity()
 
         text_indicator = DamageNumber(

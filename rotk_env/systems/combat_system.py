@@ -94,7 +94,7 @@ class CombatSystem(System):
         target_status = self.world.get_component(target_entity, UnitStatus)
         target_unit = self.world.get_component(target_entity, Unit)
 
-        # 记录战斗前状态
+        # Snapshot pre-battle state
         pre_battle_state = {
             "attacker_count": attacker_count.current_count,
             "target_count": target_count.current_count,
@@ -135,7 +135,7 @@ class CombatSystem(System):
             "damage_dealt": 0,
             "casualties_inflicted": 0,
             "target_destroyed": False,
-            "attacker_casualties": 0,  # 简化版本，暂时不实现反击
+            "attacker_casualties": 0,  # simplified: counter-attack not yet implemented
             "terrain_effects": {
                 "attacker_terrain_bonus": attacker_terrain_bonus,
                 "target_terrain_defense": target_terrain_defense,
@@ -235,7 +235,7 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
-        # attacker_combat.has_attacked = True  # 移除单次攻击限制，允许多次攻击
+        # attacker_combat.has_attacked = True  # removed single-attack restriction; multiple attacks allowed
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -382,7 +382,7 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
-        # attacker_combat.has_attacked = True  # 移除单次攻击限制，允许多次攻击
+        # attacker_combat.has_attacked = True  # removed single-attack restriction; multiple attacks allowed
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -557,7 +557,7 @@ class CombatSystem(System):
 
         # Infantry shield wall: +1 defense when attacked by ranged (simplified)
         if target_unit.unit_type == UnitType.INFANTRY:
-            # 这里需要判断攻击者是否为远程，简化处理
+            # Determining whether the attacker is ranged is skipped here for simplicity
             defense += 1
 
         # Terrain defense modifier
@@ -599,7 +599,7 @@ class CombatSystem(System):
 
     def _handle_combat_effects(self, attacker_entity: int, target_entity: int):
         """Handle post-combat effects"""
-        # 更新状态为战斗状态
+        # Reset unit status to normal after combat
         for entity in [attacker_entity, target_entity]:
             status = self.world.get_component(entity, UnitStatus)
             if status:

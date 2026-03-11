@@ -1,5 +1,5 @@
 """
-单位行动面板渲染系统
+Unit Action Panel Render System
 """
 
 import pygame
@@ -18,23 +18,23 @@ from ..prefabs.config import GameConfig, Faction, ActionType
 
 
 class UnitActionPanelSystem(System):
-    """单位行动面板系统"""
+    """Unit action panel system"""
 
     def __init__(self):
-        super().__init__(priority=4)  # 在UI渲染系统之前
+        super().__init__(priority=4)  # Render before the UI system
         self.font = None
         self.small_font = None
         self.title_font = None
 
-        # 初始化字体
+        # Initialize fonts
         pygame.font.init()
         font_path = Path("rotk_env/assets/fonts/sh.otf")
         self.font = pygame.font.Font(font_path, 18)
         self.small_font = pygame.font.Font(font_path, 14)
         self.title_font = pygame.font.Font(font_path, 20)
 
-        # 颜色定义
-        self.panel_bg_color = (40, 40, 50, 180)  # 半透明深色背景
+        # Color definitions
+        self.panel_bg_color = (40, 40, 50, 180)  # Semi-transparent dark background
         self.button_bg_color = (60, 60, 70)
         self.button_hover_color = (80, 80, 90)
         self.button_disabled_color = (30, 30, 35)
@@ -42,7 +42,7 @@ class UnitActionPanelSystem(System):
         self.text_disabled_color = (128, 128, 128)
         self.border_color = (100, 100, 110)
 
-        # 阵营颜色
+        # Faction colors
         self.faction_colors = {
             Faction.WEI: (100, 150, 255),
             Faction.SHU: (255, 100, 100),
@@ -50,68 +50,68 @@ class UnitActionPanelSystem(System):
         }
 
     def initialize(self, world) -> None:
-        """初始化系统"""
+        """Initialize the system"""
         self.world = world
 
-        # 初始化单位行动面板
+        # Initialize unit action panel
         action_panel = UnitActionPanel()
         self.world.add_singleton_component(action_panel)
 
-        # 初始化确认对话框
+        # Initialize confirmation dialog
         confirm_dialog = ActionConfirmDialog()
         self.world.add_singleton_component(confirm_dialog)
 
     def subscribe_events(self):
-        """订阅事件"""
+        """Subscribe to events"""
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新系统"""
+        """Update the system"""
         ui_state = self.world.get_singleton_component(UIState)
         action_panel = self.world.get_singleton_component(UnitActionPanel)
 
         if not ui_state or not action_panel:
             return
 
-        # 检查是否需要更新面板
+        # Check if panel needs updating
         if ui_state.selected_unit != action_panel.selected_unit:
             if ui_state.selected_unit:
                 self._update_action_panel(ui_state.selected_unit, action_panel)
             else:
                 action_panel.clear()
 
-        # 渲染面板
+        # Render panel
         if action_panel.visible:
             self._render_action_panel(action_panel)
 
-        # 渲染确认对话框
+        # Render confirmation dialog
         confirm_dialog = self.world.get_singleton_component(ActionConfirmDialog)
         if confirm_dialog and confirm_dialog.visible:
             self._render_confirm_dialog(confirm_dialog)
 
     def _update_action_panel(self, unit_entity: int, action_panel: UnitActionPanel):
-        """更新行动面板"""
-        # 检查单位是否属于当前玩家
+        """Update the action panel for the given unit"""
+        # Check if unit belongs to the current player
         if not self._is_player_unit(unit_entity):
             action_panel.clear()
             return
 
-        # 更新单位信息和可用行动
+        # Update unit info and available actions
         action_panel.update_unit_info(unit_entity, self.world)
         action_panel.update_available_actions(unit_entity, self.world)
         action_panel.visible = True
 
     def _is_player_unit(self, unit_entity: int) -> bool:
-        """检查单位是否属于人类玩家"""
+        """Check if unit belongs to a human player"""
         unit = self.world.get_component(unit_entity, Unit)
         if not unit:
             return False
 
-        # 查找该阵营的玩家
+        # Find the player for this faction
         for entity in self.world.query().with_component(Player).entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == unit.faction:
-                # 检查是否是人类玩家（不是AI控制）
+                # Check if human player (not AI-controlled)
                 from ..components import AIControlled
 
                 return not self.world.has_component(entity, AIControlled)
@@ -119,14 +119,14 @@ class UnitActionPanelSystem(System):
         return False
 
     def _render_action_panel(self, action_panel: UnitActionPanel):
-        """渲染行动面板"""
-        # 创建面板背景
+        """Render the action panel"""
+        # Create panel background
         panel_surface = pygame.Surface(
             (action_panel.width, action_panel.height), pygame.SRCALPHA
         )
         panel_surface.fill(self.panel_bg_color)
 
-        # 绘制边框
+        # Draw border
         pygame.draw.rect(
             panel_surface,
             self.border_color,
@@ -136,17 +136,17 @@ class UnitActionPanelSystem(System):
 
         y_offset = 10
 
-        # 渲染标题
-        title_text = self.title_font.render("单位行动", True, self.text_color)
+        # Render title
+        title_text = self.title_font.render("Unit Actions", True, self.text_color)
         panel_surface.blit(title_text, (10, y_offset))
         y_offset += 30
 
-        # 渲染单位信息
+        # Render unit info
         y_offset = self._render_unit_info(
             panel_surface, action_panel.unit_info, y_offset
         )
 
-        # 分隔线
+        # Separator line
         pygame.draw.line(
             panel_surface,
             self.border_color,
@@ -155,61 +155,61 @@ class UnitActionPanelSystem(System):
         )
         y_offset += 10
 
-        # 渲染行动按钮
+        # Render action buttons
         self._render_action_buttons(
             panel_surface, action_panel.available_actions, y_offset
         )
 
-        # 将面板绘制到屏幕
+        # Draw panel to screen
         RMS.draw(panel_surface, (action_panel.x, action_panel.y))
 
     def _render_unit_info(self, surface, unit_info, y_offset):
-        """渲染单位信息"""
+        """Render unit information section"""
         info_items = [
-            ("名称", unit_info.get("name", "未知")),
-            ("阵营", unit_info.get("faction", "未知")),
-            ("类型", unit_info.get("type", "未知")),
-            ("位置", unit_info.get("position", "未知")),
-            ("兵力", unit_info.get("soldiers", "0/0")),
-            ("士气", unit_info.get("morale", "100.0%")),
-            ("行动力", unit_info.get("action_points", "0/0")),
-            ("移动力", unit_info.get("movement", "0/0")),
-            ("攻击力", unit_info.get("attack", 0)),
-            ("防御力", unit_info.get("defense", 0)),
-            ("射程", unit_info.get("range", 1)),
+            ("Name", unit_info.get("name", "Unknown")),
+            ("Faction", unit_info.get("faction", "Unknown")),
+            ("Type", unit_info.get("type", "Unknown")),
+            ("Position", unit_info.get("position", "Unknown")),
+            ("Troops", unit_info.get("soldiers", "0/0")),
+            ("Morale", unit_info.get("morale", "100.0%")),
+            ("Action Pts", unit_info.get("action_points", "0/0")),
+            ("Move Pts", unit_info.get("movement", "0/0")),
+            ("Attack", unit_info.get("attack", 0)),
+            ("Defense", unit_info.get("defense", 0)),
+            ("Range", unit_info.get("range", 1)),
         ]
 
         for label, value in info_items:
-            # 标签
+            # Label
             label_text = self.small_font.render(f"{label}:", True, self.text_color)
             surface.blit(label_text, (10, y_offset))
 
-            # 值
+            # Value
             value_text = self.small_font.render(str(value), True, self.text_color)
             surface.blit(value_text, (100, y_offset))
 
             y_offset += 20
 
-        # 显示状态
+        # Display status flags
         if unit_info.get("is_decimated"):
-            status_text = self.small_font.render("状态: 残破", True, (255, 100, 100))
+            status_text = self.small_font.render("Status: Decimated", True, (255, 100, 100))
             surface.blit(status_text, (10, y_offset))
             y_offset += 20
 
         if unit_info.get("has_moved"):
-            status_text = self.small_font.render("状态: 已移动", True, (255, 200, 100))
+            status_text = self.small_font.render("Status: Moved", True, (255, 200, 100))
             surface.blit(status_text, (10, y_offset))
             y_offset += 20
 
         if unit_info.get("has_attacked"):
-            status_text = self.small_font.render("状态: 已攻击", True, (255, 200, 100))
+            status_text = self.small_font.render("Status: Attacked", True, (255, 200, 100))
             surface.blit(status_text, (10, y_offset))
             y_offset += 20
 
         return y_offset + 10
 
     def _render_action_buttons(self, surface, actions, y_offset):
-        """渲染行动按钮"""
+        """Render action buttons"""
         button_height = 35
         button_margin = 5
 
@@ -219,28 +219,28 @@ class UnitActionPanelSystem(System):
                 10, button_y, surface.get_width() - 20, button_height
             )
 
-            # 按钮背景色
+            # Button background color
             bg_color = (
                 self.button_bg_color if action.enabled else self.button_disabled_color
             )
             pygame.draw.rect(surface, bg_color, button_rect)
             pygame.draw.rect(surface, self.border_color, button_rect, 1)
 
-            # 按钮文本
+            # Button text
             text_color = self.text_color if action.enabled else self.text_disabled_color
 
-            # 主要标签
+            # Main label
             label_text = self.font.render(action.label, True, text_color)
             surface.blit(label_text, (button_rect.x + 5, button_rect.y + 2))
 
-            # 热键提示
+            # Hotkey hint
             if action.hotkey:
                 hotkey_text = self.small_font.render(
                     f"[{action.hotkey}]", True, text_color
                 )
                 surface.blit(hotkey_text, (button_rect.right - 35, button_rect.y + 2))
 
-            # 消耗描述
+            # Cost description
             if action.cost_description:
                 cost_text = self.small_font.render(
                     action.cost_description, True, text_color
@@ -248,27 +248,27 @@ class UnitActionPanelSystem(System):
                 surface.blit(cost_text, (button_rect.x + 5, button_rect.y + 18))
 
     def _render_confirm_dialog(self, confirm_dialog: ActionConfirmDialog):
-        """渲染确认对话框"""
+        """Render the confirmation dialog"""
         dialog_width = 300
         dialog_height = 150
         dialog_x = (GameConfig.WINDOW_WIDTH - dialog_width) // 2
         dialog_y = (GameConfig.WINDOW_HEIGHT - dialog_height) // 2
 
-        # 创建对话框背景
+        # Create dialog background
         dialog_surface = pygame.Surface((dialog_width, dialog_height), pygame.SRCALPHA)
         dialog_surface.fill((20, 20, 30, 220))
 
-        # 绘制边框
+        # Draw border
         pygame.draw.rect(
             dialog_surface, self.border_color, (0, 0, dialog_width, dialog_height), 3
         )
 
-        # 标题
-        title_text = self.title_font.render("确认行动", True, self.text_color)
+        # Title
+        title_text = self.title_font.render("Confirm Action", True, self.text_color)
         title_rect = title_text.get_rect(centerx=dialog_width // 2, y=10)
         dialog_surface.blit(title_text, title_rect)
 
-        # 消息文本
+        # Message text
         message_lines = self._wrap_text(
             confirm_dialog.message, self.font, dialog_width - 20
         )
@@ -279,12 +279,12 @@ class UnitActionPanelSystem(System):
             dialog_surface.blit(line_text, line_rect)
             y_offset += 25
 
-        # 按钮
+        # Buttons
         button_width = 80
         button_height = 30
         button_y = dialog_height - 40
 
-        # 确认按钮
+        # Confirm button
         confirm_rect = pygame.Rect(
             dialog_width // 2 - button_width - 10, button_y, button_width, button_height
         )
@@ -294,7 +294,7 @@ class UnitActionPanelSystem(System):
         confirm_text_rect = confirm_text.get_rect(center=confirm_rect.center)
         dialog_surface.blit(confirm_text, confirm_text_rect)
 
-        # 取消按钮
+        # Cancel button
         cancel_rect = pygame.Rect(
             dialog_width // 2 + 10, button_y, button_width, button_height
         )
@@ -304,11 +304,11 @@ class UnitActionPanelSystem(System):
         cancel_text_rect = cancel_text.get_rect(center=cancel_rect.center)
         dialog_surface.blit(cancel_text, cancel_text_rect)
 
-        # 将对话框绘制到屏幕
+        # Draw dialog to screen
         RMS.draw(dialog_surface, (dialog_x, dialog_y))
 
     def _wrap_text(self, text, font, max_width):
-        """文本换行"""
+        """Wrap text to fit within a maximum pixel width"""
         words = text.split(" ")
         lines = []
         current_line = ""
@@ -330,26 +330,26 @@ class UnitActionPanelSystem(System):
         return lines
 
     def handle_panel_click(self, mouse_pos):
-        """处理面板点击"""
+        """Handle panel click events"""
         action_panel = self.world.get_singleton_component(UnitActionPanel)
         if not action_panel or not action_panel.visible:
             return False
 
-        # 检查是否点击在面板内
+        # Check if click is within the panel
         panel_rect = pygame.Rect(
             action_panel.x, action_panel.y, action_panel.width, action_panel.height
         )
         if not panel_rect.collidepoint(mouse_pos):
             return False
 
-        # 计算点击的按钮
-        button_start_y = action_panel.y + 200  # 估算按钮开始位置
+        # Determine which button was clicked
+        button_start_y = action_panel.y + 200  # Estimated button area start y position
         button_height = 35
         button_margin = 5
 
         relative_y = mouse_pos[1] - button_start_y
         if relative_y < 0:
-            return True  # 点击在面板上但不在按钮区域
+            return True  # Click is on the panel but above the button area
 
         button_index = relative_y // (button_height + button_margin)
 
@@ -361,11 +361,11 @@ class UnitActionPanelSystem(System):
         return True
 
     def _execute_action(self, action_type, unit_entity):
-        """执行行动"""
-        # 这里可以触发相应的行动系统
-        print(f"执行行动: {action_type} on unit {unit_entity}")
+        """Execute the specified action"""
+        # Trigger the corresponding action system
+        print(f"Executing action: {action_type} on unit {unit_entity}")
 
-        # 根据行动类型执行不同的逻辑
+        # Dispatch action based on type
         if action_type == ActionType.WAIT:
             self._execute_wait_action(unit_entity)
         elif action_type == ActionType.GARRISON:
@@ -374,28 +374,28 @@ class UnitActionPanelSystem(System):
             self._execute_capture_action(unit_entity)
         elif action_type == ActionType.FORTIFY:
             self._execute_fortify_action(unit_entity)
-        # 移动和攻击需要用户选择目标，在输入系统中处理
+        # Move and attack require target selection; handled by the input system
 
     def _execute_wait_action(self, unit_entity):
-        """执行待命行动"""
+        """Execute wait (standby) action"""
         from ..components import ActionPoints
 
         action_points = self.world.get_component(unit_entity, ActionPoints)
         if action_points and action_points.can_perform_action(ActionType.WAIT):
             action_points.consume_ap(ActionType.WAIT)
-            print(f"单位 {unit_entity} 结束行动")
+            print(f"Unit {unit_entity} ends turn")
 
     def _execute_garrison_action(self, unit_entity):
-        """执行驻扎行动"""
+        """Execute garrison action"""
         from ..components import ActionPoints
 
         action_points = self.world.get_component(unit_entity, ActionPoints)
         if action_points and action_points.can_perform_action(ActionType.GARRISON):
             action_points.consume_ap(ActionType.GARRISON)
-            print(f"单位 {unit_entity} 开始驻扎")
+            print(f"Unit {unit_entity} begins garrisoning")
 
     def _execute_capture_action(self, unit_entity):
-        """执行占领行动"""
+        """Execute capture action"""
         from ..components import HexPosition
 
         position = self.world.get_component(unit_entity, HexPosition)
@@ -407,7 +407,7 @@ class UnitActionPanelSystem(System):
                 )
 
     def _execute_fortify_action(self, unit_entity):
-        """执行工事建设行动"""
+        """Execute fortify (build fortification) action"""
         from ..components import HexPosition
 
         position = self.world.get_component(unit_entity, HexPosition)
@@ -419,7 +419,7 @@ class UnitActionPanelSystem(System):
                 )
 
     def _get_territory_system(self):
-        """获取领土系统"""
+        """Get the TerritorySystem instance"""
         for system in self.world.systems:
             if system.__class__.__name__ == "TerritorySystem":
                 return system

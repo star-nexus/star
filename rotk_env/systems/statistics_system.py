@@ -399,11 +399,11 @@ class StatisticsSystem(System):
         game_state = self.world.get_singleton_component(GameState)
         if game_state:
             if game_state.game_mode.value == "turn_based":
-                # 回合制：显示回合数
+                # Turn-based: display turn number
                 time_display = f"Turn {game_state.turn_number}"
                 return time_display, game_state.turn_number
             else:
-                # 实时制：显示游戏时间
+                # Real-time: display elapsed game time
                 stats = self.world.get_singleton_component(GameStats)
                 if stats:
                     minutes = int(stats.total_game_time // 60)
@@ -413,7 +413,7 @@ class StatisticsSystem(System):
                     time_display = "00:00"
                 return time_display, None
 
-        # 默认回退
+        # Default fallback
         return "00:00", None
 
     def _get_current_turn_number(self) -> Optional[int]:
@@ -754,13 +754,13 @@ class StatisticsSystem(System):
                     f"{unit.faction.value}'s {unit.unit_type.value} died in battle"
                 )
 
-            # 根据游戏模式选择时间显示方式
+            # Choose time display based on game mode
             if game_state and game_state.game_mode.value == "turn_based":
-                # 回合制：显示回合数
+                # Turn-based: display turn number
                 time_display = f"Turn {game_state.turn_number}"
                 turn_number = game_state.turn_number
             else:
-                # 实时制：显示游戏时间
+                # Real-time: display elapsed game time
                 stats = self.world.get_singleton_component(GameStats)
                 if stats:
                     minutes = int(stats.total_game_time // 60)

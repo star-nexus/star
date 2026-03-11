@@ -350,7 +350,7 @@ class InputHandlingSystem(System):
 
     def _toggle_hex_orientation(self):
         """Toggle hex orientation in MapRenderSystem and mirror locally."""
-        # 获取地图渲染系统
+        # Get MapRenderSystem
         map_render_system = self._get_map_render_system()
         if map_render_system:
             map_render_system.toggle_hex_orientation()

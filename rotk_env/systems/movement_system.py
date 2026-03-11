@@ -13,7 +13,7 @@ from typing import Set, Tuple
 from framework import System, World
 from ..components import (
     HexPosition,
-    MovementPoints,  # 使用新的多层次资源组件
+    MovementPoints,  # uses the multi-tier resource component
     Unit,
     UnitCount,
     MapData,

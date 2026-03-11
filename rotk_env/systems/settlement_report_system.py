@@ -459,7 +459,7 @@ class SettlementReportSystem(System):
         enable_thinking_by_faction = {}
         action_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
         interaction_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
-        # provider 信息（用于文件名等）
+        # Provider info (used for file names, etc.)
         providers: Dict[str, Optional[str]] = {"wei": None, "shu": None, "wu": None}
 
         if registry:
@@ -472,7 +472,7 @@ class SettlementReportSystem(System):
                     agent_endpoints[faction] = agent_info.base_url
                     # capture enable_thinking flag
                     enable_thinking_by_faction[faction] = agent_info.enable_thinking
-                    # provider 记录下来，用于后续文件名生成
+                    # Record provider for file name generation
                     providers[faction] = agent_info.provider
                     print(f"[SettlementReport] ✅ {faction}: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
                 else:
@@ -555,20 +555,20 @@ class SettlementReportSystem(System):
             "action_counts": action_counts,
             "interaction_counts": interaction_counts,
             "llm_api_stats": llm_api_stats,
-            # 参与对局的 provider 信息以及用于文件名的简短 slug
+            # Provider info for each faction and a short slug used in file names
             "providers": providers,
             "providers_slug": self._build_providers_slug(providers),
         }
     
     def _build_providers_slug(self, providers: Dict[str, Optional[str]]) -> str:
-        """根据各阵营 provider 构造用于文件名的 slug。
+        """Build a filename-safe slug from faction provider names.
         
-        规则：
-        - 顺序固定为 wei、shu、wu（三方混战时依次追加）
-        - 跳过为空或 'unknown' 的 provider
-        - 全部转小写，并将非字母数字字符替换为 '-'
-        - 使用 '-vs-' 连接，如：'openai-vs-deepseek'、'openai-vs-deepseek-vs-grok'
-        - 如果最终没有任何有效 provider，则回退为 'agents'
+        Rules:
+        - Faction order is fixed: wei, shu, wu (appended in order for three-way matches).
+        - Skip providers that are empty or 'unknown'.
+        - Convert to lowercase and replace non-alphanumeric characters with '-'.
+        - Join with '-vs-', e.g. 'openai-vs-deepseek' or 'openai-vs-deepseek-vs-grok'.
+        - Fall back to 'agents' if no valid providers remain.
         """
         ordered_factions = ["wei", "shu", "wu"]
         name_parts: List[str] = []
@@ -580,10 +580,10 @@ class SettlementReportSystem(System):
             name = str(raw).strip()
             if not name:
                 continue
-            # 忽略 'unknown'（大小写不敏感）
+            # Skip 'unknown' (case-insensitive)
             if name.lower() == "unknown":
                 continue
-            # 构造文件名安全的段：只保留字母数字，其余替换为 '-'
+            # Build a filename-safe segment: keep alphanumeric, replace others with '-'
             safe_chars = []
             for ch in name.lower():
                 if ch.isalnum():
@@ -600,25 +600,25 @@ class SettlementReportSystem(System):
         return "-vs-".join(name_parts)
     
     def _get_map_type(self) -> str:
-        """获取地图类型"""
-        # 检查MapSystem的地图类型
+        """Get the map type string."""
+        # Check the MapSystem's symmetry_type
         for system in self.world.systems:
             if system.__class__.__name__ == "MapSystem":
                 symmetry_type = getattr(system, 'symmetry_type', 'unknown')
                 if symmetry_type == "moba":
-                    return "MOBA风格地图"
+                    return "MOBA-style map"
                 elif symmetry_type == "river_split":
-                    return "河流分割对角线竞技地图"
+                    return "River-split diagonal competitive map"
                 elif symmetry_type == "diagonal":
-                    return "对角线对称竞技地图"
+                    return "Diagonal-symmetric competitive map"
                 elif symmetry_type == "square":
-                    return "正方形竞技地图"
+                    return "Square competitive map"
                 elif symmetry_type == "horizontal":
-                    return "水平轴对称竞技地图"
+                    return "Horizontal-axis symmetric competitive map"
                 else:
-                    return f"自定义地图({symmetry_type})"
+                    return f"Custom map ({symmetry_type})"
         
-        return "标准随机地图"
+        return "Standard random map"
     
     def _check_half_win_condition(self, winner_faction: Faction) -> bool:
 
@@ -664,7 +664,7 @@ class SettlementReportSystem(System):
                 json_safe_data = self._force_clean_data(report_data)
             
             # Save to JSON file
-            # 文件名格式：report_<timestamp>_<providers>.json
+            # File name format: report_<timestamp>_<providers>.json
             timestamp = report_data.get("experiment_id", "unknown_time")
             providers_slug = report_data.get("providers_slug")
             if not isinstance(providers_slug, str) or not providers_slug.strip():

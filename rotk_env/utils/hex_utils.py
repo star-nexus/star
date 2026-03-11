@@ -1,6 +1,6 @@
 """
-六边形地图工具模块
-提供六边形坐标系统和地图相关的工具函数
+Hexagonal map utilities.
+Provides hex coordinate system and map-related helper functions.
 """
 
 import math
@@ -9,36 +9,36 @@ from ..prefabs.config import GameConfig, HexOrientation
 
 
 class HexMath:
-    """六边形数学工具类"""
+    """Hexagonal math utilities."""
 
     @staticmethod
     def cube_to_axial(q: int, r: int, s: int) -> Tuple[int, int]:
-        """立方坐标转轴坐标"""
+        """Convert cube coordinates to axial coordinates."""
         return q, r
 
     @staticmethod
     def axial_to_cube(q: int, r: int) -> Tuple[int, int, int]:
-        """轴坐标转立方坐标"""
+        """Convert axial coordinates to cube coordinates."""
         return q, r, -q - r
 
     @staticmethod
     def offset_to_axial(col: int, row: int) -> Tuple[int, int]:
-        """偏移坐标转轴坐标（奇数列偏移）"""
+        """Convert offset coordinates to axial (odd-column offset layout)."""
         q = col
         r = row - (col - (col & 1)) // 2
         return q, r
 
     @staticmethod
     def axial_to_offset(q: int, r: int) -> Tuple[int, int]:
-        """轴坐标转偏移坐标（奇数列偏移）"""
+        """Convert axial coordinates to offset (odd-column offset layout)."""
         col = q
         row = r + (q - (q & 1)) // 2
         return col, row
 
     @staticmethod
     def hex_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
-        """计算两个六边形之间的距离（支持偏移坐标）"""
-        # 如果输入是偏移坐标，先转换为轴坐标
+        """Distance between two hex cells (supports offset coordinates)."""
+        # Convert offset to axial first if input is offset
         q1, r1 = HexMath.offset_to_axial(*pos1)
         q2, r2 = HexMath.offset_to_axial(*pos2)
         s1 = -q1 - r1
@@ -47,26 +47,25 @@ class HexMath:
 
     @staticmethod
     def hex_neighbors(col: int, row: int) -> List[Tuple[int, int]]:
-        """获取六边形的6个邻居（偏移坐标，基于像素坐标推导的正确定义）"""
-        # 奇数列和偶数列的邻居模式不同
-        # 通过像素坐标验证的正确邻居定义
-        if col % 2 == 0:  # 偶数列
+        """Return the 6 neighbors of a hex (offset coords; definition validated via pixel coords)."""
+        # Neighbor pattern differs for even vs odd columns
+        if col % 2 == 0:  # even column
             directions = [
-                (1, -1),  # 右上
-                (0, -1),  # 上
-                (-1, -1),  # 左上
-                (-1, 0),  # 左
-                (0, 1),  # 下
-                (1, 0),  # 右
+                (1, -1),   # top-right
+                (0, -1),   # top
+                (-1, -1),  # top-left
+                (-1, 0),   # left
+                (0, 1),    # bottom
+                (1, 0),    # right
             ]
-        else:  # 奇数列
+        else:  # odd column
             directions = [
-                (1, 0),  # 右
-                (0, -1),  # 上
-                (-1, 0),  # 左
-                (-1, 1),  # 左下
-                (0, 1),  # 下
-                (1, 1),  # 右下
+                (1, 0),    # right
+                (0, -1),   # top
+                (-1, 0),   # left
+                (-1, 1),   # bottom-left
+                (0, 1),    # bottom
+                (1, 1),    # bottom-right
             ]
         return [(col + dc, row + dr) for dc, dr in directions]
 
@@ -74,21 +73,21 @@ class HexMath:
     def hex_ring(
         center_col: int, center_row: int, radius: int
     ) -> List[Tuple[int, int]]:
-        """获取指定半径的六边形环（偏移坐标）"""
+        """Return the hex ring at the given radius (offset coordinates)."""
         if radius == 0:
             return [(center_col, center_row)]
 
-        # 转换为轴坐标进行计算
+        # Convert to axial for computation
         center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
         results = []
         q, r = center_q + radius, center_r - radius
 
-        # 六个方向
+        # Six axial directions
         directions = [(-1, 1), (-1, 0), (0, -1), (1, -1), (1, 0), (0, 1)]
 
         for i, (dq, dr) in enumerate(directions):
             for j in range(radius):
-                # 转换回偏移坐标
+                # Convert back to offset
                 col, row = HexMath.axial_to_offset(q, r)
                 results.append((col, row))
                 q += dq
@@ -100,7 +99,7 @@ class HexMath:
     def hex_spiral(
         center_col: int, center_row: int, radius: int
     ) -> List[Tuple[int, int]]:
-        """获取指定半径内的所有六边形（螺旋顺序，偏移坐标）"""
+        """Return all hexes within the given radius in spiral order (offset coordinates)."""
         results = [(center_col, center_row)]
         for r in range(1, radius + 1):
             results.extend(HexMath.hex_ring(center_col, center_row, r))
@@ -110,7 +109,7 @@ class HexMath:
     def hex_in_range(
         center_col: int, center_row: int, range_val: int
     ) -> Set[Tuple[int, int]]:
-        """获取指定范围内的所有六边形（偏移坐标）"""
+        """Return all hexes within the given range (offset coordinates)."""
         results = set()
         center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
 
@@ -133,8 +132,8 @@ class HexMath:
     def line_of_sight(
         start: Tuple[int, int], end: Tuple[int, int]
     ) -> List[Tuple[int, int]]:
-        """计算两点间的视线路径（偏移坐标）"""
-        # 转换为轴坐标进行计算
+        """Line-of-sight path between two hexes (offset coordinates)."""
+        # Convert to axial for computation
         q1, r1 = HexMath.offset_to_axial(*start)
         q2, r2 = HexMath.offset_to_axial(*end)
 
@@ -147,7 +146,7 @@ class HexMath:
             t = i / distance
             q = int(round(q1 + (q2 - q1) * t))
             r = int(round(r1 + (r2 - r1) * t))
-            # 转换回偏移坐标
+            # Convert back to offset
             col, row = HexMath.axial_to_offset(q, r)
             results.append((col, row))
 
@@ -155,7 +154,7 @@ class HexMath:
 
 
 class HexConverter:
-    """六边形坐标转换工具类"""
+    """Hex-to-pixel and pixel-to-hex conversion utilities."""
 
     def __init__(
         self, hex_size: int = GameConfig.HEX_SIZE, orientation: HexOrientation = None
@@ -166,55 +165,55 @@ class HexConverter:
         self.height = 2 * hex_size
 
     def hex_to_pixel(self, col: int, row: int) -> Tuple[float, float]:
-        """六边形坐标转屏幕像素坐标（使用偏移坐标，row增大向上显示）"""
+        """Convert hex (offset) to screen pixel coordinates; increasing row goes up on screen."""
         sqrt3 = 1.7320508075688772  # math.sqrt(3)
         if self.orientation == HexOrientation.POINTY_TOP:
-            # 尖顶向上布局 - 奇数列偏移
+            # Pointy-top layout, odd-column offset
             x = self.size * sqrt3 * (col + 0.5 * (row & 1))
-            y = -self.size * 3 / 2 * row  # row增大时Y减小，在屏幕上向上显示
+            y = -self.size * 3 / 2 * row  # row up -> y decreases (screen up)
         else:  # FLAT_TOP
-            # 平顶向上布局 - 奇数列偏移
+            # Flat-top layout, odd-column offset
             x = self.size * 3 / 2 * col
             y = (
                 -self.size * sqrt3 * (row + 0.5 * (col & 1))
-            )  # row增大时Y减小，在屏幕上向上显示
+            )  # row up -> y decreases (screen up)
 
         return x, y
 
     def pixel_to_hex(self, x: float, y: float) -> Tuple[int, int]:
-        """屏幕像素坐标转六边形坐标（返回偏移坐标）"""
+        """Convert screen pixel to hex (returns offset coordinates)."""
         sqrt3 = 1.7320508075688772  # math.sqrt(3)
 
         if self.orientation == HexOrientation.POINTY_TOP:
-            # 尖顶向上布局的逆变换，注意Y轴翻转
+            # Inverse of pointy-top; note Y flip
             q = (sqrt3 / 3.0 * x - 1.0 / 3.0 * (-y)) / self.size
             r = (2.0 / 3.0 * (-y)) / self.size
         else:  # FLAT_TOP
-            # 平顶向上布局的逆变换，注意Y轴翻转
+            # Inverse of flat-top; note Y flip
             q = (2.0 / 3.0 * x) / self.size
             r = (-1.0 / 3.0 * x + sqrt3 / 3.0 * (-y)) / self.size
 
-        # 首先四舍五入到轴坐标
+        # Round to axial first
         rq, rr = self.hex_round(q, r)
-        # 然后转换为偏移坐标
+        # Then convert to offset
         return HexMath.axial_to_offset(rq, rr)
 
     @staticmethod
     def hex_round(q: float, r: float) -> Tuple[int, int]:
-        """六边形坐标四舍五入 - 高精度版本"""
+        """Round to nearest hex (axial) - high-precision version."""
         s = -q - r
 
-        # 精确舍入
+        # Round each axis
         rq = round(q)
         rr = round(r)
         rs = round(s)
 
-        # 计算误差
+        # Rounding errors
         q_diff = abs(rq - q)
         r_diff = abs(rr - r)
         s_diff = abs(rs - s)
 
-        # 保证立方坐标约束 q + r + s = 0
+        # Enforce cube constraint q + r + s = 0
         if q_diff > r_diff and q_diff > s_diff:
             rq = -rr - rs
         elif r_diff > s_diff:
@@ -225,22 +224,22 @@ class HexConverter:
         return rq, rr
 
     def get_hex_corners(self, col: int, row: int) -> List[Tuple[float, float]]:
-        """获取六边形的6个顶点坐标（使用偏移坐标，笛卡尔坐标系）"""
+        """Return the 6 corner coordinates of a hex (offset coords, Cartesian)."""
         center_x, center_y = self.hex_to_pixel(col, row)
         corners = []
 
         if self.orientation == HexOrientation.POINTY_TOP:
-            # 尖顶向上布局：从-30度开始，每次旋转60度
+            # Pointy-top: start at -30°, step 60°
             start_angle = -30
         else:  # FLAT_TOP
-            # 平顶向上布局：从0度开始，每次旋转60度
+            # Flat-top: start at 0°, step 60°
             start_angle = 0
 
         for i in range(6):
             angle_deg = 60 * i + start_angle
             angle_rad = math.radians(angle_deg)
             x = center_x + self.size * math.cos(angle_rad)
-            # Y轴已经在hex_to_pixel中翻转，这里保持一致
+            # Y flip is already applied in hex_to_pixel; keep consistent
             y = center_y + self.size * math.sin(angle_rad)
             corners.append((x, y))
 
@@ -248,7 +247,7 @@ class HexConverter:
 
 
 class PathFinding:
-    """A*寻路算法实现（使用偏移坐标）"""
+    """A* pathfinding (offset coordinates)."""
 
     @staticmethod
     def find_path(
@@ -257,14 +256,14 @@ class PathFinding:
         obstacles: Set[Tuple[int, int]],
         max_distance: int = None,
     ) -> List[Tuple[int, int]]:
-        """使用A*算法寻找路径（偏移坐标）"""
+        """Find path with A* (offset coordinates)."""
         if start == goal:
             return [start]
 
         if goal in obstacles:
             return []
 
-        # A*算法实现
+        # A* implementation
         from heapq import heappush, heappop
 
         frontier = [(0, start)]
@@ -275,7 +274,7 @@ class PathFinding:
             current_cost, current = heappop(frontier)
 
             if current == goal:
-                # 重建路径
+                # Reconstruct path
                 path = []
                 while current is not None:
                     path.append(current)
@@ -289,7 +288,7 @@ class PathFinding:
 
                 new_cost = cost_so_far[current] + 1
 
-                # 如果有最大距离限制
+                # Honor max distance if set
                 if max_distance and new_cost > max_distance:
                     continue
 
@@ -299,13 +298,13 @@ class PathFinding:
                     heappush(frontier, (priority, neighbor))
                     came_from[neighbor] = current
 
-        return []  # 找不到路径
+        return []  # No path found
 
     @staticmethod
     def get_movement_range(
         start: Tuple[int, int], movement_points: int, obstacles: Set[Tuple[int, int]]
     ) -> Set[Tuple[int, int]]:
-        """获取移动范围内的所有可达位置（偏移坐标）"""
+        """Return all reachable hexes within movement range (offset coordinates)."""
         reachable = set()
         visited = set()
         queue = [(start, 0)]  # (position, cost)

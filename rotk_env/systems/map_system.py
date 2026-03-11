@@ -1,5 +1,4 @@
 """
-地图系统 - 管理地图生成和地形 (重构版)
 Map System - Managing map generation and terrain (Refactored)
 """
 
@@ -15,14 +14,14 @@ from .encounter_map_generator import EncounterMapMixin
 
 
 class Tile:
-    """临时地块类，用于兼容现有代码"""
+    """Temporary tile class for compatibility with existing code."""
 
     def __init__(self, position):
         self.position = position
 
 
 class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
-    """地图系统 - 管理地图生成和地形，支持MOBA风格地图"""
+    """Map system - manages map generation and terrain, supports MOBA-style maps."""
 
     def __init__(
         self, competitive_mode: bool = True, symmetry_type: str = "river_split_offset"
@@ -35,146 +34,146 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def initialize(self, world: World) -> None:
         self.world = world
         self.generate_map()
-        # 生成地图后，保存地图信息到GameStats
+        # After generating the map, save map info to GameStats
         self._save_map_info_to_stats()
 
     def subscribe_events(self):
-        """订阅事件"""
+        """Subscribe to events."""
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新地图系统"""
+        """Update the map system."""
         pass
 
     def generate_map(self):
-        """生成地图 - 根据模式选择生成方式"""
+        """Generate the map - choose generation method based on mode."""
         if self.competitive_mode:
             if self.symmetry_type == "river_split":
-                print("[MapSystem] 🏆 生成河流分割对角线竞技地图（偏移坐标）")
+                print("[MapSystem] 🏆 Generating river-split diagonal competitive map (offset coords)")
                 self._generate_river_split_diagonal_map()
             elif self.symmetry_type == "river_split_offset":
-                print("[MapSystem] 🏆 生成河流分割对角线竞技地图（偏移坐标）")
+                print("[MapSystem] 🏆 Generating river-split diagonal competitive map (offset coords)")
                 self._generate_river_split_diagonal_map_offset_revised()
             elif self.symmetry_type == "diagonal":
-                print("[MapSystem] 🏆 生成对角线对称竞技地图")
+                print("[MapSystem] 🏆 Generating diagonal-symmetric competitive map")
                 self._generate_competitive_map_diagonal()
             elif self.symmetry_type == "square":
-                print("[MapSystem] 🏆 生成正方形竞技地图")
+                print("[MapSystem] 🏆 Generating square competitive map")
                 self._generate_square_map()
             elif self.symmetry_type == "moba":
-                print("[MapSystem] 🏟️ 生成MOBA风格地图")
+                print("[MapSystem] 🏟️ Generating MOBA-style map")
                 self._generate_moba_map()
             elif self.symmetry_type == "encounter":
-                print("[MapSystem] 🏟️ 生成Encounter风格地图")
+                print("[MapSystem] 🏟️ Generating Encounter-style map")
                 self._generate_encounter_map()
             else:
-                print("[MapSystem] 🏆 生成水平轴对称竞技地图")
+                print("[MapSystem] 🏆 Generating horizontal-axis symmetric competitive map")
                 self._generate_competitive_map_v2()
         else:
-            print("[MapSystem] 🌍 生成标准随机地图")
+            print("[MapSystem] 🌍 Generating standard random map")
             self._generate_standard_map()
 
     def _generate_square_map(self):
-        """生成地图 - 生成视觉上为正方形的六边形地图（使用偏移坐标）"""
+        """Generate the map - produce a visually square hexagonal map (using offset coordinates)."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
-        # 使用偏移坐标系直接生成矩形区域
+        # Use offset coordinate system to directly generate a rectangular region
         for col in range(GameConfig.MAP_WIDTH):
             for row in range(GameConfig.MAP_HEIGHT):
-                # 生成地形
+                # Generate terrain
                 terrain_type = self._generate_terrain_offset(col, row)
 
-                # 创建地块实体
+                # Create tile entity
                 tile_entity = self.world.create_entity()
                 self.world.add_component(tile_entity, HexPosition(col, row))
                 self.world.add_component(tile_entity, Terrain(terrain_type))
                 self.world.add_component(tile_entity, Tile((col, row)))
 
-                # 添加到地图数据
+                # Add to map data
                 map_data.tiles[(col, row)] = tile_entity
 
         self.world.add_singleton_component(map_data)
 
     def _generate_competitive_map_v2(self):
-        """🏆 生成竞技对抗地图 V2.0 - 使用偏移坐标系统"""
+        """Generate competitive map V2.0 - using offset coordinate system."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
         print(
-            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 真正对称竞技地图（偏移坐标）"
+            f"[MapSystem] Generating {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} truly symmetric competitive map (offset coords)"
         )
 
-        # 直接使用偏移坐标生成地图
+        # Directly generate map using offset coordinates
         terrain_map = self._generate_symmetric_terrain_map_offset()
 
-        # 创建ECS实体
+        # Create ECS entities
         self._create_competitive_map_entities_offset(map_data, terrain_map)
 
-        # 添加到世界
+        # Add to world
         self.world.add_singleton_component(map_data)
 
-        # 打印分析报告
+        # Print analysis report
         self._print_competitive_map_analysis_v2_offset(terrain_map)
 
     def _generate_symmetric_terrain_map_offset(
         self,
     ) -> Dict[Tuple[int, int], TerrainType]:
-        """生成完全对称的地形地图（偏移坐标）"""
+        """Generate a fully symmetric terrain map (offset coordinates)."""
         terrain_map = {}
 
-        # 遍历整个地图
+        # Traverse entire map
         for col in range(GameConfig.MAP_WIDTH):
             for row in range(GameConfig.MAP_HEIGHT):
-                # 🔥 核心：使用保证对称的地形生成函数
+                # Core: use guaranteed-symmetric terrain generation function
                 terrain = self._generate_symmetric_terrain_offset(col, row)
                 terrain_map[(col, row)] = terrain
 
         return terrain_map
 
     def _generate_symmetric_terrain_offset(self, col: int, row: int) -> TerrainType:
-        """🎯 生成绝对对称的地形 - 偏移坐标版本"""
-        # 计算地图中心
+        """Generate absolutely symmetric terrain - offset coordinate version."""
+        # Calculate map center
         center_col = GameConfig.MAP_WIDTH // 2
         center_row = GameConfig.MAP_HEIGHT // 2
 
-        # 转换为以中心为原点的坐标
+        # Convert to center-origin coordinates
         center_based_col = col - center_col
         center_based_row = row - center_row
 
-        # 🔥 关键：使用abs(row)确保水平对称性
+        # Key: use abs(row) to ensure horizontal symmetry
         abs_row = abs(center_based_row)
         distance_from_center = math.sqrt(
             center_based_col * center_based_col + abs_row * abs_row
         )
 
-        # 使用对称的种子：对于(col,row)和(col,-row)产生相同的随机数
+        # Use symmetric seed: produces the same random number for (col,row) and (col,-row)
         symmetric_seed = center_based_col * 10007 + abs_row * 10009 + self.seed
         rand = random.Random(symmetric_seed)
         value = rand.random()
 
-        # === Zone A: 出生点/大本营区域 ===
-        if abs_row >= 6:  # 地图的南北两端
+        # === Zone A: Spawn point / home base area ===
+        if abs_row >= 6:  # Northern/southern ends of the map
             return self._generate_spawn_area_terrain_offset(
                 center_based_col, abs_row, value
             )
 
-        # === Zone B: 中央战略区 ===
-        elif distance_from_center <= 1.5:  # 正中心
+        # === Zone B: Central strategic zone ===
+        elif distance_from_center <= 1.5:  # Exact center
             return self._generate_central_zone_terrain_offset(
                 center_based_col, abs_row, value
             )
 
-        # === Zone C: 战术缓冲带 ===
+        # === Zone C: Tactical buffer zone ===
         elif distance_from_center <= 4.5:
             return self._generate_tactical_buffer_terrain_offset(
                 center_based_col, abs_row, value
             )
 
-        # === Zone D: 对抗主路 ===
-        else:  # 外围区域
+        # === Zone D: Main confrontation lane ===
+        else:  # Outer region
             return self._generate_outer_zone_terrain_offset(
                 center_based_col, abs_row, value
             )
@@ -182,45 +181,45 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _generate_spawn_area_terrain_offset(
         self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成出生点区域地形 - 偏移坐标版本"""
+        """Generate spawn area terrain - offset coordinate version."""
         abs_col = abs(col)
 
-        # 出生点核心：纯平原，便于初期部署
+        # Spawn core: pure plains for easy early deployment
         if abs_col <= 1 and abs_row >= 6:
             return TerrainType.PLAIN
 
-        # 出生点周围：混合平原、丘陵、少量森林
+        # Around spawn: mixed plains, hills, sparse forest
         if value < 0.6:
-            return TerrainType.PLAIN  # 60% 平原
+            return TerrainType.PLAIN  # 60% plains
         elif value < 0.8:
-            return TerrainType.HILL  # 20% 丘陵
+            return TerrainType.HILL  # 20% hills
         else:
-            return TerrainType.FOREST  # 20% 森林
+            return TerrainType.FOREST  # 20% forest
 
     def _generate_central_zone_terrain_offset(
         self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成中央战略区地形 - 偏移坐标版本"""
+        """Generate central strategic zone terrain - offset coordinate version."""
 
-        # 正中心点：唯一的城市
+        # Exact center point: the only city
         if col == 0 and abs_row == 0:
             return TerrainType.URBAN
 
-        # 中心周围：高价值地形
+        # Around center: high-value terrain
         if value < 0.4:
-            return TerrainType.PLAIN  # 40% 平原
+            return TerrainType.PLAIN  # 40% plains
         elif value < 0.7:
-            return TerrainType.HILL  # 30% 丘陵 (高地优势)
+            return TerrainType.HILL  # 30% hills (high ground advantage)
         else:
-            return TerrainType.FOREST  # 30% 森林 (战术掩护)
+            return TerrainType.FOREST  # 30% forest (tactical cover)
 
     def _generate_tactical_buffer_terrain_offset(
         self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成战术缓冲带地形 - 偏移坐标版本"""
+        """Generate tactical buffer zone terrain - offset coordinate version."""
         abs_col = abs(col)
 
-        # 接近中轴线：相对开阔的主要通道
+        # Near central axis: relatively open main corridor
         if abs_col <= 2:
             if value < 0.5:
                 return TerrainType.PLAIN
@@ -229,7 +228,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.FOREST
 
-        # 边缘区域：更多障碍和战术地形
+        # Edge areas: more obstacles and tactical terrain
         else:
             if value < 0.25:
                 return TerrainType.PLAIN
@@ -240,14 +239,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             elif value < 0.9:
                 return TerrainType.MOUNTAIN
             else:
-                return TerrainType.WATER  # 少量水域作为天然屏障
+                return TerrainType.WATER  # Small water bodies as natural barriers
 
     def _generate_outer_zone_terrain_offset(
         self, col: int, abs_row: int, value: float
     ) -> TerrainType:
-        """生成外围区域地形 - 偏移坐标版本"""
+        """Generate outer zone terrain - offset coordinate version."""
 
-        # 边缘地带：更多山地和水域作为天然边界
+        # Edges: more mountains and water as natural borders
         if abs(col) >= 6 or abs_row >= 5:
             if value < 0.3:
                 return TerrainType.MOUNTAIN
@@ -258,7 +257,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.HILL
 
-        # 中等距离：平衡的混合地形
+        # Mid-range: balanced mixed terrain
         else:
             if value < 0.35:
                 return TerrainType.PLAIN
@@ -274,29 +273,29 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _create_competitive_map_entities_offset(
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """创建竞技地图的实体 - 偏移坐标版本"""
-        # 计算出生点位置（使用偏移坐标）
+        """Create competitive map entities - offset coordinate version."""
+        # Calculate spawn positions (using offset coordinates)
         center_row = GameConfig.MAP_HEIGHT // 2
         spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
         spawn_points = {
             Faction.SHU: (
                 GameConfig.MAP_WIDTH // 2,
                 center_row + spawn_distance,
-            ),  # 上方出生点
+            ),  # Upper spawn point
             Faction.WEI: (
                 GameConfig.MAP_WIDTH // 2,
                 center_row - spawn_distance,
-            ),  # 下方出生点
+            ),  # Lower spawn point
         }
 
         for (col, row), terrain_type in terrain_map.items():
-            # 创建地块实体
+            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(col, row))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((col, row)))
 
-            # 在出生点附近设置初始领土控制
+            # Set initial territory control near spawn points
             controlling_faction = self._get_initial_territory_control(
                 (col, row), spawn_points
             )
@@ -316,60 +315,60 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     ),
                 )
 
-            # 添加到地图数据
+            # Add to map data
             map_data.tiles[(col, row)] = tile_entity
 
     def _print_competitive_map_analysis_v2_offset(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """打印竞技地图分析报告 V2.0 - 偏移坐标版本"""
+        """Print competitive map analysis report V2.0 - offset coordinate version."""
         terrain_count = {}
         for terrain in terrain_map.values():
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
 
         print("\n" + "=" * 70)
-        print("🏆 竞技对抗地图分析报告 V2.0 (偏移坐标系)")
+        print("🏆 Competitive Map Analysis Report V2.0 (Offset Coordinate System)")
         print("=" * 70)
-        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
-        print(f"🎯 设计原则: 水平对称，直观坐标系")
-        print(f"⚖️  对称轴: 水平中轴线 (row={GameConfig.MAP_HEIGHT//2})")
-        print(f"🗂️  坐标系: 偏移坐标（更直观的行列布局）")
-        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+        print(f"📐 Map size: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print(f"🎯 Design principle: Horizontal symmetry, intuitive coordinate system")
+        print(f"⚖️  Axis of symmetry: Horizontal center line (row={GameConfig.MAP_HEIGHT//2})")
+        print(f"🗂️  Coordinate system: Offset coordinates (intuitive row/column layout)")
+        print(f"🔢 Fixed seed: {self.seed} (ensures reproducibility)")
 
-        print("\n🌍 地形分布统计:")
+        print("\n🌍 Terrain distribution:")
         total_tiles = len(terrain_map)
         for terrain, count in sorted(
             terrain_count.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = count / total_tiles * 100
-            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+            print(f"  {terrain.value:10} {count:3d} tiles ({percentage:5.1f}%)")
 
-        # 详细地图可视化打印
+        # Detailed map visualization print
         self._print_terrain_map_visual_offset(terrain_map)
 
-        # 严格的对称性验证
+        # Strict symmetry verification
         self._verify_map_symmetry_v2_offset(terrain_map)
 
-        # 出生点信息
+        # Spawn point info
         center_row = GameConfig.MAP_HEIGHT // 2
         spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
-        print(f"\n🚀 阵营出生点:")
+        print(f"\n🚀 Faction spawn points:")
         print(
-            f"  SHU (蜀): ({GameConfig.MAP_WIDTH//2}, {center_row + spawn_distance})  - 地图上方"
+            f"  SHU: ({GameConfig.MAP_WIDTH//2}, {center_row + spawn_distance})  - top of map"
         )
         print(
-            f"  WEI (魏): ({GameConfig.MAP_WIDTH//2}, {center_row - spawn_distance}) - 地图下方"
+            f"  WEI: ({GameConfig.MAP_WIDTH//2}, {center_row - spawn_distance}) - bottom of map"
         )
-        print(f"  📏 出生点距离: {2 * spawn_distance} 格")
+        print(f"  📏 Spawn distance: {2 * spawn_distance} tiles")
 
         print("=" * 70)
 
     def _print_terrain_map_visual_offset(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🗺️ 打印地图的可视化表示 - 偏移坐标版本"""
-        print("\n🗺️ 地形地图可视化 (行从上到下, 列从左到右):")
-        print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
+        """Print the visual representation of the map - offset coordinate version."""
+        print("\n🗺️ Terrain map visualization (rows top-to-bottom, columns left-to-right):")
+        print("   Terrain symbols: P=Plain F=Forest H=Hill M=Mountain W=Water U=Urban")
 
         terrain_chars = {
             TerrainType.PLAIN: "P",
@@ -382,12 +381,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         print("\n   ", end="")
 
-        # 打印列标题 (col坐标)
+        # Print column headers (col coordinates)
         for col in range(GameConfig.MAP_WIDTH):
             print(f"{col:2}", end=" ")
         print()
 
-        # 打印每一行
+        # Print each row
         for row in range(GameConfig.MAP_HEIGHT):
             print(f"{row:2}:", end=" ")
             for col in range(GameConfig.MAP_WIDTH):
@@ -399,7 +398,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     print("  ", end=" ")
             print(f" :{row}")
 
-        # 再次打印底部列标题
+        # Print bottom column headers again
         print("   ", end="")
         for col in range(GameConfig.MAP_WIDTH):
             print(f"{col:2}", end=" ")
@@ -408,8 +407,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _verify_map_symmetry_v2_offset(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🔍 严格验证地图对称性 V2.0 - 偏移坐标版本"""
-        print(f"\n🔍 对称性验证 V2.0 (偏移坐标):")
+        """Strictly verify map symmetry V2.0 - offset coordinate version."""
+        print(f"\n🔍 Symmetry verification V2.0 (offset coordinates):")
 
         asymmetric_pairs = []
         symmetric_pairs = 0
@@ -417,11 +416,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         center_row = GameConfig.MAP_HEIGHT // 2
 
-        # 检查每个位置与其镜像位置
+        # Check each position against its mirror
         for col in range(GameConfig.MAP_WIDTH):
             for row in range(GameConfig.MAP_HEIGHT):
                 if (col, row) in terrain_map:
-                    # 计算镜像位置：相对于水平中轴线对称
+                    # Calculate mirror position: symmetric about the horizontal center axis
                     mirror_row = 2 * center_row - row
                     mirror_pos = (col, mirror_row)
                     total_checks += 1
@@ -444,14 +443,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                                 "pos1": (col, row),
                                 "terrain1": terrain_map[(col, row)].value,
                                 "pos2": mirror_pos,
-                                "terrain2": "缺失",
+                                "terrain2": "missing",
                             }
                         )
 
         if len(asymmetric_pairs) == 0:
-            print(f"  ✅ 完美对称！{symmetric_pairs}/{total_checks} 个位置完全对称")
+            print(f"  ✅ Perfect symmetry! {symmetric_pairs}/{total_checks} positions fully symmetric")
         else:
-            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            print(f"  ❌ Found {len(asymmetric_pairs)} asymmetric positions:")
             for i, pair in enumerate(asymmetric_pairs[:5]):
                 print(
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
@@ -465,7 +464,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         spawn_points: Dict[Faction, Tuple[int, int]],
         control_radius: int = 2,
     ) -> Faction:
-        """确定初始领土控制"""
+        """Determine initial territory control."""
         q, r = pos
 
         for faction, (spawn_q, spawn_r) in spawn_points.items():
@@ -478,51 +477,51 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _print_competitive_map_analysis_v2(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """打印竞技地图分析报告 V2.0"""
+        """Print competitive map analysis report V2.0."""
         terrain_count = {}
         for terrain in terrain_map.values():
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
 
         print("\n" + "=" * 70)
-        print("🏆 竞技对抗地图分析报告 V2.0")
+        print("🏆 Competitive Map Analysis Report V2.0")
         print("=" * 70)
-        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
-        print(f"🎯 设计原则: 绝对水平轴对称，战略区域分层")
-        print(f"⚖️  对称轴: 水平中轴线 (r=0)")
-        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+        print(f"📐 Map size: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print("🎯 Design: strict horizontal symmetry with layered strategic zones")
+        print("⚖️  Symmetry axis: horizontal center line (r=0)")
+        print(f"🔢 Fixed seed: {self.seed} (reproducible)")
 
-        print("\n🌍 地形分布统计:")
+        print("\n🌍 Terrain distribution:")
         total_tiles = len(terrain_map)
         for terrain, count in sorted(
             terrain_count.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = count / total_tiles * 100
-            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+            print(f"  {terrain.value:10} {count:3d} tiles ({percentage:5.1f}%)")
 
-        # 详细地图可视化打印
+        # Detailed map visualization print
         self._print_terrain_map_visual(terrain_map)
 
-        # 严格的对称性验证
+        # Strict symmetry verification
         self._verify_map_symmetry_v2(terrain_map)
 
-        # 战略区域分析
+        # Strategic zone analysis
         self._analyze_strategic_zones(terrain_map)
 
-        # 出生点信息
+        # Spawn point info
         spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
-        print(f"\n🚀 阵营出生点:")
-        print(f"  SHU (蜀): (0, {spawn_distance})  - 地图上方")
-        print(f"  WEI (魏): (0, {-spawn_distance}) - 地图下方")
-        print(f"  📏 出生点距离: {2 * spawn_distance} 格")
+        print("\n🚀 Faction spawn points:")
+        print(f"  SHU: (0, {spawn_distance})  - top of map")
+        print(f"  WEI: (0, {-spawn_distance}) - bottom of map")
+        print(f"  📏 Spawn distance: {2 * spawn_distance} tiles")
 
         print("=" * 70)
 
     def _print_terrain_map_visual(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🗺️ 打印地图的可视化表示"""
-        print("\n🗺️ 地形地图可视化 (r从上到下, q从左到右):")
-        print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
+        """Print the visual representation of the map."""
+        print("\n🗺️ Terrain map visualization (r top-to-bottom, q left-to-right):")
+        print("   Symbols: P=Plain F=Forest H=Hill M=Mountain W=Water U=Urban")
 
         terrain_chars = {
             TerrainType.PLAIN: "P",
@@ -536,13 +535,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         center = GameConfig.MAP_WIDTH // 2
         print("\n   ", end="")
 
-        # 打印列标题 (q坐标)
+        # Print column headers (q coordinates)
         for q in range(-center, center + 1):
             print(f"{q:2}", end=" ")
         print()
 
-        # 打印每一行
-        for r in range(center, -center - 1, -1):  # 从上到下 (r=7到r=-7)
+        # Print each row
+        for r in range(center, -center - 1, -1):  # top to bottom (r=7 to r=-7)
             print(f"{r:2}:", end=" ")
             for q in range(-center, center + 1):
                 if (q, r) in terrain_map:
@@ -553,15 +552,15 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     print("  ", end=" ")
             print(f" :{r}")
 
-        # 再次打印底部列标题
+        # Print bottom column headers again
         print("   ", end="")
         for q in range(-center, center + 1):
             print(f"{q:2}", end=" ")
         print()
 
     def _verify_map_symmetry_v2(self, terrain_map: Dict[Tuple[int, int], TerrainType]):
-        """🔍 严格验证地图对称性 V2.0"""
-        print(f"\n🔍 对称性验证 V2.0:")
+        """Strictly verify map symmetry V2.0."""
+        print("\n🔍 Symmetry verification V2.0:")
 
         asymmetric_pairs = []
         symmetric_pairs = 0
@@ -569,7 +568,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         center = GameConfig.MAP_WIDTH // 2
 
-        # 检查每个位置与其镜像位置
+        # Check each position against its mirror
         for q in range(-center, center + 1):
             for r in range(-center, center + 1):
                 if (q, r) in terrain_map:
@@ -594,26 +593,26 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                                 "pos1": (q, r),
                                 "terrain1": terrain_map[(q, r)].value,
                                 "pos2": mirror_pos,
-                                "terrain2": "缺失",
+                                "terrain2": "missing",
                             }
                         )
 
         if len(asymmetric_pairs) == 0:
-            print(f"  ✅ 完美对称！{symmetric_pairs}/{total_checks} 个位置完全对称")
+            print(f"  ✅ Perfect symmetry! {symmetric_pairs}/{total_checks} positions fully symmetric")
         else:
-            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            print(f"  ❌ Found {len(asymmetric_pairs)} asymmetric positions:")
             for i, pair in enumerate(asymmetric_pairs[:5]):
                 print(
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
                 )
             if len(asymmetric_pairs) > 5:
-                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
+                print(f"    ... and {len(asymmetric_pairs) - 5} more asymmetric positions")
 
     def _analyze_strategic_zones(self, terrain_map: Dict[Tuple[int, int], TerrainType]):
-        """分析战略区域分布"""
-        print(f"\n🎯 战略区域分析:")
+        """Analyze strategic zone distribution."""
+        print("\n🎯 Strategic zone analysis:")
 
-        zones = {"出生点区域": 0, "中央战略区": 0, "战术缓冲带": 0, "外围区域": 0}
+        zones = {"Spawn Area": 0, "Central Strategic Zone": 0, "Tactical Buffer": 0, "Outer Region": 0}
 
         center = GameConfig.MAP_WIDTH // 2
 
@@ -624,108 +623,108 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     distance_from_center = math.sqrt(q * q + abs_r * abs_r)
 
                     if abs_r >= 6:
-                        zones["出生点区域"] += 1
+                        zones["Spawn Area"] += 1
                     elif distance_from_center <= 1.5:
-                        zones["中央战略区"] += 1
+                        zones["Central Strategic Zone"] += 1
                     elif distance_from_center <= 4.5:
-                        zones["战术缓冲带"] += 1
+                        zones["Tactical Buffer"] += 1
                     else:
-                        zones["外围区域"] += 1
+                        zones["Outer Region"] += 1
 
         for zone_name, count in zones.items():
-            print(f"  {zone_name}: {count} 块")
+            print(f"  {zone_name}: {count} tiles")
 
     def _generate_competitive_map_diagonal(self):
-        """🏆 生成对角线对称竞技地图"""
+        """Generate diagonal-symmetric competitive map."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
         print(
-            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 对角线对称竞技地图"
+            f"[MapSystem] Generating {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} diagonal-symmetric competitive map"
         )
 
-        # 生成对角线对称地图
+        # Generate diagonal-symmetric map
         terrain_map = self._generate_diagonal_symmetric_terrain_map()
 
-        # 创建ECS实体（使用对角线出生点）
+        # Create ECS entities (using diagonal spawn points)
         self._create_diagonal_competitive_map_entities(map_data, terrain_map)
 
-        # 添加到世界
+        # Add to world
         self.world.add_singleton_component(map_data)
 
-        # 打印分析报告
+        # Print analysis report
         self._print_diagonal_competitive_map_analysis(terrain_map)
 
     def _generate_diagonal_symmetric_terrain_map(
         self,
     ) -> Dict[Tuple[int, int], TerrainType]:
-        """生成对角线对称的地形地图"""
+        """Generate a diagonal-symmetric terrain map."""
         terrain_map = {}
         center = GameConfig.MAP_WIDTH // 2
 
-        # 只需要生成左上三角形，然后镜像到右下三角形
+        # Only generate the upper-left triangle, then mirror to the lower-right
         for q in range(GameConfig.MAP_WIDTH):
             for r in range(GameConfig.MAP_HEIGHT):
                 center_q = q - center
                 center_r = r - center
 
-                # 检查是否在左上三角形或对角线上
-                if center_q <= -center_r:  # 左上三角形 + 对角线
+                # Check if in upper-left triangle or on diagonal
+                if center_q <= -center_r:  # upper-left triangle + diagonal
                     terrain = self._generate_diagonal_terrain(center_q, center_r)
                     terrain_map[(center_q, center_r)] = terrain
 
-                    # 同时生成对角线对称点（如果不在对角线上）
-                    if center_q != -center_r:  # 不在对角线上
+                    # Also generate the diagonal mirror point (if not on the diagonal)
+                    if center_q != -center_r:  # not on the diagonal
                         mirror_q, mirror_r = -center_r, -center_q
                         terrain_map[(mirror_q, mirror_r)] = terrain
 
         return terrain_map
 
     def _generate_diagonal_terrain(self, q: int, r: int) -> TerrainType:
-        """🎯 生成对角线对称地形的基础地形"""
+        """Generate base terrain for the diagonal-symmetric map."""
 
-        # 计算到对角线的距离（对角线方程：q + r = 0）
+        # Distance to diagonal (diagonal equation: q + r = 0)
         distance_to_diagonal = abs(q + r) / math.sqrt(2)
 
-        # 计算到地图中心的距离
+        # Distance to map center
         distance_from_center = math.sqrt(q * q + r * r)
 
-        # 🔥 关键：使用对对角线对称的种子
-        # 对于(q,r)和(-r,-q)，这个种子是相同的
+        # Key: use a seed symmetric about the diagonal.
+        # For (q,r) and (-r,-q), this seed is identical.
         min_coord = min(q, -r)
         max_coord = max(q, -r)
         symmetric_seed = min_coord * 10007 + max_coord * 10009 + self.seed
         rand = random.Random(symmetric_seed)
         value = rand.random()
 
-        # === Zone A: 出生点区域（左上角和右下角） ===
+        # === Zone A: Spawn area (upper-left and lower-right corners) ===
         if (q <= -5 and r >= 5) or (q >= 5 and r <= -5):
             return self._generate_diagonal_spawn_area_terrain(q, r, value)
 
-        # === Zone B: 中央区域 ===
+        # === Zone B: Central area ===
         elif distance_from_center <= 1.5:
             return self._generate_diagonal_central_terrain(q, r, value)
 
-        # === Zone C: 对角线缓冲带 ===
+        # === Zone C: Diagonal buffer zone ===
         elif distance_to_diagonal <= 2.0:
             return self._generate_diagonal_buffer_terrain(q, r, value)
 
-        # === Zone D: 外围区域 ===
+        # === Zone D: Outer region ===
         else:
             return self._generate_diagonal_outer_terrain(q, r, value)
 
     def _generate_diagonal_spawn_area_terrain(
         self, q: int, r: int, value: float
     ) -> TerrainType:
-        """生成对角线模式的出生点区域地形"""
-        # 出生点核心：平原为主
-        if abs(q + 6) <= 1 and abs(r - 6) <= 1:  # 左上出生点核心
+        """Generate spawn area terrain for the diagonal map mode."""
+        # Spawn core: primarily plains
+        if abs(q + 6) <= 1 and abs(r - 6) <= 1:  # Upper-left spawn core
             return TerrainType.PLAIN
-        if abs(q - 6) <= 1 and abs(r + 6) <= 1:  # 右下出生点核心（对称）
+        if abs(q - 6) <= 1 and abs(r + 6) <= 1:  # Lower-right spawn core (symmetric)
             return TerrainType.PLAIN
 
-        # 出生点周围：安全的混合地形
+        # Around spawn: safe mixed terrain
         if value < 0.5:
             return TerrainType.PLAIN
         elif value < 0.75:
@@ -736,12 +735,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _generate_diagonal_central_terrain(
         self, q: int, r: int, value: float
     ) -> TerrainType:
-        """生成对角线模式的中央区域地形"""
-        # 正中心：城市
+        """Generate central area terrain for the diagonal map mode."""
+        # Exact center: city
         if q == 0 and r == 0:
             return TerrainType.URBAN
 
-        # 中心周围：高价值地形
+        # Around center: high-value terrain
         if value < 0.4:
             return TerrainType.PLAIN
         elif value < 0.7:
@@ -752,8 +751,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _generate_diagonal_buffer_terrain(
         self, q: int, r: int, value: float
     ) -> TerrainType:
-        """生成对角线缓冲带地形"""
-        # 主对角线附近：相对开阔
+        """Generate diagonal buffer zone terrain."""
+        # Near the main diagonal: relatively open
         if value < 0.4:
             return TerrainType.PLAIN
         elif value < 0.65:
@@ -766,8 +765,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _generate_diagonal_outer_terrain(
         self, q: int, r: int, value: float
     ) -> TerrainType:
-        """生成对角线模式的外围地形"""
-        # 边缘：更多障碍
+        """Generate outer terrain for the diagonal map mode."""
+        # Edges: more obstacles
         if abs(q) >= 6 or abs(r) >= 6:
             if value < 0.3:
                 return TerrainType.MOUNTAIN
@@ -776,7 +775,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.FOREST
         else:
-            # 中等距离：平衡地形
+            # Mid-range: balanced terrain
             if value < 0.3:
                 return TerrainType.PLAIN
             elif value < 0.5:
@@ -791,21 +790,21 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _create_diagonal_competitive_map_entities(
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """创建对角线对称竞技地图的实体"""
-        # 对角线模式的出生点
+        """Create diagonal-symmetric competitive map entities."""
+        # Spawn points for diagonal mode
         spawn_points = {
-            Faction.SHU: (-6, 6),  # 左上角
-            Faction.WEI: (6, -6),  # 右下角
+            Faction.SHU: (-6, 6),  # Upper-left corner
+            Faction.WEI: (6, -6),  # Lower-right corner
         }
 
         for (q, r), terrain_type in terrain_map.items():
-            # 创建地块实体
+            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(q, r))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((q, r)))
 
-            # 在出生点附近设置初始领土控制
+            # Set initial territory control near spawn points
             controlling_faction = self._get_initial_territory_control(
                 (q, r), spawn_points, control_radius=3
             )
@@ -825,52 +824,52 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     ),
                 )
 
-            # 添加到地图数据
+            # Add to map data
             map_data.tiles[(q, r)] = tile_entity
 
     def _print_diagonal_competitive_map_analysis(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """打印对角线竞技地图分析报告"""
+        """Print diagonal competitive map analysis report."""
         terrain_count = {}
         for terrain in terrain_map.values():
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
 
         print("\n" + "=" * 70)
-        print("🏆 对角线对称竞技地图分析报告")
+        print("🏆 Diagonal-Symmetric Competitive Map Analysis Report")
         print("=" * 70)
-        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
-        print(f"🎯 设计原则: 对角线对称 (q=-r轴)，左上↔右下")
-        print(f"⚖️  对称轴: 主对角线 (q + r = 0)")
-        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+        print(f"📐 Map size: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print("🎯 Design: diagonal symmetry (q=-r axis), upper-left ↔ lower-right")
+        print("⚖️  Symmetry axis: main diagonal (q + r = 0)")
+        print(f"🔢 Fixed seed: {self.seed} (reproducible)")
 
-        print("\n🌍 地形分布统计:")
+        print("\n🌍 Terrain distribution:")
         total_tiles = len(terrain_map)
         for terrain, count in sorted(
             terrain_count.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = count / total_tiles * 100
-            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+            print(f"  {terrain.value:10} {count:3d} tiles ({percentage:5.1f}%)")
 
-        # 地图可视化
+        # Map visualization
         self._print_terrain_map_visual(terrain_map)
 
-        # 对角线对称性验证
+        # Diagonal symmetry verification
         self._verify_diagonal_symmetry(terrain_map)
 
-        # 出生点信息
-        print(f"\n🚀 阵营出生点:")
-        print(f"  SHU (蜀): (-6, 6)  - 左上角")
-        print(f"  WEI (魏): (6, -6)  - 右下角")
-        print(f"  📏 出生点距离: {math.sqrt((12)**2 + (12)**2):.1f} 格")
+        # Spawn point info
+        print("\n🚀 Faction spawn points:")
+        print("  SHU: (-6, 6)  - upper-left corner")
+        print("  WEI: (6, -6)  - lower-right corner")
+        print(f"  📏 Spawn distance: {math.sqrt((12)**2 + (12)**2):.1f} tiles")
 
         print("=" * 70)
 
     def _verify_diagonal_symmetry(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🔍 验证对角线对称性"""
-        print(f"\n🔍 对角线对称性验证:")
+        """Verify diagonal symmetry."""
+        print("\n🔍 Diagonal symmetry verification:")
 
         asymmetric_pairs = []
         symmetric_pairs = 0
@@ -878,11 +877,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         center = GameConfig.MAP_WIDTH // 2
 
-        # 检查每个位置与其对角线镜像位置
+        # Check each position against its diagonal mirror
         for q in range(-center, center + 1):
             for r in range(-center, center + 1):
                 if (q, r) in terrain_map:
-                    mirror_pos = (-r, -q)  # 对角线镜像
+                    mirror_pos = (-r, -q)  # diagonal mirror
                     total_checks += 1
 
                     if mirror_pos in terrain_map:
@@ -903,48 +902,48 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                                 "pos1": (q, r),
                                 "terrain1": terrain_map[(q, r)].value,
                                 "pos2": mirror_pos,
-                                "terrain2": "缺失",
+                                "terrain2": "missing",
                             }
                         )
 
         if len(asymmetric_pairs) == 0:
             print(
-                f"  ✅ 完美对角线对称！{symmetric_pairs}/{total_checks} 个位置完全对称"
+                f"  ✅ Perfect diagonal symmetry! {symmetric_pairs}/{total_checks} positions fully symmetric"
             )
         else:
-            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            print(f"  ❌ Found {len(asymmetric_pairs)} asymmetric positions:")
             for i, pair in enumerate(asymmetric_pairs[:5]):
                 print(
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
                 )
             if len(asymmetric_pairs) > 5:
-                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
+                print(f"    ... and {len(asymmetric_pairs) - 5} more asymmetric positions")
 
     def _generate_standard_map(self):
-        """生成标准随机地图（使用偏移坐标）"""
+        """Generate a standard random map (using offset coordinates)."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
-        # 生成地图
+        # Generate map
         for col in range(GameConfig.MAP_WIDTH):
             for row in range(GameConfig.MAP_HEIGHT):
-                # 使用偏移坐标生成地形
+                # Generate terrain using offset coordinates
                 terrain_type = self._generate_terrain_offset(col, row)
 
-                # 创建地块实体
+                # Create tile entity
                 tile_entity = self.world.create_entity()
                 self.world.add_component(tile_entity, HexPosition(col, row))
                 self.world.add_component(tile_entity, Terrain(terrain_type))
                 self.world.add_component(tile_entity, Tile((col, row)))
 
-                # 添加到地图数据
+                # Add to map data
                 map_data.tiles[(col, row)] = tile_entity
 
         self.world.add_singleton_component(map_data)
 
     def get_competitive_spawn_positions(self) -> Dict[Faction, Tuple[int, int]]:
-        """获取竞技模式的出生位置（偏移坐标）"""
+        """Get spawn positions for competitive mode (offset coordinates)."""
         if not self.competitive_mode:
             return {}
 
@@ -955,8 +954,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         if self.symmetry_type == "river_split_offset":
             return {
-                Faction.SHU: (-half_width + 3, -half_height + 3),  # 左下区域前沿
-                Faction.WEI: (half_width - 3, half_height - 3),   # 右上区域前沿
+                Faction.SHU: (-half_width + 3, -half_height + 3),  # Lower-left front line
+                Faction.WEI: (half_width - 3, half_height - 3),   # Upper-right front line
             }
         elif self.symmetry_type == "river_split":
             return {
@@ -965,38 +964,38 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             }
         elif self.symmetry_type == "diagonal":
             return {
-                Faction.SHU: (center_col - 6, center_row + 6),  # 左上角
-                Faction.WEI: (center_col + 6, center_row - 6),  # 右下角
+                Faction.SHU: (center_col - 6, center_row + 6),  # Upper-left corner
+                Faction.WEI: (center_col + 6, center_row - 6),  # Lower-right corner
             }
         else:
-            # 水平对称模式
+            # Horizontal symmetry mode
             spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
             return {
-                Faction.SHU: (center_col, center_row + spawn_distance),  # 上方出生点
-                Faction.WEI: (center_col, center_row - spawn_distance),  # 下方出生点
+                Faction.SHU: (center_col, center_row + spawn_distance),  # Upper spawn point
+                Faction.WEI: (center_col, center_row - spawn_distance),  # Lower spawn point
             }
 
     def enable_competitive_mode(self, enabled: bool = True):
-        """启用/禁用竞技模式"""
+        """Enable or disable competitive mode."""
         self.competitive_mode = enabled
-        print(f"[MapSystem] 竞技模式: {'启用' if enabled else '禁用'}")
+        print(f"[MapSystem] Competitive mode: {'enabled' if enabled else 'disabled'}")
 
     def _generate_terrain_offset(self, col: int, row: int) -> TerrainType:
-        """生成地形类型 - 偏移坐标版本"""
-        # 使用固定种子确保地形生成的一致性
+        """Generate terrain type - offset coordinate version."""
+        # Use a fixed seed for consistent terrain generation
         rand = random.Random(col * 10007 + row * 10009 + self.seed)
         value = rand.random()
 
-        # 计算到地图中心的距离
+        # Distance from map center
         center_col = GameConfig.MAP_WIDTH // 2
         center_row = GameConfig.MAP_HEIGHT // 2
         distance = math.sqrt((col - center_col) ** 2 + (row - center_row) ** 2)
         max_distance = math.sqrt(center_col**2 + center_row**2)
         distance_ratio = distance / max_distance
 
-        # 基于距离和随机值决定地形
+        # Determine terrain based on distance and random value
         if distance < 3:
-            # 中心区域：更多城池和平原
+            # Central area: more cities and plains
             if value < 0.2:
                 return TerrainType.URBAN
             elif value < 0.7:
@@ -1006,7 +1005,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.FOREST
         elif distance_ratio > 0.8:
-            # 边缘区域：更多山地和水域
+            # Edge area: more mountains and water
             if value < 0.25:
                 return TerrainType.MOUNTAIN
             elif value < 0.4:
@@ -1016,7 +1015,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.HILL
         elif distance_ratio > 0.6:
-            # 外围区域：混合地形
+            # Outer area: mixed terrain
             if value < 0.3:
                 return TerrainType.FOREST
             elif value < 0.5:
@@ -1028,7 +1027,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.PLAIN
         else:
-            # 中间区域：平衡的多样化地形
+            # Middle area: balanced diverse terrain
             if value < 0.35:
                 return TerrainType.PLAIN
             elif value < 0.55:
@@ -1042,23 +1041,23 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.URBAN
 
-    # 保留原有的地形生成方法以兼容性（立方/轴坐标系统）
+    # Retain original terrain generation method for compatibility (cubic/axial coordinate system)
     def _generate_terrain(self, q: int, r: int) -> TerrainType:
-        """生成地形类型 - 立方坐标版本（已弃用，保留兼容性）"""
-        # 使用固定种子确保地形生成的一致性
+        """Generate terrain type - cubic coordinate version (deprecated, kept for compatibility)."""
+        # Use a fixed seed for consistent terrain generation
         rand = random.Random(q * 10007 + r * 10009)
         value = rand.random()
 
-        # 距离中心的距离
+        # Distance from center
         distance = math.sqrt(q * q + r * r)
         max_distance = math.sqrt(
             (GameConfig.MAP_WIDTH // 2) ** 2 + (GameConfig.MAP_HEIGHT // 2) ** 2
         )
         distance_ratio = distance / max_distance
 
-        # 基于距离和随机值决定地形
+        # Determine terrain based on distance and random value
         if distance < 3:
-            # 中心区域：更多城池和平原
+            # Central area: more cities and plains
             if value < 0.2:
                 return TerrainType.URBAN
             elif value < 0.7:
@@ -1068,7 +1067,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.FOREST
         elif distance_ratio > 0.8:
-            # 边缘区域：更多山地和水域
+            # Edge area: more mountains and water
             if value < 0.25:
                 return TerrainType.MOUNTAIN
             elif value < 0.4:
@@ -1078,7 +1077,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.HILL
         elif distance_ratio > 0.6:
-            # 外围区域：混合地形
+            # Outer area: mixed terrain
             if value < 0.3:
                 return TerrainType.FOREST
             elif value < 0.5:
@@ -1090,7 +1089,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.PLAIN
         else:
-            # 中间区域：平衡的多样化地形
+            # Middle area: balanced diverse terrain
             if value < 0.35:
                 return TerrainType.PLAIN
             elif value < 0.55:
@@ -1105,45 +1104,45 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                 return TerrainType.URBAN
 
     def set_symmetry_type(self, symmetry_type: str):
-        """设置对称类型"""
+        """Set symmetry type."""
         if symmetry_type in ["horizontal", "diagonal", "river_split", "river_split_offset", "square", "moba", "encounter"]:
             self.symmetry_type = symmetry_type
-            print(f"[MapSystem] 对称类型设置为: {symmetry_type}")
+            print(f"[MapSystem] Symmetry type set to: {symmetry_type}")
         else:
             print(
-                f"[MapSystem] 警告: 未知的对称类型 {symmetry_type}，使用默认值 'horizontal'"
+                f"[MapSystem] Warning: unknown symmetry type {symmetry_type}; defaulting to 'horizontal'"
             )
             self.symmetry_type = "horizontal"
 
     def _generate_river_split_diagonal_map(self):
-        """🌊 生成河流分割的对角线对称竞技地图"""
+        """Generate a river-split diagonal-symmetric competitive map."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
 
         print(
-            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 河流分割竞技地图"
+            f"[MapSystem] Generating {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} river-split competitive map"
         )
-        print(f"[MapSystem] 设计特色: 对角线河流分界，中心平地争夺点，后方城池")
+        print("[MapSystem] Design: diagonal river divider, central contest area, rear cities")
 
-        # 生成河流分割地图
+        # Generate river-split map
         terrain_map = self._generate_river_split_terrain_map()
 
-        # 创建ECS实体
+        # Create ECS entities
         self._create_river_split_map_entities(map_data, terrain_map)
 
-        # 添加到世界
+        # Add to world
         self.world.add_singleton_component(map_data)
 
-        # 打印分析报告
+        # Print analysis report
         self._print_river_split_map_analysis(terrain_map)
 
     def _generate_river_split_terrain_map(self) -> Dict[Tuple[int, int], TerrainType]:
-        """生成河流分割的地形地图"""
+        """Generate the river-split terrain map."""
         terrain_map = {}
         center = GameConfig.MAP_WIDTH // 2
 
-        # 遍历整个地图
+        # Traverse entire map
         for q in range(GameConfig.MAP_WIDTH):
             for r in range(GameConfig.MAP_HEIGHT):
                 center_q = q - center
@@ -1155,14 +1154,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         return terrain_map
 
     def _generate_river_split_terrain(self, q: int, r: int) -> TerrainType:
-        """🎯 完全确定性的河流分割地形 - V4: 增加中央区域战略元素"""
+        """Fully deterministic river-split terrain - V4: enhanced central strategic elements."""
 
-        # === 第一优先级：后方城池（中心对称） ===
-        # 🏰 用户指定的新城池位置
+        # === Priority 1: Rear cities (center-symmetric) ===
+        # User-specified new city positions
         if (q == 5 and r == 4) or (q == -5 and r == -4):
             return TerrainType.URBAN
 
-        # === 第二优先级：对角线河流系统 ===
+        # === Priority 2: Diagonal river system ===
         diagonal_distance = abs(q + r)
         if diagonal_distance == 0:
             return TerrainType.PLAIN if (q == 0 and r == 0) else TerrainType.WATER
@@ -1172,106 +1171,106 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             else:
                 return TerrainType.WATER
 
-        # === 第三优先级：城池和中央区域的战略地形 ===
+        # === Priority 3: Strategic terrain around cities and central area ===
 
-        # 🛡️ 城池防御区：确保城池周围是平地 (中心对称)
+        # City defense zone: ensure plains around cities (center-symmetric)
         city1_dist = math.sqrt((q - 5) ** 2 + (r - 4) ** 2)
         city2_dist = math.sqrt((q + 5) ** 2 + (r + 4) ** 2)
         if city1_dist <= 1.5 or city2_dist <= 1.5:
             return TerrainType.PLAIN
 
-        # ✨ 新增：中央区域的战略点 (中心对称) - 增加更多地形
-        # 定义一半的特征，另一半通过代码对称生成
-        central_hills = [(2, 2), (1, 3), (3, 3)]  # 原有  # 新增山丘，提供更深的火力点
+        # Central area strategic points (center-symmetric) - additional terrain variety
+        # Define one half; the other half is generated symmetrically by code
+        central_hills = [(2, 2), (1, 3), (3, 3)]  # existing  # new hills for deeper firing positions
         for hq, hr in central_hills:
             if (q == hq and r == hr) or (q == -hq and r == -hr):
                 return TerrainType.HILL
 
         central_forests = [
             (3, 1),
-            (2, -1),  # 原有
-            (4, 2),  # 新增森林，提供侧翼掩护
-            (1, 4),  # 新增森林，连接后方与前线
+            (2, -1),  # existing
+            (4, 2),  # new forest for flank cover
+            (1, 4),  # new forest connecting rear to front line
         ]
         for fq, fr in central_forests:
             if (q == fq and r == fr) or (q == -fq and r == -fr):
                 return TerrainType.FOREST
 
-        # === 第四优先级：外围的自然地形集群（保持对角线对称） ===
+        # === Priority 4: Peripheral natural terrain clusters (maintain diagonal symmetry) ===
 
-        # 🌲 森林集群：使用圆形/椭圆形分布，更自然
+        # Forest clusters: circular/elliptical distribution for a natural look
         forest_clusters = [
-            # 只需定义一半，另一半通过对称自动生成
-            ((-4, 6), 1.8),  # 后方森林
-            ((-2, 3), 1.2),  # 前沿森林
-            ((-6, 2), 1.0),  # 侧翼森林
+            # Define only one half; the other half is generated via symmetry
+            ((-4, 6), 1.8),  # Rear forest
+            ((-2, 3), 1.2),  # Front-line forest
+            ((-6, 2), 1.0),  # Flank forest
         ]
 
         for (center_q, center_r), radius in forest_clusters:
-            # 检查原始点
+            # Check original point
             distance1 = math.sqrt((q - center_q) ** 2 + (r - center_r) ** 2)
-            # 检查对角线对称点
+            # Check diagonal mirror point
             distance2 = math.sqrt((q - (-center_r)) ** 2 + (r - (-center_q)) ** 2)
             if distance1 <= radius or distance2 <= radius:
                 return TerrainType.FOREST
 
-        # 🏔️ 山脉集群：战略高地，圆形分布
+        # Mountain clusters: strategic high ground, circular distribution
         mountain_clusters = [
-            # 只需定义一半
-            ((-3, 5), 1.0),  # 关键高地
-            ((-6, 6), 0.8),  # 角落要塞
+            # Define only one half
+            ((-3, 5), 1.0),  # Key high ground
+            ((-6, 6), 0.8),  # Corner fortress
         ]
 
         for (center_q, center_r), radius in mountain_clusters:
-            # 检查原始点和对角线对称点
+            # Check original and diagonal mirror points
             distance1 = math.sqrt((q - center_q) ** 2 + (r - center_r) ** 2)
             distance2 = math.sqrt((q - (-center_r)) ** 2 + (r - (-center_q)) ** 2)
             if distance1 <= radius or distance2 <= radius:
                 return TerrainType.MOUNTAIN
 
-        # 🏔️ 战略高地：精确的单点制高点
+        # Strategic hills: precise single-point high ground
         strategic_hills = [
-            # 只需定义一半
+            # Define only one half
             (-1, 3),
             (-4, 2),
         ]
 
         for hill_q, hill_r in strategic_hills:
-            # 检查原始点和对角线对称点
+            # Check original and diagonal mirror points
             if (q == hill_q and r == hill_r) or (q == -hill_r and r == -hill_q):
                 return TerrainType.HILL
 
-        # === 第五优先级：边界处理 ===
-        # 🏔️ 地图边缘：稀疏的山脉边界
+        # === Priority 5: Boundary handling ===
+        # Map edges: sparse mountain border
         if abs(q) == 7 or abs(r) == 7:
-            # 只在特定位置设置边界山脉，不是全部
+            # Only place border mountains at specific positions, not all
             if (q + r) % 3 == 0:
                 return TerrainType.MOUNTAIN
             else:
                 return TerrainType.FOREST
 
-        # === 第六优先级：默认地形 ===
-        # 所有其他区域都是平地
+        # === Priority 6: Default terrain ===
+        # All other areas are plains
         return TerrainType.PLAIN
 
     def _create_river_split_map_entities(
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """创建河流分割地图的实体"""
-        # 出生点：在各自区域的前沿位置
+        """Create river-split map entities."""
+        # Spawn points: at front-line positions in each faction's area
         spawn_points = {
-            Faction.SHU: (-4, 4),  # 左上区域前沿
-            Faction.WEI: (4, -4),  # 右下区域前沿
+            Faction.SHU: (-4, 4),  # Upper-left area front line
+            Faction.WEI: (4, -4),  # Lower-right area front line
         }
 
         for (q, r), terrain_type in terrain_map.items():
-            # 创建地块实体
+            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(q, r))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((q, r)))
 
-            # 在出生点和城池附近设置领土控制
+            # Set territory control near spawn points and cities
             controlling_faction = self._get_river_split_territory_control(
                 (q, r), spawn_points
             )
@@ -1291,7 +1290,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     ),
                 )
 
-            # 添加到地图数据
+            # Add to map data
             map_data.tiles[(q, r)] = tile_entity
 
     def _get_river_split_territory_control(
@@ -1300,21 +1299,21 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         spawn_points: Dict[Faction, Tuple[int, int]],
         control_radius: int = 2,
     ) -> Faction:
-        """确定河流分割地图的初始领土控制"""
+        """Determine initial territory control for the river-split map."""
         q, r = pos
 
-        # 出生点周围控制
+        # Control around spawn points
         for faction, (spawn_q, spawn_r) in spawn_points.items():
             distance = math.sqrt((q - spawn_q) ** 2 + (r - spawn_r) ** 2)
             if distance <= control_radius:
                 return faction
 
-        # 🏰 城池控制 (中心对称)
-        # (5, 4) 位于WEI的区域 (q+r > 0)
+        # City control (center-symmetric)
+        # (5, 4) is in WEI's area (q+r > 0)
         if math.sqrt((q - 5) ** 2 + (r - 4) ** 2) <= 2:
             return Faction.WEI
 
-        # (-5, -4) 位于SHU的区域 (q+r < 0)
+        # (-5, -4) is in SHU's area (q+r < 0)
         if math.sqrt((q + 5) ** 2 + (r + 4) ** 2) <= 2:
             return Faction.SHU
 
@@ -1323,7 +1322,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _print_river_split_map_analysis(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """打印河流分割地图分析报告"""
+        """Print river-split map analysis report."""
         terrain_count = {}
         for terrain in terrain_map.values():
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
@@ -1345,13 +1344,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             percentage = count / total_tiles * 100
             print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
 
-        # 地图可视化
+        # Map visualization
         self._print_terrain_map_visual(terrain_map)
 
-        # 对称性验证
+        # Symmetry verification
         self._verify_diagonal_symmetry(terrain_map)
 
-        # 战略要点分析
+        # Strategic point analysis
         self._analyze_river_split_strategic_points(terrain_map)
 
         print("=" * 70)
@@ -1359,10 +1358,10 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _analyze_river_split_strategic_points(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """分析河流分割地图的战略要点"""
+        """Analyze strategic points on the river-split map."""
         print(f"\n🎯 战略要点分析:")
 
-        # 统计各类地形簇
+        # Count terrain clusters by type
         shu_area_count = sum(1 for (q, r) in terrain_map.keys() if q <= -1 and r >= 1)
         wei_area_count = sum(1 for (q, r) in terrain_map.keys() if q >= 1 and r <= -1)
         river_count = sum(
@@ -1394,7 +1393,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  🏰 城池更靠后方，提供安全的战略纵深")
 
     def _generate_river_split_diagonal_map_offset(self):
-        """🌊 生成河流分割的对角线对称竞技地图 - 偏移坐标系版本"""
+        """Generate a river-split diagonal-symmetric competitive map - offset coordinate version."""
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
         )
@@ -1404,27 +1403,27 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         )
         print(f"[MapSystem] 设计特色: 对角线河流分界，左下右上对称，对角战略布局")
 
-        # 生成河流分割地图（偏移坐标版本）
+        # Generate river-split map (offset coordinate version)
         terrain_map = self._generate_river_split_terrain_map_offset()
 
-        # 创建ECS实体（偏移坐标版本）
+        # Create ECS entities (offset coordinate version)
         self._create_river_split_map_entities_offset(map_data, terrain_map)
 
-        # 添加到世界
+        # Add to world
         self.world.add_singleton_component(map_data)
 
-        # 打印分析报告（偏移坐标版本）
+        # Print analysis report (offset coordinate version)
         self._print_river_split_map_analysis_offset(terrain_map)
 
     def _generate_river_split_terrain_map_offset(self) -> Dict[Tuple[int, int], TerrainType]:
-        """生成河流分割的地形地图 - 以(0,0)为中心的坐标版本"""
+        """Generate the river-split terrain map - centered at (0,0) coordinate version."""
         terrain_map = {}
 
-        # 计算地图半径
+        # Calculate map radius
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
 
-        # 遍历整个地图（以(0,0)为中心的坐标）
+        # Traverse entire map ((0,0)-centered coordinates)
         for x in range(-half_width, half_width + 1):
             for y in range(-half_height, half_height + 1):
                 terrain = self._generate_river_split_terrain_centered(x, y)
@@ -1433,99 +1432,99 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         return terrain_map
 
     def _generate_river_split_terrain_centered(self, x: int, y: int) -> TerrainType:
-        """🎯 完全确定性的河流分割地形 - 以(0,0)为中心的坐标版本，左下右上对角线对称"""
+        """Fully deterministic river-split terrain - (0,0)-centered coordinates, lower-left/upper-right diagonal symmetry."""
         
-        # 计算地图半径
+        # Calculate map radius
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
         
-        # === 第一优先级：后方城池（对角线对称） ===
-        # 左下角城池和右上角城池
+        # === Priority 1: Rear cities (diagonal-symmetric) ===
+        # Lower-left and upper-right corner cities
         if (x == -half_width + 2 and y == -half_height + 2) or (x == half_width - 2 and y == half_height - 2):
             return TerrainType.URBAN
 
-        # === 第二优先级：对角线河流系统 ===
-        # 使用反对角线（从右上到左下），对角线方程：x + y = 0
+        # === Priority 2: Diagonal river system ===
+        # Anti-diagonal (upper-right to lower-left), equation: x + y = 0
         diagonal_distance = abs(x + y)
         
         if diagonal_distance == 0:
-            # 正好在反对角线上
+            # Exactly on the anti-diagonal
             if x == 0 and y == 0:
-                return TerrainType.PLAIN  # 中心争夺点
+                return TerrainType.PLAIN  # Center contest point
             else:
-                return TerrainType.WATER  # 河流
+                return TerrainType.WATER  # River
         elif diagonal_distance == 1:
-            # 河流两侧
-            # 在地图中心附近或特定位置设为平地，其他为河流
+            # River banks
+            # Near center or specific positions become plains; others are river
             if (abs(x) <= 1 and abs(y) <= 1) or ((x * x + y * y) % 5 == 0):
                 return TerrainType.PLAIN
             else:
                 return TerrainType.WATER
 
-        # === 第三优先级：城池和中央区域的战略地形 ===
+        # === Priority 3: Strategic terrain around cities and central area ===
         
-        # 🛡️ 城池防御区：确保城池周围是平地（对角线对称）
-        # 左下城池防御区
+        # City defense zone: ensure plains around cities (diagonal-symmetric)
+        # Lower-left city defense zone
         city1_dist = math.sqrt((x - (-half_width + 2)) ** 2 + (y - (-half_height + 2)) ** 2)
-        # 右上城池防御区
+        # Upper-right city defense zone
         city2_dist = math.sqrt((x - (half_width - 2)) ** 2 + (y - (half_height - 2)) ** 2)
         if city1_dist <= 1.5 or city2_dist <= 1.5:
             return TerrainType.PLAIN
 
-        # ✨ 中央区域的战略点（对角线对称）
-        # 定义一半的战略丘陵，另一半通过对角线对称生成
+        # Central area strategic points (diagonal-symmetric)
+        # Define one half of strategic hills; the other half is generated via diagonal symmetry
         strategic_hills = [
-            (-2, 1),   # 左下象限的丘陵
+            (-2, 1),   # Hills in lower-left quadrant
             (-1, 2),
             (-3, 2),
         ]
         
         for hx, hy in strategic_hills:
-            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            # Check original and diagonal mirror points (x, y) ↔ (-y, -x)
             if (x == hx and y == hy) or (x == -hy and y == -hx):
                 return TerrainType.HILL
 
-        # 中央森林区域（对角线对称）
+        # Central forest areas (diagonal-symmetric)
         central_forests = [
-            (-1, -1),  # 左下象限的森林
-            (1, 1),    # 右上象限的森林
-            (-3, 1),   # 左下象限的森林
+            (-1, -1),  # Forest in lower-left quadrant
+            (1, 1),    # Forest in upper-right quadrant
+            (-3, 1),   # Forest in lower-left quadrant
         ]
         
         for fx, fy in central_forests:
-            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            # Check original and diagonal mirror points (x, y) ↔ (-y, -x)
             if (x == fx and y == fy) or (x == -fy and y == -fx):
                 return TerrainType.FOREST
 
-        # === 第四优先级：外围的自然地形集群（对角线对称） ===
+        # === Priority 4: Peripheral natural terrain clusters (diagonal-symmetric) ===
         
-        # 🌲 森林集群：使用圆形分布，更自然
+        # Forest clusters: circular distribution for a natural look
         forest_clusters = [
-            # 只需定义一半，另一半通过对角线对称自动生成
-            ((-half_width + 3, -half_height + 2), 1.8),  # 左下后方森林
-            ((-2, 2), 1.2),                              # 左下前沿森林
-            ((-half_width + 2, -half_height + 4), 1.0),  # 左下侧翼森林
+            # Define only one half; the other half is generated via diagonal symmetry
+            ((-half_width + 3, -half_height + 2), 1.8),  # Lower-left rear forest
+            ((-2, 2), 1.2),                              # Lower-left front-line forest
+            ((-half_width + 2, -half_height + 4), 1.0),  # Lower-left flank forest
         ]
 
         for (center_fx, center_fy), radius in forest_clusters:
-            # 检查原始点
+            # Check original point
             distance1 = math.sqrt((x - center_fx) ** 2 + (y - center_fy) ** 2)
-            # 检查对角线对称点 (x, y) ↔ (-y, -x)
+            # Check diagonal mirror point (x, y) ↔ (-y, -x)
             sym_center_x = -center_fy
             sym_center_y = -center_fx
             distance2 = math.sqrt((x - sym_center_x) ** 2 + (y - sym_center_y) ** 2)
             if distance1 <= radius or distance2 <= radius:
                 return TerrainType.FOREST
 
-        # 🏔️ 山脉集群：战略高地，圆形分布
+        # Mountain clusters: strategic high ground, circular distribution
         mountain_clusters = [
-            # 只需定义一半，另一半通过对角线对称自动生成
-            ((-1, -3), 1.0),  # 左下关键高地
-            ((-half_width + 1, -half_height + 1), 0.8),  # 左下角落要塞
+            # Define only one half; the other half is generated via diagonal symmetry
+            ((-1, -3), 1.0),  # Lower-left key high ground
+            ((-half_width + 1, -half_height + 1), 0.8),  # Lower-left corner fortress
         ]
 
         for (center_mx, center_my), radius in mountain_clusters:
-            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            # Check original and diagonal mirror points (x, y) ↔ (-y, -x)
             distance1 = math.sqrt((x - center_mx) ** 2 + (y - center_my) ** 2)
             sym_center_x = -center_my
             sym_center_y = -center_mx
@@ -1533,53 +1532,53 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             if distance1 <= radius or distance2 <= radius:
                 return TerrainType.MOUNTAIN
 
-        # 🏔️ 战略高地：精确的单点制高点
+        # Strategic hills: precise single-point high ground
         strategic_points = [
-            # 只需定义一半，另一半通过对角线对称自动生成
+            # Define only one half; the other half is generated via diagonal symmetry
             (1, 3),
             (-2, 4),
         ]
 
         for px, py in strategic_points:
-            # 检查原始点和对角线对称点 (x, y) ↔ (-y, -x)
+            # Check original and diagonal mirror points (x, y) ↔ (-y, -x)
             if (x == px and y == py) or (x == -py and y == -px):
                 return TerrainType.HILL
 
-        # === 第五优先级：边界处理 ===
-        # 🏔️ 地图边缘：稀疏的山脉边界
+        # === Priority 5: Boundary handling ===
+        # Map edges: sparse mountain border
         if abs(x) == half_width or abs(y) == half_height:
-            # 只在特定位置设置边界山脉，不是全部
+            # Only place border mountains at specific positions, not all
             if (x + y) % 3 == 0:
                 return TerrainType.MOUNTAIN
             else:
                 return TerrainType.FOREST
 
-        # === 第六优先级：默认地形 ===
-        # 所有其他区域都是平地
+        # === Priority 6: Default terrain ===
+        # All other areas are plains
         return TerrainType.PLAIN
 
     def _create_river_split_map_entities_offset(
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """创建河流分割地图的实体 - 以(0,0)为中心的坐标版本"""
-        # 计算地图半径
+        """Create river-split map entities - (0,0)-centered coordinate version."""
+        # Calculate map radius
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
         
-        # 出生点：在左下角和右上角的对称位置
+        # Spawn points: symmetric positions in lower-left and upper-right corners
         spawn_points = {
-            Faction.SHU: (-half_width + 3, -half_height + 3),  # 左下区域前沿
-            Faction.WEI: (half_width - 3, half_height - 3),   # 右上区域前沿
+            Faction.SHU: (-half_width + 3, -half_height + 3),  # Lower-left front line
+            Faction.WEI: (half_width - 3, half_height - 3),   # Upper-right front line
         }
 
         for (x, y), terrain_type in terrain_map.items():
-            # 创建地块实体
+            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(x, y))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((x, y)))
 
-            # 在出生点和城池附近设置领土控制
+            # Set territory control near spawn points and cities
             controlling_faction = self._get_river_split_territory_control_centered(
                 (x, y), spawn_points
             )
@@ -1599,7 +1598,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     ),
                 )
 
-            # 添加到地图数据
+            # Add to map data
             map_data.tiles[(x, y)] = tile_entity
 
     def _get_river_split_territory_control_centered(
@@ -1608,23 +1607,23 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         spawn_points: Dict[Faction, Tuple[int, int]],
         control_radius: int = 2,
     ) -> Faction:
-        """确定河流分割地图的初始领土控制 - 以(0,0)为中心的坐标版本"""
+        """Determine initial territory control for the river-split map - (0,0)-centered coordinate version."""
         x, y = pos
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
 
-        # 出生点周围控制
+        # Control around spawn points
         for faction, (spawn_x, spawn_y) in spawn_points.items():
             distance = math.sqrt((x - spawn_x) ** 2 + (y - spawn_y) ** 2)
             if distance <= control_radius:
                 return faction
 
-        # 🏰 城池控制（对角线对称）
-        # 左下城池 (-half_width+2, -half_height+2) 位于SHU的区域
+        # City control (diagonal-symmetric)
+        # Lower-left city (-half_width+2, -half_height+2) is in SHU's area
         if math.sqrt((x - (-half_width + 2)) ** 2 + (y - (-half_height + 2)) ** 2) <= 2:
             return Faction.SHU
 
-        # 右上城池 (half_width-2, half_height-2) 位于WEI的区域
+        # Upper-right city (half_width-2, half_height-2) is in WEI's area
         if math.sqrt((x - (half_width - 2)) ** 2 + (y - (half_height - 2)) ** 2) <= 2:
             return Faction.WEI
 
@@ -1633,7 +1632,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _print_river_split_map_analysis_offset(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """打印河流分割地图分析报告 - 以(0,0)为中心的坐标版本"""
+        """Print river-split map analysis report - (0,0)-centered coordinate version."""
         terrain_count = {}
         for terrain in terrain_map.values():
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
@@ -1659,13 +1658,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             percentage = count / total_tiles * 100
             print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
 
-        # 地图可视化
+        # Map visualization
         self._print_terrain_map_visual_centered(terrain_map)
 
-        # 对称性验证
+        # Symmetry verification
         self._verify_diagonal_symmetry_centered(terrain_map)
 
-        # 战略要点分析
+        # Strategic point analysis
         self._analyze_river_split_strategic_points_centered(terrain_map)
 
         print("=" * 70)
@@ -1673,7 +1672,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _print_terrain_map_visual_centered(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🗺️ 打印地图的可视化表示 - 以(0,0)为中心的坐标版本"""
+        """Print the visual representation of the map - (0,0)-centered coordinate version."""
         print("\n🗺️ 地形地图可视化 (y从上到下, x从左到右, 中心(0,0)):")
         print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
 
@@ -1691,12 +1690,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         print("\n   ", end="")
 
-        # 打印列标题 (x坐标)
+        # Print column headers (x coordinates)
         for x in range(-half_width, half_width + 1):
             print(f"{x:2}", end=" ")
         print()
 
-        # 打印每一行 (y从高到低，即从上到下)
+        # Print each row (y from high to low, i.e., top to bottom)
         for y in range(half_height, -half_height - 1, -1):
             print(f"{y:2}:", end=" ")
             for x in range(-half_width, half_width + 1):
@@ -1708,7 +1707,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     print("  ", end=" ")
             print(f" :{y}")
 
-        # 再次打印底部列标题
+        # Print bottom column headers again
         print("   ", end="")
         for x in range(-half_width, half_width + 1):
             print(f"{x:2}", end=" ")
@@ -1717,7 +1716,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _verify_diagonal_symmetry_centered(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """🔍 验证对角线对称性 - 以(0,0)为中心的坐标版本"""
+        """Verify diagonal symmetry - (0,0)-centered coordinate version."""
         print(f"\n🔍 对角线对称性验证（中心坐标）:")
 
         asymmetric_pairs = []
@@ -1727,11 +1726,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
 
-        # 检查每个位置与其对角线镜像位置
+        # Check each position against its diagonal mirror
         for x in range(-half_width, half_width + 1):
             for y in range(-half_height, half_height + 1):
                 if (x, y) in terrain_map:
-                    # 对角线镜像：(x, y) ↔ (-y, -x)
+                    # Diagonal mirror: (x, y) ↔ (-y, -x)
                     mirror_pos = (-y, -x)
                     total_checks += 1
 
@@ -1753,7 +1752,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                                 "pos1": (x, y),
                                 "terrain1": terrain_map[(x, y)].value,
                                 "pos2": mirror_pos,
-                                "terrain2": "缺失",
+                                "terrain2": "missing",
                             }
                         )
 
@@ -1762,7 +1761,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                 f"  ✅ 完美对角线对称！{symmetric_pairs}/{total_checks} 个位置完全对称"
             )
         else:
-            print(f"  ❌ 发现 {len(asymmetric_pairs)} 个不对称位置:")
+            print(f"  ❌ Found {len(asymmetric_pairs)} asymmetric positions:")
             for i, pair in enumerate(asymmetric_pairs[:5]):
                 print(
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
@@ -1773,14 +1772,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _analyze_river_split_strategic_points_centered(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
-        """分析河流分割地图的战略要点 - 以(0,0)为中心的坐标版本"""
+        """Analyze strategic points on the river-split map - (0,0)-centered coordinate version."""
         print(f"\n🎯 战略要点分析:")
 
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
 
-        # 统计各类地形簇
-        # 使用反对角线分割：x + y < 0 为左下区域，x + y > 0 为右上区域
+        # Count terrain clusters by type
+        # Split by anti-diagonal: x + y < 0 is lower-left area, x + y > 0 is upper-right area
         shu_area_count = sum(
             1 for (x, y) in terrain_map.keys() 
             if x + y < 0
@@ -1823,32 +1822,32 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  SHU (蜀): 出生点({shu_spawn_x}, {shu_spawn_y}), 城池({shu_city_x}, {shu_city_y}) - 左下区域")
         print(f"  WEI (魏): 出生点({wei_spawn_x}, {wei_spawn_y}), 城池({wei_city_x}, {wei_city_y}) - 右上区域")
         
-        # 计算出生点间距离
+        # Calculate spawn point distance
         spawn_distance = math.sqrt((wei_spawn_x - shu_spawn_x)**2 + (wei_spawn_y - shu_spawn_y)**2)
         print(f"  📏 直线距离: {spawn_distance:.1f} 格")
         print(f"  🌊 需跨越对角河流才能到达对方区域")
         print(f"  🏰 城池位于后方，提供安全的战略纵深")
 
     def _save_map_info_to_stats(self):
-        """保存地图信息到GameStats中"""
+        """Save map information to GameStats."""
         import time
         from ..components import GameStats
         
-        # 获取GameStats组件，如果不存在就暂时跳过
+        # Get GameStats component; skip if it doesn't exist yet
         game_stats = self.world.get_singleton_component(GameStats)
         if not game_stats:
-            print("[MapSystem] GameStats组件不存在，跳过地图信息保存")
+            print("[MapSystem] GameStats component not found, skipping map info save")
             return
         
-        # 确定坐标系类型
+        # Determine coordinate system type
         coordinate_system = "centered" if self.symmetry_type == "river_split_offset" else "offset"
         
-        # 获取出生点位置
+        # Get spawn positions
         spawn_positions = {}
         if self.competitive_mode:
             spawn_positions = self.get_competitive_spawn_positions()
         
-        # 收集地图信息
+        # Collect map info
         map_info = {
             "map_width": GameConfig.MAP_WIDTH,
             "map_height": GameConfig.MAP_HEIGHT,
@@ -1861,7 +1860,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             "generation_timestamp": time.time(),
         }
         
-        # 保存到GameStats
+        # Save to GameStats
         game_stats.map_info = map_info
         
         print(f"[MapSystem] ✅ 地图信息已保存到GameStats:")
@@ -1873,8 +1872,9 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
     def _generate_river_split_diagonal_map_offset_revised(self):
         """
-        🌊 (Revised) 生成河流分割的对角线对称竞技地图 - 偏移坐标系版本
-        此版本修正了坐标系处理和对称性计算的根本问题，确保地图的几何正确性和真正的对称性。
+        (Revised) Generate the river-split diagonal-symmetric competitive map - offset coordinate version.
+        This version fixes fundamental issues with coordinate system handling and symmetry calculation,
+        ensuring geometric correctness and true symmetry.
         """
         map_data = MapData(
             width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
@@ -1885,16 +1885,16 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         )
         print(f"[MapSystem] ✨ Design: True point-symmetry across a diagonal river.")
 
-        # 1. 使用修正后的、基于轴坐标的逻辑生成地形图
+        # 1. Generate terrain map using the revised axial-coordinate-based logic
         terrain_map = self._generate_river_split_terrain_map_offset_revised()
 
-        # 2. 创建ECS实体 (此步骤与原版兼容)
+        # 2. Create ECS entities (compatible with the original version)
         self._create_river_split_map_entities_offset(map_data, terrain_map)
 
-        # 3. 添加到世界
+        # 3. Add to world
         self.world.add_singleton_component(map_data)
 
-        # 4. 打印分析报告 (可以使用适用于中心坐标系的打印函数)
+        # 4. Print analysis report (use the centered-coordinate print function)
         self._print_river_split_map_analysis_offset(terrain_map)
         print("[MapSystem] ✅ Revised map generation complete.")
 
@@ -1902,17 +1902,18 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self,
     ) -> Dict[Tuple[int, int], TerrainType]:
         """
-        (Revised) 生成地形地图。
-        遍历所有偏移坐标，并调用基于轴坐标的生成函数来确保几何正确性。
+        (Revised) Generate the terrain map.
+        Iterates over all offset coordinates and calls the axial-coordinate-based
+        generation function to ensure geometric correctness.
         """
         terrain_map = {}
-        # 保持与原版相同的中心化坐标系
+        # Use the same centered coordinate system as the original version
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
 
         for col in range(-half_width, half_width + 1):
             for row in range(-half_height, half_height + 1):
-                # 对每个坐标调用新的、基于轴坐标的逻辑函数
+                # Call the new axial-coordinate-based logic for each position
                 terrain = self._generate_river_split_terrain_axial(col, row)
                 terrain_map[(col, row)] = terrain
 
@@ -1927,46 +1928,46 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, col: int, row: int
     ) -> TerrainType:
         """
-        (Revised V5) 最终版本，修复城市消失的BUG，并增加河流细节和中轴线山脉。
+        (Revised V5) Final version: fixes the disappearing-city bug and adds river detail and central-axis mountains.
         """
-        # 核心：将偏移坐标转换为轴坐标进行所有几何计算
+        # Core: convert offset coordinates to axial coordinates for all geometric calculations
         q, r = HexMath.offset_to_axial(col, row)
         s = -q - r
         
         map_radius = GameConfig.MAP_WIDTH // 2
 
-        # --- 地图设计元素 (所有坐标均为轴坐标) ---
+        # --- Map design elements (all coordinates in axial space) ---
 
-        # 1. 城市位于对角线位置
+        # 1. Cities placed at diagonal positions
         city_bl_offset = (-6, -6)
         city_bl_axial = HexMath.offset_to_axial(*city_bl_offset)
         city_tr_axial = (-city_bl_axial[0], -city_bl_axial[1])
         city_tr_offset = HexMath.axial_to_offset(*city_tr_axial)
 
-        # 2. 丰富河流宽度的点
+        # 2. Points that widen the river
         river_thicken_points = [
-            (3, -2), (4, -3), # 右上河岸加宽点
-            (-1, 2) # 左下河岸加宽点
+            (3, -2), (4, -3), # Upper-right bank widening points
+            (-1, 2) # Lower-left bank widening point
         ]
 
-        # 3. 中轴线上的战略山脉 (偏移坐标)
+        # 3. Strategic mountains on the central axis (offset coordinates)
         central_mountain_offset_1 = (0, 3)
         central_mountain_axial_1 = HexMath.offset_to_axial(*central_mountain_offset_1)
         
-        # 4. 沿河森林
+        # 4. Riverside forests
         riverside_forests = [
             (1, 0), (2, -1),
             (5, -4),
             (-2, 3), 
         ]
 
-        # 5. 自然的山脉
+        # 5. Natural mountain ridges
         mountain_ridge = [
             (4, 1), (5, 1), (5, 0), (6, 0), (6, -1), 
             (2, 4), (2, 5), (3, 4) 
         ]
 
-        # 6. 在河上开辟的陆桥 (axial coords)
+        # 6. Land bridges across the river (axial coords)
         plain_bridges_axial = [
             (-1, 1), (1, -1), # from offset (-1,0), (1,-1)
             (3, -2),          # from offset (3,-1)
@@ -1975,99 +1976,99 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             (4, -4),          # from offset (4,-2)
         ]
 
-        # 7. 最终微调的河流点
+        # 7. Final fine-tuned river blocks
         final_river_blocks_axial = [
             (-4, 4), # from offset (-4,2)
             (-3, 3), # from offset (-3,1)
         ]
 
-        # --- 地形生成优先级 ---
+        # --- Terrain generation priority ---
 
-        # 优先级 1: 城市 (必须是最高优先级，防止被覆盖)
+        # Priority 1: Cities (must be highest priority to prevent being overwritten)
         if (q, r) == city_bl_axial or (q, r) == city_tr_axial:
             return TerrainType.URBAN
 
-        # 优先级 2: 最终微调的河流块
+        # Priority 2: Final fine-tuned river blocks
         for fq, fr in final_river_blocks_axial:
             if (q, r) == (fq, fr) or (q, r) == (-fq, -fr):
                 return TerrainType.WATER
 
-        # 优先级 3: 河流上的陆桥
+        # Priority 3: Land bridges across the river
         for bq, br in plain_bridges_axial:
             if (q, r) == (bq, br) or (q, r) == (-bq, -br):
                 return TerrainType.PLAIN
 
-        # 优先级 4: 中轴线战略山脉
+        # Priority 4: Central-axis strategic mountains
         if (q, r) == central_mountain_axial_1 or (q, r) == (-central_mountain_axial_1[0], -central_mountain_axial_1[1]):
              return TerrainType.MOUNTAIN
 
-        # 优先级 5: 地图边界 - 用森林和山脉包围，并保持稀疏
+        # Priority 5: Map border - surrounded by forest and mountains, kept sparse
         if max(abs(q), abs(r), abs(s)) >= map_radius:
             rand_val = (q * 13 + r * 31) % 100
-            if rand_val < 60:  # 60% 森林
+            if rand_val < 60:  # 60% forest
                 return TerrainType.FOREST
-            elif rand_val < 75: # 15% 山脉
+            elif rand_val < 75: # 15% mountain
                 return TerrainType.MOUNTAIN
         
-        # 优先级 6: 河流系统
+        # Priority 6: River system
         diagonal_sum = q + r
-        if diagonal_sum == 0: # 主河道
+        if diagonal_sum == 0: # Main river channel
             return TerrainType.PLAIN if q == 0 and r == 0 else TerrainType.WATER
-        # 河道加宽
+        # River channel widening
         for tq, tr in river_thicken_points:
             if (q, r) == (tq, tr) or (q, r) == (-tq, -tr):
                 return TerrainType.WATER
         
-        # 优先级 7: 沿河森林
+        # Priority 7: Riverside forests
         for fq, fr in riverside_forests:
             if (q, r) == (fq, fr) or (q, r) == (-fq, -fr):
                 return TerrainType.FOREST
 
-        # 优先级 8: 城市周围的防御地形
+        # Priority 8: Defense terrain around cities
         dist_to_bl_city = HexMath.hex_distance((col, row), city_bl_offset)
         dist_to_tr_city = HexMath.hex_distance((col, row), city_tr_offset)
 
-        # 紧邻城市的平原
+        # Plains immediately adjacent to city
         if dist_to_bl_city == 1 or dist_to_tr_city == 1:
             return TerrainType.PLAIN
-        # 环绕平原的森林
+        # Forest surrounding the plains
         if dist_to_bl_city == 2 or dist_to_tr_city == 2:
             return TerrainType.FOREST
 
-        # 优先级 9: 战略山脉 (使用新的山脊定义)
+        # Priority 9: Strategic mountain ridges (using new ridge definition)
         for mq, mr in mountain_ridge:
             if (q, r) == (mq, mr) or (q, r) == (-mq, -mr):
                 return TerrainType.MOUNTAIN
 
-        # 优先级 10: 填充一些战略丘陵
+        # Priority 10: Strategic hills
         strategic_hills = [(2, 2), (1, 3), (3, 3)]
         for hq, hr in strategic_hills:
             if (q, r) == (hq, hr) or (q, r) == (-hq, -hr):
                 return TerrainType.HILL
 
-        # 优先级 11: 默认地形
+        # Priority 11: Default terrain
         return TerrainType.PLAIN
 
     def _save_map_info_to_stats(self):
-        """保存地图信息到GameStats中"""
+        """Save map information to GameStats."""
         import time
         from ..components import GameStats
         
-        # 获取GameStats组件，如果不存在就暂时跳过
+        # Get GameStats component; skip if it doesn't exist yet
         game_stats = self.world.get_singleton_component(GameStats)
         if not game_stats:
-            print("[MapSystem] GameStats组件不存在，跳过地图信息保存")
+            print("[MapSystem] GameStats component not found, skipping map info save")
             return
         
-        # 确定坐标系类型
+        # Determine coordinate system type
         coordinate_system = "centered" if self.symmetry_type == "river_split_offset" else "offset"
         
-        # 获取出生点位置
+        # Get spawn positions
         spawn_positions = {}
         if self.competitive_mode:
             spawn_positions = self.get_competitive_spawn_positions()
         
-        # 收集地图信息
+        # Collect map info
         map_info = {
             "map_width": GameConfig.MAP_WIDTH,
             "map_height": GameConfig.MAP_HEIGHT,
@@ -2080,7 +2081,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             "generation_timestamp": time.time(),
         }
         
-        # 保存到GameStats
+        # Save to GameStats
         game_stats.map_info = map_info
         
         print(f"[MapSystem] ✅ 地图信息已保存到GameStats:")

@@ -1,6 +1,6 @@
 """
-LLM系统 - 游戏全局控制接口
-提供完整的游戏操作能力：系统控制 + 委托单位动作 + 委托观测查询
+LLM System - Global game control interface
+Provides full game operation capabilities: system control + delegated unit actions + delegated observation queries
 """
 
 import asyncio
@@ -87,19 +87,19 @@ class ActionExecutor:
         action = request.action_name
         params = request.parameters
         
-        # 1. 检查是否为系统级动作
+        # 1. Check if this is a system-level action
         if action in self.llm_system.system_actions:
             result = self.llm_system.system_actions[action](params)
             
-        # 2. 检查是否为单位动作 (委托给ActionHandler)
+        # 2. Check if this is a unit action (delegate to ActionHandler)
         elif action in self.llm_system.action_handler.action_handlers:
             result = self.llm_system.action_handler.execute_action(action, params)
             
-        # 3. 检查是否为观测动作 (委托给ObservationSystem)
+        # 3. Check if this is an observation action (delegate to ObservationSystem)
         elif self.llm_system._is_observation_action(action):
             result = self.llm_system._handle_observation_action(action, params)
             
-        # 4. 未知动作
+        # 4. Unknown action
         else:
             result = self.llm_system._create_system_error_response(
                 action, f"UNKNOWN ACTION: {action}", 2010
@@ -109,7 +109,7 @@ class ActionExecutor:
 
 
 class SyncEnvClient(SyncWebSocketClient):
-    """同步环境客户端"""
+    """Synchronous environment client"""
 
     def __init__(self, server_url: str, env_id: str):
         client_info = ClientInfo(type=ClientType.ENVIRONMENT, id=env_id)
@@ -117,13 +117,13 @@ class SyncEnvClient(SyncWebSocketClient):
         self.connected_agents = {}
 
     def url(self) -> str:
-        """构建环境连接 URL"""
+        """Build the environment connection URL"""
         return f"{self.server_url}/env/{self.client_info.id}"
 
     def response_to_agent(
         self, agent_id: str, action_id: int, outcome: str, outcome_type: str = "str"
     ):
-        """向Agent发送响应 - 同步接口"""
+        """Send a response to an Agent - synchronous interface"""
         return self.send_message(
             MessageType.MESSAGE.value,
             {
@@ -140,49 +140,49 @@ class SyncEnvClient(SyncWebSocketClient):
 
 
 class LLMSystem(System):
-    """LLM系统 - 游戏全局控制接口"""
+    """LLM System - Global game control interface"""
 
     def __init__(self):
         super().__init__()
         self.name = "LLMSystem"
         
-        # 🆕 游戏结束通知状态
+        # Game-end notification state
         self.game_end_notified = False
-        # 🆕 消息级冷却（鼓励批量发送）
+        # Message-level cooldown (encourages batch sending)
         self.message_cooldown_seconds: float = 0
         self._agent_last_message_ts: Dict[str, float] = {}
-        # 🆕 turn_start 可靠投递：等待 ACK 或重发。key=agent_id, value={turn_number, faction_key, next_retry_time, retry_count, notification}
+        # Reliable turn_start delivery: wait for ACK or retry. key=agent_id, value={turn_number, faction_key, next_retry_time, retry_count, notification}
         self._pending_turn_start_ack: Dict[str, dict] = {}
         self._turn_start_retry_interval: float = 8.0
         self._turn_start_max_retries: int = 5
 
-        # 系统级错误代码
+        # System-level error codes
         self.system_error_codes = {
-            2001: "游戏未初始化",
-            2002: "游戏已结束",
-            2003: "操作不被当前游戏模式支持",
-            2004: "系统资源不足",
-            2005: "权限不足",
-            2006: "操作超时",
-            2007: "参数验证失败",
-            2008: "系统状态异常",
-            2009: "网络连接错误",
-            2010: "内部服务错误",
-            2011: "操作频率过高",
+            2001: "Game not initialized",
+            2002: "Game already finished",
+            2003: "Operation not supported in current game mode",
+            2004: "Insufficient system resources",
+            2005: "Insufficient permissions",
+            2006: "Operation timed out",
+            2007: "Parameter validation failed",
+            2008: "Invalid system state",
+            2009: "Network connection error",
+            2010: "Internal service error",
+            2011: "Operation rate limit exceeded",
         }
 
     def initialize(self, world):
         self.world = world
 
-        # 初始化委托对象
+        # Initialize delegation objects
         self.action_handler = LLMActionHandler(world)
         self.observation_system = LLMObservationSystem(world)
 
-        # 🆕 初始化 ActionExecutor
+        # Initialize ActionExecutor
         self.action_executor = ActionExecutor(self)
 
-        # 使用同步客户端
-        # env_id: 从环境变量 ENV_ID 读取，便于 auto_test 多进程并行时隔离；默认 env_1
+        # Use synchronous client
+        # env_id: read from ENV_ID environment variable for multi-process isolation in auto_test; default env_1
         _env_id = os.environ.get("ENV_ID", "env_1")
         self.client = SyncEnvClient(
             server_url="ws://localhost:8000/ws/metaverse",
@@ -190,14 +190,14 @@ class LLMSystem(System):
         )
         self.add_listener()
 
-        # 初始化系统级动作映射
+        # Initialize system-level action mapping
         self.system_actions = self._init_system_actions()
 
         self.connect()
         return
 
     def _init_system_actions(self) -> Dict[str, callable]:
-        """初始化系统级动作映射"""
+        """Initialize system-level action mapping"""
         return {
             "strategy_ping": self.handle_strategy_ping,
             "report_llm_stats": self.handle_report_llm_stats,
@@ -206,34 +206,34 @@ class LLMSystem(System):
         }
 
     def add_listener(self):
-        # 添加事件监听器
+        # Add event listeners
         self.client.add_hub_listener("message", self.on_message)
         self.client.add_hub_listener("connect", self.on_connect)
         self.client.add_hub_listener("disconnect", self.on_disconnect)
         self.client.add_hub_listener("error", self.on_error)
 
-    # === WebSocket 事件处理方法 ===
+    # === WebSocket event handler methods ===
 
     def on_message(self, envelope):
-        """处理接收到的消息"""
+        """Handle a received message"""
         print(f"LLMSystem received message")
         try:
-            # 解析新的Envelope结构
+            # Parse the new Envelope structure
             sender = envelope.get("sender", {})
             recipient = envelope.get("recipient", {})
             payload = envelope.get("payload", {})
             message_type = envelope.get("type", "")
             now = time.time()
             if payload.get("type") == "action":
-                # 处理动作消息
+                # Handle action message
 
-                print(f"[LLM SYSTEM] 处理动作消息: {payload}")
+                print(f"[LLM SYSTEM] Handling action message: {payload}")
 
-                # 提取 agent 信息
+                # Extract agent info
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
-                # 记录一次消息级交互（单动作消息）
+                # Record one message-level interaction (single-action message)
 
                 last_ts = self._agent_last_message_ts.get(agent_id)
                 if last_ts is not None:
@@ -245,13 +245,13 @@ class LLMSystem(System):
                 self._record_message(agent_id, payload.get("parameters"))
                 return
             elif payload.get("type") == "action_batch":
-                # 批量处理动作消息
+                # Handle batch action message
                 actions = payload.get("actions", [])
                 batch_id = payload.get("id") or int(time.time() * 1e9)
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
-                # 🆕 消息级冷却检查（仅当批量中包含非系统级动作时生效；纯系统级动作跳过冷却）
+                # Message-level cooldown check (only applies when the batch contains non-system actions; skip cooldown for purely system actions)
                 try:
                     has_non_system_action = False
                     for _item in (actions or []):
@@ -265,14 +265,14 @@ class LLMSystem(System):
                     if not self._enforce_message_cooldown(agent_id, batch_id):
                         return
 
-                # 通过冷却检查后，记录一次消息级交互（批量消息只记一次）
+                # After passing the cooldown check, record one message-level interaction (batch messages counted once)
                 self._record_message(agent_id, None)
 
                 try:
                     size = len(actions)
                 except Exception:
                     size = 0
-                print(f"处理批量动作消息: count={size}")
+                print(f"[LLM SYSTEM] Handling batched actions: count={size}")
 
                 batch_results: List[Dict[str, Any]] = []
                 for idx, item in enumerate(actions):
@@ -328,16 +328,16 @@ class LLMSystem(System):
                     )
                 return
             else:
-                # 处理其他消息类型
-                print(f"处理其他消息类型: {payload}")
+                # Handle other message types
+                print(f"[LLM SYSTEM] Handling other message type: {payload}")
 
         except Exception as e:
-            print(f"消息处理错误: {e}")
+            print(f"[LLM SYSTEM] Error while handling message: {e}")
             if "sender" in locals():
                 self.send_error_response(sender, f"Message processing error: {e}")
     
     def _enforce_message_cooldown(self, agent_id: Optional[str], message_id: Union[int, str]) -> bool:
-        """简单易行的消息级冷却：限制同一 Agent 发送消息的频率，鼓励一次消息内批量 action。"""
+        """Simple message-level cooldown: limits how often the same Agent can send messages, encouraging batching multiple actions into one message."""
         try:
             if not agent_id:
                 return True
@@ -358,16 +358,16 @@ class LLMSystem(System):
                     print(
                         f"[LLMSystem] ⏱️ Message rejected due to cooldown: agent_id={agent_id}, remaining={remaining:.2f}s"
                     )
-                    # 用消息ID回包
+                    # Reply with message ID
                     self.client.response_to_agent(agent_id, message_id, error_result, "str")
-                    # 统一计数
+                    # Unified count
                     # self._record_interaction(agent_id, None)
                     return False
-            # 通过，记录时间戳
+            # Passed - record timestamp
             self._agent_last_message_ts[agent_id] = now
             return True
         except Exception as _e:
-            print(f"[LLMSystem] 冷却检查异常: {_e}")
+            print(f"[LLMSystem] Cooldown check error: {_e}")
             return True
 
     def on_connect(self, message):
@@ -379,18 +379,18 @@ class LLMSystem(System):
     def on_error(self, error):
         print(f"LLMSystem error: {error}")
 
-    # === WebSocket 客户端方法 ===
+    # === WebSocket client methods ===
 
     def connect(self):
-        """连接到服务器 - 同步方法"""
+        """Connect to server - synchronous method"""
         return self.client.connect()
 
     def disconnect(self):
-        """断开连接 - 同步方法"""
+        """Disconnect - synchronous method"""
         return self.client.disconnect()
 
     def send_message(self, message, instruction=None, target=None):
-        """发送消息 - 同步方法"""
+        """Send message - synchronous method"""
         return self.client.send_message(
             instruction or MessageType.MESSAGE.value, message, target
         )
@@ -398,7 +398,7 @@ class LLMSystem(System):
     def response_to_agent(
         self, agent_id: str, action_id: int, outcome: str, outcome_type: str = "str"
     ):
-        """执行动作 - 同步接口"""
+        """Execute action - synchronous interface"""
         return self.client.response_to_agent(agent_id, action_id, outcome, outcome_type)
 
     def _get_or_create_stats(self) -> GameStats:
@@ -481,17 +481,17 @@ class LLMSystem(System):
         except Exception:
             return {}
 
-    # === 策略评分：Agent 端主动打点 ===
+    # === Strategy scoring: Agent-side ping ===
     def handle_strategy_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """接收Agent端策略思考命中打点，进行计分与限流。
+        """Receive a strategy thinking hit ping from the Agent side for scoring and rate limiting.
 
-        期望参数：
-          - faction: str (wei/shu/wu) 必填
-          - score: float (默认0.5, 0 < score ≤ 1.0)
-          - evidence: str (可选，简短策略摘要)
-        限制：
-          - 同一阵营限流间隔（默认2秒）内只计一次
-          - 每阵营每分钟上限（默认6次 = 3分）
+        Expected parameters:
+          - faction: str (wei/shu/wu) Required
+          - score: float (default 0.5, 0 < score ≤ 1.0)
+          - evidence: str (optional, brief strategy summary)
+        Limits:
+          - Only one count per faction within the throttle interval (default 2 seconds)
+          - Per-faction per-minute cap (default 6 pings = 3 points)
         """
         try:
             faction_key = params.get("faction")
@@ -506,7 +506,7 @@ class LLMSystem(System):
             except Exception:
                 return {"success": False, "message": f"Invalid faction: {faction_key}"}
 
-            # 校验分值
+            # Validate score
             try:
                 score = float(score)
             except Exception:
@@ -514,7 +514,7 @@ class LLMSystem(System):
             if not (0.0 < score <= 1.0):
                 return {"success": False, "message": "Score out of range (0, 1]"}
 
-            # 获取统计组件
+            # Get statistics component
             stats = self.world.get_singleton_component(GameStats)
             if stats is None:
                 stats = GameStats()
@@ -523,33 +523,33 @@ class LLMSystem(System):
             import time as _time
             now = _time.time()
 
-            # 限流：同阵营最小响应间隔
+            # Rate limit: minimum interval per faction
             min_interval_sec = 2.0
             last_ts = stats.last_strategy_ping_ts.get(faction)
             if last_ts is not None and (now - last_ts) < min_interval_sec:
                 return {"success": False, "message": "Strategy ping throttled"}
 
-            # 每分钟上限
-            per_minute_cap = 6  # 次数
+            # Per-minute cap
+            per_minute_cap = 6  # count
             window_sec = 60.0
-            # 简易：用 ping_count 和 last_ts 粗略控制，如果上一分钟内次数已达上限，则拒绝
+            # Simple: use ping_count and last_ts for rough control; reject if cap reached within the last minute
             count = stats.strategy_ping_count_by_faction.get(faction, 0)
-            # 可选更精细：维护一个时间戳队列，这里先保持简单
+            # Optional finer control: maintain a timestamp queue; kept simple for now
             if count >= per_minute_cap and last_ts and (now - last_ts) < window_sec:
                 return {"success": False, "message": "Per-minute cap reached"}
 
-            # 通过，累计分值
+            # Passed - accumulate score
             current_score = stats.strategy_scores_by_faction.get(faction, 0.0)
             stats.strategy_scores_by_faction[faction] = round(current_score + score, 4)
 
-            # 更新计数、时间戳
+            # Update count and timestamp
             stats.strategy_ping_count_by_faction[faction] = count + 1
             stats.last_strategy_ping_ts[faction] = now
 
-            # 记录证据（保留最近10条）
+            # Record evidence (keep the most recent 10 entries)
             if evidence:
                 ev_list = stats.strategy_evidence.get(faction, [])
-                # 截断证据
+                # Truncate evidence
                 try:
                     evidence = str(evidence)
                     if len(evidence) > 120:
@@ -608,13 +608,13 @@ class LLMSystem(System):
             if not isinstance(api_stats, dict):
                 return {"success": False, "message": "Invalid api_stats format"}
             
-            # 获取统计组件
+            # Get statistics component
             stats = self.world.get_singleton_component(GameStats)
             if stats is None:
                 stats = GameStats()
                 self.world.add_singleton_component(stats)
             
-            # 🆕 未注册直接拒绝统计
+            # Reject stats from unregistered agents immediately
             try:
                 from ..components.agent_info import AgentInfoRegistry
                 registry = self.world.get_singleton_component(AgentInfoRegistry)
@@ -623,11 +623,11 @@ class LLMSystem(System):
             except Exception:
                 return {"success": False, "message": "Registration status unavailable"}
 
-            # 确保 llm_api_stats 字段存在
+            # Ensure llm_api_stats field exists
             if not hasattr(stats, 'llm_api_stats'):
                 stats.llm_api_stats = {}
             
-            # 存储 LLM API 统计数据
+            # Store LLM API statistics data
             stats.llm_api_stats[faction] = {
                 "total_calls": api_stats.get("total_calls", 0),
                 "successful_calls": api_stats.get("successful_calls", 0),
@@ -641,23 +641,23 @@ class LLMSystem(System):
                 "timestamp": time.time()
             }
             
-            print(f"[LLMSystem] ✅ 接收 {faction_key} 阵营 LLM API 统计: {api_stats}")
-            print(f"[LLMSystem] 📊 错误统计 - HTTP错误: {http_error_total}, Tool Call错误: {toolcall_error_total}, 空间感知错误: {spatial_awareness_error}")
+            print(f"[LLMSystem] ✅ Received LLM API stats for faction {faction_key}: {api_stats}")
+            print(f"[LLMSystem] 📊 Error stats - HTTP errors: {http_error_total}, Tool-call errors: {toolcall_error_total}, spatial-awareness errors: {spatial_awareness_error}")
 
             # 🆕 基于集合的收齐判断
             try:
                 stats.received_llm_stats_factions.add(faction)
                 registered = stats.registered_factions if hasattr(stats, 'registered_factions') else set()
                 received = stats.received_llm_stats_factions
-                print(f"[LLMSystem] 📊 统计进度: {len(received)}/{len(registered)} -> received={[f.value for f in received]}, registered={[f.value for f in registered]}")
+                print(f"[LLMSystem] 📊 Stats progress: {len(received)}/{len(registered)} -> received={[f.value for f in received]}, registered={[f.value for f in registered]}")
                 if not stats.can_generate_settlement_report and len(received) >= len(registered) and len(registered) > 0:
                     stats.can_generate_settlement_report = True
-                    print(f"[LLMSystem] 🎯 所有LLM统计已收齐，已设置结算报告生成标志")
-                # 同步传统计数，保持兼容
+                    print(f"[LLMSystem] 🎯 All LLM stats received; settlement report generation flag set")
+                # Sync count-based fields for backward compatibility
                 stats.received_llm_stats_count = len(received)
                 stats.expected_llm_stats_count = len(registered)
             except Exception as _e:
-                print(f"[LLMSystem] ⚠️ 集合统计进度更新失败: {_e}")
+                print(f"[LLMSystem] ⚠️ Failed to update set-based stats progress: {_e}")
             
             return {
                 "success": True,
@@ -673,12 +673,13 @@ class LLMSystem(System):
             return {"success": False, "message": f"Report LLM stats failed: {e}"}
 
     def handle_retrieve_game_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """返回系统级状态信息给 Agent（不改变游戏状态）。
-        内容包含：
-          - 当前回合数、当前玩家阵营、游戏是否在运行/暂停/结束
-          - 赢家（如有）和最大回合
-          - 已注册阵营、已连接的Agent数量
-          - LLM统计收集进度（已收与期望）
+        """Return system-level status information to the Agent (read-only, no game-state changes).
+
+        Includes:
+          - current turn number, current player faction, whether the game is running/paused/finished
+          - winner (if any) and maximum number of turns
+          - registered factions and number of connected agents
+          - LLM statistics collection progress (received vs expected)
         """
         try:
             game_state = self.world.get_singleton_component(GameState)
@@ -808,7 +809,7 @@ class LLMSystem(System):
             }
 
     def send_error_response(self, sender: Dict[str, Any], error_message: str):
-        """发送错误响应"""
+        """Send an error response to the originating agent (if any)."""
         agent_id = sender.get("id") if sender.get("type") == "agent" else None
         if agent_id:
             error_response = {
@@ -817,11 +818,11 @@ class LLMSystem(System):
                 "timestamp": time.time(),
             }
             self.send_message(error_response, target={"type": "agent", "id": agent_id})
-            # 统一位置计数：显式错误响应也计数
+            # Unified place for interaction counting: explicit error responses could also be counted here.
             # self._record_interaction(agent_id, None)
 
     def notify_game_end_to_all_agents(self, winner: Optional[Faction] = None, reason: str = "game_completed"):
-        """向所有连接的Agent发送游戏结束通知"""
+        """Send a game-end notification to all connected agents."""
         try:
             game_end_notification = {
                 "type": "game_end_notification",
@@ -831,7 +832,7 @@ class LLMSystem(System):
                 "message": "Game has ended. Please report your LLM statistics."
             }
             
-            # 🆕 设置期望收到的Agent统计数量（优先以已注册阵营集合为准）
+            # Set expected number of LLM stats (prefer registered factions over raw connection count).
             stats = self.world.get_singleton_component(GameStats)
             if stats:
                 try:
@@ -840,29 +841,29 @@ class LLMSystem(System):
                     registered_count = 0
                 connected_count = len(self.client.connected_agents)
                 expected = registered_count if registered_count > 0 else connected_count
-                # 同步集合到计数以保持兼容
+                # Sync set-based tracking to count-based fields for backward compatibility.
                 stats.expected_llm_stats_count = expected
                 stats.received_llm_stats_count = len(getattr(stats, 'received_llm_stats_factions', set())) if registered_count > 0 else 0
-                print(f"[LLMSystem] ℹ️ 期望统计={expected}（已注册={registered_count}，已连接={connected_count}）")
+                print(f"[LLMSystem] ℹ️ Expected stats={expected} (registered={registered_count}, connected={connected_count})")
 
-                # 🆕 若期望为0，则直接允许生成报告
+                # If nothing is expected, allow report generation immediately.
                 if expected == 0:
                     stats.can_generate_settlement_report = True
-                    raise Exception("[LLMSystem] ⚠️ 当前无期望统计，直接允许生成报告")
+                    raise Exception("[LLMSystem] ⚠️ No stats expected; allowing settlement report generation directly")
 
 
-            # 🆕 仅向已注册阵营对应的Agent发送通知
+            # Only notify agents mapped to registered factions.
             agent_count = 0
             try:
                 stats = self.world.get_singleton_component(GameStats)
                 registered = getattr(stats, 'registered_factions', set()) if stats else set()
                 id_to_faction = getattr(stats, 'agent_id_to_faction', {}) if stats else {}
 
-                # 基于映射过滤：仅通知阵营在已注册集合中的Agent
+                # Filter via mapping: only notify agents whose faction is in the registered set.
                 for agent_id, agent_info in self.client.connected_agents.items():
                     mapped_faction = id_to_faction.get(agent_id)
                     if mapped_faction not in registered:
-                        print(f"[LLMSystem] ⏭️ 跳过未注册或未映射阵营的Agent: {agent_id}")
+                        print(f"[LLMSystem] ⏭️ Skipping agent not mapped to a registered faction: {agent_id}")
                         continue
                     try:
                         self.send_message(
@@ -870,38 +871,38 @@ class LLMSystem(System):
                             target={"type": "agent", "id": agent_id}
                         )
                         agent_count += 1
-                        print(f"[LLMSystem] ✅ 已向Agent {agent_id} 发送游戏结束通知 (faction={mapped_faction.value})")
+                        print(f"[LLMSystem] ✅ Sent game-end notification to agent {agent_id} (faction={mapped_faction.value})")
                     except Exception as e:
-                        print(f"[LLMSystem] ❌ 向Agent {agent_id} 发送游戏结束通知失败: {e}")
+                        print(f"[LLMSystem] ❌ Failed to send game-end notification to agent {agent_id}: {e}")
 
-                print(f"[LLMSystem] 📢 游戏结束通知已发送给 {agent_count} 个已注册Agent (registered={[f.value for f in registered]})")
+                print(f"[LLMSystem] 📢 Game-end notification sent to {agent_count} registered agents (registered={[f.value for f in registered]})")
             except Exception as _e:
-                print(f"[LLMSystem] ⚠️ 过滤已注册Agent发送通知失败，降级为不发送: {_e}")
+                print(f"[LLMSystem] ⚠️ Failed to filter registered agents for notification; falling back to no notifications: {_e}")
                 agent_count = 0
             return agent_count
             
         except Exception as e:
-            print(f"[LLMSystem] ❌ 发送游戏结束通知时出错: {e}")
+            print(f"[LLMSystem] ❌ Error while sending game-end notifications: {e}")
             return 0
 
     def subscribe_events(self):
         return super().subscribe_events()
 
     def update(self, dt):
-        # 🆕 检查游戏是否结束，如果结束且未通知过，则发送游戏结束通知
+        # Check whether the game has ended; if so and not yet notified, send game-end notification.
         if not self.game_end_notified:
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                print("[LLMSystem] 🏁 检测到游戏结束，开始发送游戏结束通知给所有Agent")
+                print("[LLMSystem] 🏁 Game over detected, sending game-end notifications to all agents")
                 agent_count = self.notify_game_end_to_all_agents(
                     winner=game_state.winner,
                     reason="game_completed"
                 )
                 self.game_end_notified = True
                 self._pending_turn_start_ack.clear()
-                print(f"[LLMSystem] ✅ 游戏结束通知完成，已通知 {agent_count} 个Agent")
+                print(f"[LLMSystem] ✅ Game-end notifications completed; {agent_count} agents notified")
 
-        # 🆕 turn_start 可靠投递：超时未收到 ACK 则重发，超过最大重试则放弃
+        # Reliable turn_start delivery: if ACK not received by deadline, retry until max retries reached.
         game_state = self.world.get_singleton_component(GameState) if self.world else None
         if game_state and not getattr(game_state, "game_over", False):
             now = time.time()
@@ -911,7 +912,7 @@ class LLMSystem(System):
                     continue
                 entry["retry_count"] = entry.get("retry_count", 0) + 1
                 if entry["retry_count"] > self._turn_start_max_retries:
-                    print(f"[LLMSystem] ⚠️ 放弃重发 turn_start 给 {agent_id}，已重试 {self._turn_start_max_retries} 次")
+                    print(f"[LLMSystem] ⚠️ Giving up on resending turn_start to {agent_id} after {self._turn_start_max_retries} retries")
                     self._pending_turn_start_ack.pop(agent_id, None)
                     continue
                 try:
@@ -920,18 +921,14 @@ class LLMSystem(System):
                         target={"type": "agent", "id": agent_id},
                     )
                     entry["next_retry_time"] = now + self._turn_start_retry_interval
-                    print(f"[LLMSystem] 🔄 重发 turn_start 给 {agent_id}（第 {entry['retry_count']} 次）")
+                    print(f"[LLMSystem] 🔄 Resending turn_start to {agent_id} (retry {entry['retry_count']})")
                 except Exception as _e:
-                    print(f"[LLMSystem] ❌ 重发 turn_start 给 {agent_id} 失败: {_e}")
+                    print(f"[LLMSystem] ❌ Failed to resend turn_start to {agent_id}: {_e}")
         
-        # 原有的注释代码保持不变
+        # Legacy interactive console code kept for reference:
         # print(f"LLMSystem update: {dt}")
         # with patch_stdout():
-        #     command = self.session.prompt(
-        #         "💬 输入命令 (输入 'quit' 退出): ",
-        #         completer=None,
-        #         complete_while_typing=True,
-        #     )
+        #     command = self.session.prompt("💬 Enter command (type 'quit' to exit): ", completer=None, complete_while_typing=True)
         pass
 
     # === ENV 方法 ===
@@ -1151,17 +1148,17 @@ class LLMSystem(System):
 
             return standardized_result
         except Exception as e:
-            print(f"执行动作 {action} 时出错: {e}")
+            print(f"[LLMSystem] Error while executing action {action}: {e}")
             error_result = self._create_system_error_response(action, str(e), 2010)
             if send_response and agent_id:
                 try:
                     self.client.response_to_agent(agent_id, action_id, error_result, "str")
                 except Exception as response_error:
-                    print(f"发送错误响应失败: {response_error}")
+                    print(f"[LLMSystem] Failed to send error response: {response_error}")
             return error_result
 
     def exec_action(self, message):
-        """智能委托执行动作 - 统一动作入口"""
+        """Intelligently delegate and execute an action – unified entry point."""
         sender = message.get("sender", {})
         payload = message.get("payload", {})
 
@@ -1179,7 +1176,7 @@ class LLMSystem(System):
         )
 
     def _is_observation_action(self, action: str) -> bool:
-        """判断是否为观测动作"""
+        """Return True if the given action is an observation-related action."""
         observation_actions = [
             "observation",
             "unit_observation",
@@ -1204,8 +1201,8 @@ class LLMSystem(System):
         )
 
     def _handle_observation_action(self, action: str, params: Dict) -> Dict:
-        """处理观测动作的路由"""
-        # 对于已知的观测动作，路由到对应的处理方法
+        """Route observation actions to the appropriate handler."""
+        # For known observation actions, route to specific handlers.
         if action == "observation":
             return self.handle_observation(params)
         elif action == "unit_observation":
@@ -1219,13 +1216,13 @@ class LLMSystem(System):
         elif action == "tactical_observation":
             return self.handle_tactical_observation(params)
         else:
-            # 通用观测动作，直接委托给observation_system
+            # Generic observation action: delegate directly to the observation_system.
             return self.observation_system.get_observation_by_action(action, params)
 
     def _standardize_response(
         self, result: Dict, action: str, params: Dict, execution_time: float
     ) -> Dict:
-        """标准化响应格式"""
+        """Normalize/standardize the response format."""
         base_response = {
             "success": result.get("success", True),
             "api_version": "v1.0",
@@ -1237,10 +1234,10 @@ class LLMSystem(System):
         }
 
         if result.get("success", True):
-            # 成功响应，合并数据
+            # Successful response: merge payload fields.
             base_response.update({k: v for k, v in result.items() if k != "success"})
         else:
-            # 错误响应
+            # Error response: attach error metadata.
             base_response.update(
                 {
                     "error": result.get("error", "Unknown error"),
@@ -1254,7 +1251,7 @@ class LLMSystem(System):
     def _create_system_error_response(
         self, action: str, error_message: str, error_code: int = 2010
     ) -> Dict:
-        """创建系统级错误响应"""
+        """Create a standardized system-level error response."""
         return {
             "success": False,
             "error": self.system_error_codes.get(error_code, "Unknown system error"),
@@ -1264,11 +1261,11 @@ class LLMSystem(System):
             "metadata": {"action": action, "timestamp": time.time()},
         }
 
-    # ==================== 系统级控制方法 ====================
+    # ==================== System-level control methods ====================
 
-    # === 游戏生命周期控制 ===
+    # === Game lifecycle control ===
     def handle_start_game(self, params: Dict) -> Dict:
-        """启动游戏"""
+        """Start the game."""
         game_state = self.world.get_singleton_component(GameState)
         if game_state and not game_state.game_over:
             return {
@@ -1294,7 +1291,7 @@ class LLMSystem(System):
             }
 
     def handle_pause_game(self, params: Dict) -> Dict:
-        """暂停游戏"""
+        """Pause the game."""
         game_state = self.world.get_singleton_component(GameState)
         if not game_state:
             return {
@@ -1314,7 +1311,7 @@ class LLMSystem(System):
         return {"success": True, "message": "Game paused", "paused": True}
 
     def handle_resume_game(self, params: Dict) -> Dict:
-        """恢复游戏"""
+        """Resume the game."""
         game_state = self.world.get_singleton_component(GameState)
         if not game_state:
             return {
@@ -1334,7 +1331,7 @@ class LLMSystem(System):
         return {"success": True, "message": "Game resumed", "paused": False}
 
     def handle_reset_game(self, params: Dict) -> Dict:
-        """重置游戏"""
+        """Reset the game state to its initial configuration."""
         try:
             # 重置游戏状态
             game_state = self.world.get_singleton_component(GameState)
@@ -1343,7 +1340,7 @@ class LLMSystem(System):
                 game_state.paused = False
                 game_state.turn_number = 1
                 game_state.winner = None
-                game_state.current_player = Faction.WEI  # 默认从魏国开始
+                game_state.current_player = Faction.WEI  # Default starting faction: WEI
 
             return {"success": True, "message": "Game reset successfully"}
         except Exception as e:
@@ -1354,8 +1351,8 @@ class LLMSystem(System):
             }
 
     def handle_save_game(self, params: Dict) -> Dict:
-        """保存游戏"""
-        # TODO: 实现游戏保存逻辑
+        """Persist the current game state (not yet implemented)."""
+        # TODO: Implement game save logic
         return {
             "success": False,
             "error_code": 2004,
@@ -1363,17 +1360,17 @@ class LLMSystem(System):
         }
 
     def handle_load_game(self, params: Dict) -> Dict:
-        """加载游戏"""
-        # TODO: 实现游戏加载逻辑
+        """Load a previously saved game (not yet implemented)."""
+        # TODO: Implement game load logic
         return {
             "success": False,
             "error_code": 2004,
             "message": "Load game not implemented yet",
         }
 
-    # === 回合和时间管理 ===
+    # === Turn and time management ===
     def handle_end_turn(self, params: Dict) -> Dict:
-        """结束回合"""
+        """End the current turn."""
         turn_system = self._get_turn_system()
         if turn_system:
             try:
@@ -1400,7 +1397,7 @@ class LLMSystem(System):
         }
 
     def handle_skip_turn(self, params: Dict) -> Dict:
-        """跳过回合"""
+        """Skip the current turn for a specific faction (logical placeholder)."""
         faction_str = params.get("faction")
         if not faction_str:
             return {
@@ -1411,7 +1408,7 @@ class LLMSystem(System):
 
         try:
             faction = Faction(faction_str)
-            # TODO: 实现跳过指定阵营回合的逻辑
+            # TODO: Implement logic to actually skip the specified faction's turn.
             return {
                 "success": True,
                 "message": f"Skipped turn for faction {faction.value}",
@@ -1424,20 +1421,20 @@ class LLMSystem(System):
             }
 
     def handle_force_next_turn(self, params: Dict) -> Dict:
-        """强制推进到下一回合"""
+        """Force the game to advance to the next turn."""
         target_faction = params.get("target_faction")
         turn_system = self._get_turn_system()
 
         if turn_system:
             try:
-                # 如果指定了目标阵营，持续推进直到到达该阵营
+                # If a target faction is specified, keep advancing until that faction becomes current.
                 if target_faction:
                     target = Faction(target_faction)
                     game_state = self.world.get_singleton_component(GameState)
                     while game_state and game_state.current_player != target:
                         turn_system.end_turn()
                 else:
-                    # 否则只推进一个回合
+                    # Otherwise, advance by a single turn.
                     turn_system.end_turn()
 
                 game_state = self.world.get_singleton_component(GameState)
@@ -1462,13 +1459,13 @@ class LLMSystem(System):
         }
 
     def handle_advance_time(self, params: Dict) -> Dict:
-        """推进游戏时间"""
+        """Advance in-game time by a given number of seconds (simplified)."""
         seconds = params.get("seconds", 1.0)
         game_time_system = self._get_game_time_system()
 
         if game_time_system:
             try:
-                game_time_system.advance_turn()  # 简化实现
+                game_time_system.advance_turn()  # Simplified implementation
                 return {
                     "success": True,
                     "message": f"Advanced time by {seconds} seconds",
@@ -1487,14 +1484,14 @@ class LLMSystem(System):
         }
 
     def handle_set_turn_timer(self, params: Dict) -> Dict:
-        """设置回合计时器"""
+        """Configure the turn timer duration (not fully implemented)."""
         duration = params.get("duration", 30.0)
-        # TODO: 实现回合计时器设置
+        # TODO: Implement actual turn-timer wiring to the TurnSystem.
         return {"success": True, "message": f"Turn timer set to {duration} seconds"}
 
-    # === 游戏模式控制 ===
+    # === Game mode control ===
     def handle_set_game_mode(self, params: Dict) -> Dict:
-        """设置游戏模式"""
+        """Set the game mode (e.g., turn-based vs real-time)."""
         mode_str = params.get("mode")
         if not mode_str:
             return {
@@ -1510,7 +1507,7 @@ class LLMSystem(System):
                 game_mode_component.mode = mode
                 return {"success": True, "message": f"Game mode set to {mode.value}"}
             else:
-                # 创建游戏模式组件
+                # Create game mode component if missing.
                 game_mode_component = GameModeComponent(mode=mode)
                 self.world.add_singleton_component(game_mode_component)
                 return {"success": True, "message": f"Game mode set to {mode.value}"}
@@ -1522,7 +1519,7 @@ class LLMSystem(System):
             }
 
     def handle_set_time_scale(self, params: Dict) -> Dict:
-        """设置时间缩放"""
+        """Set the global time scale for the game."""
         scale = params.get("scale", 1.0)
         game_time_system = self._get_game_time_system()
 
@@ -1544,7 +1541,7 @@ class LLMSystem(System):
         }
 
     def handle_set_max_turns(self, params: Dict) -> Dict:
-        """设置最大回合数"""
+        """Set the maximum allowed number of turns."""
         max_turns = params.get("max_turns", 50)
         game_state = self.world.get_singleton_component(GameState)
 
@@ -1558,9 +1555,9 @@ class LLMSystem(System):
             "message": "Game state not available",
         }
 
-    # === 视角和UI控制 ===
+    # === Camera, view, and UI control ===
     def handle_set_view_faction(self, params: Dict) -> Dict:
-        """设置观察视角"""
+        """Set which faction the UI is currently observing."""
         faction_str = params.get("faction")
         try:
             faction = Faction(faction_str) if faction_str else None
@@ -1573,7 +1570,7 @@ class LLMSystem(System):
                     "view_faction": faction_str,
                 }
             else:
-                # 创建UI状态组件
+                # Create UIState component if missing.
                 ui_state = UIState(view_faction=faction)
                 self.world.add_singleton_component(ui_state)
                 return {
@@ -1589,7 +1586,7 @@ class LLMSystem(System):
             }
 
     def handle_set_camera_position(self, params: Dict) -> Dict:
-        """设置摄像机位置"""
+        """Set the camera position (world offset)."""
         x = params.get("x", 0.0)
         y = params.get("y", 0.0)
         camera = self.world.get_singleton_component(Camera)
@@ -1609,7 +1606,7 @@ class LLMSystem(System):
         }
 
     def handle_toggle_god_mode(self, params: Dict) -> Dict:
-        """切换上帝模式"""
+        """Toggle god mode (omniscient view)."""
         ui_state = self.world.get_singleton_component(UIState)
         if ui_state:
             ui_state.god_mode = not ui_state.god_mode
@@ -1626,19 +1623,19 @@ class LLMSystem(System):
         }
 
     def handle_toggle_fog_of_war(self, params: Dict) -> Dict:
-        """切换战争迷雾"""
+        """Toggle the fog-of-war visualization."""
         enabled = params.get("enabled")
         fog_of_war = self.world.get_singleton_component(FogOfWar)
 
         if fog_of_war:
             if enabled is not None:
-                # 如果指定了启用状态，直接设置
+                # If explicit enabled state is provided, apply it directly.
                 fog_enabled = bool(enabled)
             else:
-                # 否则切换当前状态
+                # Otherwise toggle the current state.
                 fog_enabled = not getattr(fog_of_war, "enabled", True)
 
-            # TODO: 实现战争迷雾启用/禁用逻辑
+            # TODO: Wire fog_enabled into the actual FogOfWar logic.
             return {
                 "success": True,
                 "message": f"Fog of war {'enabled' if fog_enabled else 'disabled'}",
@@ -1652,7 +1649,7 @@ class LLMSystem(System):
         }
 
     def handle_show_ui_panel(self, params: Dict) -> Dict:
-        """显示UI面板"""
+        """Show a specific UI panel."""
         panel_name = params.get("panel")
         if not panel_name:
             return {
@@ -1663,7 +1660,7 @@ class LLMSystem(System):
 
         ui_state = self.world.get_singleton_component(UIState)
         if ui_state:
-            # 根据面板名称设置显示状态
+            # Set visibility based on the requested panel.
             if panel_name == "help":
                 ui_state.show_help = True
             elif panel_name == "stats":
@@ -1686,7 +1683,7 @@ class LLMSystem(System):
         }
 
     def handle_hide_ui_panel(self, params: Dict) -> Dict:
-        """隐藏UI面板"""
+        """Hide a specific UI panel."""
         panel_name = params.get("panel")
         if not panel_name:
             return {
@@ -1697,7 +1694,7 @@ class LLMSystem(System):
 
         ui_state = self.world.get_singleton_component(UIState)
         if ui_state:
-            # 根据面板名称设置隐藏状态
+            # Set visibility to hidden based on the requested panel.
             if panel_name == "help":
                 ui_state.show_help = False
             elif panel_name == "stats":
@@ -1720,7 +1717,7 @@ class LLMSystem(System):
         }
 
     def handle_toggle_grid_display(self, params: Dict) -> Dict:
-        """切换网格显示"""
+        """Toggle the grid overlay display."""
         ui_state = self.world.get_singleton_component(UIState)
         if ui_state:
             ui_state.show_grid = not ui_state.show_grid
@@ -1736,9 +1733,9 @@ class LLMSystem(System):
             "message": "UI state not available",
         }
 
-    # === 选择和分组控制 ===
+    # === Selection and grouping control ===
     def handle_select_unit(self, params: Dict) -> Dict:
-        """选择单位"""
+        """Select a single unit by ID."""
         unit_id = params.get("unit_id")
         if not unit_id:
             return {
@@ -1747,11 +1744,11 @@ class LLMSystem(System):
                 "message": "Missing unit_id parameter",
             }
 
-        # 委托给ActionHandler处理具体的选择逻辑
+        # Delegate real selection logic to ActionHandler.
         return self.action_handler.execute_action("select_unit", params)
 
     def handle_select_multiple_units(self, params: Dict) -> Dict:
-        """选择多个单位"""
+        """Select multiple units by ID (placeholder implementation)."""
         unit_ids = params.get("unit_ids", [])
         if not unit_ids:
             return {
@@ -1760,7 +1757,7 @@ class LLMSystem(System):
                 "message": "Missing unit_ids parameter",
             }
 
-        # TODO: 实现多选逻辑
+        # TODO: Implement multi-selection logic.
         return {
             "success": True,
             "message": f"Selected {len(unit_ids)} units",
@@ -1768,12 +1765,12 @@ class LLMSystem(System):
         }
 
     def handle_deselect_units(self, params: Dict) -> Dict:
-        """取消选择单位"""
-        # TODO: 实现取消选择逻辑
+        """Deselect all currently selected units (placeholder)."""
+        # TODO: Implement actual deselection logic.
         return {"success": True, "message": "Units deselected"}
 
     def handle_group_units(self, params: Dict) -> Dict:
-        """组编单位"""
+        """Assign selected units to a logical control group (placeholder)."""
         unit_ids = params.get("unit_ids", [])
         group_id = params.get("group_id", 1)
 
@@ -1784,15 +1781,15 @@ class LLMSystem(System):
                 "message": "Missing unit_ids parameter",
             }
 
-        # TODO: 实现单位分组逻辑
+        # TODO: Implement persistent unit grouping logic.
         return {
             "success": True,
             "message": f"Grouped {len(unit_ids)} units into group {group_id}",
         }
 
-    # === 系统信息和诊断 ===
+    # === System information and diagnostics ===
     def handle_get_system_status(self, params: Dict) -> Dict:
-        """获取系统状态"""
+        """Return high-level system status."""
         return {
             "success": True,
             "message": "System status retrieved",
@@ -1832,14 +1829,14 @@ class LLMSystem(System):
         }
 
     def handle_get_system_capabilities(self, params: Dict) -> Dict:
-        """获取系统能力"""
+        """Return a capability matrix for this system."""
         capabilities = {
             "game_control": True,
             "unit_control": True,
             "observation": True,
-            "real_time": False,  # 目前只支持回合制
+            "real_time": False,  # Currently only turn-based is supported
             "multiplayer": True,
-            "save_load": False,  # 尚未实现
+            "save_load": False,  # Not yet implemented
             "ai_integration": True,
             "error_recovery": True,
         }
@@ -1851,8 +1848,8 @@ class LLMSystem(System):
         }
 
     def handle_get_performance_info(self, params: Dict) -> Dict:
-        """获取性能信息"""
-        # TODO: 实现性能监控
+        """Return basic performance information (placeholder)."""
+        # TODO: Implement real performance monitoring.
         return {
             "success": True,
             "message": "Performance information retrieved",
@@ -1865,7 +1862,7 @@ class LLMSystem(System):
         }
 
     def handle_validate_game_state(self, params: Dict) -> Dict:
-        """验证游戏状态"""
+        """Validate core invariants of the current game state."""
         try:
             game_state = self.world.get_singleton_component(GameState)
             if not game_state:
@@ -1875,7 +1872,7 @@ class LLMSystem(System):
                     "message": "Game state not found",
                 }
 
-            # 基本验证
+            # Basic validation checks.
             validation_results = {
                 "game_state_exists": bool(game_state),
                 "current_player_valid": hasattr(game_state, "current_player"),
@@ -1900,8 +1897,8 @@ class LLMSystem(System):
             }
 
     def handle_get_game_statistics(self, params: Dict) -> Dict:
-        """获取游戏统计"""
-        # TODO: 实现游戏统计收集
+        """Return aggregated game statistics (placeholder)."""
+        # TODO: Implement real game statistics collection.
         return {
             "success": True,
             "message": "Game statistics retrieved",
@@ -1914,16 +1911,16 @@ class LLMSystem(System):
             },
         }
 
-    # === 观测处理方法 ===
+    # === Observation handling methods ===
 
     def handle_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理通用观测请求"""
+        """Handle a generic observation request."""
         observation_level = params.get("observation_level", ObservationLevel.FACTION)
         faction = params.get("faction")
         unit_id = params.get("unit_id")
         include_hidden = params.get("include_hidden", False)
 
-        # 转换字符串到Faction枚举（如果需要）
+        # Convert string faction to Faction enum if necessary.
         if faction and isinstance(faction, str):
             try:
                 from ..prefabs.config import Faction

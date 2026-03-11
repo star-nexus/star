@@ -51,7 +51,7 @@ class GameOverRenderSystem(System):
         self._render_statistics()
         self._render_buttons()
 
-        # 执行渲染
+        # Execute render
         # RMS.present()
 
     def _render_background(self) -> None:
@@ -88,7 +88,7 @@ class GameOverRenderSystem(System):
 
     def _render_title(self) -> None:
         """Render title."""
-        # 获取屏幕尺寸
+        # Get screen width
         screen_width = GameConfig.WINDOW_WIDTH
 
         title_text = "GAME OVER"

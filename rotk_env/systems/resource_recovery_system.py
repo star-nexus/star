@@ -1,6 +1,6 @@
 """
-资源恢复系统 - 处理多层次资源的自动和手动恢复
-按照MULTILAYER_RESOURCE_SYSTEM_DESIGN.md实现
+Resource recovery system - handles automatic and manual recovery of multi-tier resources.
+Implemented per MULTILAYER_RESOURCE_SYSTEM_DESIGN.md.
 """
 
 from typing import Dict, Set
@@ -11,36 +11,37 @@ from ..prefabs.config import TerrainType
 
 
 class ResourceRecoverySystem(System):
-    """多层次资源恢复系统"""
+    """Multi-tier resource recovery system"""
 
     def __init__(self):
-        super().__init__(priority=50)  # 早期执行，确保资源状态正确
-        
-        # 行动点（AP）恢复配置：默认每5秒恢复1点
-        # 注意：如需防止spam，建议配合操作冷却系统使用（见AP_RECOVERY_IMPROVEMENT_PROPOSAL.md）
+        super().__init__(priority=50)  # runs early to ensure resource state is ready for other systems
+
+        # Action Point (AP) recovery config: recovers 1 AP per interval by default.
+        # Note: to prevent action spam, consider pairing this with an operation cooldown system
+        # (see AP_RECOVERY_IMPROVEMENT_PROPOSAL.md).
         self.ap_recovery_interval = 1.0
         self.ap_recovery_amount = 1
-        
-        # 移动力（MP）恢复配置：默认每10秒完全恢复
+
+        # Movement Point (MP) recovery config: full recovery after each interval
         self.mp_recovery_interval = 3.0
 
-        # 普通攻击次数恢复配置：每5秒重置
+        # Normal attack count recovery config: resets each interval
         self.attack_recovery_interval = 1.0
 
-        # 技能冷却更新配置：与攻击恢复同步，默认每5秒更新一次
+        # Skill cooldown update config: synchronized with attack recovery, updates each interval
         self.skill_cooldown_interval = 5.0
 
-        # 记录每个实体的累计恢复时间，防止"刚消耗即恢复"现象
+        # Per-entity accumulated recovery timers; prevents immediate re-grant after spending
         self.ap_elapsed: Dict[int, float] = {}
         self.mp_elapsed: Dict[int, float] = {}
         self.attack_elapsed: Dict[int, float] = {}
         self.skill_elapsed: Dict[int, float] = {}
-        # 记录移动力最近一次观测的数值，用于检测新的移动操作
+        # Last observed MP value per entity, used to detect when a move action has been spent
         self.mp_last_points: Dict[int, int] = {}
-        
-        # ===== 方案2：决策质量奖励（可选，需要配合ActionSystem实现）=====
-        # 记录每个单位的"决策质量分数"，用于加速资源恢复
-        # self.unit_decision_quality: Dict[int, float] = {}  # 0.0-1.0，1.0表示完美决策
+
+        # ===== Option 2: Decision-quality bonus (optional; requires ActionSystem integration) =====
+        # Tracks each unit's "decision quality score" to accelerate resource recovery.
+        # self.unit_decision_quality: Dict[int, float] = {}  # 0.0-1.0; 1.0 = perfect decision
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -49,19 +50,19 @@ class ResourceRecoverySystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新资源恢复"""
+        """Update resource recovery for all entities"""
         game_time = self.world.get_singleton_component(GameTime)
         if not game_time:
             return
 
-        # 检查是否需要实时恢复
+        # Only run recovery in real-time game mode
         if game_time.is_real_time():
             self._update_action_points(delta_time)
             self._update_movement_points(delta_time)
             self._update_attack_points(delta_time)
             self._update_skill_cooldowns(delta_time)
 
-    # === 行动点恢复 ===
+    # === Action point recovery ===
     def _update_action_points(self, delta_time: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.ap_recovery_interval
@@ -99,12 +100,12 @@ class ResourceRecoverySystem(System):
             else:
                 self.ap_elapsed[entity] = elapsed
 
-        # 清理已经不存在的实体计时器
+        # Clean up stale timers for entities that no longer exist
         stale_entities = set(self.ap_elapsed.keys()) - seen_entities
         for entity in stale_entities:
             self.ap_elapsed.pop(entity, None)
 
-    # === 移动力恢复 ===
+    # === Movement point recovery ===
     def _update_movement_points(self, delta_time: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.mp_recovery_interval
@@ -120,7 +121,7 @@ class ResourceRecoverySystem(System):
                 prev_points = movement_points.current_mp
             else:
                 if movement_points.current_mp < prev_points:
-                    # 检测到新的移动操作，重新计时
+                    # Movement was spent; reset the recovery timer
                     self.mp_elapsed[entity] = 0.0
                     self.mp_last_points[entity] = movement_points.current_mp
                     continue
@@ -142,7 +143,7 @@ class ResourceRecoverySystem(System):
                 self.mp_last_points[entity] = movement_points.current_mp
                 continue
 
-            # 完全恢复移动力
+            # Fully restore movement points
             movement_points.reset()
             elapsed -= interval * recover_ticks
 
@@ -160,7 +161,7 @@ class ResourceRecoverySystem(System):
         for entity in stale_last:
             self.mp_last_points.pop(entity, None)
 
-    # === 普通攻击次数恢复 ===
+    # === Normal attack count recovery ===
     def _update_attack_points(self, delta_time: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.attack_recovery_interval
@@ -197,7 +198,7 @@ class ResourceRecoverySystem(System):
         for entity in stale_entities:
             self.attack_elapsed.pop(entity, None)
 
-    # === 技能冷却更新 ===
+    # === Skill cooldown reduction ===
     def _update_skill_cooldowns(self, delta_time: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.skill_cooldown_interval
@@ -234,7 +235,7 @@ class ResourceRecoverySystem(System):
 
 
     def _get_terrain_at_position(self, position: tuple) -> TerrainType:
-        """获取位置的地形类型"""
+        """Return the terrain type at the given tile position"""
         from ..components import MapData
 
         map_data = self.world.get_singleton_component(MapData)
