@@ -13,7 +13,13 @@
 ---
 
 <div align="center">
-  <img src="docs/rotk.jpg" alt="STAR Environment Demo" width="800" />
+  <a href="https://www.youtube.com/watch?v=4bSB5S3ixLI">
+    <img src="docs/starbench_rotk.gif" alt="STAR Environment Demo" width="800" />
+  </a>
+  <br>
+  <a href="https://www.youtube.com/watch?v=4bSB5S3ixLI">
+    <img src="https://img.shields.io/badge/-Watch%20High--Res%20Video%20on%20YouTube-red?style=for-the-badge&logo=youtube" alt="Watch on YouTube">
+  </a>
 </div>
 
 ## 🚀 Introduction
@@ -23,6 +29,10 @@
 STAR focuses on evaluating how large language models perform under **long-horizon strategic planning**, **partial observability**, and **real-time decision constraints**, providing a reproducible interface that integrates simulation, evaluation, and extensible agent interaction.
 
 ## Overview
+
+<div align="center">
+  <img src="docs/rotk.jpg" alt="STAR Environment Static View" width="800" />
+</div>
 
 Recent advances in language models have demonstrated strong reasoning ability in static settings, yet their behavior in interactive, dynamic environments remains less understood. STAR provides a standardized environment for investigating decision-making under uncertainty, adversarial interaction, and execution latency.
 
@@ -111,6 +121,7 @@ Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizo
 
 ---
 
+<a id="quick-start"></a>
 ## 🛠️ Quick Start
 
 ### Prerequisites
