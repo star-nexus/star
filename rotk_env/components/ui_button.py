@@ -1,5 +1,5 @@
 """
-UI按钮组件
+UI button components.
 """
 
 from dataclasses import dataclass, field
@@ -10,58 +10,58 @@ import pygame
 
 @dataclass
 class UIButton(Component):
-    """UI按钮组件"""
+    """UI button component."""
 
-    # 按钮属性
+    # Button geometry/content
     x: int
     y: int
     width: int
     height: int
     text: str
 
-    # 样式属性
+    # Style
     background_color: Tuple[int, int, int] = (70, 70, 70)
     hover_color: Tuple[int, int, int] = (100, 100, 100)
     text_color: Tuple[int, int, int] = (255, 255, 255)
     border_color: Tuple[int, int, int] = (150, 150, 150)
     border_width: int = 2
 
-    # 状态属性
+    # State
     is_hovered: bool = False
     is_pressed: bool = False
     is_enabled: bool = True
     is_visible: bool = True
 
-    # 回调函数名称（系统会根据这个名称调用相应的方法）
+    # Callback function name (the system resolves and invokes it by name)
     callback_name: str = ""
 
-    # 附加数据
+    # Arbitrary extra data
     data: Any = None
 
 
 @dataclass
 class UIButtonCollection(SingletonComponent):
-    """UI按钮集合单例组件"""
+    """Singleton UI button registry."""
 
-    buttons: dict = field(default_factory=dict)  # button_id -> entity_id 的映射
+    buttons: dict = field(default_factory=dict)  # button_id -> entity_id
 
     def add_button(self, button_id: str, entity_id: int):
-        """添加按钮"""
+        """Add a button mapping."""
         self.buttons[button_id] = entity_id
 
     def remove_button(self, button_id: str):
-        """移除按钮"""
+        """Remove a button mapping."""
         if button_id in self.buttons:
             del self.buttons[button_id]
 
     def get_button(self, button_id: str) -> Optional[int]:
-        """获取按钮实体ID"""
+        """Get the button entity id."""
         return self.buttons.get(button_id)
 
 
 @dataclass
 class UIPanel(Component):
-    """UI面板组件"""
+    """UI panel component."""
 
     x: int
     y: int
@@ -70,5 +70,5 @@ class UIPanel(Component):
     background_color: Tuple[int, int, int] = (50, 50, 50)
     border_color: Tuple[int, int, int] = (100, 100, 100)
     border_width: int = 2
-    alpha: int = 200  # 透明度
+    alpha: int = 200  # Opacity
     is_visible: bool = True

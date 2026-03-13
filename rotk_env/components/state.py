@@ -1,5 +1,5 @@
 """
-游戏状态相关组件（单例组件）
+Game-state related singleton components.
 """
 
 from dataclasses import dataclass, field
@@ -10,7 +10,7 @@ from ..prefabs.config import Faction, GameMode
 
 @dataclass
 class GameState(SingletonComponent):
-    """游戏状态单例组件"""
+    """Singleton game state."""
 
     current_player: Faction
     turn_number: int = 1
@@ -23,35 +23,35 @@ class GameState(SingletonComponent):
 
 @dataclass
 class MapData(SingletonComponent):
-    """地图数据单例组件"""
+    """Singleton map data."""
 
     width: int
     height: int
     tiles: Dict[Tuple[int, int], int] = field(
         default_factory=dict
-    )  # 坐标到地块实体ID的映射
+    )  # (col,row) -> tile entity id
 
 
 @dataclass
 class UIState(SingletonComponent):
-    """UI状态单例组件"""
+    """Singleton UI state."""
 
     selected_unit: Optional[int] = None
     hovered_tile: Optional[Tuple[int, int]] = None
     show_grid: bool = True
     show_stats: bool = False
     show_help: bool = False
-    show_coordinates: bool = False  # 显示坐标
+    show_coordinates: bool = False  # Show coordinates overlay
     camera_position: Tuple[float, float] = (0.0, 0.0)
     zoom_level: float = 1.0
-    # 视角相关
-    god_mode: bool = False  # 上帝视角（无战争迷雾）
-    view_faction: Optional[Faction] = None  # 当前查看的阵营视角
+    # View-related
+    god_mode: bool = False  # God view (no fog of war)
+    view_faction: Optional[Faction] = None  # Current viewed faction perspective
 
 
 @dataclass
 class InputState(SingletonComponent):
-    """输入状态单例组件"""
+    """Singleton input state."""
 
     mouse_pos: Tuple[int, int] = (0, 0)
     mouse_hex_pos: Optional[Tuple[int, int]] = None
@@ -61,7 +61,7 @@ class InputState(SingletonComponent):
 
 @dataclass
 class FogOfWar(SingletonComponent):
-    """战争迷雾单例组件"""
+    """Singleton fog-of-war state."""
 
     faction_vision: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
     explored_tiles: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
@@ -69,83 +69,83 @@ class FogOfWar(SingletonComponent):
 
 @dataclass
 class GameStats(SingletonComponent):
-    """游戏统计单例组件 - 纯数据存储"""
+    """Singleton game statistics (data-only)."""
 
-    # 阵营统计
+    # Faction stats
     faction_stats: Dict[Faction, Dict[str, int]] = field(default_factory=dict)
 
-    # 战斗历史
+    # Battle history
     battle_history: List[Dict] = field(default_factory=list)
 
-    # 回合历史
+    # Turn history
     turn_history: List[Dict] = field(default_factory=list)
 
-    # 单位观测数据历史
+    # Unit observation history
     unit_observation_history: List[Dict] = field(default_factory=list)
 
-    # 游戏模式特定统计
+    # Game-mode specific stats
     game_mode_stats: Dict[str, any] = field(default_factory=dict)
 
-    # 游戏开始时间
+    # Game start time
     game_start_time: float = 0.0
 
-    # 当前游戏时间（实时模式用）
+    # Total game time (real-time mode)
     total_game_time: float = 0.0
     
-    # 🆕 添加初始单位数记录
+    # 🆕 Initial unit counts
     initial_unit_counts: Dict[Faction, int] = field(default_factory=dict)
 
-    # 🆕 动作统计：Agent -> ENV 提交的 action 总数
-    # 按 Agent 统计（agent_id -> count）
+    # 🆕 Action counts: Agent -> ENV submitted actions
+    # By agent (agent_id -> count)
     action_counts_by_agent: Dict[str, int] = field(default_factory=dict)
-    # 按阵营统计（Faction -> count）
+    # By faction (Faction -> count)
     action_counts_by_faction: Dict[Faction, int] = field(default_factory=dict)
-    # 🆕 记录agent与阵营的映射（用于按阵营汇总）
+    # 🆕 Agent-to-faction mapping (for faction aggregation)
     agent_id_to_faction: Dict[str, Faction] = field(default_factory=dict)
 
-    # 🆕 交互统计：Agent -> ENV 的消息包数量（一次消息即一次交互）
-    # 按 Agent 统计（agent_id -> message count）
+    # 🆕 Interaction counts: Agent -> ENV message packets (one packet = one interaction)
+    # By agent (agent_id -> message count)
     interaction_counts_by_agent: Dict[str, int] = field(default_factory=dict)
-    # 按阵营统计（Faction -> message count）
+    # By faction (Faction -> message count)
     interaction_counts_by_faction: Dict[Faction, int] = field(default_factory=dict)
 
-    # 🆕 策略评分统计
+    # 🆕 Strategy scoring stats
     strategy_scores_by_faction: Dict[Faction, float] = field(default_factory=dict)
     strategy_ping_count_by_faction: Dict[Faction, int] = field(default_factory=dict)
     strategy_evidence: Dict[Faction, List[str]] = field(default_factory=dict)
     last_strategy_ping_ts: Dict[Faction, float] = field(default_factory=dict)
 
-    # 🆕 地图信息统计
+    # 🆕 Map metadata
     map_info: Dict[str, any] = field(default_factory=dict)
-    # 地图信息包含：
-    # - map_width: int - 地图宽度
-    # - map_height: int - 地图高度  
-    # - map_type: str - 地图类型/模式 (如 "river_split", "river_split_offset", "diagonal" 等)
-    # - competitive_mode: bool - 是否为竞技模式
-    # - map_seed: int - 地图生成种子
-    # - spawn_positions: Dict[Faction, Tuple[int, int]] - 各阵营出生点位置
-    # - coordinate_system: str - 坐标系类型 ("centered" 表示以(0,0)为中心, "offset" 表示从左上角开始)
-    # - symmetry_type: str - 对称类型
-    # - generation_timestamp: float - 地图生成时间戳
+    # Includes:
+    # - map_width: int - map width
+    # - map_height: int - map height
+    # - map_type: str - generation type/mode (e.g., "river_split", "diagonal")
+    # - competitive_mode: bool - whether competitive mode is enabled
+    # - map_seed: int - RNG seed used for generation
+    # - spawn_positions: Dict[Faction, Tuple[int, int]] - faction spawn positions
+    # - coordinate_system: str - coordinate system ("centered" uses (0,0) as center; "offset" starts top-left)
+    # - symmetry_type: str - symmetry type
+    # - generation_timestamp: float - generation timestamp
 
-    # 🆕 LLM API 交互统计
+    # 🆕 LLM API interaction stats
     llm_api_stats: Dict[Faction, Dict[str, any]] = field(default_factory=dict)
-    # LLM API 统计包含：
-    # - total_calls: int - 总调用次数
-    # - successful_calls: int - 成功次数
-    # - failed_calls: int - 失败次数  
-    # - success_rate: float - 成功率
-    # - provider: str - LLM 提供商
-    # - model_id: str - 模型ID
-    # - timestamp: float - 最后更新时间戳
+    # Includes:
+    # - total_calls: int - total calls
+    # - successful_calls: int - successful calls
+    # - failed_calls: int - failed calls
+    # - success_rate: float - success rate
+    # - provider: str - LLM provider
+    # - model_id: str - model id
+    # - timestamp: float - last update timestamp
     
-    # 🆕 结算报告生成标志
-    can_generate_settlement_report: bool = False  # 是否可以生成结算报告
+    # 🆕 Settlement report generation gate
+    can_generate_settlement_report: bool = False  # Whether settlement report can be generated
     
-    # 🆕 LLM统计收集计数器 (用于多Agent)
+    # 🆕 LLM stats collection counters (multi-agent)
     expected_llm_stats_count: int = 0
     received_llm_stats_count: int = 0
 
-    # 🆕 已注册与已统计集合（以集合替代纯计数，解决竞态问题）
+    # 🆕 Registered/received sets (use sets instead of counters to avoid races)
     registered_factions: Set[Faction] = field(default_factory=set)
     received_llm_stats_factions: Set[Faction] = field(default_factory=set)

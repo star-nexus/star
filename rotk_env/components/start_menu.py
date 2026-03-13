@@ -1,6 +1,5 @@
 """
-开始场景相关组件
-Start Scene Components
+Start scene components.
 """
 
 import pygame
@@ -13,7 +12,7 @@ from framework import SingletonComponent
 
 @dataclass
 class StartMenuConfig(SingletonComponent):
-    """开始菜单配置组件"""
+    """Start menu configuration component."""
 
     selected_mode: GameMode = GameMode.TURN_BASED
     selected_players: Dict[Faction, PlayerType] = field(
@@ -27,7 +26,7 @@ class StartMenuConfig(SingletonComponent):
 
 @dataclass
 class StartMenuButtons(SingletonComponent):
-    """开始菜单按钮组件"""
+    """Start menu button component."""
 
     buttons: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     options: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -35,7 +34,7 @@ class StartMenuButtons(SingletonComponent):
 
 @dataclass
 class StartMenuOptions(SingletonComponent):
-    """开始菜单选项组件"""
+    """Start menu options component."""
 
     mode_options: List[Dict[str, Any]] = field(default_factory=list)
     player_options: List[Dict[str, Any]] = field(default_factory=list)

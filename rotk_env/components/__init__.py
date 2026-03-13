@@ -1,6 +1,7 @@
 """
-游戏组件模块
-定义游戏中所有的ECS组件
+Game components module.
+
+Defines all ECS components used by the game.
 """
 
 from .base import HexPosition, Renderable, AnimationState, PathFinding
@@ -15,17 +16,17 @@ from .unit import (
     UnitSkills,
 )
 
-# 导入原有Movement组件用于向后兼容
+# Import legacy Movement for backward compatibility.
 from .unit import Movement as LegacyMovement
 
-# 导入新的多层次资源组件
+# Import the new multi-layer resource components.
 from .multilayer_resources import (
     ActionPoints,
     MovementPoints,
     AttackPoints,
     ConstructionPoints,
     SkillPoints,
-    # Movement,  # 新的Movement别名指向MovementPoints
+    # Movement,  # New Movement alias points to MovementPoints
 )
 from .terrain import Terrain, TerrainModifier, Tile, TerritoryControl, CaptureAction
 from .player import Player, TurnOrder, TurnManager
@@ -72,14 +73,14 @@ from .random_events import (
 from .agent_info import AgentInfo, AgentInfoRegistry
 
 __all__ = [
-    # 基础组件
+    # Base components
     "HexPosition",
     "Renderable",
     "AnimationState",
     "PathFinding",
-    # 单位组件
+    # Unit components
     "Unit",
-    # "Movement",  # 新的多层次Movement组件
+    # "Movement",  # New multi-layer Movement component
     "Combat",
     "Vision",
     "Selected",
@@ -87,25 +88,25 @@ __all__ = [
     "UnitCount",
     "UnitStatus",
     "UnitSkills",
-    "ActionPoints",  # 新的多层次ActionPoints组件
-    # 多层次资源组件
+    "ActionPoints",  # New multi-layer ActionPoints component
+    # Multi-layer resource components
     "MovementPoints",
     "AttackPoints",
     "ConstructionPoints",
     "SkillPoints",
-    # 向后兼容组件
+    # Backward compatibility
     "LegacyMovement",
-    # 地形组件
+    # Terrain components
     "Terrain",
     "TerrainModifier",
     "Tile",
     "TerritoryControl",
     "CaptureAction",
-    # 玩家组件
+    # Player components
     "Player",
     "TurnOrder",
     "TurnManager",
-    # 状态组件
+    # State components
     "GameState",
     "MapData",
     "UIState",
@@ -115,35 +116,35 @@ __all__ = [
     "Camera",
     "MiniMap",
     "GameModeComponent",
-    # 游戏时间组件
+    # Game time components
     "GameTime",
-    # 动画组件
+    # Animation components
     "MovementAnimation",
     "DamageNumber",
     "AttackAnimation",
     "EffectAnimation",
     "ProjectileAnimation",
-    # 战斗日志组件
+    # Battle log components
     "BattleLog",
     "BattleLogEntry",
     "UnitObservation",
     "UnitStatistics",
     "VisibilityTracker",
     "GameModeStatistics",
-    # 游戏结束组件
+    # Game over components
     "Winner",
     "GameStatistics",
     "GameOverButtons",
-    # UI按钮组件
+    # UI button components
     "UIButton",
     "UIButtonCollection",
     "UIPanel",
-    # 单位行动面板组件
+    # Unit action panel components
     "UnitActionPanel",
     "UnitActionButton",
     "ActionConfirmDialog",
     "ActionType",
-    # 随机事件组件
+    # Random event components
     "DiceRoll",
     "TerrainEvent",
     "UnitSkillEvent",

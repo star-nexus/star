@@ -1,5 +1,5 @@
 """
-战况记录组件
+Battle log components.
 """
 
 from dataclasses import dataclass, field
@@ -9,25 +9,25 @@ from framework import SingletonComponent
 
 @dataclass
 class BattleLogEntry:
-    """战况记录条目"""
+    """Battle log entry."""
 
-    game_time_display: str = ""  # 游戏时间显示（如"T1"或"02:30"）
-    turn_number: Optional[int] = None  # 回合制模式下的回合数
+    game_time_display: str = ""  # Game time display (e.g., "T1" or "02:30")
+    turn_number: Optional[int] = None  # Turn number in turn-based mode
     message: str = ""
     log_type: str = "info"  # "info", "combat", "movement", "death", "turn"
     faction: str = ""
-    color: tuple = (255, 255, 255)  # 文本颜色
+    color: tuple = (255, 255, 255)  # Text color
 
 
 @dataclass
 class BattleLog(SingletonComponent):
-    """战况记录单例组件"""
+    """Singleton battle log."""
 
     entries: List[BattleLogEntry] = field(default_factory=list)
-    max_entries: int = 100  # 最大记录数
-    show_log: bool = True  # 是否显示战况栏
-    scroll_offset: int = 0  # 滚动偏移量
-    visible_lines: int = 8  # 可见行数
+    max_entries: int = 100  # Max number of entries
+    show_log: bool = True  # Whether to show the log UI
+    scroll_offset: int = 0  # Scroll offset (lines)
+    visible_lines: int = 8  # Visible lines
 
     def add_entry(
         self,
@@ -38,7 +38,7 @@ class BattleLog(SingletonComponent):
         game_time_display: str = "",
         turn_number: Optional[int] = None,
     ):
-        """添加战况记录"""
+        """Add a battle log entry."""
         entry = BattleLogEntry(
             message=message,
             log_type=log_type,
@@ -50,30 +50,30 @@ class BattleLog(SingletonComponent):
 
         self.entries.append(entry)
 
-        # 限制最大记录数
+        # Enforce max size
         if len(self.entries) > self.max_entries:
             self.entries = self.entries[-self.max_entries :]
 
-        # 自动滚动到最新记录
+        # Auto-scroll to the newest entry
         self.scroll_to_bottom()
 
     def scroll_up(self):
-        """向上滚动"""
+        """Scroll up."""
         if self.scroll_offset > 0:
             self.scroll_offset -= 1
 
     def scroll_down(self):
-        """向下滚动"""
+        """Scroll down."""
         max_scroll = max(0, len(self.entries) - self.visible_lines)
         if self.scroll_offset < max_scroll:
             self.scroll_offset += 1
 
     def scroll_to_bottom(self):
-        """滚动到底部"""
+        """Scroll to bottom."""
         self.scroll_offset = max(0, len(self.entries) - self.visible_lines)
 
     def get_visible_entries(self) -> List[BattleLogEntry]:
-        """获取当前可见的记录"""
+        """Get currently visible entries."""
         if not self.entries:
             return []
 
@@ -82,11 +82,11 @@ class BattleLog(SingletonComponent):
         return self.entries[start_idx:end_idx]
 
     def get_recent_entries(self, count: int = 10) -> List[BattleLogEntry]:
-        """获取最近的记录"""
+        """Get recent entries."""
         return self.entries[-count:] if self.entries else []
 
     def clear(self):
-        """清空记录"""
+        """Clear the log."""
         self.entries.clear()
         self.scroll_offset = 0
         self.entries.clear()

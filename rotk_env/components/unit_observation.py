@@ -1,6 +1,5 @@
 """
-单位观测和统计组件
-Unit Observation and Statistics Components
+Unit observation and statistics components.
 """
 
 from dataclasses import dataclass, field
@@ -12,84 +11,84 @@ from ..prefabs.config import Faction, UnitType
 
 @dataclass
 class UnitObservation(Component):
-    """单位观测组件 - 记录单位的可观测状态"""
+    """Unit observation component (observable state snapshot)."""
 
-    # 位置信息
+    # Position
     current_position: Tuple[int, int] = (0, 0)
     previous_position: Tuple[int, int] = (0, 0)
 
-    # 健康状态
+    # Health
     health_percentage: float = 100.0
 
-    # 行动状态
+    # Action state
     movement_remaining: int = 0
     has_acted_this_turn: bool = False
 
-    # 可见状态
+    # Visibility
     is_visible_to: Set[Faction] = field(default_factory=set)
     last_seen_time: float = field(default_factory=time.time)
 
-    # 地形效果
+    # Terrain effects
     current_terrain_type: str = "plains"
     terrain_bonus_active: bool = False
 
-    # 战斗状态
+    # Combat state
     in_combat: bool = False
     last_combat_time: float = 0.0
 
-    # 移动轨迹
+    # Movement trail
     movement_path: List[Tuple[int, int]] = field(default_factory=list)
     total_distance_moved: int = 0
 
 
 @dataclass
 class UnitStatistics(Component):
-    """单位个体统计组件"""
+    """Per-unit statistics."""
 
-    # 基础统计
+    # Core stats
     kills: int = 0
     deaths: int = 0
     damage_dealt: int = 0
     damage_taken: int = 0
 
-    # 行动统计
+    # Action stats
     moves_made: int = 0
     attacks_made: int = 0
     turns_survived: int = 0
 
-    # 战斗统计
+    # Combat stats
     battles_participated: int = 0
     battles_won: int = 0
     battles_lost: int = 0
 
-    # 地形统计
+    # Terrain stats
     terrain_types_visited: Set[str] = field(default_factory=set)
     terrain_bonuses_used: int = 0
 
-    # 时间统计
+    # Time stats
     total_active_time: float = 0.0
     creation_time: float = field(default_factory=time.time)
 
 
 @dataclass
 class VisibilityTracker(SingletonComponent):
-    """可见性追踪器 - 跟踪单位的可见状态 - 纯数据存储"""
+    """Visibility tracker for units (data-only)."""
 
-    # 阵营可见单位映射
+    # Faction -> visible unit ids
     faction_visible_units: Dict[Faction, Set[int]] = field(default_factory=dict)
 
-    # 单位可见历史
+    # Unit id -> visibility history records
     visibility_history: Dict[int, List[Dict]] = field(default_factory=dict)
 
-    # 侦察统计
+    # Reconnaissance stats
     reconnaissance_stats: Dict[Faction, Dict[str, int]] = field(default_factory=dict)
 
 
 @dataclass
 class GameModeStatistics(SingletonComponent):
-    """游戏模式统计组件 - 纯数据存储"""
+    """Game-mode statistics (data-only)."""
 
-    # 回合制统计
+    # Turn-based stats
     turn_based_stats: Dict[str, Any] = field(
         default_factory=lambda: {
             "total_turns": 0,
@@ -102,7 +101,7 @@ class GameModeStatistics(SingletonComponent):
         }
     )
 
-    # 实时制统计
+    # Real-time stats
     realtime_stats: Dict[str, Any] = field(
         default_factory=lambda: {
             "total_game_time": 0.0,
@@ -114,7 +113,7 @@ class GameModeStatistics(SingletonComponent):
         }
     )
 
-    # 当前统计
+    # Current tracking window
     current_mode: str = "turn_based"
     current_turn_start_time: float = 0.0
     actions_this_turn: int = 0

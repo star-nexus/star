@@ -1,5 +1,5 @@
 """
-地形相关组件
+Terrain-related components.
 """
 
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ from ..prefabs.config import TerrainType, Faction
 
 @dataclass
 class Terrain(Component):
-    """地形组件"""
+    """Terrain component."""
 
     terrain_type: TerrainType
     movement_cost: int = 1
@@ -22,7 +22,7 @@ class Terrain(Component):
 
 @dataclass
 class TerrainModifier(Component):
-    """地形修正器组件"""
+    """Terrain modifier component."""
 
     attack_modifier: float = 1.0
     defense_modifier: float = 1.0
@@ -32,62 +32,62 @@ class TerrainModifier(Component):
 
 @dataclass
 class Tile(Component):
-    """地块组件"""
+    """Map tile component."""
 
-    position: Tuple[int, int]  # 地块坐标
-    occupied_by: Optional[int] = None  # 占据此地块的单位实体ID
+    position: Tuple[int, int]  # Tile coordinates
+    occupied_by: Optional[int] = None  # Occupying unit entity id
 
 
 @dataclass
 class TerritoryControl(Component):
-    """领土控制组件"""
+    """Territory control component."""
 
-    # 控制该地块的阵营
+    # Faction controlling this tile
     controlling_faction: Optional[Faction] = None
 
-    # 是否正在占领中
+    # Whether capture is in progress
     being_captured: bool = False
 
-    # 正在占领的单位
+    # Unit currently capturing
     capturing_unit: Optional[int] = None
 
-    # 占领进度 (0.0-1.0)
+    # Capture progress (0.0-1.0)
     capture_progress: float = 0.0
 
-    # 占领所需时间（秒）
+    # Time required to capture (seconds)
     capture_time_required: float = 5.0
 
-    # 是否已建立工事
+    # Whether the tile is fortified
     fortified: bool = False
 
-    # 工事等级（影响防御加成）
+    # Fortification level (affects defense bonus)
     fortification_level: int = 0
 
-    # 占领时间戳
+    # Capture timestamp
     captured_time: float = 0.0
 
-    # 是否为城市（占领代价更高，收益更高）
+    # Whether this tile is a city (higher capture cost, higher reward)
     is_city: bool = False
 
 
 @dataclass
 class CaptureAction(Component):
-    """占领行动组件"""
+    """Capture action component."""
 
-    # 执行占领的单位
+    # Capturing unit
     capturing_unit: int
 
-    # 目标地块位置
+    # Target tile position
     target_position: Tuple[int, int]
 
-    # 占领开始时间
+    # Capture start time
     start_time: float = 0.0
 
-    # 是否在回合制模式下使用行动力
+    # Whether action points are used in turn-based mode
     uses_action_points: bool = True
 
-    # 所需行动力
+    # Action point cost
     action_points_cost: int = 1
 
-    # 是否已完成
+    # Whether the capture is completed
     completed: bool = False

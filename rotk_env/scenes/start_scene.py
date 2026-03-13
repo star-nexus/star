@@ -1,6 +1,5 @@
 """
-开始场景
-Start Scene
+Start scene.
 """
 
 import pygame
@@ -22,24 +21,24 @@ from ..systems.start_scene_render_system import StartSceneRenderSystem
 
 
 class StartScene(Scene):
-    """开始场景类"""
+    """Start scene."""
 
     def __init__(self, engine):
         super().__init__(engine)
         self.name = "start"
         self.world = World()
-        self.game_config = None  # 将传递给GameScene的配置
+        self.game_config = None  # Configuration passed to GameScene
 
     def enter(self, **kwargs) -> None:
-        """进入场景时调用"""
+        """Called when entering the scene."""
         super().enter(**kwargs)
-        # 创建配置实体
+        # Create configuration entity
         self.world.add_singleton_component(StartMenuConfig())
 
-        # 获取屏幕尺寸
+        # Get screen size
         screen_width = GameConfig.WINDOW_WIDTH
         screen_height = GameConfig.WINDOW_HEIGHT
-        # 定义按钮
+        # Define buttons
         buttons = {
             "start_game": {
                 "text": "Start Game",
@@ -64,13 +63,13 @@ class StartScene(Scene):
         }
 
         options = {}
-        # 创建配置选项组件
+        # Create options component
 
         self.world.add_singleton_component(
             StartMenuButtons(buttons=buttons, options=options)
         )
 
-        # 初始化渲染系统
+        # Initialize render system
         self.world.add_system(StartSceneRenderSystem())
         self.subscribe_events()
 
@@ -80,18 +79,18 @@ class StartScene(Scene):
         # EBS.subscribe(KeyDownEvent, self._handle_key_down)
 
     def update(self, dt: float) -> None:
-        """更新场景"""
+        """Update the scene."""
 
-        # 更新渲染系统
+        # Update render system
         self.world.update(dt)
 
     def _update_hover_state(self, event: MouseMotionEvent) -> None:
-        """更新悬停状态"""
+        """Update hover state."""
         buttons_component = self.world.get_singleton_component(StartMenuButtons)
         if not buttons_component:
             return
 
-        # 检查按钮悬停
+        # Update button hover state
         for button_name, button in buttons_component.buttons.items():
             if button["rect"].collidepoint(event.pos):
                 button["hover"] = True
@@ -100,23 +99,23 @@ class StartScene(Scene):
 
         # self.render_system.set_hover_button(hover_button)
 
-        # 检查配置选项悬停
+        # Option hover (not implemented)
         # self._update_option_hover()
 
     def _update_option_hover(self) -> None:
-        """更新选项悬停状态"""
+        """Update option hover state (placeholder)."""
         pass
-        # 获取屏幕尺寸
+        # Get screen size
         # screen_width = GameConfig.WINDOW_WIDTH
         # screen_height = GameConfig.WINDOW_HEIGHT
-        # # 面板位置
+        # # Panel position
         # panel_x = (screen_width - 600) // 2
         # panel_y = 200
 
-        # # 检查各种选项的悬停
+        # # Check hover for various options
         # hover_option = None
 
-        # # 游戏模式选项
+        # # Game mode options
         # mode_y = panel_y + 70
         # for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
         #     option_rect = pygame.Rect(panel_x + 50 + i * 150, mode_y, 120, 30)
@@ -124,19 +123,19 @@ class StartScene(Scene):
         #         hover_option = f"mode_{mode.value}"
         #         break
 
-        # # 玩家配置选项
+        # # Player configuration options
         # if not hover_option:
         #     player_y = panel_y + 170
-        #     for i in range(3):  # 三个玩家配置选项
+        #     for i in range(3):  # Three player configuration options
         #         option_rect = pygame.Rect(panel_x + 50, player_y + i * 30, 200, 30)
         #         if option_rect.collidepoint(self.mouse_pos):
         #             hover_option = f"player_{i}"
         #             break
 
-        # # 场景配置选项
+        # # Scenario options
         # if not hover_option:
         #     scenario_y = panel_y + 270
-        #     for i in range(3):  # 三个场景选项
+        #     for i in range(3):  # Three scenario options
         #         option_rect = pygame.Rect(panel_x + 50, scenario_y + i * 30, 200, 30)
         #         if option_rect.collidepoint(self.mouse_pos):
         #             hover_option = f"scenario_{i}"
@@ -145,9 +144,9 @@ class StartScene(Scene):
         # self.render_system.set_hover_option(hover_option)
 
     def _handle_mouse_click(self, event: MouseButtonDownEvent) -> None:
-        """处理鼠标点击"""
+        """Handle mouse click."""
         pos = event.pos
-        # 检查按钮点击
+        # Check button clicks
         buttons_component = self.world.get_singleton_component(StartMenuButtons)
         if buttons_component:
             for button_name, button in buttons_component.buttons.items():
@@ -155,36 +154,40 @@ class StartScene(Scene):
                     button["action"]()
                     return
 
-        # 检查配置选项点击
+        # Check configuration option clicks
         self._handle_config_click(pos)
 
     def _handle_config_click(self, pos: tuple) -> None:
-        """处理配置选项点击"""
+        """Handle configuration option clicks."""
         config = self.world.get_singleton_component(StartMenuConfig)
         if not config:
             return
 
-        # 获取屏幕尺寸
+        # Get screen size
         screen_width = GameConfig.WINDOW_WIDTH
         screen_height = GameConfig.WINDOW_HEIGHT
-        # 面板位置
+        # Panel position
         panel_x = (screen_width - 600) // 2
         panel_y = 200
 
-        print(f"点击位置: {pos}, 面板位置: ({panel_x}, {panel_y})")  # 调试信息
+        print(
+            f"Click position: {pos}, panel position: ({panel_x}, {panel_y})"
+        )  # Debug
 
-        # 检查游戏模式选项点击
+        # Check game mode option clicks
         mode_y = panel_y + 30 + 60  # panel_y + 30 (y_offset) + 60 (option_y offset)
         for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
-            # 修改为垂直排列，与渲染系统保持一致
+            # Vertical layout (kept consistent with render system)
             option_rect = pygame.Rect(panel_x + 50, mode_y + i * 45, 300, 30)
-            print(f"模式选项 {i} ({mode.value}) 区域: {option_rect}")  # 调试信息
+            print(
+                f"Mode option {i} ({mode.value}) rect: {option_rect}"
+            )  # Debug
             if option_rect.collidepoint(pos):
                 config.selected_mode = mode
-                print(f"选中模式: {mode.value}")  # 调试信息
+                print(f"Selected mode: {mode.value}")  # Debug
                 return
 
-        # 检查玩家配置选项点击
+        # Check player configuration option clicks
         player_y = panel_y + 190 + 60  # panel_y + 190 (y_offset + 160) + 60 (option_y offset)
         player_configs = [
             {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
@@ -197,18 +200,18 @@ class StartScene(Scene):
         ]
 
         for i, player_config in enumerate(player_configs):
-            # 修改为45像素间隔，与渲染系统保持一致
+            # 45px spacing (kept consistent with render system)
             option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 400, 30)
-            config_name = ["人机对战", "AI对战", "三国模式"][i]
-            print(f"玩家配置 {i} ({config_name}) 区域: {option_rect}")  # 调试信息
+            config_name = ["Human vs AI", "AI vs AI", "Three Kingdoms Mode"][i]
+            print(f"Player config {i} ({config_name}) rect: {option_rect}")  # Debug
             if option_rect.collidepoint(pos):
                 config.selected_players = player_config.copy()
                 print(
-                    f"选中玩家配置: {config_name}, 阵营: {list(player_config.keys())}"
-                )  # 调试信息
+                    f"Selected player config: {config_name}, factions: {list(player_config.keys())}"
+                )  # Debug
                 return
 
-        # # 检查场景配置选项点击
+        # # Check scenario option clicks
         # scenario_y = panel_y + 290
         # scenarios = ["default", "plains", "mountains"]
         # for i, scenario in enumerate(scenarios):
@@ -218,37 +221,37 @@ class StartScene(Scene):
         #         return
 
     def _start_game(self) -> None:
-        """开始游戏"""
+        """Start the game."""
         config = self.world.get_singleton_component(StartMenuConfig)
         if not config:
             return
 
-        # 准备游戏配置
+        # Build game configuration
         self.game_config = {
             "mode": config.selected_mode,
             "players": config.selected_players.copy(),
             "scenario": config.selected_scenario,
         }
 
-        # 通过引擎切换到游戏场景
+        # Switch to game scene via the engine
         self.engine.scene_manager.switch_to("game", **self.game_config)
 
     def _quit_game(self) -> None:
-        """退出游戏"""
+        """Quit the game."""
         EBS.publish(QuitEvent(sender=__name__, timestamp=pygame.time.get_ticks()))
 
     def exit(self) -> None:
-        """退出场景"""
+        """Exit the scene."""
         super().exit()
         self.cleanup()
 
     def cleanup(self) -> None:
-        """清理场景"""
+        """Cleanup scene resources."""
         if self.world:
             self.world.reset()
         EBS.unsubscribe(MouseMotionEvent, self._update_hover_state)
         EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_click)
 
     def get_game_config(self) -> Optional[Dict[str, Any]]:
-        """获取游戏配置"""
+        """Get the prepared game configuration."""
         return self.game_config

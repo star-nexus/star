@@ -1,12 +1,13 @@
 """
-LLM Action Handler V2 - 符合API规范的新版动作处理器
-完全按照ROTK_UNIT_ACTION_API_SPECIFICATION.md实现
+LLM Action Handler V2 - API-spec compliant action handler.
 
-主要改进:
-1. 接入各个系统的基础功能，统一封装成符合接口的格式
-2. 详细的错误反馈机制，让LLM知道决策错误的具体原因
-3. 标准化的JSON请求/响应格式
-4. 完整的前置条件检查和限制验证
+Implemented according to ROTK_UNIT_ACTION_API_SPECIFICATION.md.
+
+Key improvements:
+1. Integrates core capabilities from individual systems and exposes them via a standardized interface.
+2. Provides detailed error feedback so the LLM can understand why a decision failed.
+3. Standardized JSON request/response schema.
+4. Complete precondition checks and constraint validation.
 """
 
 import asyncio
@@ -26,7 +27,7 @@ from ..components import (
     Selected,
     UnitStatus,
     UnitSkills,
-    ActionPoints,  # 这现在指向新的多层次ActionPoints
+    ActionPoints,  # Points to the new multi-layer ActionPoints
     AttackPoints,
     ConstructionPoints,
     SkillPoints,
@@ -49,29 +50,29 @@ from ..utils.hex_utils import HexMath
 
 
 class LLMActionHandlerV2:
-    """LLM动作处理器V2 - 符合API规范标准"""
+    """LLM action handler V2 - compliant with the API specification."""
 
     def __init__(self, world: World):
         self.world = world
         self.api_version = "v1.0"
 
-        # 错误代码映射
+        # Error code mapping
         self.error_codes = {
-            1001: "单位不存在",
-            1002: "动作点不足",
-            1003: "目标超出范围",
-            1004: "无效的目标位置",
-            1005: "单位状态不允许该动作",
-            1006: "技能冷却中",
-            1007: "地形不支持该动作",
-            1008: "阵营不匹配",
-            1009: "游戏状态不允许",
-            1010: "参数格式错误",
+            1001: "Unit not found",
+            1002: "Insufficient action points",
+            1003: "Target out of range",
+            1004: "Invalid target position",
+            1005: "Unit state does not allow this action",
+            1006: "Skill is on cooldown",
+            1007: "Terrain does not support this action",
+            1008: "Faction mismatch",
+            1009: "Action not allowed in the current game state",
+            1010: "Invalid parameter format",
         }
 
-        # 支持的动作映射
+        # Supported action mapping
         self.action_handlers = {
-            # 单位控制动作
+            # Unit control actions
             "move": self.handle_move_action,
             "attack": self.handle_attack_action,
             "wait": self.handle_wait_action,
@@ -79,10 +80,10 @@ class LLMActionHandlerV2:
             "capture": self.handle_capture_action,
             "fortify": self.handle_fortify_action,
             "skill": self.handle_skill_action,
-            # 观测动作
+            # Observation actions
             "unit_observation": self.handle_unit_observation,
             "get_unit_info": self.handle_get_unit_info,
-            # 阵营控制动作
+            # Faction-level actions
             "faction_state": self.handle_faction_state,
             # "faction_unit_action": self.handle_faction_unit_action,
             # "faction_batch_actions": self.handle_faction_batch_actions,
@@ -93,9 +94,9 @@ class LLMActionHandlerV2:
     def execute_action(
         self, action_type: str, params: Dict[str, Any] = {}
     ) -> Dict[str, Any]:
-        """执行动作的统一入口点"""
+        """Unified entry point for executing actions."""
         try:
-            # 解析动作数据
+            # Parse action data
             # action_type = action_data.get("action")
             # params = action_data.get("params", {})
 
@@ -109,7 +110,7 @@ class LLMActionHandlerV2:
                     {"supported_actions": list(self.action_handlers.keys())},
                 )
 
-            # 执行具体动作
+            # Execute the action
             print(f"Executing action: {action_type} with params: {params}")
             return self.action_handlers[action_type](params)
 
@@ -118,25 +119,25 @@ class LLMActionHandlerV2:
                 1010, f"Action execution failed: {str(e)}"
             )
 
-    # ==================== 单位控制动作 ====================
+    # ==================== Unit control actions ====================
 
     def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理移动动作 - 按多层次资源系统设计，增强错误反馈"""
-        print(f"[MOVE_ACTION] 开始处理移动动作，参数: {params}")
+        """Handle the move action - designed for the multi-layer resource system with enhanced error feedback."""
+        print(f"[MOVE_ACTION] Start processing move action, params: {params}")
 
-        # 详细参数验证与反馈
+        # Detailed parameter validation and feedback
         unit_id = params.get("unit_id")
         target_position = params.get("target_position")
 
         print(
-            f"[MOVE_ACTION] 解析参数: unit_id={unit_id}, target_position={target_position}"
+            f"[MOVE_ACTION] Parsed params: unit_id={unit_id}, target_position={target_position}"
         )
 
         if not isinstance(unit_id, int):
             error_msg = (
                 f"Invalid unit_id type: expected int, got {type(unit_id).__name__}"
             )
-            print(f"[MOVE_ACTION] 参数验证失败: {error_msg}")
+            print(f"[MOVE_ACTION] Parameter validation failed: {error_msg}")
             return self._create_error_response(
                 1010,
                 error_msg,
@@ -150,7 +151,7 @@ class LLMActionHandlerV2:
 
         if not target_position or not isinstance(target_position, dict):
             error_msg = f"Invalid target_position: expected dict with col/row, got {type(target_position).__name__}"
-            print(f"[MOVE_ACTION] 参数验证失败: {error_msg}")
+            print(f"[MOVE_ACTION] Parameter validation failed: {error_msg}")
             return self._create_error_response(
                 1010,
                 error_msg,
@@ -166,7 +167,7 @@ class LLMActionHandlerV2:
 
         if not isinstance(target_col, int) or not isinstance(target_row, int):
             error_msg = f"Invalid target_position coordinates: col={target_col} ({type(target_col).__name__}), row={target_row} ({type(target_row).__name__})"
-            print(f"[MOVE_ACTION] 坐标验证失败: {error_msg}")
+            print(f"[MOVE_ACTION] Coordinate validation failed: {error_msg}")
             return self._create_error_response(
                 1010,
                 error_msg,
@@ -180,13 +181,13 @@ class LLMActionHandlerV2:
                 },
             )
 
-        # 详细单位存在性检查
-        print(f"[MOVE_ACTION] 检查单位 {unit_id} 是否存在...")
+        # Detailed unit existence check
+        print(f"[MOVE_ACTION] Checking whether unit {unit_id} exists...")
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             error_msg = f"Unit {unit_id} not found in world"
-            print(f"[MOVE_ACTION] 单位不存在: {error_msg}")
-            # 获取所有存在的单位ID作为参考
+            print(f"[MOVE_ACTION] Unit not found: {error_msg}")
+            # Collect existing unit ids for reference
             all_units = []
             for entity_id in self.world.entities:
                 if self.world.get_component(entity_id, Unit):
@@ -197,25 +198,25 @@ class LLMActionHandlerV2:
                 error_msg,
                 {
                     "requested_unit_id": unit_id,
-                    "available_unit_ids": all_units[:10],  # 限制显示前10个
+                        "available_unit_ids": all_units[:10],  # Show at most the first 10
                     "total_units_in_world": len(all_units),
                     "suggestion": "Use faction_state action to see all units for a faction",
                 },
             )
 
         print(
-            f"[MOVE_ACTION] 单位 {unit_id} 存在，类型: {unit.unit_type.value}, 阵营: {unit.faction.value}"
+            f"[MOVE_ACTION] Unit {unit_id} exists. Type: {unit.unit_type.value}, faction: {unit.faction.value}"
         )
 
-        # 详细组件检查
-        print(f"[MOVE_ACTION] 检查单位 {unit_id} 的必需组件...")
+        # Detailed component checks
+        print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
         position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
         action_points = self.world.get_component(unit_id, ActionPoints)
         unit_status = self.world.get_component(unit_id, UnitStatus)
 
-        # 详细的组件缺失检查
+        # Detailed missing-component checks
         missing_components = []
         component_info = {}
 
@@ -223,7 +224,7 @@ class LLMActionHandlerV2:
             missing_components.append("HexPosition")
         else:
             component_info["position"] = {"col": position.col, "row": position.row}
-            print(f"[MOVE_ACTION] 当前位置: ({position.col}, {position.row})")
+            print(f"[MOVE_ACTION] Current position: ({position.col}, {position.row})")
 
         if not movement_points:
             missing_components.append("MovementPoints")
@@ -234,7 +235,7 @@ class LLMActionHandlerV2:
                 "recovery_rate": getattr(movement_points, "recovery_rate", "unknown"),
             }
             print(
-                f"[MOVE_ACTION] 移动力: {movement_points.current_mp}/{movement_points.max_mp}"
+                f"[MOVE_ACTION] Movement points: {movement_points.current_mp}/{movement_points.max_mp}"
             )
 
         if not unit_count:
@@ -248,7 +249,7 @@ class LLMActionHandlerV2:
                 * 100,
             }
             print(
-                f"[MOVE_ACTION] 单位人数: {unit_count.current_count}/{unit_count.max_count}"
+                f"[MOVE_ACTION] Unit headcount: {unit_count.current_count}/{unit_count.max_count}"
             )
 
         if not action_points:
@@ -259,12 +260,12 @@ class LLMActionHandlerV2:
                 "max_ap": action_points.max_ap,
             }
             print(
-                f"[MOVE_ACTION] 行动点: {action_points.current_ap}/{action_points.max_ap}"
+                f"[MOVE_ACTION] Action points: {action_points.current_ap}/{action_points.max_ap}"
             )
 
         if missing_components:
             error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
-            print(f"[MOVE_ACTION] 组件缺失: {error_msg}")
+            print(f"[MOVE_ACTION] Missing components: {error_msg}")
             return self._create_error_response(
                 1001,
                 error_msg,
@@ -282,12 +283,12 @@ class LLMActionHandlerV2:
                 },
             )
 
-        # 详细单位状态检查
+        # Detailed unit-state checks
         if unit_status:
-            print(f"[MOVE_ACTION] 单位状态: {unit_status.current_status}")
+            print(f"[MOVE_ACTION] Unit status: {unit_status.current_status}")
             if unit_status.current_status == UnitState.CONFUSION:
                 error_msg = f"Unit {unit_id} is confused and cannot move"
-                print(f"[MOVE_ACTION] 状态阻止移动: {error_msg}")
+                print(f"[MOVE_ACTION] Move blocked by status: {error_msg}")
                 return self._create_error_response(
                     1005,
                     error_msg,
@@ -300,16 +301,16 @@ class LLMActionHandlerV2:
                     },
                 )
         else:
-            print(f"[MOVE_ACTION] 单位状态组件不存在，假设状态正常")
+            print("[MOVE_ACTION] UnitStatus component missing; assuming normal status")
 
-        # === 第一层检查：行动点（决策层级） ===
-        print(f"[MOVE_ACTION] 检查行动点需求...")
+        # === Layer 1: action points (decision layer) ===
+        print("[MOVE_ACTION] Checking action point requirement...")
         required_ap = 1
         current_ap = action_points.current_ap
 
         if current_ap < required_ap:
             error_msg = f"Insufficient action points to initiate movement decision: need {required_ap}, have {current_ap}"
-            print(f"[MOVE_ACTION] 行动点不足: {error_msg}")
+            print(f"[MOVE_ACTION] Insufficient action points: {error_msg}")
             return self._create_error_response(
                 1002,
                 error_msg,
@@ -322,15 +323,15 @@ class LLMActionHandlerV2:
                     "suggestion": "Wait for action points to recover or use garrison action",
                 },
             )
-        print(f"[MOVE_ACTION] 行动点检查通过: {current_ap}/{action_points.max_ap}")
+        print(f"[MOVE_ACTION] Action point check passed: {current_ap}/{action_points.max_ap}")
 
-        # === 第二层检查：移动力点数（执行层级） ===
-        print(f"[MOVE_ACTION] 检查移动力...")
+        # === Layer 2: movement points (execution layer) ===
+        print("[MOVE_ACTION] Checking movement points...")
         current_mp = movement_points.current_mp
 
         if current_mp <= 0:
             error_msg = f"Unit has no movement points left: {current_mp}"
-            print(f"[MOVE_ACTION] 移动力不足: {error_msg}")
+            print(f"[MOVE_ACTION] Insufficient movement points: {error_msg}")
             return self._create_error_response(
                 1002,
                 error_msg,
@@ -342,31 +343,31 @@ class LLMActionHandlerV2:
                     "suggestion": "Wait for movement points to recover",
                 },
             )
-        print(f"[MOVE_ACTION] 移动力检查通过: {current_mp}/{movement_points.max_mp}")
+        print(f"[MOVE_ACTION] Movement point check passed: {current_mp}/{movement_points.max_mp}")
 
-        # 计算有效移动力（考虑人数损失）
+        # Compute effective movement (account for headcount loss)
         effective_movement = movement_points.get_effective_movement(unit_count)
         current_pos = (position.col, position.row)
         target_pos = (target_col, target_row)
 
         print(
-            f"[MOVE_ACTION] 有效移动力: {effective_movement} (基础: {current_mp}, 人数影响: {unit_count.current_count}/{unit_count.max_count})"
+            f"[MOVE_ACTION] Effective movement: {effective_movement} (base: {current_mp}, headcount: {unit_count.current_count}/{unit_count.max_count})"
         )
-        print(f"[MOVE_ACTION] 路径规划: 从 {current_pos} 到 {target_pos}")
+        print(f"[MOVE_ACTION] Path planning: from {current_pos} to {target_pos}")
 
-        # 获取路径并检查可达性
-        print(f"[MOVE_ACTION] 获取地图障碍...")
-        obstacles = self._get_obstacles_excluding_unit(unit_id)  # 排除移动单位自己
-        print(f"[MOVE_ACTION] 地图障碍数量: {len(obstacles) if obstacles else 0}")
+        # Get obstacles and check reachability
+        print("[MOVE_ACTION] Collecting map obstacles...")
+        obstacles = self._get_obstacles_excluding_unit(unit_id)  # Exclude the moving unit itself
+        print(f"[MOVE_ACTION] Obstacle count: {len(obstacles) if obstacles else 0}")
 
-        # 检查目标位置是否被占用
+        # Check whether the target position is occupied
         if target_pos in obstacles:
-            # 查找占用目标位置的单位
+            # Find the unit occupying the target
             occupying_unit_id = None
             occupying_unit_info = None
             for entity in self.world.query().with_all(HexPosition, Unit).entities():
                 if entity == unit_id:
-                    continue  # 跳过移动单位自己
+                    continue  # Skip the moving unit itself
                 pos = self.world.get_component(entity, HexPosition)
                 if pos and (pos.col, pos.row) == target_pos:
                     occupying_unit_id = entity
@@ -382,7 +383,7 @@ class LLMActionHandlerV2:
             error_msg = (
                 f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
             )
-            print(f"[MOVE_ACTION] 目标位置被占用: {error_msg}")
+            print(f"[MOVE_ACTION] Target position occupied: {error_msg}")
             return self._create_error_response(
                 1004,
                 error_msg,
@@ -401,44 +402,44 @@ class LLMActionHandlerV2:
 
         from ..utils.hex_utils import PathFinding
 
-        print(f"[MOVE_ACTION] 执行路径查找...")
-        print(f"[MOVE_ACTION] 起始位置: {current_pos}")
-        print(f"[MOVE_ACTION] 目标位置: {target_pos}")
-        print(f"[MOVE_ACTION] 有效移动力范围: {effective_movement}")
+        print("[MOVE_ACTION] Running pathfinding...")
+        print(f"[MOVE_ACTION] Start position: {current_pos}")
+        print(f"[MOVE_ACTION] Target position: {target_pos}")
+        print(f"[MOVE_ACTION] Effective movement budget: {effective_movement}")
         print(
-            f"[MOVE_ACTION] 障碍物列表: {list(obstacles)[:10]}..."
-        )  # 只显示前10个障碍
+            f"[MOVE_ACTION] Obstacles sample: {list(obstacles)[:10]}..."
+        )  # Show only the first 10
 
         path = PathFinding.find_path(
             current_pos, target_pos, obstacles, effective_movement
         )
 
-        print(f"[MOVE_ACTION] 路径查找结果: {path}")
+        print(f"[MOVE_ACTION] Pathfinding result: {path}")
 
         if not path or len(path) < 2:
-            # 尝试获取更多路径查找失败的信息
+            # Collect more info when pathfinding fails
             from ..utils.hex_utils import HexMath
 
             hex_distance = HexMath.hex_distance(current_pos, target_pos)
 
-            # 检查是否是距离问题
+            # Check whether distance exceeds range
             distance_issue = hex_distance > effective_movement
 
-            # 检查是否是目标位置问题
+            # Check whether the target is blocked
             target_blocked = target_pos in obstacles
 
-            # 检查相邻位置的可达性
+            # Check reachability of adjacent free positions
             adjacent_free_positions = self._get_adjacent_free_positions(
                 current_pos, obstacles
             )
 
             error_msg = f"No valid path to target position {target_pos}"
-            print(f"[MOVE_ACTION] 路径查找失败: {error_msg}")
-            print(f"[MOVE_ACTION] 六边形距离: {hex_distance}")
-            print(f"[MOVE_ACTION] 有效移动力: {effective_movement}")
-            print(f"[MOVE_ACTION] 距离超出范围: {distance_issue}")
-            print(f"[MOVE_ACTION] 目标被阻挡: {target_blocked}")
-            print(f"[MOVE_ACTION] 相邻空位: {adjacent_free_positions}")
+            print(f"[MOVE_ACTION] Pathfinding failed: {error_msg}")
+            print(f"[MOVE_ACTION] Hex distance: {hex_distance}")
+            print(f"[MOVE_ACTION] Effective movement: {effective_movement}")
+            print(f"[MOVE_ACTION] Distance exceeds range: {distance_issue}")
+            print(f"[MOVE_ACTION] Target blocked: {target_blocked}")
+            print(f"[MOVE_ACTION] Adjacent free positions: {adjacent_free_positions}")
 
             return self._create_error_response(
                 1004,
@@ -454,7 +455,7 @@ class LLMActionHandlerV2:
                     "path_found": path is not None,
                     "path_length": len(path) if path else 0,
                     "obstacle_count": len(obstacles),
-                    "obstacles_sample": list(obstacles)[:10],  # 前10个障碍样本
+                    "obstacles_sample": list(obstacles)[:10],  # First 10 obstacles as a sample
                     "adjacent_free_positions": adjacent_free_positions,
                     "possible_causes": [
                         (
@@ -478,17 +479,17 @@ class LLMActionHandlerV2:
                 },
             )
 
-        print(f"[MOVE_ACTION] 找到路径，长度: {len(path)}, 路径: {path}")
+        print(f"[MOVE_ACTION] Path found. Length: {len(path)}, path: {path}")
 
-        # 计算路径总移动力消耗（每个地形格子有不同的移动力成本）
-        print(f"[MOVE_ACTION] 计算路径移动力消耗...")
+        # Compute total movement cost (terrain tiles may have different costs)
+        print("[MOVE_ACTION] Computing total path movement cost...")
         total_movement_cost = self._calculate_total_movement_cost(path)
-        print(f"[MOVE_ACTION] 路径总消耗: {total_movement_cost} 移动力")
+        print(f"[MOVE_ACTION] Total cost: {total_movement_cost} movement points")
 
-        # 检查当前移动力是否足够（使用实际剩余的移动力）
+        # Check remaining movement points (use actual remaining points)
         if total_movement_cost > current_mp:
             error_msg = f"Target too far: need {total_movement_cost} movement points, have {current_mp}"
-            print(f"[MOVE_ACTION] 移动力不足以到达目标: {error_msg}")
+            print(f"[MOVE_ACTION] Not enough movement points to reach target: {error_msg}")
             return self._create_error_response(
                 1003,
                 error_msg,
@@ -505,14 +506,14 @@ class LLMActionHandlerV2:
                 },
             )
 
-        print(f"[MOVE_ACTION] 移动力足够，剩余: {current_mp - total_movement_cost}")
+        print(f"[MOVE_ACTION] Movement points sufficient. Remaining: {current_mp - total_movement_cost}")
 
-        # 执行移动
-        print(f"[MOVE_ACTION] 获取移动系统...")
+        # Execute movement
+        print("[MOVE_ACTION] Getting movement system...")
         movement_system = self._get_movement_system()
         if not movement_system:
             error_msg = "Movement system not available"
-            print(f"[MOVE_ACTION] 系统错误: {error_msg}")
+            print(f"[MOVE_ACTION] System error: {error_msg}")
             return self._create_error_response(
                 1009,
                 error_msg,
@@ -523,12 +524,12 @@ class LLMActionHandlerV2:
                 },
             )
 
-        print(f"[MOVE_ACTION] 执行移动操作...")
+        print("[MOVE_ACTION] Executing movement...")
         success = movement_system.move_unit(unit_id, target_pos)
 
         if success:
-            print(f"[MOVE_ACTION] 移动成功！")
-            # 移动成功后，需要重新获取组件状态（因为MovementSystem已经修改了它们）
+            print("[MOVE_ACTION] Movement succeeded.")
+            # Refresh component state after movement (MovementSystem may have modified them)
             updated_action_points = self.world.get_component(unit_id, ActionPoints)
             updated_movement_points = self.world.get_component(unit_id, MovementPoints)
 
@@ -543,8 +544,8 @@ class LLMActionHandlerV2:
                     "terrain_breakdown": self._get_path_terrain_breakdown(path),
                 },
                 "resource_consumption": {
-                    "action_points_used": 1,  # 固定消耗1点行动点启动决策
-                    "movement_points_used": total_movement_cost,  # 实际移动力消耗
+                    "action_points_used": 1,  # Fixed: consume 1 AP to initiate the decision
+                    "movement_points_used": total_movement_cost,  # Actual movement point cost
                 },
                 "remaining_resources": {
                     "action_points": (
@@ -571,11 +572,11 @@ class LLMActionHandlerV2:
                     > 0,
                 },
             }
-            print(f"[MOVE_ACTION] 移动完成，返回结果: {result}")
+            print(f"[MOVE_ACTION] Move completed. Returning result: {result}")
             return result
         else:
             error_msg = "Movement system failed to execute move"
-            print(f"[MOVE_ACTION] 移动执行失败: {error_msg}")
+            print(f"[MOVE_ACTION] Move execution failed: {error_msg}")
             return self._create_error_response(
                 1009,
                 error_msg,
@@ -595,8 +596,8 @@ class LLMActionHandlerV2:
             )
 
     def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理攻击动作"""
-        # 参数验证
+        """Handle the attack action."""
+        # Parameter validation
         unit_id = params.get("unit_id")
         target_id = params.get("target_id")
 
@@ -605,27 +606,27 @@ class LLMActionHandlerV2:
                 1010, "unit_id and target_id must be integers"
             )
 
-        # 检查攻击方存在性
+        # Check attacker existence
         attacker_unit = self.world.get_component(unit_id, Unit)
         if not attacker_unit:
             return self._create_error_response(
                 1001, f"Attacker unit {unit_id} not found"
             )
 
-        # 检查目标存在性
+        # Check target existence
         target_unit = self.world.get_component(target_id, Unit)
         if not target_unit:
             return self._create_error_response(
                 1001, f"Target unit {target_id} not found"
             )
 
-        # 检查是否敌对阵营
+        # Check whether factions are hostile
         if attacker_unit.faction == target_unit.faction:
             return self._create_error_response(
                 1008, "Cannot attack units of same faction"
             )
 
-        # 检查攻击方组件
+        # Check attacker components
         attacker_pos = self.world.get_component(unit_id, HexPosition)
         attacker_combat = self.world.get_component(unit_id, Combat)
         attacker_action_points = self.world.get_component(unit_id, ActionPoints)
@@ -635,21 +636,21 @@ class LLMActionHandlerV2:
                 1001, "Attacker missing required components"
             )
 
-        # 检查目标组件
+        # Check target components
         target_pos = self.world.get_component(target_id, HexPosition)
         if not target_pos:
             return self._create_error_response(
                 1001, "Target missing position component"
             )
 
-        # 检查动作点
+        # Check action points
         if not attacker_action_points.can_perform_action(ActionType.ATTACK):
             return self._create_error_response(
                 1002,
                 f"Insufficient action points for attack: need 2, have {attacker_action_points.current_ap}",
             )
 
-        # 检查攻击范围
+        # Check attack range
         attacker_current_pos = (attacker_pos.col, attacker_pos.row)
         target_current_pos = (target_pos.col, target_pos.row)
         distance = HexMath.hex_distance(attacker_current_pos, target_current_pos)
@@ -660,26 +661,26 @@ class LLMActionHandlerV2:
                 f"Target out of range: distance {distance}, range {attacker_combat.attack_range}",
             )
 
-        # 检查是否已攻击过
+        # Check whether the unit has already attacked
         if attacker_combat.has_attacked:
             return self._create_error_response(
                 1005, "Unit has already attacked this turn"
             )
 
-        # 执行攻击
+        # Execute attack
         combat_system = self._get_combat_system()
         if combat_system:
-            # 获取攻击前的状态
+            # Capture pre-attack state
             target_count = self.world.get_component(target_id, UnitCount)
             initial_target_count = target_count.current_count if target_count else 0
 
             success = combat_system.attack(unit_id, target_id)
             if success:
-                # 获取攻击后的状态
+                # Capture post-attack state
                 final_target_count = target_count.current_count if target_count else 0
                 casualties = initial_target_count - final_target_count
 
-                # 获取地形加成信息
+                # Terrain modifier information
                 terrain_bonus = self._get_terrain_attack_bonus(
                     attacker_current_pos, attacker_unit.faction
                 )
@@ -689,7 +690,7 @@ class LLMActionHandlerV2:
                     "message": f"Unit {unit_id} attacked unit {target_id}",
                     "battle_result": {
                         "attacker_damage_dealt": casualties,
-                        "defender_damage_dealt": 0,  # 简化，实际可能有反击
+                        "defender_damage_dealt": 0,  # Simplified: counterattacks may exist in full rules
                         "attacker_casualties": 0,
                         "defender_casualties": casualties,
                         "terrain_bonus": terrain_bonus,
@@ -704,18 +705,18 @@ class LLMActionHandlerV2:
             return self._create_error_response(1009, "Combat system not available")
 
     def handle_wait_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理待命动作"""
+        """Handle the wait action."""
         unit_id = params.get("unit_id")
 
         if not isinstance(unit_id, int):
             return self._create_error_response(1010, "unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 执行待命
+        # Execute wait
         action_system = self._get_action_system()
         if action_system:
             success = action_system.perform_wait(unit_id)
@@ -744,18 +745,18 @@ class LLMActionHandlerV2:
             return self._create_error_response(1009, "Action system not available")
 
     def handle_garrison_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理驻扎动作"""
+        """Handle the garrison action."""
         unit_id = params.get("unit_id")
 
         if not isinstance(unit_id, int):
             return self._create_error_response(1010, "unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 检查动作点
+        # Check action points
         action_points = self.world.get_component(unit_id, ActionPoints)
         if not action_points or not action_points.can_perform_action(
             ActionType.GARRISON
@@ -765,7 +766,7 @@ class LLMActionHandlerV2:
                 f"Insufficient action points for garrison: need 2, have {action_points.current_ap if action_points else 0}",
             )
 
-        # 执行驻扎
+        # Execute garrison
         action_system = self._get_action_system()
         if action_system:
             success = action_system.perform_garrison(unit_id)
@@ -790,7 +791,7 @@ class LLMActionHandlerV2:
             return self._create_error_response(1009, "Action system not available")
 
     def handle_capture_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理占领动作"""
+        """Handle the capture action."""
         unit_id = params.get("unit_id")
         position = params.get("position")
 
@@ -810,19 +811,19 @@ class LLMActionHandlerV2:
                 1010, "position col/row must be integers"
             )
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 检查单位位置是否在目标位置
+        # Validate that the unit is at the target position
         unit_pos = self.world.get_component(unit_id, HexPosition)
         if not unit_pos or (unit_pos.col, unit_pos.row) != (col, row):
             return self._create_error_response(
                 1004, "Unit must be at target position to capture"
             )
 
-        # 检查动作点
+        # Check action points
         action_points = self.world.get_component(unit_id, ActionPoints)
         if not action_points or not action_points.can_perform_action(
             ActionType.CAPTURE
@@ -832,7 +833,7 @@ class LLMActionHandlerV2:
                 f"Insufficient action points for capture: need 2, have {action_points.current_ap if action_points else 0}",
             )
 
-        # 检查是否可以占领
+        # Check whether the tile can be captured
         territory_system = self._get_territory_system()
         if territory_system:
             success = territory_system.start_capture(unit_id, (col, row))
@@ -842,7 +843,7 @@ class LLMActionHandlerV2:
                     "message": f"Unit {unit_id} started capturing position {(col, row)}",
                     "capture_status": {
                         "in_progress": True,
-                        "estimated_turns": 1,  # 可以根据地形调整
+                        "estimated_turns": 1,  # May be adjusted based on terrain
                         "can_be_interrupted": True,
                     },
                     "remaining_action_points": action_points.current_ap - 2,
@@ -855,7 +856,7 @@ class LLMActionHandlerV2:
             return self._create_error_response(1009, "Territory system not available")
 
     def handle_fortify_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理工事建设动作"""
+        """Handle the fortify (build fortification) action."""
         unit_id = params.get("unit_id")
         position = params.get("position")
 
@@ -875,12 +876,12 @@ class LLMActionHandlerV2:
                 1010, "position col/row must be integers"
             )
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 检查动作点和建造点
+        # Check action points and construction points
         action_points = self.world.get_component(unit_id, ActionPoints)
         construction_points = self.world.get_component(unit_id, ConstructionPoints)
 
@@ -898,11 +899,11 @@ class LLMActionHandlerV2:
                 f"Insufficient construction points for fortify: need 1, have {construction_points.current_cp if construction_points else 0}",
             )
 
-        # 获取地形类型和工事等级限制
+        # Get terrain type and fortification level cap
         terrain_type = self._get_terrain_at_position((col, row))
         max_level = self._get_max_fortification_level(terrain_type)
 
-        # 检查当前工事等级
+        # Check current fortification level
         current_level = self._get_current_fortification_level((col, row))
 
         if current_level >= max_level:
@@ -911,7 +912,7 @@ class LLMActionHandlerV2:
                 f"Fortification already at max level for terrain {terrain_type.value}: {current_level}/{max_level}",
             )
 
-        # 执行工事建设
+        # Execute fortification build
         territory_system = self._get_territory_system()
         if territory_system:
             success = territory_system.build_fortification(unit_id, (col, row))
@@ -936,7 +937,7 @@ class LLMActionHandlerV2:
             return self._create_error_response(1009, "Territory system not available")
 
     def handle_skill_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理技能动作"""
+        """Handle the skill action."""
         unit_id = params.get("unit_id")
         skill_name = params.get("skill_name")
         target = params.get("target")
@@ -947,12 +948,12 @@ class LLMActionHandlerV2:
         if not isinstance(skill_name, str):
             return self._create_error_response(1010, "skill_name must be string")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 检查技能组件
+        # Check skill-related components
         unit_skills = self.world.get_component(unit_id, UnitSkills)
         skill_points = self.world.get_component(unit_id, SkillPoints)
 
@@ -962,7 +963,7 @@ class LLMActionHandlerV2:
         if not skill_points:
             return self._create_error_response(1005, "Unit has no skill points")
 
-        # 检查技能是否可用（UnitSkills控制技能列表和冷却）
+        # Check whether the skill is available (UnitSkills controls list & cooldown)
         if not unit_skills.can_use_skill(skill_name):
             if skill_name not in unit_skills.available_skills:
                 return self._create_error_response(
@@ -974,14 +975,14 @@ class LLMActionHandlerV2:
                     1006, f"Skill {skill_name} on cooldown: {cooldown} turns"
                 )
 
-        # 检查技能点是否足够（SkillPoints控制消耗）
+        # Check skill points (SkillPoints controls cost)
         if not skill_points.can_use_skill(skill_name, 1):
             return self._create_error_response(
                 1006,
                 f"Insufficient skill points: need 1, have {skill_points.current_sp}",
             )
 
-        # 检查动作点
+        # Check action points
         action_points = self.world.get_component(unit_id, ActionPoints)
         if not action_points or not action_points.can_perform_action(ActionType.SKILL):
             return self._create_error_response(
@@ -989,7 +990,7 @@ class LLMActionHandlerV2:
                 f"Insufficient action points for skill: need 2, have {action_points.current_ap if action_points else 0}",
             )
 
-        # 检查地形和技能要求
+        # Check terrain and skill requirements
         unit_pos = self.world.get_component(unit_id, HexPosition)
         if unit_pos:
             current_terrain = self._get_terrain_at_position(
@@ -1000,14 +1001,14 @@ class LLMActionHandlerV2:
             )
 
             if skill_result["success"]:
-                # 消耗资源：多层次资源系统
-                # 1. 消耗行动点（决策层）
+                # Consume resources: multi-layer resource system
+                # 1) Action points (decision layer)
                 action_points.consume_ap(ActionType.SKILL)
 
-                # 2. 消耗技能点（执行层）
+                # 2) Skill points (execution layer)
                 skill_points.use_skill(skill_name, 1, skill_result.get("cooldown", 0))
 
-                # 3. 设置冷却时间（通过UnitSkills）
+                # 3) Set cooldown (via UnitSkills)
                 unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
 
                 return {
@@ -1024,25 +1025,25 @@ class LLMActionHandlerV2:
         else:
             return self._create_error_response(1001, "Unit position not found")
 
-    # ==================== 观测动作 ====================
+    # ==================== Observation actions ====================
 
     def handle_unit_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理单位观测"""
+        """Handle unit observation."""
         unit_id = params.get("unit_id")
         observation_level = params.get("observation_level", "basic")
 
         if not isinstance(unit_id, int):
             return self._create_error_response(1010, "unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
 
-        # 获取单位信息
+        # Get unit information
         unit_info = self._get_detailed_unit_info(unit_id)
 
-        # 获取可见环境
+        # Get visible environment
         visible_environment = self._get_visible_environment(unit_id, observation_level)
 
         result = {
@@ -1051,20 +1052,20 @@ class LLMActionHandlerV2:
             "visible_environment": visible_environment,
         }
 
-        # 根据观测级别添加额外信息
+        # Add extra information based on observation level
         if observation_level in ["detailed", "tactical"]:
             result["tactical_info"] = self._get_tactical_info(unit_id)
 
         return result
 
     def handle_get_unit_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取单位详细信息"""
+        """Get detailed unit information."""
         unit_id = params.get("unit_id")
 
         if not isinstance(unit_id, int):
             return self._create_error_response(1010, "unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
@@ -1073,10 +1074,10 @@ class LLMActionHandlerV2:
 
         return {"success": True, **unit_info}
 
-    # ==================== 阵营控制动作 ====================
+    # ==================== Faction-level actions ====================
 
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取阵营状态"""
+        """Get faction state."""
         faction_str = params.get("faction")
 
         if not faction_str:
@@ -1088,21 +1089,21 @@ class LLMActionHandlerV2:
         except ValueError:
             return self._create_error_response(1010, f"Invalid faction: {faction_str}")
 
-        # 获取阵营所有单位
+        # Get all units for the faction
         faction_units = self._get_faction_units(faction)
 
-        # 计算阵营统计
+        # Compute faction statistics
         total_units_count = len(faction_units)
         active_units = [u for u in faction_units if self._is_unit_active(u)]
         active_units_count = len(active_units)
 
-        # 计算领土控制
+        # Territory control (TODO)
         # territory_control = self._calculate_territory_control(faction)
 
-        # 计算资源汇总
+        # Resource summary (TODO)
         # resource_summary = self._calculate_resource_summary(faction_units)
 
-        # 战略分析
+        # Strategic analysis (TODO)
         # strategic_summary = self._get_strategic_summary(faction)
         print(f"final {faction.value}")
         return {
@@ -1112,23 +1113,23 @@ class LLMActionHandlerV2:
             "active_units": active_units_count,
             "units": [
                 self._get_detailed_unit_info(unit_id) for unit_id in active_units[:10]
-            ],  # 限制返回数量
+            ],  # Limit returned units
             # "territory_control": territory_control,
             # "resource_summary": resource_summary,
             # "units": [
             #     self._get_detailed_unit_info(unit_id) for unit_id in faction_units[:10]
-            # ],  # 限制返回数量
+            # ],  # Limit returned count
             # "strategic_summary": strategic_summary,
         }
 
     def handle_faction_unit_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """执行阵营单位动作"""
+        """Execute a unit action scoped to a faction."""
         faction_str = params.get("faction")
         unit_id = params.get("unit_id")
         unit_action = params.get("unit_action")
         action_params = params.get("action_params", {})
 
-        # 验证参数
+        # Validate parameters
         if not faction_str or not isinstance(unit_id, int) or not unit_action:
             return self._create_error_response(
                 1010, "faction, unit_id, unit_action required"
@@ -1139,7 +1140,7 @@ class LLMActionHandlerV2:
         except ValueError:
             return self._create_error_response(1010, f"Invalid faction: {faction_str}")
 
-        # 验证单位属于该阵营
+        # Validate the unit belongs to this faction
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(1001, f"Unit {unit_id} not found")
@@ -1149,7 +1150,7 @@ class LLMActionHandlerV2:
                 1008, f"Unit {unit_id} does not belong to faction {faction.value}"
             )
 
-        # 构造动作数据并执行
+        # Construct action payload and execute
         action_data = {
             "action": unit_action,
             "params": {"unit_id": unit_id, **action_params},
@@ -1158,7 +1159,7 @@ class LLMActionHandlerV2:
         return self.execute_action(action_data)
 
     def handle_faction_batch_actions(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """批量执行阵营动作"""
+        """Execute a batch of faction-scoped actions."""
         faction_str = params.get("faction")
         actions = params.get("actions", [])
 
@@ -1168,7 +1169,7 @@ class LLMActionHandlerV2:
         if not isinstance(actions, list):
             return self._create_error_response(1010, "actions must be array")
 
-        if len(actions) > 10:  # 限制批量操作数量
+        if len(actions) > 10:  # Limit batch size
             return self._create_error_response(1010, "Maximum 10 actions per batch")
 
         try:
@@ -1176,7 +1177,7 @@ class LLMActionHandlerV2:
         except ValueError:
             return self._create_error_response(1010, f"Invalid faction: {faction_str}")
 
-        # 执行所有动作
+        # Execute all actions
         results = []
         executed_actions = 0
         failed_actions = 0
@@ -1196,7 +1197,7 @@ class LLMActionHandlerV2:
                 }
                 failed_actions += 1
             else:
-                # 验证单位属于该阵营
+                # Validate the unit belongs to this faction
                 unit = self.world.get_component(unit_id, Unit)
                 if not unit or unit.faction != faction:
                     result = {
@@ -1208,7 +1209,7 @@ class LLMActionHandlerV2:
                     }
                     failed_actions += 1
                 else:
-                    # 执行动作
+                    # Execute action
                     action_data = {
                         "action": action_type,
                         "params": {"unit_id": unit_id, **action_params},
@@ -1239,463 +1240,397 @@ class LLMActionHandlerV2:
         }
 
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """返回所有可用动作的接口文档描述"""
+        """Return interface documentation for all available actions."""
         action_docs = {
             "api_version": self.api_version,
             "total_actions": len(self.action_handlers),
             "actions": {
-                # 单位控制动作
+                # Unit control actions
                 "move": {
                     "category": "unit_control",
-                    "description": "移动单位到指定位置",
+                    "description": "Move a unit to a target position",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         },
                         "target_position": {
                             "type": "object",
                             "required": True,
-                            "description": "目标位置",
+                            "description": "Target position",
                             "properties": {
-                                "col": {"type": "int", "description": "列坐标"},
-                                "row": {"type": "int", "description": "行坐标"},
+                                "col": {"type": "int", "description": "Column coordinate"},
+                                "row": {"type": "int", "description": "Row coordinate"},
                             },
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "执行是否成功"},
-                        "message": {"type": "string", "description": "执行结果消息"},
+                        "success": {"type": "bool", "description": "Whether execution succeeded"},
+                        "message": {"type": "string", "description": "Result message"},
                         "resource_consumption": {
                             "type": "object",
-                            "description": "资源消耗详情",
+                            "description": "Resource consumption details",
                             "properties": {
                                 "action_points_used": {
                                     "type": "int",
-                                    "description": "消耗的行动点（决策层级）",
+                                    "description": "Action points consumed (decision layer)",
                                 },
                                 "movement_points_used": {
                                     "type": "int",
-                                    "description": "消耗的移动力（执行层级）",
+                                    "description": "Movement points consumed (execution layer)",
                                 },
                             },
                         },
                         "remaining_resources": {
                             "type": "object",
-                            "description": "剩余资源",
+                            "description": "Remaining resources",
                             "properties": {
                                 "action_points": {
                                     "type": "int",
-                                    "description": "剩余行动点",
+                                    "description": "Remaining action points",
                                 },
                                 "movement_points": {
                                     "type": "int",
-                                    "description": "剩余移动力",
+                                    "description": "Remaining movement points",
                                 },
                             },
                         },
                         "path_info": {
                             "type": "object",
-                            "description": "路径信息",
+                            "description": "Path information",
                             "properties": {
-                                "path": {"type": "array", "description": "移动路径"},
+                                "path": {"type": "array", "description": "Movement path"},
                                 "path_length": {
                                     "type": "int",
-                                    "description": "路径长度",
+                                    "description": "Path length",
                                 },
                                 "terrain_breakdown": {
                                     "type": "array",
-                                    "description": "路径地形分析",
+                                    "description": "Per-tile terrain cost breakdown",
                                 },
                             },
                         },
                     },
                     "resource_system": {
-                        "action_points": "固定消耗1点启动移动决策",
-                        "movement_points": "根据路径和地形消耗：平原1，森林2，山地3等",
-                        "recovery": "每回合自动恢复，实时模式下5秒恢复",
+                        "action_points": "Fixed: consume 1 AP to initiate the movement decision",
+                        "movement_points": "Depends on path & terrain costs: plain=1, forest=2, mountain=3, etc.",
+                        "recovery": "Automatically recovers each turn; in real-time mode recovers every 5 seconds",
                     },
                     "prerequisites": [
-                        "单位存在",
-                        "有1点行动点启动决策",
-                        "有足够移动力到达目标",
-                        "目标位置可达",
-                        "单位状态正常",
+                        "Unit exists",
+                        "At least 1 AP to initiate decision",
+                        "Sufficient movement points to reach the target",
+                        "Target position is reachable",
+                        "Unit status allows movement",
                     ],
                 },
                 "attack": {
                     "category": "unit_control",
-                    "description": "攻击指定敌方单位",
+                    "description": "Attack an enemy unit",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "攻击方单位ID",
+                            "description": "Attacker unit id",
                         },
                         "target_id": {
                             "type": "int",
                             "required": True,
-                            "description": "目标单位ID",
+                            "description": "Target unit id",
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "攻击是否成功"},
-                        "message": {"type": "string", "description": "攻击结果消息"},
-                        "battle_result": {"type": "object", "description": "战斗详情"},
+                        "success": {"type": "bool", "description": "Whether the attack succeeded"},
+                        "message": {"type": "string", "description": "Attack result message"},
+                        "battle_result": {"type": "object", "description": "Battle details"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "2",
                     "prerequisites": [
-                        "单位存在",
-                        "目标在攻击范围内",
-                        "敌对阵营",
-                        "未攻击过",
-                        "足够行动点",
+                        "Unit exists",
+                        "Target is within attack range",
+                        "Target is hostile",
+                        "Has not attacked this turn",
+                        "Sufficient action points",
                     ],
                 },
                 "wait": {
                     "category": "unit_control",
-                    "description": "单位待命并恢复状态",
+                    "description": "Wait to recover/normalize unit state",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         }
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "执行是否成功"},
-                        "message": {"type": "string", "description": "执行结果"},
-                        "effects": {"type": "object", "description": "恢复效果"},
+                        "success": {"type": "bool", "description": "Whether execution succeeded"},
+                        "message": {"type": "string", "description": "Result message"},
+                        "effects": {"type": "object", "description": "Recovery effects"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "0",
-                    "prerequisites": ["单位存在"],
+                    "prerequisites": ["Unit exists"],
                 },
                 "garrison": {
                     "category": "unit_control",
-                    "description": "单位驻扎并恢复人数",
+                    "description": "Garrison to recover headcount and gain defensive benefits",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         }
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "执行是否成功"},
-                        "message": {"type": "string", "description": "执行结果"},
-                        "effects": {"type": "object", "description": "驻扎效果"},
-                        "current_count": {"type": "int", "description": "当前人数"},
+                        "success": {"type": "bool", "description": "Whether execution succeeded"},
+                        "message": {"type": "string", "description": "Result message"},
+                        "effects": {"type": "object", "description": "Garrison effects"},
+                        "current_count": {"type": "int", "description": "Current headcount"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "2",
-                    "prerequisites": ["单位存在", "足够行动点"],
+                    "prerequisites": ["Unit exists", "Sufficient action points"],
                 },
                 "capture": {
                     "category": "territory_control",
-                    "description": "占领指定地块",
+                    "description": "Capture a target tile",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         },
                         "position": {
                             "type": "object",
                             "required": True,
-                            "description": "占领位置",
+                            "description": "Capture position",
                             "properties": {
-                                "col": {"type": "int", "description": "列坐标"},
-                                "row": {"type": "int", "description": "行坐标"},
+                                "col": {"type": "int", "description": "Column coordinate"},
+                                "row": {"type": "int", "description": "Row coordinate"},
                             },
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "占领是否成功"},
-                        "message": {"type": "string", "description": "占领结果"},
-                        "capture_status": {"type": "object", "description": "占领状态"},
+                        "success": {"type": "bool", "description": "Whether capture started/succeeded"},
+                        "message": {"type": "string", "description": "Capture result message"},
+                        "capture_status": {"type": "object", "description": "Capture status"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "2",
-                    "prerequisites": ["单位在目标位置", "位置可占领", "足够行动点"],
+                    "prerequisites": ["Unit is on the target position", "Tile is capturable", "Sufficient action points"],
                 },
                 "fortify": {
                     "category": "territory_control",
-                    "description": "在指定位置建设工事",
+                    "description": "Build fortifications at a target position",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         },
                         "position": {
                             "type": "object",
                             "required": True,
-                            "description": "工事位置",
+                            "description": "Fortification position",
                             "properties": {
-                                "col": {"type": "int", "description": "列坐标"},
-                                "row": {"type": "int", "description": "行坐标"},
+                                "col": {"type": "int", "description": "Column coordinate"},
+                                "row": {"type": "int", "description": "Row coordinate"},
                             },
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "建设是否成功"},
-                        "message": {"type": "string", "description": "建设结果"},
-                        "current_level": {"type": "int", "description": "当前工事等级"},
-                        "max_level": {"type": "int", "description": "最大工事等级"},
-                        "defense_bonus": {"type": "float", "description": "防御加成"},
-                        "terrain_type": {"type": "string", "description": "地形类型"},
+                        "success": {"type": "bool", "description": "Whether the build succeeded"},
+                        "message": {"type": "string", "description": "Build result message"},
+                        "current_level": {"type": "int", "description": "Current fortification level"},
+                        "max_level": {"type": "int", "description": "Maximum fortification level"},
+                        "defense_bonus": {"type": "float", "description": "Defense bonus"},
+                        "terrain_type": {"type": "string", "description": "Terrain type"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "2",
                     "prerequisites": [
-                        "单位存在",
-                        "工事未达上限",
-                        "地形允许",
-                        "足够行动点",
+                        "Unit exists",
+                        "Fortification not at cap",
+                        "Terrain allows fortification",
+                        "Sufficient action points",
                     ],
                 },
                 "skill": {
                     "category": "unit_control",
-                    "description": "使用单位技能",
+                    "description": "Use a unit skill",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         },
                         "skill_name": {
                             "type": "string",
                             "required": True,
-                            "description": "技能名称",
+                            "description": "Skill name",
                         },
                         "target": {
                             "type": "any",
                             "required": False,
-                            "description": "技能目标(可选)",
+                            "description": "Skill target (optional)",
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "技能使用是否成功"},
-                        "message": {"type": "string", "description": "技能使用结果"},
-                        "skill_result": {"type": "object", "description": "技能效果"},
+                        "success": {"type": "bool", "description": "Whether the skill execution succeeded"},
+                        "message": {"type": "string", "description": "Skill result message"},
+                        "skill_result": {"type": "object", "description": "Skill effects"},
                         "remaining_action_points": {
                             "type": "int",
-                            "description": "剩余行动点",
+                            "description": "Remaining action points",
                         },
                     },
                     "action_point_cost": "2",
                     "prerequisites": [
-                        "单位存在",
-                        "技能可用",
-                        "无冷却",
-                        "地形符合",
-                        "足够行动点",
+                        "Unit exists",
+                        "Skill is available",
+                        "Not on cooldown",
+                        "Terrain requirements met",
+                        "Sufficient action points",
                     ],
                 },
-                # 观测动作
+                # Observation actions
                 "unit_observation": {
                     "category": "observation",
-                    "description": "获取单位观测信息",
+                    "description": "Get observation information for a unit",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         },
                         "observation_level": {
                             "type": "string",
                             "required": False,
-                            "description": "观测级别",
+                            "description": "Observation level",
                             "default": "basic",
                             "options": ["basic", "detailed", "tactical"],
                         },
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "观测是否成功"},
-                        "unit_info": {"type": "object", "description": "单位详细信息"},
+                        "success": {"type": "bool", "description": "Whether observation succeeded"},
+                        "unit_info": {"type": "object", "description": "Detailed unit info"},
                         "visible_environment": {
                             "type": "array",
-                            "description": "可见环境",
+                            "description": "Visible environment",
                         },
                         "tactical_info": {
                             "type": "object",
-                            "description": "战术信息(详细模式)",
+                            "description": "Tactical info (detailed/tactical modes)",
                         },
                     },
                     "action_point_cost": "0",
-                    "prerequisites": ["单位存在"],
+                    "prerequisites": ["Unit exists"],
                 },
                 "get_unit_info": {
                     "category": "observation",
-                    "description": "获取单位详细信息",
+                    "description": "Get detailed unit information",
                     "parameters": {
                         "unit_id": {
                             "type": "int",
                             "required": True,
-                            "description": "单位ID",
+                            "description": "Unit id",
                         }
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "获取是否成功"},
-                        "unit_id": {"type": "int", "description": "单位ID"},
-                        "unit_type": {"type": "string", "description": "单位类型"},
-                        "faction": {"type": "string", "description": "所属阵营"},
-                        "position": {"type": "object", "description": "位置信息"},
-                        "status": {"type": "object", "description": "状态信息"},
-                        "capabilities": {"type": "object", "description": "能力信息"},
+                        "success": {"type": "bool", "description": "Whether retrieval succeeded"},
+                        "unit_id": {"type": "int", "description": "Unit id"},
+                        "unit_type": {"type": "string", "description": "Unit type"},
+                        "faction": {"type": "string", "description": "Faction"},
+                        "position": {"type": "object", "description": "Position info"},
+                        "status": {"type": "object", "description": "Status info"},
+                        "capabilities": {"type": "object", "description": "Capability info"},
                         "available_skills": {
                             "type": "array",
-                            "description": "可用技能列表",
+                            "description": "List of available skills",
                         },
                     },
                     "action_point_cost": "0",
-                    "prerequisites": ["单位存在"],
+                    "prerequisites": ["Unit exists"],
                 },
-                # 阵营控制动作
+                # Faction-level actions
                 "faction_state": {
                     "category": "faction_control",
-                    "description": "获取阵营整体状态",
+                    "description": "Get overall faction state",
                     "parameters": {
                         "faction": {
                             "type": "string",
                             "required": True,
-                            "description": "阵营名称(wei/shu/wu)",
+                            "description": "Faction name (wei/shu/wu)",
                         }
                     },
                     "returns": {
-                        "success": {"type": "bool", "description": "获取是否成功"},
-                        "faction": {"type": "string", "description": "阵营名称"},
-                        "total_units": {"type": "int", "description": "总单位数"},
-                        "active_units": {"type": "int", "description": "活跃单位数"},
+                        "success": {"type": "bool", "description": "Whether retrieval succeeded"},
+                        "faction": {"type": "string", "description": "Faction name"},
+                        "total_units": {"type": "int", "description": "Total units"},
+                        "active_units": {"type": "int", "description": "Active units"},
                         "territory_control": {
                             "type": "int",
-                            "description": "领土控制百分比",
+                            "description": "Territory control percentage",
                         },
                         "resource_summary": {
                             "type": "object",
-                            "description": "资源汇总",
+                            "description": "Resource summary",
                         },
-                        "units": {"type": "array", "description": "单位列表(最多10个)"},
+                        "units": {"type": "array", "description": "Unit list (up to 10)"},
                         "strategic_summary": {
                             "type": "object",
-                            "description": "战略摘要",
+                            "description": "Strategic summary",
                         },
                     },
                     "action_point_cost": "0",
-                    "prerequisites": ["有效阵营名称"],
+                    "prerequisites": ["Valid faction name"],
                 },
-                # "faction_unit_action": {
-                #     "category": "faction_control",
-                #     "description": "以阵营身份执行单位动作",
-                #     "parameters": {
-                #         "faction": {
-                #             "type": "string",
-                #             "required": True,
-                #             "description": "阵营名称",
-                #         },
-                #         "unit_id": {
-                #             "type": "int",
-                #             "required": True,
-                #             "description": "单位ID",
-                #         },
-                #         "unit_action": {
-                #             "type": "string",
-                #             "required": True,
-                #             "description": "单位动作类型",
-                #         },
-                #         "action_params": {
-                #             "type": "object",
-                #             "required": False,
-                #             "description": "动作参数",
-                #         },
-                #     },
-                #     "returns": {
-                #         "type": "object",
-                #         "description": "返回对应单位动作的结果",
-                #     },
-                #     "action_point_cost": "取决于具体动作",
-                #     "prerequisites": ["单位属于指定阵营", "单位动作有效"],
-                # },
-                # "faction_batch_actions": {
-                #     "category": "faction_control",
-                #     "description": "批量执行阵营动作",
-                #     "parameters": {
-                #         "faction": {
-                #             "type": "string",
-                #             "required": True,
-                #             "description": "阵营名称",
-                #         },
-                #         "actions": {
-                #             "type": "array",
-                #             "required": True,
-                #             "description": "动作列表(最多10个)",
-                #             "max_items": 10,
-                #         },
-                #     },
-                #     "returns": {
-                #         "success": {"type": "bool", "description": "批量执行总体结果"},
-                #         "executed_actions": {
-                #             "type": "int",
-                #             "description": "成功执行的动作数",
-                #         },
-                #         "failed_actions": {
-                #             "type": "int",
-                #             "description": "失败的动作数",
-                #         },
-                #         "results": {
-                #             "type": "array",
-                #             "description": "每个动作的详细结果",
-                #         },
-                #     },
-                #     "action_point_cost": "取决于具体动作",
-                #     "prerequisites": ["有效阵营", "动作列表不超过10个"],
-                # },
-                # 系统动作
+                # System actions
                 "action_list": {
                     "category": "system",
-                    "description": "获取所有可用动作的接口文档",
+                    "description": "Get interface documentation for all available actions",
                     "parameters": {},
                     "returns": {
-                        "api_version": {"type": "string", "description": "API版本"},
-                        "total_actions": {"type": "int", "description": "总动作数"},
+                        "api_version": {"type": "string", "description": "API version"},
+                        "total_actions": {"type": "int", "description": "Total number of actions"},
                         "actions": {
                             "type": "object",
-                            "description": "所有动作的详细文档",
+                            "description": "Detailed docs for all actions",
                         },
                     },
                     "action_point_cost": "0",
-                    "prerequisites": ["无"],
+                    "prerequisites": ["None"],
                 },
             },
             "error_codes": {
-                1001: "单位不存在",
-                1002: "动作点不足",
-                1003: "目标超出范围",
-                1004: "无效的目标位置",
-                1005: "单位状态不允许该动作",
-                1006: "技能冷却中",
-                1007: "地形不支持该动作",
-                1008: "阵营不匹配",
-                1009: "游戏状态不允许",
-                1010: "参数格式错误",
+                1001: "Unit not found",
+                1002: "Insufficient action points",
+                1003: "Target out of range",
+                1004: "Invalid target position",
+                1005: "Unit state does not allow this action",
+                1006: "Skill is on cooldown",
+                1007: "Terrain does not support this action",
+                1008: "Faction mismatch",
+                1009: "Action not allowed in the current game state",
+                1010: "Invalid parameter format",
             },
             "usage_examples": {
                 "move_unit": {
@@ -1715,12 +1650,12 @@ class LLMActionHandlerV2:
 
         return {"success": True, **action_docs}
 
-    # ==================== 辅助方法 ====================
+    # ==================== Helper methods ====================
 
     def _create_error_response(
         self, error_code: int, message: str, extra_data: Dict = None
     ) -> Dict[str, Any]:
-        """创建错误响应"""
+        """Create a standardized error response."""
         response = {
             "success": False,
             "error_code": error_code,
@@ -1735,9 +1670,9 @@ class LLMActionHandlerV2:
         return response
 
     def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
-        """获取单位详细信息"""
+        """Get detailed unit information."""
         try:
-            # 参数验证
+            # Parameter validation
             if not isinstance(unit_id, int) or unit_id <= 0:
                 return {
                     "unit_id": unit_id,
@@ -1765,7 +1700,7 @@ class LLMActionHandlerV2:
                     "available_skills": [],
                 }
 
-            # 获取所有组件
+            # Get all relevant components
             unit = self.world.get_component(unit_id, Unit)
             unit_count = self.world.get_component(unit_id, UnitCount)
             position = self.world.get_component(unit_id, HexPosition)
@@ -1779,7 +1714,7 @@ class LLMActionHandlerV2:
             unit_status = self.world.get_component(unit_id, UnitStatus)
             unit_skills = self.world.get_component(unit_id, UnitSkills)
 
-            # 检查核心组件是否存在
+            # Validate that core components exist
             if not unit:
                 return {
                     "unit_id": unit_id,
@@ -1807,7 +1742,7 @@ class LLMActionHandlerV2:
                     "available_skills": [],
                 }
 
-            # 安全获取单位类型和阵营
+            # Safely extract unit type and faction
             try:
                 unit_type_value = unit.unit_type.value if unit.unit_type else "unknown"
             except (AttributeError, ValueError):
@@ -1818,7 +1753,7 @@ class LLMActionHandlerV2:
             except (AttributeError, ValueError):
                 faction_value = "unknown"
 
-            # 安全获取位置信息
+            # Safely extract position info
             position_info = {"col": 0, "row": 0}
             if position:
                 try:
@@ -1829,7 +1764,7 @@ class LLMActionHandlerV2:
                 except (AttributeError, ValueError, TypeError):
                     position_info = {"col": 0, "row": 0}
 
-            # 安全获取状态信息
+            # Safely extract status info
             status_info = {
                 "current_count": 0,
                 "max_count": 0,
@@ -1860,7 +1795,7 @@ class LLMActionHandlerV2:
                         }
                     )
                 except (AttributeError, ValueError, TypeError):
-                    pass  # 保持默认值
+                    pass  # Keep defaults
 
             if unit_status:
                 try:
@@ -1877,7 +1812,7 @@ class LLMActionHandlerV2:
                 except (AttributeError, ValueError, TypeError):
                     status_info["morale"] = "normal"
 
-            # 安全获取能力信息
+            # Safely extract capability info
             capabilities_info = {
                 "movement": 0,
                 "attack_range": 1,
@@ -1936,7 +1871,7 @@ class LLMActionHandlerV2:
                 except (AttributeError, ValueError, TypeError):
                     pass
 
-            # 新增多层次资源信息
+            # Multi-layer resource info
             if attack_points:
                 try:
                     capabilities_info["attack_points"] = (
@@ -1967,7 +1902,7 @@ class LLMActionHandlerV2:
                 except (AttributeError, ValueError, TypeError):
                     pass
 
-            # 安全获取技能信息
+            # Safely extract skill info
             available_skills = []
             if unit_skills:
                 try:
@@ -1992,7 +1927,7 @@ class LLMActionHandlerV2:
             }
 
         except Exception as e:
-            # 异常情况下返回安全的默认值
+            # Fallback: return safe defaults on errors
             return {
                 "unit_id": unit_id,
                 "error": f"Failed to get unit info: {str(e)}",
@@ -2022,12 +1957,12 @@ class LLMActionHandlerV2:
     def _get_visible_environment(
         self, unit_id: int, observation_level: str
     ) -> List[Dict[str, Any]]:
-        """获取单位可见环境"""
+        """Get the environment visible to the unit."""
         vision = self.world.get_component(unit_id, Vision)
         if not vision:
             return []
 
-        # 获取单位当前位置和移动组件（为移动模式做准备）
+        # Get unit position and movement components (for movement-related info)
         unit_position = self.world.get_component(unit_id, HexPosition)
         movement_points = self.world.get_component(unit_id, MovementPoints)
         unit_count = self.world.get_component(unit_id, UnitCount)
@@ -2042,7 +1977,7 @@ class LLMActionHandlerV2:
                 "fortifications": self._get_current_fortification_level(pos),
             }
 
-            # 如果observation_level为"move"，添加移动相关信息
+            # Add movement-related info (e.g., for "move"/tactical style observation)
             # if current_pos and movement_points and unit_count:
             move_info = self._calculate_movement_info(
                 unit_id, current_pos, pos, movement_points, unit_count
@@ -2061,8 +1996,8 @@ class LLMActionHandlerV2:
         movement_points: MovementPoints,
         unit_count: UnitCount,
     ) -> Dict[str, Any]:
-        """计算从当前位置到目标位置的移动信息"""
-        # 如果是当前位置，返回特殊信息
+        """Compute movement info from current position to a target position."""
+        # If this is the current position, return a special marker
         if current_pos == target_pos:
             return {
                 "reachable": True,
@@ -2077,31 +2012,31 @@ class LLMActionHandlerV2:
                 "path": [current_pos],
             }
 
-        # 计算有效移动力（考虑人数损失）
+        # Compute effective movement (account for headcount loss)
         effective_movement = movement_points.get_effective_movement(unit_count)
 
-        # 获取障碍物和路径
+        # Get obstacles and compute a path
         obstacles = self._get_obstacles()
         from ..utils.hex_utils import PathFinding
 
         try:
-            # 尝试寻找路径
+            # Attempt to find a path
             path = PathFinding.find_path(
                 current_pos, target_pos, obstacles, effective_movement
             )
 
             if path and len(path) > 1:
-                # 计算路径总消耗
+                # Compute total path cost
                 total_movement_cost = self._calculate_total_movement_cost(path)
 
-                # 检查是否可达
+                # Check reachability
                 reachable = total_movement_cost <= movement_points.current_mp
 
                 return {
                     "reachable": reachable,
                     "is_current_position": False,
                     "movement_cost": total_movement_cost,
-                    "path_length": len(path) - 1,  # 不包括起始位置
+                    "path_length": len(path) - 1,  # Excludes the starting position
                     "terrain_movement_cost": self._get_terrain_movement_cost(
                         target_pos
                     ),
@@ -2115,7 +2050,7 @@ class LLMActionHandlerV2:
                     ),
                 }
             else:
-                # 无法找到路径
+                # No path found
                 return {
                     "reachable": False,
                     "is_current_position": False,
@@ -2130,7 +2065,7 @@ class LLMActionHandlerV2:
                     "reachable_reason": "no_valid_path",
                 }
         except Exception as e:
-            # 路径计算出错
+            # Path calculation error
             return {
                 "reachable": False,
                 "is_current_position": False,
@@ -2144,12 +2079,12 @@ class LLMActionHandlerV2:
             }
 
     def _get_tactical_info(self, unit_id: int) -> Dict[str, Any]:
-        """获取战术信息"""
-        # 简化实现
+        """Get tactical information."""
+        # Simplified placeholder implementation
         return {"threats": [], "opportunities": [], "movement_options": []}
 
     def _get_faction_units(self, faction: Faction) -> List[int]:
-        """获取阵营所有单位"""
+        """Get all unit ids for a faction."""
         units = []
         for entity in self.world.query().with_component(Unit).entities():
             unit = self.world.get_component(entity, Unit)
@@ -2158,17 +2093,17 @@ class LLMActionHandlerV2:
         return units
 
     def _is_unit_active(self, unit_id: int) -> bool:
-        """检查单位是否活跃"""
+        """Check whether a unit is active (alive)."""
         unit_count = self.world.get_component(unit_id, UnitCount)
         return unit_count and unit_count.current_count > 0
 
     def _calculate_territory_control(self, faction: Faction) -> int:
-        """计算领土控制百分比"""
-        # 简化实现
-        return 30  # 返回固定值，实际应计算
+        """Calculate territory control percentage."""
+        # Simplified placeholder implementation
+        return 30  # Fixed placeholder value; should be computed
 
     def _calculate_resource_summary(self, faction_units: List[int]) -> Dict[str, Any]:
-        """计算资源汇总"""
+        """Calculate a resource summary."""
         total_manpower = 0
         for unit_id in faction_units:
             unit_count = self.world.get_component(unit_id, UnitCount)
@@ -2177,54 +2112,54 @@ class LLMActionHandlerV2:
 
         return {
             "total_manpower": total_manpower,
-            "fortification_points": 0,  # 简化
-            "controlled_cities": 0,  # 简化
+            "fortification_points": 0,  # Simplified placeholder
+            "controlled_cities": 0,  # Simplified placeholder
         }
 
     def _get_strategic_summary(self, faction: Faction) -> Dict[str, Any]:
-        """获取战略摘要"""
+        """Get a strategic summary."""
         return {
             "active_battles": 0,
             "territory_threats": [],
             "expansion_opportunities": [],
         }
 
-    # ==================== 系统获取方法 ====================
+    # ==================== System accessors ====================
 
     def _get_movement_system(self):
-        """获取移动系统"""
+        """Get the movement system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "MovementSystem":
                 return system
         return None
 
     def _get_combat_system(self):
-        """获取战斗系统"""
+        """Get the combat system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "CombatSystem":
                 return system
         return None
 
     def _get_action_system(self):
-        """获取动作系统"""
+        """Get the action system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 
     def _get_territory_system(self):
-        """获取领土系统"""
+        """Get the territory system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "TerritorySystem":
                 return system
         return None
 
-    # ==================== 游戏逻辑辅助方法 ====================
+    # ==================== Game-logic helpers ====================
 
     def _get_obstacles(self) -> Set[Tuple[int, int]]:
-        """获取移动障碍 - 只考虑单位作为障碍"""
+        """Get movement obstacles (units only)."""
         obstacles = set()
-        # 获取所有单位位置作为障碍
+        # Use all unit positions as obstacles
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             if pos:
@@ -2234,29 +2169,27 @@ class LLMActionHandlerV2:
     def _get_obstacles_excluding_unit(
         self, exclude_unit_id: int
     ) -> Set[Tuple[int, int]]:
-        """获取移动障碍，排除指定单位 - 只考虑其他单位作为障碍"""
+        """Get movement obstacles excluding a given unit (other units only)."""
         obstacles = set()
-        # 获取所有单位位置作为障碍，但排除指定单位
+        # Use all unit positions as obstacles, excluding the specified unit
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             if entity == exclude_unit_id:
-                continue  # 跳过要移动的单位
+                continue  # Skip the unit being moved
             pos = self.world.get_component(entity, HexPosition)
             if pos:
                 obstacles.add((pos.col, pos.row))
-        print(
-            f"[DEBUG] 实际单位障碍数量: {len(obstacles)} (排除单位 {exclude_unit_id})"
-        )
+        print(f"[DEBUG] Unit obstacles: {len(obstacles)} (excluding unit {exclude_unit_id})")
         return obstacles
 
     def _get_adjacent_free_positions(
         self, center_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]
     ) -> List[Tuple[int, int]]:
-        """获取中心位置周围的空闲位置"""
+        """Get free adjacent positions around a center tile."""
         from ..utils.hex_utils import HexMath
 
         col, row = center_pos
 
-        # 六边形的6个相邻方向
+        # 6 adjacent directions in a hex grid
         adjacent_positions = []
         directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
 
@@ -2268,24 +2201,24 @@ class LLMActionHandlerV2:
         return adjacent_positions
 
     def _calculate_total_movement_cost(self, path: List[Tuple[int, int]]) -> int:
-        """计算路径总移动消耗"""
+        """Calculate total movement cost for a path."""
         total_cost = 0
-        for pos in path[1:]:  # 跳过起始位置
+        for pos in path[1:]:  # Skip the start position
             terrain_cost = self._get_terrain_movement_cost(pos)
             total_cost += terrain_cost
         return total_cost
 
     def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
-        """获取地形移动消耗（移动力消耗）"""
+        """Get terrain movement cost (movement point cost)."""
         terrain_type = self._get_terrain_at_position(position)
 
-        # 地形移动消耗映射
+        # Terrain movement cost mapping
         terrain_costs = {
             TerrainType.PLAIN: 1,
             TerrainType.FOREST: 2,
             TerrainType.HILL: 2,
             TerrainType.MOUNTAIN: 3,
-            TerrainType.WATER: 99,  # 不可通行
+            TerrainType.WATER: 99,  # Impassable
             TerrainType.CITY: 1,
             TerrainType.URBAN: 1,
         }
@@ -2295,11 +2228,11 @@ class LLMActionHandlerV2:
     def _get_path_terrain_breakdown(
         self, path: List[Tuple[int, int]]
     ) -> List[Dict[str, Any]]:
-        """获取路径中每个位置的地形信息和消耗"""
+        """Get terrain type and movement cost for each position on a path."""
         breakdown = []
 
         for i, pos in enumerate(path):
-            if i == 0:  # 跳过起始位置
+            if i == 0:  # Skip the start position
                 continue
 
             terrain_type = self._get_terrain_at_position(pos)
@@ -2317,7 +2250,7 @@ class LLMActionHandlerV2:
         return breakdown
 
     def _get_terrain_at_position(self, position: Tuple[int, int]) -> TerrainType:
-        """获取位置的地形类型"""
+        """Get the terrain type at a given position."""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return TerrainType.PLAIN
@@ -2332,16 +2265,16 @@ class LLMActionHandlerV2:
     def _get_terrain_attack_bonus(
         self, position: Tuple[int, int], faction: Faction
     ) -> float:
-        """获取地形攻击加成"""
+        """Get terrain attack bonus."""
         territory_system = self._get_territory_system()
         if territory_system:
             return (
                 territory_system.get_territory_attack_bonus(position, faction) / 10.0
-            )  # 转换为小数
+            )  # Convert to decimal
         return 0.0
 
     def _get_max_fortification_level(self, terrain_type: TerrainType) -> int:
-        """获取地形最大工事等级"""
+        """Get the maximum fortification level for a terrain type."""
         level_limits = {
             TerrainType.PLAIN: 1,
             TerrainType.FOREST: 2,
@@ -2354,7 +2287,7 @@ class LLMActionHandlerV2:
         return level_limits.get(terrain_type, 1)
 
     def _get_current_fortification_level(self, position: Tuple[int, int]) -> int:
-        """获取当前工事等级"""
+        """Get the current fortification level at a position."""
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
             return 0
@@ -2369,11 +2302,11 @@ class LLMActionHandlerV2:
         return 0
 
     def _calculate_fortification_defense_bonus(self, level: int) -> float:
-        """计算工事防御加成"""
-        return level * 0.2  # 每级+20%防御
+        """Calculate fortification defense bonus."""
+        return level * 0.2  # +20% defense per level
 
     def _get_units_at_position(self, position: Tuple[int, int]) -> List[Dict[str, Any]]:
-        """获取位置上的所有单位"""
+        """Get all units at a position."""
         units = []
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
@@ -2393,8 +2326,8 @@ class LLMActionHandlerV2:
     def _execute_terrain_skill(
         self, unit_id: int, skill_name: str, terrain: TerrainType, target: Any
     ) -> Dict[str, Any]:
-        """执行地形技能"""
-        # 技能执行逻辑
+        """Execute a terrain-dependent skill."""
+        # Skill execution logic
         skill_effects = {
             "hide": {
                 "allowed_terrains": [

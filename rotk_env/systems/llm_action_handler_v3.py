@@ -143,7 +143,7 @@ class LLMActionHandlerV3:
         target_col = target_position.get("col")
         target_row = target_position.get("row")
 
-        # 检查目标位置坐标类型
+        # Validate target coordinate types
         if not isinstance(target_col, int) or not isinstance(target_row, int):
             error_msg = f"Invalid coordinate types: col must be int, row must be int"
             print(f"[MOVE_ACTION] Coordinate type validation failed: {error_msg}")
@@ -211,7 +211,7 @@ class LLMActionHandlerV3:
         #     f"[MOVE_ACTION] Unit {unit_id} exists, type: {unit.unit_type.value}, faction: {unit.faction.value}"
         # )
 
-        # === 阵营回合权限验证 ===
+        # === Faction turn permission validation ===
         # print(f"[MOVE_ACTION] Checking faction turn permission for unit {unit_id}...")
         permission_error = self._validate_faction_turn_permission(unit_id, "move")
         if permission_error:
@@ -336,7 +336,7 @@ class LLMActionHandlerV3:
         obstacles = self._get_obstacles_excluding_unit(unit_id)  # exclude moving unit
         # print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
 
-        # 检查目标位置是否被占用
+        # Check whether the target position is occupied
         # if target_pos in obstacles:
         #     # Find the unit occupying the target tile
         #     occupying_unit_id = None
@@ -562,7 +562,7 @@ class LLMActionHandlerV3:
         #     f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
         # )
 
-        # 执行移动
+        # Execute movement
         # print(f"[MOVE_ACTION] Fetching MovementSystem...")
         movement_system = self._get_movement_system()
         if not movement_system:
@@ -583,8 +583,8 @@ class LLMActionHandlerV3:
         if success:
             # print(f"[MOVE_ACTION] Move succeeded")
 
-            # 从 MovementAnimation 组件获取默认速度，或者硬编码一个已知值
-            # 这里我们使用在 rotk_env/components/animation.py 中定义的默认值 2.0
+            # Use default speed from MovementAnimation, or fall back to a known constant.
+            # Here we use the default value 2.0 defined in rotk_env/components/animation.py.
             animation_speed = 2.0
             path_length = len(path) - 1 if path else 0
             estimated_duration = (
@@ -675,7 +675,7 @@ class LLMActionHandlerV3:
         #     f"[ATTACK_ACTION] Units exist: {attacker_unit.unit_type.value}({attacker_unit.faction.value}) -> {target_unit.unit_type.value}({target_unit.faction.value})"
         # )
 
-        # === Layer 3: 阵营回合权限验证 ===
+        # === Layer 3: faction turn permission validation ===
         # print(f"[ATTACK_ACTION] Checking faction turn permission for unit {unit_id}...")
         permission_error = self._validate_faction_turn_permission(unit_id, "attack")
         if permission_error:
@@ -895,7 +895,7 @@ class LLMActionHandlerV3:
             },
             "remaining_resources": {
                 "action_points": post_attack_state["attacker_action_points"],
-                # "can_attack_again": not post_attack_state["attacker_has_attacked"],  # 移除单次攻击限制
+                # "can_attack_again": not post_attack_state["attacker_has_attacked"],  # Removed single-attack limit
             },
             "tactical_info": {
                 "attack_was_effective": casualties_inflicted > 0,
@@ -918,23 +918,23 @@ class LLMActionHandlerV3:
         return result
 
     def handle_rest_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理待命动作"""
+        """Handle the rest (wait) action."""
         unit_id = params.get("unit_id")
 
         if not isinstance(unit_id, int):
             return self._create_error_response("unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
-        # 阵营回合权限验证
+        # Faction turn permission validation
         permission_error = self._validate_faction_turn_permission(unit_id, "rest")
         if permission_error:
             return permission_error
 
-        # 执行待命
+        # Execute rest
         action_system = self._get_action_system()
         if action_system:
             success = action_system.perform_wait(unit_id)
@@ -965,7 +965,7 @@ class LLMActionHandlerV3:
             return self._create_error_response("Action system not available")
 
     def handle_occupy_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理占领动作 - 占领区域不消耗建筑点，但消耗行动点"""
+        """Handle the occupy action - does not consume construction points, but consumes action points."""
         unit_id = params.get("unit_id")
         position = params.get("position")
 
@@ -981,17 +981,17 @@ class LLMActionHandlerV3:
         if not isinstance(col, int) or not isinstance(row, int):
             return self._create_error_response("position col/row must be integers")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
-        # 阵营回合权限验证
+        # Faction turn permission validation
         permission_error = self._validate_faction_turn_permission(unit_id, "occupy")
         if permission_error:
             return permission_error
 
-        # 检查单位位置和行动点
+        # Check unit position and action points
         unit_pos = self.world.get_component(unit_id, HexPosition)
         action_points = self.world.get_component(unit_id, ActionPoints)
 
@@ -1003,7 +1003,7 @@ class LLMActionHandlerV3:
                 f"Insufficient action points for occupy: need 1, have {action_points.current_ap if action_points else 0}",
             )
 
-        # 检查是否在单位当前位置或相邻位置
+        # Ensure target is current or adjacent position
         current_pos = (unit_pos.col, unit_pos.row)
         target_pos = (col, row)
 
@@ -1016,26 +1016,26 @@ class LLMActionHandlerV3:
                 f"Cannot occupy position {target_pos}: too far from unit position {current_pos}. Can only occupy current or adjacent positions.",
             )
 
-        # 检查目标位置是否已被占领
+        # Check whether the target is already occupied/controlled
         territory_system = self._get_territory_system()
         if not territory_system:
             return self._create_error_response("Territory system not available")
 
-        # 检查是否已被己方占领
+        # Check whether it is already controlled by the unit's faction
         current_control = territory_system.get_territory_control(target_pos)
         if current_control and current_control == unit.faction:
             return self._create_error_response(
                 f"Position {target_pos} already controlled by faction {unit.faction.value}",
             )
 
-        # 执行占领
+        # Execute occupy
         success = territory_system.occupy_territory(unit_id, target_pos)
 
         if success:
-            # 消耗行动点
+            # Consume action points
             action_points.consume_ap(ActionType.OCCUPY)
 
-            # 获取地形信息
+            # Terrain info (optional)
             terrain_type = self._get_terrain_at_position(target_pos)
 
             return {
@@ -1054,7 +1054,7 @@ class LLMActionHandlerV3:
                 # },
                 # "resource_consumption": {
                 #     "action_points_used": 1,
-                #     "construction_points_used": 0,  # 占领不消耗建筑点
+                #     "construction_points_used": 0,  # Occupy does not consume construction points
                 # },
                 # "remaining_resources": {
                 #     "action_points": action_points.current_ap,
@@ -1072,7 +1072,7 @@ class LLMActionHandlerV3:
             )
 
     def handle_fortify_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理工事建设动作"""
+        """Handle the fortify (build fortification) action."""
         unit_id = params.get("unit_id")
         position = params.get("position")
 
@@ -1088,17 +1088,17 @@ class LLMActionHandlerV3:
         if not isinstance(col, int) or not isinstance(row, int):
             return self._create_error_response("position col/row must be integers")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
-        # 阵营回合权限验证
+        # Faction turn permission validation
         permission_error = self._validate_faction_turn_permission(unit_id, "fortify")
         if permission_error:
             return permission_error
 
-        # 检查动作点和建造点
+        # Check action points and construction points
         action_points = self.world.get_component(unit_id, ActionPoints)
         construction_points = self.world.get_component(unit_id, ConstructionPoints)
 
@@ -1114,11 +1114,11 @@ class LLMActionHandlerV3:
                 f"Insufficient construction points for fortify: need 1, have {construction_points.current_cp if construction_points else 0}",
             )
 
-        # 获取地形类型和工事等级限制
+        # Get terrain type and fortification level cap
         terrain_type = self._get_terrain_at_position((col, row))
         max_level = self._get_max_fortification_level(terrain_type)
 
-        # 检查当前工事等级
+        # Check current fortification level
         current_level = self._get_current_fortification_level((col, row))
 
         if current_level >= max_level:
@@ -1126,7 +1126,7 @@ class LLMActionHandlerV3:
                 f"Fortification already at max level for terrain {terrain_type.value}: {current_level}/{max_level}",
             )
 
-        # 执行工事建设
+        # Execute fortification build
         territory_system = self._get_territory_system()
         if territory_system:
             success = territory_system.build_fortification(unit_id, (col, row))
@@ -1151,7 +1151,7 @@ class LLMActionHandlerV3:
             return self._create_error_response("Territory system not available")
 
     def handle_skill_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理技能动作"""
+        """Handle the skill action."""
         unit_id = params.get("unit_id")
         skill_name = params.get("skill_name")
         target = params.get("target")
@@ -1162,17 +1162,17 @@ class LLMActionHandlerV3:
         if not isinstance(skill_name, str):
             return self._create_error_response("skill_name must be string")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
 
-        # 阵营回合权限验证
+        # Faction turn permission validation
         permission_error = self._validate_faction_turn_permission(unit_id, "skill")
         if permission_error:
             return permission_error
 
-        # 检查技能组件
+        # Check skill-related components
         unit_skills = self.world.get_component(unit_id, UnitSkills)
         skill_points = self.world.get_component(unit_id, SkillPoints)
 
@@ -1182,7 +1182,7 @@ class LLMActionHandlerV3:
         if not skill_points:
             return self._create_error_response("Unit has no skill points")
 
-        # 检查技能是否可用（UnitSkills控制技能列表和冷却）
+        # Check skill availability (UnitSkills controls list & cooldown)
         if not unit_skills.can_use_skill(skill_name):
             if skill_name not in unit_skills.available_skills:
                 return self._create_error_response(f"Skill {skill_name} not available")
@@ -1192,20 +1192,20 @@ class LLMActionHandlerV3:
                     f"Skill {skill_name} on cooldown: {cooldown} turns"
                 )
 
-        # 检查技能点是否足够（SkillPoints控制消耗）
+        # Check skill points (SkillPoints controls cost)
         if not skill_points.can_use_skill(skill_name, 1):
             return self._create_error_response(
                 f"Insufficient skill points: need 1, have {skill_points.current_sp}",
             )
 
-        # 检查动作点
+        # Check action points
         action_points = self.world.get_component(unit_id, ActionPoints)
         if not action_points or not action_points.can_perform_action(ActionType.SKILL):
             return self._create_error_response(
                 f"Insufficient action points for skill: need 2, have {action_points.current_ap if action_points else 0}",
             )
 
-        # 检查地形和技能要求
+        # Check terrain and skill requirements
         unit_pos = self.world.get_component(unit_id, HexPosition)
         if unit_pos:
             current_terrain = self._get_terrain_at_position(
@@ -1216,14 +1216,14 @@ class LLMActionHandlerV3:
             )
 
             if skill_result.get("result", False):
-                # 消耗资源：多层次资源系统
-                # 1. 消耗行动点（决策层）
+                # Consume resources: multi-layer resource system
+                # 1) Action points (decision layer)
                 action_points.consume_ap(ActionType.SKILL)
 
-                # 2. 消耗技能点（执行层）
+                # 2) Skill points (execution layer)
                 skill_points.use_skill(skill_name, 1, skill_result.get("cooldown", 0))
 
-                # 3. 设置冷却时间（通过UnitSkills）
+                # 3) Cooldown (via UnitSkills)
                 unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
 
                 return {
@@ -1252,7 +1252,7 @@ class LLMActionHandlerV3:
         if not isinstance(unit_id, int):
             return self._create_error_response("unit_id must be integer")
 
-        # 检查单位存在性
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(f"Unit {unit_id} not found")
@@ -1299,7 +1299,7 @@ class LLMActionHandlerV3:
         alive_units = [u for u in faction_units if self._is_unit_alive(u)]
         alive_units_count = len(alive_units)
 
-        # 计算可行动单位（存活且有行动点）
+        # Count actionable units (alive and with action points)
         actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
         actionable_units_count = len(actionable_units)
 
@@ -1313,11 +1313,11 @@ class LLMActionHandlerV3:
             "state": faction_status,
             "faction": faction.value,
             "total_units": total_units_count,
-            "alive_units": alive_units_count,  # 存活单位数（人数>0）
-            "actionable_units": actionable_units_count,  # 可行动单位数（存活且有行动点）
+            "alive_units": alive_units_count,  # Number of alive units (count > 0)
+            "actionable_units": actionable_units_count,  # Alive units with action points
             "units": [
                 self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
-            ],  # 返回存活单位的详细信息
+            ],  # Return details for alive units (limited)
         }
 
     def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
@@ -1871,31 +1871,31 @@ class LLMActionHandlerV3:
     def _validate_faction_turn_permission(
         self, unit_id: int, action_name: str = "action"
     ) -> Dict[str, Any]:
-        """验证指定单位的阵营是否有当前回合的操作权限
+        """Validate whether the unit's faction has permission to act this turn.
 
         Args:
-            unit_id: 单位ID
-            action_name: 动作名称，用于错误信息
+            unit_id: Unit id
+            action_name: Action name (used for error messages)
 
         Returns:
-            Dict: 包含验证结果的字典，如果验证失败会返回错误响应，成功返回None
+            Dict: Error response dict on failure; None on success.
         """
-        # 检查单位是否存在
+        # Validate that the unit exists
         unit = self.world.get_component(unit_id, Unit)
         if not unit:
             return self._create_error_response(
                 f"Unit {unit_id} not found", {"unit_id": unit_id, "action": action_name}
             )
 
-        # 检查游戏模式
+        # Check game mode
         game_mode = self.world.get_singleton_component(GameModeComponent)
         is_realtime = game_mode and game_mode.is_real_time()
 
-        # 在实时模式下，所有阵营都可以同时行动，跳过回合检查
+        # In real-time mode all factions can act concurrently, so skip turn checks
         if is_realtime:
             return None
 
-        # 获取当前轮到行动的阵营（仅在回合制模式下）
+        # Get the currently active faction (turn-based mode only)
         current_player = self._get_current_player()
         if not current_player:
             return self._create_error_response(
@@ -1903,7 +1903,7 @@ class LLMActionHandlerV3:
                 {"unit_id": unit_id, "action": action_name},
             )
 
-        # 检查是否是该阵营的回合
+        # Check whether it's this faction's turn
         if unit.faction != current_player.faction:
             return self._create_error_response(
                 f"Not {unit.faction.value}'s turn to act. Current turn: {current_player.faction.value}",
@@ -1916,7 +1916,7 @@ class LLMActionHandlerV3:
                 },
             )
 
-        # 验证通过，返回None表示无错误
+        # Validation passed: None means no error
         return None
 
     def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
@@ -2065,7 +2065,7 @@ class LLMActionHandlerV3:
             capabilities_info = {
                 "properties": {
                     "attack_range": 1,
-                    "attack_power": 10,  # 默认攻击力
+                    "attack_power": 10,  # Default attack power
                     "vision_range": 2,
                 },
                 "unit_resources": {
@@ -2263,21 +2263,21 @@ class LLMActionHandlerV3:
         # Effective movement (consider strength)
         effective_movement = movement_points.get_effective_movement(unit_count)
 
-        # 获取障碍物和路径
+        # Get obstacles and compute a path
         obstacles = self._get_obstacles()
         from ..utils.hex_utils import PathFinding
 
         try:
-            # 尝试寻找路径
+            # Attempt to find a path
             path = PathFinding.find_path(
                 current_pos, target_pos, obstacles, effective_movement
             )
 
             if path and len(path) > 1:
-                # 计算路径总消耗
+                # Compute total path cost
                 total_movement_cost = self._calculate_total_movement_cost(path)
 
-                # 检查是否可达
+                # Check reachability
                 reachable = total_movement_cost <= movement_points.current_mp
 
                 return {
@@ -2328,7 +2328,7 @@ class LLMActionHandlerV3:
 
     def _get_tactical_info(self, unit_id: int) -> Dict[str, Any]:
         """Get tactical info (placeholder)."""
-        # 简化实现
+        # Simplified placeholder implementation
         return {"threats": [], "opportunities": [], "movement_options": []}
 
     def _get_faction_units(self, faction: Faction) -> List[int]:
@@ -2355,7 +2355,7 @@ class LLMActionHandlerV3:
 
     def _calculate_territory_control(self, faction: Faction) -> int:
         """Calculate territory control percentage (placeholder)."""
-        # 简化实现
+        # Simplified placeholder implementation
         return 30  # fixed value; real calculation TBD
 
     def _calculate_resource_summary(self, faction_units: List[int]) -> Dict[str, Any]:
@@ -2718,7 +2718,7 @@ class LLMActionHandlerV3:
             u for u in self._get_faction_units(faction) if self._is_unit_alive(u)
         ]
         if not alive_units:
-            return "eliminated"  # 已被消灭
+            return "eliminated"  # Eliminated
 
         # If other factions have living units, inspect recent battles to infer in_battle
         other_factions_exist = False
@@ -2734,7 +2734,7 @@ class LLMActionHandlerV3:
                     break
 
         if other_factions_exist:
-            # 检查是否有最近的战斗活动
+            # Check for recent battle activity
             battle_log = self.world.get_singleton_component(BattleLog)
             if battle_log and hasattr(battle_log, "entries") and battle_log.entries:
                 # Recent battles imply in_battle
@@ -2784,10 +2784,10 @@ class LLMActionHandlerV3:
         )
         is_neutral = current_control is None
 
-        # 判断是否可以占领（未被己方控制的地块）
+        # Determine whether the tile can be occupied (not controlled by own faction)
         can_occupy = not is_friendly if unit_faction else False
 
-        # 获取地形占领加成
+        # Terrain occupation bonus
         terrain_type = self._get_terrain_at_position(position)
         occupation_bonus = self._get_terrain_occupation_bonus(terrain_type)
 

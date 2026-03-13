@@ -1,5 +1,5 @@
 """
-单位相关组件
+Unit-related components.
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +11,7 @@ from ..prefabs.config import UnitType, Faction, UnitState, ActionType
 
 @dataclass
 class Unit(Component):
-    """单位组件"""
+    """Unit component."""
 
     unit_type: UnitType
     faction: Faction
@@ -22,47 +22,47 @@ class Unit(Component):
 
 @dataclass
 class UnitCount(Component):
-    """单位人数组件"""
+    """Unit headcount component."""
 
-    current_count: int = 100  # 当前人数
-    max_count: int = 100  # 满编人数
+    current_count: int = 100  # Current headcount
+    max_count: int = 100  # Max (full strength) headcount
 
     @property
     def ratio(self) -> float:
-        """人数比例"""
+        """Headcount ratio."""
         return self.current_count / self.max_count if self.max_count > 0 else 0.0
 
     @property
     def percentage(self) -> float:
-        """人数百分比"""
+        """Headcount percentage."""
         return self.ratio * 100
 
     def is_decimated(self) -> bool:
-        """是否已经残破（人数<=10%）"""
+        """Whether the unit is decimated (headcount <= 10%)."""
         return self.ratio <= 0.1
 
 
 @dataclass
 class UnitStatus(Component):
-    """单位状态组件"""
+    """Unit status component."""
 
     current_status: UnitState = UnitState.NORMAL
-    status_duration: int = 0  # 状态持续回合数
-    wait_turns: int = 0  # 连续待命回合数
-    charge_stacks: int = 0  # 冲势层数
+    status_duration: int = 0  # Turns remaining for the current status
+    wait_turns: int = 0  # Consecutive wait turns
+    charge_stacks: int = 0  # Charge stacks
 
 
 @dataclass
 class Movement(Component):
-    """移动组件"""
+    """Movement component."""
 
-    base_movement: int  # 基础移动力
-    current_movement: int  # 当前移动力
+    base_movement: int  # Base movement points
+    current_movement: int  # Current movement points
     has_moved: bool = False
 
     def get_effective_movement(self, unit_count: UnitCount) -> int:
-        """获取考虑人数的有效移动力"""
-        # 每少20%人数移动力-1（最低1）
+        """Get effective movement after headcount scaling."""
+        # -1 movement per 20% headcount loss (min 1)
         ratio = unit_count.ratio
         penalty = max(0, int((1 - ratio) / 0.2))
         return max(1, self.base_movement - penalty)
@@ -70,10 +70,10 @@ class Movement(Component):
 
 @dataclass
 class Combat(Component):
-    """战斗组件"""
+    """Combat component."""
 
-    base_attack: int  # 基础攻击
-    base_defense: int  # 基础防御
+    base_attack: int  # Base attack
+    base_defense: int  # Base defense
     attack_range: int = 1
     has_attacked: bool = False
 
@@ -90,10 +90,10 @@ class Combat(Component):
     def get_effective_stats(
         self, unit_count: UnitCount, status: UnitStatus, terrain_coeff: float = 1.0
     ) -> tuple:
-        """获取考虑人数、状态和地形的有效攻防"""
+        """Get effective attack/defense with headcount, status, and terrain."""
         from ..prefabs.config import GameConfig
 
-        # 动态攻防公式：基础值 × (N/M)^0.7 × 状态系数 × 地形系数
+        # Effective stat = base × f(headcount) × status_coeff × terrain_coeff
         ratio = unit_count.ratio
         # sigmoid-like modifier
         attack_modifier = self.attack_multiplier(ratio)
@@ -112,7 +112,7 @@ class Combat(Component):
 
 @dataclass
 class Vision(Component):
-    """视野组件"""
+    """Vision component."""
 
     range: int
     visible_tiles: Set[tuple] = field(default_factory=set)
@@ -120,14 +120,14 @@ class Vision(Component):
 
 @dataclass
 class Selected(Component):
-    """选中状态组件"""
+    """Selection marker component."""
 
     selected: bool = True
 
 
 @dataclass
 class AIControlled(Component):
-    """AI控制组件"""
+    """AI control marker component."""
 
     difficulty: str = "normal"
     last_action_time: float = 0.0
@@ -135,19 +135,19 @@ class AIControlled(Component):
 
 @dataclass
 class UnitSkills(Component):
-    """单位技能组件"""
+    """Unit skills component."""
 
     available_skills: Set[str] = field(default_factory=set)
-    skill_cooldowns: Dict[str, int] = field(default_factory=dict)  # 技能冷却时间
+    skill_cooldowns: Dict[str, int] = field(default_factory=dict)  # Skill cooldowns
 
     def can_use_skill(self, skill_name: str) -> bool:
-        """检查是否可以使用技能"""
+        """Return whether a skill can be used now."""
         return (
             skill_name in self.available_skills
             and self.skill_cooldowns.get(skill_name, 0) <= 0
         )
 
     def use_skill(self, skill_name: str, cooldown: int = 0):
-        """使用技能"""
+        """Use a skill and apply its cooldown."""
         if skill_name in self.available_skills:
             self.skill_cooldowns[skill_name] = cooldown

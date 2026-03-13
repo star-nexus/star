@@ -1,6 +1,7 @@
 """
-多层次资源系统组件
-按照MULTILAYER_RESOURCE_SYSTEM_DESIGN.md设计实现
+Multi-layer resource system components.
+
+Implemented according to `MULTILAYER_RESOURCE_SYSTEM_DESIGN.md`.
 """
 
 from dataclasses import dataclass, field
@@ -11,18 +12,18 @@ from ..prefabs.config import ActionType
 
 @dataclass
 class ActionPoints(Component):
-    """行动点 - 决策层级控制"""
+    """Action points (AP) - decision-layer control."""
 
-    current_ap: int = 2  # 当前行动点
-    max_ap: int = 2  # 最大行动点
+    current_ap: int = 2  # Current AP
+    max_ap: int = 2  # Max AP
 
     def can_perform_action(self, action_type: ActionType) -> bool:
-        """检查是否有足够行动点执行决策"""
+        """Return whether there is enough AP to perform the action."""
         cost = self._get_action_cost(action_type)
         return self.current_ap >= cost
 
     def consume_ap(self, action_type: ActionType) -> bool:
-        """消耗行动点"""
+        """Consume AP for the action, if possible."""
         cost = self._get_action_cost(action_type)
         if self.current_ap >= cost:
             self.current_ap -= cost
@@ -30,33 +31,33 @@ class ActionPoints(Component):
         return False
 
     def _get_action_cost(self, action_type: ActionType) -> int:
-        """获取决策消耗的行动点（决策层级）"""
+        """Get AP cost for an action (decision layer)."""
         action_costs = {
-            ActionType.MOVE: 1,  # 移动决策：固定1点
-            ActionType.ATTACK: 1,  # 攻击决策：固定1点
-            ActionType.REST: 1,  # 休整：固定1点
-            ActionType.SKILL: 1,  # 技能决策：固定1点
-            ActionType.OCCUPY: 1,  # 占领决策：固定1点
-            ActionType.FORTIFY: 1,  # 建造决策：固定1点
+            ActionType.MOVE: 1,  # Move: fixed cost 1
+            ActionType.ATTACK: 1,  # Attack: fixed cost 1
+            ActionType.REST: 1,  # Rest: fixed cost 1
+            ActionType.SKILL: 1,  # Skill: fixed cost 1
+            ActionType.OCCUPY: 1,  # Occupy: fixed cost 1
+            ActionType.FORTIFY: 1,  # Fortify: fixed cost 1
         }
         return action_costs.get(action_type, 1)
 
     def reset(self):
-        """重置行动点（回合开始时）"""
+        """Reset AP (at the start of a turn)."""
         self.current_ap = self.max_ap
 
 
 @dataclass
 class MovementPoints(Component):
-    """移动力点数 - 移动执行层"""
+    """Movement points (MP) - execution-layer movement."""
 
-    current_mp: int = 3  # 当前移动力
-    max_mp: int = 3  # 最大移动力（基于单位类型）
-    base_mp: int = 3  # 基础移动力
-    has_moved: bool = False  # 是否已移动
+    current_mp: int = 3  # Current MP
+    max_mp: int = 3  # Max MP (by unit type)
+    base_mp: int = 3  # Base MP
+    has_moved: bool = False  # Whether the unit has moved
 
     def get_effective_movement(self, unit_count) -> int:
-        """获取考虑人数的有效移动力（分区间弱化，仅重伤罚机动）"""
+        """Get effective MP after headcount scaling (only penalize severe losses)."""
         if not unit_count:
             return self.base_mp
 
@@ -71,11 +72,11 @@ class MovementPoints(Component):
         return max(2, effective)
 
     def can_move(self, cost: int) -> bool:
-        """检查是否有足够移动力"""
+        """Return whether there is enough MP."""
         return self.current_mp >= cost
 
     def consume_movement(self, cost: int) -> bool:
-        """消耗移动力"""
+        """Consume MP, if possible."""
         if self.current_mp >= cost:
             self.current_mp -= cost
             self.has_moved = True
@@ -83,90 +84,90 @@ class MovementPoints(Component):
         return False
 
     def reset(self):
-        """重置移动力（回合开始时）"""
+        """Reset MP (at the start of a turn)."""
         self.current_mp = self.max_mp
         self.has_moved = False
 
 
 @dataclass
 class AttackPoints(Component):
-    """攻击点数 - 攻击执行层"""
+    """Attack points - execution-layer attacks."""
 
-    normal_attacks: int = 1  # 普通攻击次数
-    max_normal_attacks: int = 1  # 最大普通攻击次数
-    skill_points: int = 2  # 技能点数
-    max_skill_points: int = 2  # 最大技能点数
+    normal_attacks: int = 1  # Normal attack count
+    max_normal_attacks: int = 1  # Max normal attacks
+    skill_points: int = 2  # Skill points
+    max_skill_points: int = 2  # Max skill points
 
     def can_normal_attack(self) -> bool:
-        """检查是否可以普通攻击"""
+        """Return whether a normal attack can be performed."""
         return self.normal_attacks > 0
 
     def can_use_skill(self, skill_cost: int) -> bool:
-        """检查是否可以使用技能"""
+        """Return whether there are enough points to use a skill."""
         return self.skill_points >= skill_cost
 
     def consume_normal_attack(self) -> bool:
-        """消耗普通攻击次数"""
+        """Consume one normal attack, if possible."""
         if self.normal_attacks > 0:
             self.normal_attacks -= 1
             return True
         return False
 
     def consume_skill_points(self, cost: int) -> bool:
-        """消耗技能点数"""
+        """Consume skill points, if possible."""
         if self.skill_points >= cost:
             self.skill_points -= cost
             return True
         return False
 
     def reset_normal_attacks(self):
-        """重置普通攻击次数（每回合自动）"""
+        """Reset normal attacks (automatic per turn)."""
         self.normal_attacks = self.max_normal_attacks
 
     def restore_skill_points(self):
-        """恢复技能点数（需要休整动作）"""
+        """Restore skill points (requires a rest action)."""
         self.skill_points = self.max_skill_points
 
 
 @dataclass
 class ConstructionPoints(Component):
-    """建造点数 - 建造执行层"""
+    """Construction points - execution-layer building."""
 
-    current_cp: int = 3  # 当前建造点（根据文档修改为3）
-    max_cp: int = 3  # 最大建造点
+    current_cp: int = 3  # Current construction points (set to 3 per design doc)
+    max_cp: int = 3  # Max construction points
 
     def can_build(self, cost: int) -> bool:
-        """检查是否可以建造"""
+        """Return whether building is possible."""
         return self.current_cp >= cost
 
     def consume_construction(self, cost: int) -> bool:
-        """消耗建造点数"""
+        """Consume construction points, if possible."""
         if self.current_cp >= cost:
             self.current_cp -= cost
             return True
         return False
 
     def restore_to_city(self):
-        """在城市根据地恢复建造点数"""
+        """Restore construction points in a city/base."""
         self.current_cp = self.max_cp
 
 
 @dataclass
 class SkillPoints(Component):
-    """技能点数 - 技能执行层（独立于攻击点的技能点）"""
+    """Skill points - execution-layer skills (separate from attack skill points)."""
 
-    current_sp: int = 3  # 当前技能点
-    max_sp: int = 3  # 最大技能点
-    skill_cooldowns: Dict[str, int] = field(default_factory=dict)  # 技能冷却
+    current_sp: int = 3  # Current skill points
+    max_sp: int = 3  # Max skill points
+    skill_cooldowns: Dict[str, int] = field(default_factory=dict)  # Skill cooldowns
 
     def can_use_skill(self, skill_name: str, cost: int = 1) -> bool:
-        """检查是否可以使用技能"""
+        """Return whether a skill can be used now."""
         if skill_name in self.skill_cooldowns and self.skill_cooldowns[skill_name] > 0:
             return False
         return self.current_sp >= cost
 
     def use_skill(self, skill_name: str, cost: int = 1, cooldown: int = 0) -> bool:
-        """使用技能"""
+        """Use a skill, consuming points and applying cooldown."""
         if self.can_use_skill(skill_name, cost):
             self.current_sp -= cost
             if cooldown > 0:
@@ -175,16 +176,16 @@ class SkillPoints(Component):
         return False
 
     def restore_by_rest(self):
-        """通过休整恢复技能点数"""
+        """Restore skill points via a rest action."""
         self.current_sp = self.max_sp
 
     def update_cooldowns(self):
-        """更新冷却时间（每回合调用）"""
+        """Update cooldown timers (called each turn)."""
         for skill_name in list(self.skill_cooldowns.keys()):
             self.skill_cooldowns[skill_name] -= 1
             if self.skill_cooldowns[skill_name] <= 0:
                 del self.skill_cooldowns[skill_name]
 
 
-# 为了向后兼容，保留原有的组件别名
+# Backward-compatibility aliases (kept intentionally).
 # Movement = MovementPoints

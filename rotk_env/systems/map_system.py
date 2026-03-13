@@ -456,7 +456,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
                 )
             if len(asymmetric_pairs) > 5:
-                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
+                print(f"    ... {len(asymmetric_pairs) - 5} more asymmetric positions")
 
     def _get_initial_territory_control(
         self,
@@ -1328,21 +1328,21 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             terrain_count[terrain] = terrain_count.get(terrain, 0) + 1
 
         print("\n" + "=" * 70)
-        print("🌊 河流分割对角线竞技地图分析报告")
+        print("🌊 River-Split Diagonal Competitive Map Analysis Report")
         print("=" * 70)
-        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
-        print(f"🎯 设计特色: 对角线河流分界，区域化布局")
-        print(f"🌊 河流系统: 沿主对角线 (q + r = 0)")
-        print(f"🏰 战略要点: 中心争夺点 + 后方双城池")
-        print(f"🔢 固定种子: {self.seed} (确保可重现)")
+        print(f"📐 Map size: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print("🎯 Design: diagonal river boundary with zoned layout")
+        print("🌊 River system: along the main diagonal (q + r = 0)")
+        print("🏰 Strategic highlights: central contest point + two rear cities")
+        print(f"🔢 Fixed seed: {self.seed} (reproducible)")
 
-        print("\n🌍 地形分布统计:")
+        print("\n🌍 Terrain distribution:")
         total_tiles = len(terrain_map)
         for terrain, count in sorted(
             terrain_count.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = count / total_tiles * 100
-            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+            print(f"  {terrain.value:10} {count:3d} tiles ({percentage:5.1f}%)")
 
         # Map visualization
         self._print_terrain_map_visual(terrain_map)
@@ -1359,7 +1359,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Analyze strategic points on the river-split map."""
-        print(f"\n🎯 战略要点分析:")
+        print("\n🎯 Strategic point analysis:")
 
         # Count terrain clusters by type
         shu_area_count = sum(1 for (q, r) in terrain_map.keys() if q <= -1 and r >= 1)
@@ -1377,20 +1377,20 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             1 for terrain in terrain_map.values() if terrain == TerrainType.MOUNTAIN
         )
 
-        print(f"  🔵 SHU控制区: {shu_area_count} 块 (左上区域)")
-        print(f"  🔴 WEI控制区: {wei_area_count} 块 (右下区域)")
-        print(f"  🌊 河流系统: {river_count} 块 (天然分界线)")
-        print(f"  🏰 城池数量: {city_count} 座 (后方要塞)")
-        print(f"  🌱 平地总数: {plain_count} 块 (主要活动区域)")
-        print(f"  🏔️ 山脉总数: {mountain_count} 块 (战略高地)")
-        print(f"  ⭐ 中心争夺点: (0, 0) - 平地")
+        print(f"  🔵 SHU control zone: {shu_area_count} tiles (upper-left)")
+        print(f"  🔴 WEI control zone: {wei_area_count} tiles (lower-right)")
+        print(f"  🌊 River system: {river_count} tiles (natural boundary)")
+        print(f"  🏰 Cities: {city_count} (rear strongholds)")
+        print(f"  🌱 Plains: {plain_count} tiles (main maneuver area)")
+        print(f"  🏔️ Mountains: {mountain_count} tiles (strategic high ground)")
+        print("  ⭐ Central contest point: (0, 0) - Plain")
 
-        print(f"\n🚀 阵营部署:")
-        print(f"  SHU (蜀): 出生点(-4, 4), 城池(-5, -4) - 后方区域")
-        print(f"  WEI (魏): 出生点(4, -4), 城池(5, 4) - 后方区域")
-        print(f"  📏 直线距离: {math.sqrt(8**2 + 8**2):.1f} 格")
-        print(f"  🌊 需跨越河流才能到达对方区域")
-        print(f"  🏰 城池更靠后方，提供安全的战略纵深")
+        print("\n🚀 Faction deployment:")
+        print("  SHU: spawn(-4, 4), city(-5, -4) - rear area")
+        print("  WEI: spawn(4, -4), city(5, 4) - rear area")
+        print(f"  📏 Straight-line distance: {math.sqrt(8**2 + 8**2):.1f} tiles")
+        print("  🌊 A river crossing is required to reach the opponent area")
+        print("  🏰 Cities are placed deeper in the rear, providing strategic depth")
 
     def _generate_river_split_diagonal_map_offset(self):
         """Generate a river-split diagonal-symmetric competitive map - offset coordinate version."""
@@ -1399,9 +1399,9 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         )
 
         print(
-            f"[MapSystem] 生成 {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} 河流分割竞技地图（偏移坐标）"
+            f"[MapSystem] Generating {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} river-split competitive map (offset coords)"
         )
-        print(f"[MapSystem] 设计特色: 对角线河流分界，左下右上对称，对角战略布局")
+        print("[MapSystem] Design: diagonal river boundary, symmetric across corners, diagonal strategic layout")
 
         # Generate river-split map (offset coordinate version)
         terrain_map = self._generate_river_split_terrain_map_offset()
@@ -1641,22 +1641,22 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         half_height = GameConfig.MAP_HEIGHT // 2
 
         print("\n" + "=" * 70)
-        print("🌊 河流分割对角线竞技地图分析报告（中心坐标）")
+        print("🌊 River-Split Diagonal Competitive Map Analysis Report (Centered Coords)")
         print("=" * 70)
-        print(f"📐 地图尺寸: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
-        print(f"🎯 设计特色: 左下右上对角线对称，河流分界")
-        print(f"🌊 河流系统: 沿反对角线 (x + y = 0)")
-        print(f"🏰 战略要点: 中心争夺点(0,0) + 对角城池")
-        print(f"🔢 固定种子: {self.seed} (确保可重现)")
-        print(f"📍 坐标范围: x∈[{-half_width}, {half_width}], y∈[{-half_height}, {half_height}]")
+        print(f"📐 Map size: {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT}")
+        print("🎯 Design: lower-left/upper-right diagonal symmetry with a river boundary")
+        print("🌊 River system: along the anti-diagonal (x + y = 0)")
+        print("🏰 Strategic highlights: central contest point (0,0) + diagonal cities")
+        print(f"🔢 Fixed seed: {self.seed} (reproducible)")
+        print(f"📍 Coordinate range: x∈[{-half_width}, {half_width}], y∈[{-half_height}, {half_height}]")
 
-        print("\n🌍 地形分布统计:")
+        print("\n🌍 Terrain distribution:")
         total_tiles = len(terrain_map)
         for terrain, count in sorted(
             terrain_count.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = count / total_tiles * 100
-            print(f"  {terrain.value:10} {count:3d} 块 ({percentage:5.1f}%)")
+            print(f"  {terrain.value:10} {count:3d} tiles ({percentage:5.1f}%)")
 
         # Map visualization
         self._print_terrain_map_visual_centered(terrain_map)
@@ -1673,8 +1673,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Print the visual representation of the map - (0,0)-centered coordinate version."""
-        print("\n🗺️ 地形地图可视化 (y从上到下, x从左到右, 中心(0,0)):")
-        print("   地形符号: P=平原 F=森林 H=丘陵 M=山地 W=水域 U=城市")
+        print("\n🗺️ Terrain map visualization (y top→bottom, x left→right, center (0,0)):")
+        print("   Legend: P=Plain F=Forest H=Hill M=Mountain W=Water U=City")
 
         terrain_chars = {
             TerrainType.PLAIN: "P",
@@ -1717,7 +1717,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Verify diagonal symmetry - (0,0)-centered coordinate version."""
-        print(f"\n🔍 对角线对称性验证（中心坐标）:")
+        print("\n🔍 Diagonal symmetry verification (centered coords):")
 
         asymmetric_pairs = []
         symmetric_pairs = 0
@@ -1758,7 +1758,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
         if len(asymmetric_pairs) == 0:
             print(
-                f"  ✅ 完美对角线对称！{symmetric_pairs}/{total_checks} 个位置完全对称"
+                f"  ✅ Perfect diagonal symmetry! {symmetric_pairs}/{total_checks} positions fully symmetric"
             )
         else:
             print(f"  ❌ Found {len(asymmetric_pairs)} asymmetric positions:")
@@ -1767,13 +1767,13 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                     f"    {pair['pos1']}={pair['terrain1']} ≠ {pair['pos2']}={pair['terrain2']}"
                 )
             if len(asymmetric_pairs) > 5:
-                print(f"    ... 还有 {len(asymmetric_pairs) - 5} 个不对称位置")
+                print(f"    ... {len(asymmetric_pairs) - 5} more asymmetric positions")
 
     def _analyze_river_split_strategic_points_centered(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Analyze strategic points on the river-split map - (0,0)-centered coordinate version."""
-        print(f"\n🎯 战略要点分析:")
+        print("\n🎯 Strategic point analysis:")
 
         half_width = GameConfig.MAP_WIDTH // 2
         half_height = GameConfig.MAP_HEIGHT // 2
@@ -1801,15 +1801,15 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             1 for terrain in terrain_map.values() if terrain == TerrainType.MOUNTAIN
         )
 
-        print(f"  🔵 SHU控制区: {shu_area_count} 块 (左下区域, x+y<0)")
-        print(f"  🔴 WEI控制区: {wei_area_count} 块 (右上区域, x+y>0)")
-        print(f"  🌊 河流系统: {river_count} 块 (对角分界线, x+y=0)")
-        print(f"  🏰 城池数量: {city_count} 座 (对角要塞)")
-        print(f"  🌱 平地总数: {plain_count} 块 (主要活动区域)")
-        print(f"  🏔️ 山脉总数: {mountain_count} 块 (战略高地)")
-        print(f"  ⭐ 中心争夺点: (0, 0) - 平地")
+        print(f"  🔵 SHU control zone: {shu_area_count} tiles (lower-left, x+y<0)")
+        print(f"  🔴 WEI control zone: {wei_area_count} tiles (upper-right, x+y>0)")
+        print(f"  🌊 River system: {river_count} tiles (diagonal boundary, x+y=0)")
+        print(f"  🏰 Cities: {city_count} (diagonal strongholds)")
+        print(f"  🌱 Plains: {plain_count} tiles (main maneuver area)")
+        print(f"  🏔️ Mountains: {mountain_count} tiles (strategic high ground)")
+        print("  ⭐ Central contest point: (0, 0) - Plain")
 
-        print(f"\n🚀 阵营部署:")
+        print("\n🚀 Faction deployment:")
         shu_spawn_x = -half_width + 3
         shu_spawn_y = -half_height + 3
         shu_city_x = -half_width + 2
@@ -1819,14 +1819,14 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         wei_city_x = half_width - 2
         wei_city_y = half_height - 2
         
-        print(f"  SHU (蜀): 出生点({shu_spawn_x}, {shu_spawn_y}), 城池({shu_city_x}, {shu_city_y}) - 左下区域")
-        print(f"  WEI (魏): 出生点({wei_spawn_x}, {wei_spawn_y}), 城池({wei_city_x}, {wei_city_y}) - 右上区域")
+        print(f"  SHU: spawn({shu_spawn_x}, {shu_spawn_y}), city({shu_city_x}, {shu_city_y}) - lower-left")
+        print(f"  WEI: spawn({wei_spawn_x}, {wei_spawn_y}), city({wei_city_x}, {wei_city_y}) - upper-right")
         
         # Calculate spawn point distance
         spawn_distance = math.sqrt((wei_spawn_x - shu_spawn_x)**2 + (wei_spawn_y - shu_spawn_y)**2)
-        print(f"  📏 直线距离: {spawn_distance:.1f} 格")
-        print(f"  🌊 需跨越对角河流才能到达对方区域")
-        print(f"  🏰 城池位于后方，提供安全的战略纵深")
+        print(f"  📏 Straight-line distance: {spawn_distance:.1f} tiles")
+        print("  🌊 A diagonal river crossing is required to reach the opponent area")
+        print("  🏰 Cities are placed in the rear, providing strategic depth")
 
     def _save_map_info_to_stats(self):
         """Save map information to GameStats."""
@@ -1863,12 +1863,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         # Save to GameStats
         game_stats.map_info = map_info
         
-        print(f"[MapSystem] ✅ 地图信息已保存到GameStats:")
-        print(f"  - 地图尺寸: {map_info['map_width']}x{map_info['map_height']}")
-        print(f"  - 地图类型: {map_info['map_type']}")
-        print(f"  - 竞技模式: {map_info['competitive_mode']}")
-        print(f"  - 坐标系: {map_info['coordinate_system']}")
-        print(f"  - 出生点: {map_info['spawn_positions']}")
+        print("[MapSystem] ✅ Map info saved to GameStats:")
+        print(f"  - Map size: {map_info['map_width']}x{map_info['map_height']}")
+        print(f"  - Map type: {map_info['map_type']}")
+        print(f"  - Competitive mode: {map_info['competitive_mode']}")
+        print(f"  - Coordinate system: {map_info['coordinate_system']}")
+        print(f"  - Spawn positions: {map_info['spawn_positions']}")
 
     def _generate_river_split_diagonal_map_offset_revised(self):
         """
@@ -2084,9 +2084,9 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         # Save to GameStats
         game_stats.map_info = map_info
         
-        print(f"[MapSystem] ✅ 地图信息已保存到GameStats:")
-        print(f"  - 地图尺寸: {map_info['map_width']}x{map_info['map_height']}")
-        print(f"  - 地图类型: {map_info['map_type']}")
-        print(f"  - 竞技模式: {map_info['competitive_mode']}")
-        print(f"  - 坐标系: {map_info['coordinate_system']}")
-        print(f"  - 出生点: {map_info['spawn_positions']}")
+        print("[MapSystem] ✅ Map info saved to GameStats:")
+        print(f"  - Map size: {map_info['map_width']}x{map_info['map_height']}")
+        print(f"  - Map type: {map_info['map_type']}")
+        print(f"  - Competitive mode: {map_info['competitive_mode']}")
+        print(f"  - Coordinate system: {map_info['coordinate_system']}")
+        print(f"  - Spawn positions: {map_info['spawn_positions']}")

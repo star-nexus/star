@@ -1,5 +1,5 @@
 """
-游戏场景模块
+Game scenes module.
 """
 
 from .game_scene import GameScene

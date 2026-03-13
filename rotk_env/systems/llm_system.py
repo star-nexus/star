@@ -644,7 +644,7 @@ class LLMSystem(System):
             print(f"[LLMSystem] ✅ Received LLM API stats for faction {faction_key}: {api_stats}")
             print(f"[LLMSystem] 📊 Error stats - HTTP errors: {http_error_total}, Tool-call errors: {toolcall_error_total}, spatial-awareness errors: {spatial_awareness_error}")
 
-            # 🆕 基于集合的收齐判断
+            # 🆕 Set-based completion check
             try:
                 stats.received_llm_stats_factions.add(faction)
                 registered = stats.registered_factions if hasattr(stats, 'registered_factions') else set()
@@ -931,7 +931,7 @@ class LLMSystem(System):
         #     command = self.session.prompt("💬 Enter command (type 'quit' to exit): ", completer=None, complete_while_typing=True)
         pass
 
-    # === ENV 方法 ===
+    # === ENV methods ===
     def _process_action_request(
         self,
         agent_id: Optional[str],
@@ -962,7 +962,7 @@ class LLMSystem(System):
                 self.client.response_to_agent(agent_id, action_id, error_result, "str")
             return error_result
 
-        # 🆕 turn_start 可靠投递：Agent 收到 turn_start 后发 ACK，ENV 清除重发等待
+        # 🆕 Reliable delivery for turn_start: agent ACKs turn_start; env cancels retry loop
         if action == "turn_start_ack":
             self._pending_turn_start_ack.pop(agent_id, None)
             if send_response and agent_id:
@@ -970,7 +970,7 @@ class LLMSystem(System):
             return {"success": True}
 
         try:
-            # 收到该 agent 的任意业务 action 视为已活跃，清除其 turn_start 重发等待
+            # Any business action from the agent counts as "active": clear its pending turn_start ACK
             self._pending_turn_start_ack.pop(agent_id, None)
             if action != "register_agent_info":
                 mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
@@ -1050,10 +1050,10 @@ class LLMSystem(System):
                                 else str(current_faction)
                             )
 
-                            # 收集目标 agent_id 列表
+                            # Collect target agent_id list
                             target_agent_ids = set()
 
-                            # 1) 从注册表获取（可能只有一个）
+                            # 1) From registry (may be only one)
                             try:
                                 from ..components.agent_info import AgentInfoRegistry
 
@@ -1063,9 +1063,9 @@ class LLMSystem(System):
                                     if agent_info and getattr(agent_info, "agent_id", None):
                                         target_agent_ids.add(agent_info.agent_id)
                             except Exception as _e:
-                                print(f"[LLMSystem] 获取AgentInfoRegistry失败: {_e}")
+                                print(f"[LLMSystem] Failed to get AgentInfoRegistry: {_e}")
 
-                            # 2) 通过统计映射收集所有注册到该阵营的 agent_id
+                            # 2) From stats mapping: all agent_ids registered to this faction
                             if stats and getattr(stats, "agent_id_to_faction", None):
                                 try:
                                     for mapped_agent_id, mapped_faction in (
@@ -1074,9 +1074,9 @@ class LLMSystem(System):
                                         if mapped_faction == current_faction:
                                             target_agent_ids.add(mapped_agent_id)
                                 except Exception as _e:
-                                    print(f"[LLMSystem] 通过统计映射查找agent_id失败: {_e}")
+                                    print(f"[LLMSystem] Failed to resolve agent_id via stats mapping: {_e}")
 
-                            # 仅向当前已连接的 agent 发送
+                            # Only notify currently connected agents
                             connected_ids = set(self.client.connected_agents.keys())
                             target_agent_ids = [
                                 aid for aid in target_agent_ids if aid in connected_ids
@@ -1098,7 +1098,7 @@ class LLMSystem(System):
                                             notification,
                                             target={"type": "agent", "id": target_agent_id},
                                         )
-                                        # 可靠投递：等待 ACK 或按间隔重发，直至收到 ack/任意 action 或超过最大重试
+                                        # Reliable delivery: wait for ACK or retry periodically, until ack/any action or max retries
                                         self._pending_turn_start_ack[target_agent_id] = {
                                             "turn_number": turn_number,
                                             "faction_key": faction_key,
@@ -1107,14 +1107,14 @@ class LLMSystem(System):
                                             "notification": notification,
                                         }
                                         print(
-                                            f"[LLMSystem] ✅ 已通知 {faction_key} 阵营 (agent_id={target_agent_id}) 开始新回合"
+                                            f"[LLMSystem] ✅ Notified faction {faction_key} (agent_id={target_agent_id}) of turn start"
                                         )
                                     except Exception as _e:
-                                        print(f"[LLMSystem] ❌ 发送回合开始通知失败: {_e}")
+                                        print(f"[LLMSystem] ❌ Failed to send turn-start notification: {_e}")
                             else:
-                                print(f"[LLMSystem] ⚠️ 未找到阵营 {faction_key} 的在线 agent_id，跳过通知")
+                                print(f"[LLMSystem] ⚠️ No online agent_id found for faction {faction_key}; skipping notification")
                 except Exception as _e:
-                    print(f"[LLMSystem] ⚠️ end_turn 后通知当前玩家失败: {_e}")
+                    print(f"[LLMSystem] ⚠️ Failed to notify next player after end_turn: {_e}")
 
             if (
                 action == "register_agent_info"
@@ -1132,10 +1132,10 @@ class LLMSystem(System):
                         stats.registered_factions.add(reg_faction)
                         stats.expected_llm_stats_count = len(stats.registered_factions)
                         print(
-                            f"[LLMSystem] 📝 已注册阵营集合: {[f.value for f in stats.registered_factions]} (期望统计数={stats.expected_llm_stats_count})"
+                            f"[LLMSystem] 📝 Registered factions: {[f.value for f in stats.registered_factions]} (expected={stats.expected_llm_stats_count})"
                         )
                 except Exception as _e:
-                    print(f"[LLMSystem] ⚠️ 注册后维护集合失败: {_e}")
+                    print(f"[LLMSystem] ⚠️ Failed to maintain registry sets after registration: {_e}")
 
             # print(f"{action} response: {standardized_result}")
             if send_response and agent_id:
@@ -1275,7 +1275,7 @@ class LLMSystem(System):
             }
 
         try:
-            # 重置游戏状态
+            # Reset game state
             if game_state:
                 game_state.game_over = False
                 game_state.paused = False
@@ -1333,7 +1333,7 @@ class LLMSystem(System):
     def handle_reset_game(self, params: Dict) -> Dict:
         """Reset the game state to its initial configuration."""
         try:
-            # 重置游戏状态
+            # Reset game state
             game_state = self.world.get_singleton_component(GameState)
             if game_state:
                 game_state.game_over = False
@@ -1805,7 +1805,7 @@ class LLMSystem(System):
         }
 
     def handle_get_api_info(self, params: Dict) -> Dict:
-        """获取API信息"""
+        """Get API information."""
         return {
             "success": True,
             "message": "API information retrieved",
@@ -1934,7 +1934,7 @@ class LLMSystem(System):
         )
 
     def handle_unit_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理单位观测请求"""
+        """Handle a unit observation request."""
         unit_id = params.get("unit_id")
         if not unit_id:
             return {"error": "Missing unit_id parameter"}
@@ -1944,14 +1944,14 @@ class LLMSystem(System):
         )
 
     def handle_faction_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理阵营观测请求"""
+        """Handle a faction observation request."""
         faction = params.get("faction")
         include_hidden = params.get("include_hidden", False)
 
         if not faction:
             return {"error": "Missing faction parameter"}
 
-        # 转换字符串到Faction枚举
+        # Convert string to the Faction enum
         if isinstance(faction, str):
             try:
                 from ..prefabs.config import Faction
@@ -1965,17 +1965,17 @@ class LLMSystem(System):
         )
 
     def handle_godview_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理上帝视角观测请求"""
+        """Handle a god-view observation request."""
         return self.observation_system.get_observation(ObservationLevel.GODVIEW)
 
     def handle_limited_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理受限观测请求"""
+        """Handle a restricted-view observation request."""
         faction = params.get("faction")
 
         if not faction:
             return {"success": False, "error": "Missing faction parameter"}
 
-        # 转换字符串到Faction枚举
+        # Convert string to the Faction enum
         if isinstance(faction, str):
             try:
                 from ..prefabs.config import Faction
@@ -1989,75 +1989,75 @@ class LLMSystem(System):
         )
 
     def handle_tactical_observation(self, params: Dict) -> Dict[str, Any]:
-        """处理战术观测请求"""
+        """Handle a tactical observation request."""
         return self.action_handler.execute_action("tactical_observation", params)
 
     # =============================================
-    # 状态查询指令处理方法
+    # State/query command handlers
     # =============================================
 
     def handle_get_unit_list(self, params: Dict) -> Dict[str, Any]:
-        """获取单位列表"""
+        """List units."""
         return self.action_handler.execute_action("get_unit_list", params)
 
     def handle_get_unit_info(self, params: Dict) -> Dict[str, Any]:
-        """获取指定单位的详细信息"""
+        """Get detailed information for a unit."""
         return self.action_handler.execute_action("get_unit_info", params)
 
     def handle_get_faction_units(self, params: Dict) -> Dict[str, Any]:
-        """获取指定阵营的所有单位"""
+        """List all units for a faction."""
         return self.action_handler.execute_action("get_faction_units", params)
 
     def handle_get_game_state(self, params: Dict) -> Dict[str, Any]:
-        """获取游戏状态信息"""
+        """Get game state information."""
         return self.action_handler.execute_action("get_game_state", params)
 
     def handle_get_map_info(self, params: Dict) -> Dict[str, Any]:
-        """获取地图信息"""
+        """Get map information."""
         return self.action_handler.execute_action("get_map_info", params)
 
     def handle_get_battle_status(self, params: Dict) -> Dict[str, Any]:
-        """获取战斗状态信息"""
+        """Get battle status information."""
         return self.action_handler.execute_action("get_battle_status", params)
 
     def handle_get_available_actions(self, params: Dict) -> Dict[str, Any]:
-        """获取可用动作列表"""
+        """Get available actions."""
         return self.action_handler.execute_action("get_available_actions", params)
 
     def handle_action_list(self, params: Dict) -> Dict[str, Any]:
-        """获取动作列表"""
+        """Get the action list."""
         return self.action_handler.execute_action("action_list", params)
 
     def handle_get_unit_capabilities(self, params: Dict) -> Dict[str, Any]:
-        """获取单位能力信息"""
+        """Get unit capability information."""
         return self.action_handler.execute_action("get_unit_capabilities", params)
 
     def handle_get_visibility_info(self, params: Dict) -> Dict[str, Any]:
-        """获取视野信息"""
+        """Get vision/visibility information."""
         return self.action_handler.execute_action("get_visibility_info", params)
 
     def handle_get_strategic_summary(self, params: Dict) -> Dict[str, Any]:
-        """获取战略摘要"""
+        """Get a strategic summary."""
         return self.action_handler.execute_action("get_strategic_summary", params)
 
     def cleanup(self):
-        """清理资源"""
+        """Clean up resources."""
         try:
             self.disconnect()
         except Exception as e:
-            print(f"断开连接时出错: {e}")
+            print(f"Error while disconnecting: {e}")
 
-    # ==================== 系统辅助方法 ====================
+    # ==================== System helper methods ====================
 
     def _get_turn_system(self):
-        """获取回合系统"""
+        """Get the turn system."""
         for system in self.world.get_systems():
             if hasattr(system, "end_turn"):
                 return system
         return None
 
     def _get_game_time_system(self):
-        """获取游戏时间系统"""
+        """Get the game time system."""
         for system in self.world.get_systems():
             if (
                 hasattr(system, "advance_turn")
@@ -2067,36 +2067,36 @@ class LLMSystem(System):
         return None
 
     def _get_rendering_system(self):
-        """获取渲染系统"""
+        """Get the rendering system."""
         for system in self.world.get_systems():
             if "render" in system.__class__.__name__.lower():
                 return system
         return None
 
     def _get_camera_system(self):
-        """获取摄像机系统"""
+        """Get the camera system."""
         for system in self.world.get_systems():
             if "camera" in system.__class__.__name__.lower():
                 return system
         return None
 
     def _get_ui_system(self):
-        """获取UI系统"""
+        """Get the UI system."""
         for system in self.world.get_systems():
             if "ui" in system.__class__.__name__.lower():
                 return system
         return None
 
     def _get_available_factions(self) -> List[str]:
-        """获取所有可用阵营"""
+        """Get all available factions."""
         return [faction.value for faction in Faction]
 
     def _get_available_unit_types(self) -> List[str]:
-        """获取所有可用单位类型"""
+        """Get all available unit types."""
         return [unit_type.value for unit_type in UnitType]
 
     def _validate_faction(self, faction_str: str) -> bool:
-        """验证阵营有效性"""
+        """Validate a faction string."""
         try:
             Faction(faction_str)
             return True
@@ -2104,7 +2104,7 @@ class LLMSystem(System):
             return False
 
     def _validate_position(self, position: Dict) -> bool:
-        """验证位置坐标有效性"""
+        """Validate a position object."""
         if not isinstance(position, dict):
             return False
         required_keys = ["q", "r"]
@@ -2113,16 +2113,16 @@ class LLMSystem(System):
         )
 
     def _normalize_position(self, position: Dict) -> Dict:
-        """标准化位置坐标（确保包含s坐标）"""
+        """Normalize a position object (ensure the s coordinate is included)."""
         q, r = position["q"], position["r"]
         return {"q": q, "r": r, "s": -q - r}
 
     def _validate_unit_id(self, unit_id: Any) -> bool:
-        """验证单位ID有效性"""
+        """Validate a unit id."""
         return isinstance(unit_id, int) and unit_id > 0
 
     def _get_game_status(self) -> Dict:
-        """获取当前游戏状态摘要"""
+        """Get a short summary of the current game state."""
         game_state = self.world.get_singleton_component(GameState)
         if not game_state:
             return {"initialized": False}
@@ -2137,10 +2137,10 @@ class LLMSystem(System):
             "max_turns": getattr(game_state, "max_turns", None),
         }
 
-    # === 统计和分析 ===
+    # === Statistics and analytics ===
     def handle_get_battle_history(self, params: Dict) -> Dict:
-        """获取战斗历史"""
-        # TODO: 实现战斗历史收集
+        """Get battle history."""
+        # TODO: Implement battle history collection
         return {
             "success": True,
             "message": "Battle history retrieved",
@@ -2148,17 +2148,17 @@ class LLMSystem(System):
         }
 
     def handle_export_game_data(self, params: Dict) -> Dict:
-        """导出游戏数据"""
-        # TODO: 实现游戏数据导出
+        """Export game data."""
+        # TODO: Implement game data export
         return {
             "success": False,
             "error_code": 2004,
             "message": "Game data export not implemented yet",
         }
 
-    # === 调试功能 ===
+    # === Debug tools ===
     def handle_execute_debug_command(self, params: Dict) -> Dict:
-        """执行调试命令"""
+        """Execute a debug command."""
         command = params.get("command")
         if not command:
             return {
@@ -2167,7 +2167,7 @@ class LLMSystem(System):
                 "message": "Missing command parameter",
             }
 
-        # TODO: 实现调试命令执行
+        # TODO: Implement debug command execution
         return {
             "success": True,
             "message": f"Debug command '{command}' executed",
@@ -2175,22 +2175,22 @@ class LLMSystem(System):
         }
 
     def handle_toggle_debug_mode(self, params: Dict) -> Dict:
-        """切换调试模式"""
-        # TODO: 实现调试模式切换
+        """Toggle debug mode."""
+        # TODO: Implement debug mode toggle
         return {"success": True, "message": "Debug mode toggled", "debug_mode": True}
 
     def handle_get_component_info(self, params: Dict) -> Dict:
-        """获取组件信息"""
+        """Get component information."""
         entity_id = params.get("entity_id")
         if entity_id:
-            # TODO: 获取指定实体的组件信息
+            # TODO: Get component info for a specific entity
             return {
                 "success": True,
                 "message": f"Component info for entity {entity_id}",
                 "data": {"components": []},
             }
         else:
-            # 获取所有组件类型信息
+            # Return all component type information
             return {
                 "success": True,
                 "message": "All component types retrieved",

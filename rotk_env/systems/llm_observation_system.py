@@ -41,7 +41,7 @@ class LLMObservationSystem:
         self.world = world
         self.cache = {}
         self.cache_timestamp = 0
-        self.cache_duration = 1.0  # 缓存1秒
+        self.cache_duration = 1.0  # Cache for 1 second
 
     def get_observation(
         self,
@@ -257,8 +257,8 @@ class LLMObservationSystem:
                 unit_info["movement"] = {
                     "current": movement.current_mp,
                     "max": movement.max_mp,
-                    # "has_moved": movement.has_moved,  # 移除单次移动显示
-                    "can_move": movement.current_mp > 0,  # 只要有移动力就能移动
+                    # "has_moved": movement.has_moved,  # Removed single-move display
+                    "can_move": movement.current_mp > 0,  # Any positive MP allows movement
                 }
 
             if combat:
@@ -266,12 +266,12 @@ class LLMObservationSystem:
                     "attack": combat.base_attack,
                     "defense": combat.base_defense,
                     "range": combat.attack_range,
-                    # "has_attacked": (  # 移除单次攻击限制显示
+                    # "has_attacked": (  # Removed single-attack limitation display
                     #     combat.has_attacked
                     #     if hasattr(combat, "has_attacked")
                     #     else False
                     # ),
-                    "can_attack": True,  # 只要有攻击能力就能攻击
+                    "can_attack": True,  # Any combat capability allows attacking
                 }
 
             # Information within the unit's sight range
@@ -414,7 +414,7 @@ class LLMObservationSystem:
         }
 
     def _get_visible_area(self, unit_id: int) -> Set[Tuple[int, int]]:
-        """获取单位可见区域"""
+        """Get the unit's visible area."""
         position = self.world.get_component(unit_id, HexPosition)
         vision = self.world.get_component(unit_id, Vision)
 
@@ -424,7 +424,7 @@ class LLMObservationSystem:
         visible_positions = set()
         center = (position.col, position.row)
 
-        # 简单的视野计算（六边形范围）
+        # Simple vision calculation (hex range)
         for col in range(
             position.col - vision.sight_range, position.col + vision.sight_range + 1
         ):
@@ -439,11 +439,11 @@ class LLMObservationSystem:
     def _get_visible_units(
         self, observer_id: int, visible_area: Set[Tuple[int, int]]
     ) -> List[Dict[str, Any]]:
-        """获取可见区域内的单位"""
+        """Get units within the visible area."""
         visible_units = []
 
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            if entity == observer_id:  # 跳过观察者自己
+            if entity == observer_id:  # Skip the observer itself
                 continue
 
             position = self.world.get_component(entity, HexPosition)
@@ -456,11 +456,11 @@ class LLMObservationSystem:
     def _get_visible_terrain(
         self, visible_area: Set[Tuple[int, int]]
     ) -> List[Dict[str, Any]]:
-        """获取可见区域内的地形"""
+        """Get terrain within the visible area."""
         terrain_info = []
 
         for col, row in visible_area:
-            # 查找该位置的地形
+            # Find terrain at this position
             for entity in self.world.query().with_all(Tile, HexPosition).entities():
                 position = self.world.get_component(entity, HexPosition)
                 tile = self.world.get_component(entity, Tile)
@@ -489,7 +489,7 @@ class LLMObservationSystem:
     def _get_unit_summary(
         self, entity: int, include_hidden: bool = False
     ) -> Dict[str, Any]:
-        """获取单位摘要信息"""
+        """Get unit summary."""
         unit = self.world.get_component(entity, Unit)
         position = self.world.get_component(entity, HexPosition)
         unit_count = self.world.get_component(entity, UnitCount)
@@ -526,13 +526,13 @@ class LLMObservationSystem:
                 ),
             }
 
-        # 只有在包含隐藏信息或者是己方单位时才显示详细状态
+        # Only include detailed state when hidden info is allowed (e.g., god view).
         if include_hidden:
             if movement:
                 unit_info["movement"] = {
                     "current": movement.current_mp,
                     "max": movement.max_mp,
-                    # "has_moved": movement.has_moved,  # 移除单次移动显示
+                    # "has_moved": movement.has_moved,  # Removed single-move display
                 }
 
             if combat:
@@ -540,8 +540,8 @@ class LLMObservationSystem:
                     "attack": combat.attack,
                     "defense": combat.defense,
                     "range": combat.attack_range,
-                    # "has_attacked": combat.has_attacked,  # 移除单次攻击限制显示
-                    "can_attack": True,  # 只要有攻击能力就能攻击
+                    # "has_attacked": combat.has_attacked,  # Removed single-attack limitation display
+                    "can_attack": True,  # Any combat capability allows attacking
                 }
 
             if status:
@@ -554,16 +554,16 @@ class LLMObservationSystem:
         return unit_info
 
     def _get_unit_action_options(self, unit_id: int) -> List[str]:
-        """获取单位可执行的动作选项"""
+        """Get action options the unit can execute."""
         movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
 
         actions = []
 
-        if movement and movement.current_mp > 0:  # 只要有移动力就能移动
+        if movement and movement.current_mp > 0:  # Any positive MP allows movement
             actions.append("move")
 
-        if combat:  # 只要有攻击能力就能攻击（不检查has_attacked）
+        if combat:  # Any combat component enables attack (do not check has_attacked)
             actions.append("attack")
 
         actions.extend(["defend", "scout", "retreat", "fortify"])
@@ -571,7 +571,7 @@ class LLMObservationSystem:
         return actions
 
     def _get_strategic_info(self, faction: Faction) -> Dict[str, Any]:
-        """获取阵营战略信息"""
+        """Get faction-level strategic info."""
         return {
             "total_units": len(
                 [
@@ -606,17 +606,17 @@ class LLMObservationSystem:
         }
 
     def _get_territory_control(self, faction: Faction) -> Dict[str, Any]:
-        """获取领土控制信息"""
-        # TODO: 实现领土控制计算
+        """Get territory control info."""
+        # TODO: Implement territory control calculation
         return {"controlled_tiles": 0, "contested_tiles": 0, "strategic_points": []}
 
     def _get_faction_resources(self, faction: Faction) -> Dict[str, Any]:
-        """获取阵营资源信息"""
-        # TODO: 实现资源系统
+        """Get faction resources."""
+        # TODO: Implement resource system
         return {"manpower": 1000, "supplies": 500, "morale": 80}
 
     def _get_full_map_info(self) -> Dict[str, Any]:
-        """获取完整地图信息"""
+        """Get full map information."""
         tiles = []
         for entity in self.world.query().with_all(Tile, HexPosition).entities():
             position = self.world.get_component(entity, HexPosition)
@@ -642,7 +642,7 @@ class LLMObservationSystem:
         return {"tiles": tiles}
 
     def _get_global_statistics(self) -> Dict[str, Any]:
-        """获取全局统计信息"""
+        """Get global statistics."""
         game_stats = self.world.get_singleton_component(GameStats)
 
         if game_stats:
@@ -655,7 +655,7 @@ class LLMObservationSystem:
         return {"turn_number": 1, "total_battles": 0, "total_casualties": 0}
 
     def _get_battle_history(self) -> List[Dict[str, Any]]:
-        """获取战斗历史"""
+        """Get battle history."""
         battle_log = self.world.get_singleton_component(BattleLog)
 
         if battle_log and hasattr(battle_log, "entries"):
@@ -667,13 +667,13 @@ class LLMObservationSystem:
                     "damage": entry.damage,
                     "result": entry.result,
                 }
-                for entry in battle_log.entries[-10:]  # 最近10次战斗
+                for entry in battle_log.entries[-10:]  # Last 10 battles
             ]
 
         return []
 
     def _get_game_state_info(self) -> Dict[str, Any]:
-        """获取游戏状态信息"""
+        """Get game state information."""
         game_state = self.world.get_singleton_component(GameState)
 
         if game_state:
@@ -700,6 +700,6 @@ class LLMObservationSystem:
         }
 
     def clear_cache(self):
-        """清空观测缓存"""
+        """Clear observation cache."""
         self.cache.clear()
         self.cache_timestamp = 0

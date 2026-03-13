@@ -1,6 +1,7 @@
 """
-Mock LLM AI 系统 - 使用普通AI逻辑但通过LLM Action Handler V3的API执行动作
-不调用真正的大模型，而是用规则逻辑生成动作命令
+Mock LLM AI system - uses rule-based AI logic but executes actions via the LLM Action Handler V3 API.
+
+It does not call a real LLM; instead it generates API action commands using heuristic rules.
 """
 
 import random
@@ -28,21 +29,21 @@ from .llm_action_handler_v3 import LLMActionHandlerV3
 
 
 class MockLLMAISystem(System):
-    """Mock LLM AI系统 - 使用LLM Action Handler V3 API的AI决策系统"""
+    """Mock LLM AI system using the LLM Action Handler V3 API."""
 
     def __init__(self):
         super().__init__(required_components={Player, AIControlled})
         self.decision_timer = 0.0
-        self.decision_interval = 2.0  # AI决策间隔（秒）
-        self.unit_last_action = {}  # 记录每个单位的最后行动时间
-        self.llm_handler = None  # LLM Action Handler实例
-        self.ai_memory = {}  # AI记忆，记录之前的决策和结果
-        self.failed_actions = {}  # 记录失败的动作，避免重复尝试
+        self.decision_interval = 2.0  # AI decision interval (seconds)
+        self.unit_last_action = {}  # Unit -> last action timestamp
+        self.llm_handler = None  # LLM Action Handler instance
+        self.ai_memory = {}  # AI memory: previous decisions/results
+        self.failed_actions = {}  # Failed actions to avoid repeats
 
     def initialize(self, world: World) -> None:
-        """初始化Mock LLM AI系统"""
+        """Initialize the mock LLM AI system."""
         self.world = world
-        # 创建LLM Action Handler实例
+        # Create LLM Action Handler instance
         self.llm_handler = LLMActionHandlerV3(world)
         print("Mock LLM AI System initialized with LLM Action Handler V3")
 
@@ -50,24 +51,24 @@ class MockLLMAISystem(System):
         pass
 
     def update(self, delta_time: float) -> None:
-        """更新Mock LLM AI系统"""
+        """Update the mock LLM AI system."""
         game_state = self.world.get_singleton_component(GameState)
         game_mode = self.world.get_singleton_component(GameModeComponent)
 
         if not game_state or game_state.game_over or game_state.paused:
             return
 
-        # 检查游戏模式
+        # Determine game mode
         is_realtime = game_mode and game_mode.is_real_time()
 
         self.decision_timer += delta_time
 
         if self.decision_timer >= self.decision_interval:
             if is_realtime:
-                # 实时模式：所有AI玩家同时行动
+                # Real-time: all AI players act concurrently
                 self._make_realtime_ai_decisions()
             else:
-                # 回合制模式：只有当前玩家行动
+                # Turn-based: only the current player acts
                 current_player = self._get_current_player()
                 if current_player:
                     ai_controlled = self.world.get_component(
@@ -79,18 +80,18 @@ class MockLLMAISystem(System):
             self.decision_timer = 0.0
 
     def _make_realtime_ai_decisions(self):
-        """实时模式AI决策逻辑"""
-        # 获取所有AI玩家
+        """Real-time AI decision logic."""
+        # Collect AI players
         ai_players = []
         for entity in self.world.query().with_all(Player, AIControlled).entities():
             ai_players.append(entity)
 
-        # 为每个AI玩家执行决策
+        # Execute decisions per AI player
         for player_entity in ai_players:
             self._execute_ai_turn(player_entity, is_realtime=True)
 
     def _get_current_player(self) -> Optional[int]:
-        """获取当前玩家实体"""
+        """Get current player entity id."""
         game_state = self.world.get_singleton_component(GameState)
         if not game_state or not game_state.current_player:
             return None
@@ -102,27 +103,27 @@ class MockLLMAISystem(System):
         return None
 
     def _execute_ai_turn(self, player_entity: int, is_realtime: bool = False):
-        """执行AI回合 - 通过LLM Action Handler V3"""
+        """Execute an AI turn via the LLM Action Handler V3."""
         player = self.world.get_component(player_entity, Player)
         if not player:
             return
 
         print(
-            f"\n=== Mock LLM AI Turn: {player.faction.value} ({'实时' if is_realtime else '回合制'}) ==="
+            f"\n=== Mock LLM AI Turn: {player.faction.value} ({'realtime' if is_realtime else 'turn-based'}) ==="
         )
 
-        # 清理过期的失败记录（超过30秒的记录）
+        # Clean up expired failure records (>30s)
         self._cleanup_old_failed_actions()
 
-        # 检查胜利条件
+        # Check victory conditions
         if self._check_victory_conditions():
-            return  # 游戏已结束
+            return  # Game already ended
 
-        # 1. 获取阵营状态
+        # 1) Get faction state
         faction_state = self._get_faction_state(player.faction)
         if not faction_state.get("success"):
             print(f"❌ Failed to get faction state: {faction_state.get('message')}")
-            if not is_realtime:  # 只在回合制模式下结束回合
+            if not is_realtime:  # End turn only in turn-based mode
                 self._end_turn(player.faction)
             return
 
@@ -136,21 +137,21 @@ class MockLLMAISystem(System):
         if actionable_units == 0:
             print(f"⏭️ No actionable units")
 
-            # 检查是否应该结束游戏（所有单位都无法行动）
+            # If no units are alive, trigger defeat.
             if alive_units == 0:
                 print(f"💀 {player.faction.value} has no surviving units - defeat!")
                 self._trigger_game_over(player.faction, "defeat")
                 return
 
-            if not is_realtime:  # 只在回合制模式下结束回合
+            if not is_realtime:  # End turn only in turn-based mode
                 print(f"⏭️ Ending turn")
                 self._end_turn(player.faction)
             return
 
-        # 2. 为每个单位制定并执行策略
+        # 2) Plan and execute actions per unit
         units_info = faction_state.get("units", [])
         actions_executed = 0
-        max_actions_per_turn = 3 if is_realtime else 5  # 实时模式限制更少动作
+        max_actions_per_turn = 3 if is_realtime else 5  # Fewer actions in real-time mode
 
         for unit_info in units_info:
             if actions_executed >= max_actions_per_turn:
@@ -160,14 +161,14 @@ class MockLLMAISystem(System):
             if not unit_id:
                 continue
 
-            # 在实时模式下检查单位行动冷却
+            # Per-unit cooldown in real-time mode
             if is_realtime:
                 current_time = time.time()
                 last_action_time = self.unit_last_action.get(unit_id, 0)
-                if current_time - last_action_time < 1.0:  # 1秒冷却
+                if current_time - last_action_time < 1.0:  # 1s cooldown
                     continue
 
-            # 执行单位策略
+            # Execute unit strategy
             action_taken = self._execute_unit_strategy(
                 unit_id, unit_info, player.faction, is_realtime
             )
@@ -176,19 +177,19 @@ class MockLLMAISystem(System):
                 if is_realtime:
                     self.unit_last_action[unit_id] = time.time()
                 else:
-                    time.sleep(0.3)  # 回合制模式添加延迟，让动作效果更明显
+                    time.sleep(0.3)  # Turn-based delay for clearer visuals
 
-        # 3. 处理回合结束
+        # 3) End-of-turn handling
         print(f"✅ {player.faction.value} executed {actions_executed} actions")
 
-        if not is_realtime:  # 只在回合制模式下结束回合
+        if not is_realtime:  # End turn only in turn-based mode
             print(f"⏭️ Ending turn")
             self._end_turn(player.faction)
         else:
             print(f"🔄 Continuing in realtime mode")
 
     def _get_faction_state(self, faction: Faction) -> Dict[str, Any]:
-        """通过LLM Action Handler获取阵营状态"""
+        """Get faction state via the LLM Action Handler."""
         return self.llm_handler.handle_faction_state({"faction": faction.value})
 
     def _execute_unit_strategy(
@@ -198,7 +199,7 @@ class MockLLMAISystem(System):
         faction: Faction,
         is_realtime: bool = False,
     ) -> bool:
-        """为单位执行策略 - 通过LLM Action Handler V3"""
+        """Execute strategy for a unit via the LLM Action Handler V3."""
 
         capabilities = unit_info.get("capabilities", {})
         unit_resources = capabilities.get("unit_resources", {})
@@ -214,7 +215,7 @@ class MockLLMAISystem(System):
             f"🤖 Processing unit {unit_id}: AP={action_points}, MP={movement_points}, HP={health_percentage:.1f}%"
         )
 
-        # 检查单位是否能行动
+        # Check whether the unit can act
         if action_points <= 0:
             print(f"  ⏸️ Unit {unit_id} has no action points")
             return False
@@ -223,7 +224,7 @@ class MockLLMAISystem(System):
             print(f"  💀 Unit {unit_id} is too weak to act ({health_percentage:.1f}%)")
             return False
 
-        # 获取单位观察信息
+        # Get unit observation
         observation = self._get_unit_observation(unit_id)
         if not observation.get("success"):
             print(f"  ❌ Failed to get observation for unit {unit_id}")
@@ -231,7 +232,7 @@ class MockLLMAISystem(System):
 
         visible_environment = observation.get("visible_environment", [])
 
-        # 分析周围环境，寻找敌人和机会
+        # Analyze surroundings: enemies and opportunities
         enemy_targets = []
         strategic_positions = []
 
@@ -251,7 +252,7 @@ class MockLLMAISystem(System):
                         }
                     )
 
-            # 收集战略位置（城市、山丘等）
+            # Collect strategic positions (city/hill/mountain)
             if terrain in ["city", "hill", "mountain"]:
                 strategic_positions.append(
                     {
@@ -261,7 +262,7 @@ class MockLLMAISystem(System):
                     }
                 )
 
-        # 策略决策逻辑
+        # Decide strategy
         strategy_result = self._decide_strategy(
             unit_id,
             position,
@@ -275,7 +276,7 @@ class MockLLMAISystem(System):
         return self._execute_strategy(strategy_result, faction)
 
     def _get_unit_observation(self, unit_id: int) -> Dict[str, Any]:
-        """获取单位观察信息"""
+        """Get unit observation."""
         return self.llm_handler.handle_observation_action(
             {"unit_id": unit_id, "observation_level": "detailed"}
         )
@@ -290,7 +291,7 @@ class MockLLMAISystem(System):
         movement_points: int,
         properties: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """决策策略 - 模拟LLM思考过程"""
+        """Decide strategy (simulated LLM-style reasoning)."""
 
         current_pos = (position.get("col", 0), position.get("row", 0))
         attack_range = properties.get("attack_range", 1)
@@ -300,7 +301,7 @@ class MockLLMAISystem(System):
             f"     Found {len(enemy_targets)} enemies, {len(strategic_positions)} strategic positions"
         )
 
-        # 优先级1: 如果有敌人在攻击范围内，优先攻击
+        # Priority 1: attack if an enemy is in range
         for enemy in enemy_targets:
             enemy_pos = (
                 enemy["position"].get("col", 0),
@@ -318,7 +319,7 @@ class MockLLMAISystem(System):
                     "reason": f"Attack enemy {enemy['unit_type']} at distance {distance}",
                 }
 
-        # 优先级2: 移动接近最近的敌人
+        # Priority 2: move closer to the nearest enemy
         if enemy_targets and movement_points > 0:
             nearest_enemy = min(
                 enemy_targets,
@@ -335,7 +336,7 @@ class MockLLMAISystem(System):
             distance = HexMath.hex_distance(current_pos, enemy_pos)
 
             if distance > attack_range:
-                # 计算移动目标位置（向敌人方向移动）
+                # Compute a move target (towards enemy)
                 target_pos = self._calculate_move_towards_enemy(
                     current_pos, enemy_pos, movement_points
                 )
@@ -356,9 +357,9 @@ class MockLLMAISystem(System):
                         "reason": f"Move towards enemy {nearest_enemy['unit_type']} (distance: {distance})",
                     }
 
-        # 优先级3: 占领战略位置
+        # Priority 3: occupy strategic positions
         if strategic_positions and action_points >= 1:
-            # 获取当前单位的阵营
+            # Get the unit's current faction
             unit_obj = self.world.get_component(unit_id, Unit)
             current_faction = unit_obj.faction.value if unit_obj else None
 
@@ -367,20 +368,20 @@ class MockLLMAISystem(System):
                 target_pos = (pos.get("col", 0), pos.get("row", 0))
                 distance = HexMath.hex_distance(current_pos, target_pos)
 
-                # 如果在当前位置或相邻位置，尝试占领
+                # If at or adjacent to the target, try to occupy
                 if distance <= 1:
                     territory_control = strategic_pos.get("territory_control", {})
                     controlled_by = territory_control.get("controlled_by")
 
-                    # 检查是否之前尝试过这个位置的占领但失败了
+                    # Skip if we previously failed to occupy this position
                     action_key = f"occupy_{target_pos[0]}_{target_pos[1]}"
                     if (
                         unit_id in self.failed_actions
                         and action_key in self.failed_actions[unit_id]
                     ):
-                        continue  # 跳过之前失败的动作
+                        continue  # Skip previously failed actions
 
-                    # 只有当位置未被本阵营控制时才尝试占领
+                    # Only attempt occupy if not controlled by our faction
                     if controlled_by != current_faction:
                         print(f"     🏰 Occupying strategic position {target_pos}")
                         return {
@@ -395,27 +396,27 @@ class MockLLMAISystem(System):
                             "reason": f"Occupy strategic {strategic_pos['terrain']} position",
                         }
 
-        # 优先级4: 如果没有敌人，向地图中心或对方区域移动探索
+        # Priority 4: if no enemies, explore towards the map center or other areas
         if not enemy_targets and movement_points > 0:
-            # 获取所有单位占据的位置，避免移动到被占用的位置
+            # Collect occupied positions to avoid collisions
             occupied_positions = set()
             for entity in self.world.query().with_all(HexPosition, Unit).entities():
                 pos = self.world.get_component(entity, HexPosition)
                 if pos:
                     occupied_positions.add((pos.col, pos.row))
 
-            # 生成多个可能的目标位置，选择未被占用的
+            # Candidate exploration targets (choose an unoccupied one)
             potential_targets = [
-                (0, 0),  # 地图中心
-                (2, 2),  # 右上区域
-                (-2, -2),  # 左下区域
-                (3, 0),  # 右侧
-                (-3, 0),  # 左侧
-                (0, 3),  # 上方
-                (0, -3),  # 下方
+                (0, 0),  # map center
+                (2, 2),  # upper-right
+                (-2, -2),  # lower-left
+                (3, 0),  # right
+                (-3, 0),  # left
+                (0, 3),  # up
+                (0, -3),  # down
             ]
 
-            # 找到最近的未被占用的目标
+            # Choose the nearest unoccupied target (with a minimum distance)
             best_target = None
             min_distance = float("inf")
 
@@ -424,7 +425,7 @@ class MockLLMAISystem(System):
                     distance = HexMath.hex_distance(current_pos, target)
                     if (
                         distance > 2 and distance < min_distance
-                    ):  # 至少要有一定距离才值得移动
+                    ):
                         min_distance = distance
                         best_target = target
 
@@ -450,16 +451,16 @@ class MockLLMAISystem(System):
                         "reason": f"Explore towards strategic area (distance: {min_distance})",
                     }
 
-        # 优先级6: 移动到战略位置
+        # Priority 6: move towards strategic positions
         if strategic_positions and movement_points > 0:
-            # 获取所有单位占据的位置
+            # Collect occupied positions
             occupied_positions = set()
             for entity in self.world.query().with_all(HexPosition, Unit).entities():
                 pos = self.world.get_component(entity, HexPosition)
                 if pos:
                     occupied_positions.add((pos.col, pos.row))
 
-            # 找到最近的未被占用的战略位置
+            # Find nearest unoccupied strategic position
             unoccupied_strategic = []
             for strategic_pos in strategic_positions:
                 pos = strategic_pos["position"]
@@ -503,7 +504,7 @@ class MockLLMAISystem(System):
                         "reason": f"Move towards strategic {nearest_strategic['terrain']} position",
                     }
 
-        # 优先级7: 建设工事（如果在己方控制的重要位置）
+        # Priority 7: fortify current position
         if action_points >= 1:
             print(f"     🔨 Attempting to fortify current position")
             return {
@@ -515,7 +516,7 @@ class MockLLMAISystem(System):
                 "reason": "Fortify current position for defense",
             }
 
-        # 最后选择: 休息
+        # Last resort: rest
         print(f"     😴 No better options, resting")
         return {
             "action": "rest",
@@ -529,12 +530,12 @@ class MockLLMAISystem(System):
         enemy_pos: Tuple[int, int],
         movement_points: int,
     ) -> Optional[Tuple[int, int]]:
-        """计算向敌人移动的目标位置"""
-        # 简单的启发式：向敌人方向移动1格
+        """Compute a target position when moving toward an enemy."""
+        # Simple heuristic: move 1 step toward the enemy.
         dx = enemy_pos[0] - current_pos[0]
         dy = enemy_pos[1] - current_pos[1]
 
-        # 归一化方向
+        # Normalize direction
         if abs(dx) > abs(dy):
             move_x = 1 if dx > 0 else -1
             move_y = 0
@@ -542,13 +543,13 @@ class MockLLMAISystem(System):
             move_x = 0
             move_y = 1 if dy > 0 else -1
         else:
-            # 对角移动
+            # Diagonal move
             move_x = 1 if dx > 0 else -1
             move_y = 1 if dy > 0 else -1
 
         target_pos = (current_pos[0] + move_x, current_pos[1] + move_y)
 
-        # 检查移动距离是否在范围内
+        # Ensure the move is within movement range
         if HexMath.hex_distance(current_pos, target_pos) <= movement_points:
             return target_pos
 
@@ -560,19 +561,19 @@ class MockLLMAISystem(System):
         target_pos: Tuple[int, int],
         movement_points: int,
     ) -> Optional[Tuple[int, int]]:
-        """计算向目标位置移动"""
+        """Compute a target position when moving toward a target."""
         distance = HexMath.hex_distance(current_pos, target_pos)
 
         if distance <= movement_points:
             return target_pos
 
-        # 向目标方向移动1格
+        # Move 1 step toward the target
         return self._calculate_move_towards_enemy(
             current_pos, target_pos, movement_points
         )
 
     def _execute_strategy(self, strategy: Dict[str, Any], faction: Faction) -> bool:
-        """执行策略 - 通过LLM Action Handler V3"""
+        """Execute the chosen strategy via the LLM Action Handler V3."""
         action = strategy.get("action")
         params = strategy.get("params", {})
         reason = strategy.get("reason", "")
@@ -602,7 +603,7 @@ class MockLLMAISystem(System):
             if success:
                 print(f"     ✅ {action} succeeded: {message}")
 
-                # 记录成功的行动到AI记忆
+                # Record successful action to AI memory
                 unit_id = params.get("unit_id")
                 if unit_id:
                     self.ai_memory[unit_id] = {
@@ -612,7 +613,7 @@ class MockLLMAISystem(System):
                         "timestamp": time.time(),
                     }
 
-                    # 如果成功了，清除失败记录
+                    # On success, clear failure record for this action
                     if unit_id in self.failed_actions:
                         action_key = self._get_action_key(action, params)
                         if action_key in self.failed_actions[unit_id]:
@@ -622,7 +623,7 @@ class MockLLMAISystem(System):
             else:
                 print(f"     ❌ {action} failed: {message}")
 
-                # 记录失败的行动到记忆和失败列表
+                # Record failed action to memory and failure list
                 unit_id = params.get("unit_id")
                 if unit_id:
                     self.ai_memory[unit_id] = {
@@ -633,7 +634,7 @@ class MockLLMAISystem(System):
                         "timestamp": time.time(),
                     }
 
-                    # 记录到失败动作列表，避免重复尝试
+                    # Track failures to avoid repeated attempts
                     if unit_id not in self.failed_actions:
                         self.failed_actions[unit_id] = {}
                     action_key = self._get_action_key(action, params)
@@ -646,7 +647,7 @@ class MockLLMAISystem(System):
             return False
 
     def _get_action_key(self, action: str, params: Dict[str, Any]) -> str:
-        """生成动作的唯一键，用于记录失败动作"""
+        """Generate a unique key for an action (to track failures)."""
         if action == "occupy":
             pos = params.get("position", {})
             return f"occupy_{pos.get('col', 0)}_{pos.get('row', 0)}"
@@ -663,11 +664,11 @@ class MockLLMAISystem(System):
             return f"{action}_general"
 
     def _cleanup_old_failed_actions(self):
-        """清理超过30秒的失败动作记录"""
+        """Clear failure records older than 30 seconds."""
         current_time = time.time()
         for unit_id in list(self.failed_actions.keys()):
             unit_failed_actions = self.failed_actions[unit_id]
-            # 移除超过30秒的失败记录
+            # Remove records older than 30 seconds
             expired_keys = [
                 key
                 for key, timestamp in unit_failed_actions.items()
@@ -676,14 +677,14 @@ class MockLLMAISystem(System):
             for key in expired_keys:
                 del unit_failed_actions[key]
 
-            # 如果单位没有失败记录了，移除整个条目
+            # If no failures remain for the unit, remove the entry
             if not unit_failed_actions:
                 del self.failed_actions[unit_id]
 
     def _end_turn(self, faction: Faction):
-        """结束AI回合"""
+        """End the AI turn."""
         try:
-            # 首先尝试通过LLM Action Handler结束回合
+            # Try ending via the LLM Action Handler first
             result = self.llm_handler.handle_end_turn({"faction": faction.value})
             if result.get("success"):
                 print(f"✅ {faction.value} turn ended successfully")
@@ -691,10 +692,10 @@ class MockLLMAISystem(System):
             else:
                 print(f"⚠️ LLM Handler failed to end turn: {result.get('message')}")
 
-            # 如果LLM Handler失败，尝试直接调用回合系统
+            # If handler fails, try calling the turn system directly
             turn_system = self._get_turn_system()
             if turn_system:
-                # 检查是否有end_turn方法
+                # Check for end_turn method
                 if hasattr(turn_system, "end_turn"):
                     turn_system.end_turn()
                     print(f"✅ {faction.value} turn ended via TurnSystem")
@@ -710,7 +711,7 @@ class MockLLMAISystem(System):
             else:
                 print(f"⚠️ No TurnSystem available")
 
-            # 如果都失败了，至少记录尝试
+            # If all fail, at least record the attempt
             print(f"⚠️ Could not end turn for {faction.value}, but continuing")
             return False
 
@@ -719,27 +720,27 @@ class MockLLMAISystem(System):
             return False
 
     def _get_turn_system(self):
-        """获取回合系统"""
+        """Get the turn system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "TurnSystem":
                 return system
         return None
 
     def _trigger_game_over(self, losing_faction: Faction, reason: str):
-        """触发游戏结束"""
+        """Trigger game over."""
         print(f"🏁 Game Over! {losing_faction.value} {reason}")
 
         game_state = self.world.get_singleton_component(GameState)
         if game_state:
             game_state.game_over = True
-            # 可以设置获胜阵营等信息
+            # Winner/finalization can be set here if needed
             print(f"🎉 Game marked as over")
 
     def _check_victory_conditions(self):
-        """检查胜利条件"""
+        """Check victory conditions."""
         faction_status = {}
 
-        # 检查每个阵营的存活单位
+        # Count alive units per faction
         for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
             alive_units = 0
             for entity in self.world.query().with_component(Unit).entities():
@@ -756,7 +757,7 @@ class MockLLMAISystem(System):
 
             faction_status[faction] = alive_units
 
-        # 检查是否有阵营全军覆没
+        # Determine eliminated factions
         eliminated_factions = [
             faction for faction, count in faction_status.items() if count == 0
         ]
@@ -780,7 +781,7 @@ class MockLLMAISystem(System):
         return False
 
     def get_ai_memory_summary(self) -> Dict[str, Any]:
-        """获取AI记忆摘要 - 用于调试"""
+        """Get AI memory summary (debug)."""
         return {
             "total_units_tracked": len(self.ai_memory),
             "recent_actions": {

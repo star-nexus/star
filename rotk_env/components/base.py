@@ -1,5 +1,5 @@
 """
-基础组件模块
+Base component module.
 """
 
 from dataclasses import dataclass
@@ -9,7 +9,7 @@ from framework import Component
 
 @dataclass
 class HexPosition(Component):
-    """六边形位置组件"""
+    """Hex-grid position component."""
 
     col: int
     row: int
@@ -17,7 +17,7 @@ class HexPosition(Component):
 
 @dataclass
 class Renderable(Component):
-    """可渲染组件"""
+    """Renderable component."""
 
     color: Tuple[int, int, int]
     size: int = 20
@@ -26,7 +26,7 @@ class Renderable(Component):
 
 @dataclass
 class AnimationState(Component):
-    """动画状态组件"""
+    """Animation state component."""
 
     animation_type: str = "idle"
     frame: int = 0
@@ -35,7 +35,7 @@ class AnimationState(Component):
 
 @dataclass
 class PathFinding(Component):
-    """寻路组件"""
+    """Pathfinding component."""
 
     target_position: Optional[Tuple[int, int]] = None
     path: list = None

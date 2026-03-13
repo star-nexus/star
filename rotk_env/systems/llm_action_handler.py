@@ -1,7 +1,7 @@
 """
-LLM Action Handler - 为LLM系统提供可执行操作的handle
-处理move、battle、defend、scout等各种单位动作
-支持观测相关指令和状态查询功能
+LLM Action Handler - provides executable operation handlers for the LLM system.
+
+Supports unit actions (move/battle/defend/scout, etc.), observation commands, and state/query utilities.
 """
 
 import ast
@@ -28,12 +28,12 @@ from ..utils.hex_utils import HexMath
 
 
 class LLMActionHandler:
-    """LLM动作处理器 - 提供单位可执行操作的统一接口"""
+    """LLM action handler - a unified interface for unit-executable operations."""
 
     def __init__(self, world: World):
         self.world = world
         self.supported_actions = {
-            # 单位动作
+            # Unit actions
             "move": self.handle_move_action,
             "attack": self.handle_attack_action,
             "defend": self.handle_defend_action,
@@ -46,13 +46,13 @@ class LLMActionHandler:
             "end_turn": self.handle_end_turn_action,
             "select_unit": self.handle_select_unit_action,
             "formation": self.handle_formation_action,
-            # 观测相关指令
+            # Observation commands
             "unit_observation": self.handle_unit_observation,
             "faction_observation": self.handle_faction_observation,
             "godview_observation": self.handle_godview_observation,
             "limited_observation": self.handle_limited_observation,
             "tactical_observation": self.handle_tactical_observation,
-            # 状态查询指令
+            # State/query commands
             "get_unit_list": self.handle_get_unit_list,
             "get_unit_info": self.handle_get_unit_info,
             "get_faction_units": self.handle_get_faction_units,
@@ -68,7 +68,7 @@ class LLMActionHandler:
     def execute_action(
         self, action_type: str, params: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """执行指定动作"""
+        """Execute a specific action."""
         if action_type not in self.supported_actions:
             return {
                 "success": False,
@@ -87,20 +87,20 @@ class LLMActionHandler:
             }
 
     def get_supported_actions(self) -> Dict[str, Dict[str, Any]]:
-        """获取支持的动作列表及其详细信息"""
+        """Get supported actions and their detailed interface metadata."""
         return {
-            # 单位动作
+            # Unit actions
             "move": {
                 "function_name": "move",
-                "function_desc": "移动单位到指定位置",
+                "function_desc": "Move a unit to a target position",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要移动的单位ID",
+                        "param_desc": "Unit id to move",
                         "param_type": "int",
                         "required": True,
                     },
                     "target_position": {
-                        "param_desc": "目标位置坐标 [col, row]",
+                        "param_desc": "Target position coordinates [col, row]",
                         "param_type": "list[int]",
                         "required": True,
                     },
@@ -108,15 +108,15 @@ class LLMActionHandler:
             },
             "attack": {
                 "function_name": "attack",
-                "function_desc": "攻击指定目标单位",
+                "function_desc": "Attack a target unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "攻击方单位ID",
+                        "param_desc": "Attacker unit id",
                         "param_type": "int",
                         "required": True,
                     },
                     "target_id": {
-                        "param_desc": "目标单位ID",
+                        "param_desc": "Target unit id",
                         "param_type": "int",
                         "required": True,
                     },
@@ -124,10 +124,10 @@ class LLMActionHandler:
             },
             "defend": {
                 "function_name": "defend",
-                "function_desc": "设置单位为防御状态",
+                "function_desc": "Set a unit to defensive stance",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要设置防御的单位ID",
+                        "param_desc": "Unit id to set defending",
                         "param_type": "int",
                         "required": True,
                     }
@@ -135,10 +135,10 @@ class LLMActionHandler:
             },
             "garrison": {
                 "function_name": "garrison",
-                "function_desc": "单位进入驻守状态，获得防御加成",
+                "function_desc": "Put a unit into garrison to gain defensive bonuses",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要驻守的单位ID",
+                        "param_desc": "Unit id to garrison",
                         "param_type": "int",
                         "required": True,
                     }
@@ -146,10 +146,10 @@ class LLMActionHandler:
             },
             "wait": {
                 "function_name": "wait",
-                "function_desc": "单位等待，跳过本回合",
+                "function_desc": "Wait with a unit and skip this turn",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要等待的单位ID",
+                        "param_desc": "Unit id to wait",
                         "param_type": "int",
                         "required": True,
                     }
@@ -157,15 +157,15 @@ class LLMActionHandler:
             },
             "scout": {
                 "function_name": "scout",
-                "function_desc": "侦察指定区域",
+                "function_desc": "Scout a target area",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "执行侦察的单位ID",
+                        "param_desc": "Unit id that performs scouting",
                         "param_type": "int",
                         "required": True,
                     },
                     "target_position": {
-                        "param_desc": "侦察目标位置 [col, row]",
+                        "param_desc": "Scout target position [col, row]",
                         "param_type": "list[int]",
                         "required": True,
                     },
@@ -173,10 +173,10 @@ class LLMActionHandler:
             },
             "retreat": {
                 "function_name": "retreat",
-                "function_desc": "单位撤退到安全位置",
+                "function_desc": "Retreat a unit to a safe position",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要撤退的单位ID",
+                        "param_desc": "Unit id to retreat",
                         "param_type": "int",
                         "required": True,
                     }
@@ -184,10 +184,10 @@ class LLMActionHandler:
             },
             "fortify": {
                 "function_name": "fortify",
-                "function_desc": "在当前位置构建防御工事",
+                "function_desc": "Build fortifications at the current position",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "执行构建的单位ID",
+                        "param_desc": "Unit id that builds fortifications",
                         "param_type": "int",
                         "required": True,
                     }
@@ -195,15 +195,15 @@ class LLMActionHandler:
             },
             "patrol": {
                 "function_name": "patrol",
-                "function_desc": "在指定区域执行巡逻任务",
+                "function_desc": "Patrol within a specified area",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "执行巡逻的单位ID",
+                        "param_desc": "Unit id that performs patrol",
                         "param_type": "int",
                         "required": True,
                     },
                     "patrol_area": {
-                        "param_desc": "巡逻区域的坐标列表",
+                        "param_desc": "List of coordinates defining the patrol area",
                         "param_type": "list[list[int]]",
                         "required": True,
                     },
@@ -211,10 +211,10 @@ class LLMActionHandler:
             },
             "end_turn": {
                 "function_name": "end_turn",
-                "function_desc": "结束当前单位的回合",
+                "function_desc": "End the current unit's turn",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要结束回合的单位ID",
+                        "param_desc": "Unit id whose turn should end",
                         "param_type": "int",
                         "required": True,
                     }
@@ -222,10 +222,10 @@ class LLMActionHandler:
             },
             "select_unit": {
                 "function_name": "select_unit",
-                "function_desc": "选择指定单位",
+                "function_desc": "Select a unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要选择的单位ID",
+                        "param_desc": "Unit id to select",
                         "param_type": "int",
                         "required": True,
                     }
@@ -233,27 +233,27 @@ class LLMActionHandler:
             },
             "formation": {
                 "function_name": "formation",
-                "function_desc": "设置单位阵型",
+                "function_desc": "Set unit formation",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要设置阵型的单位ID",
+                        "param_desc": "Unit id to set formation for",
                         "param_type": "int",
                         "required": True,
                     },
                     "formation_type": {
-                        "param_desc": "阵型类型 (offensive/defensive/mobile)",
+                        "param_desc": "Formation type (offensive/defensive/mobile)",
                         "param_type": "str",
                         "required": True,
                     },
                 },
             },
-            # 观测相关指令
+            # Observation commands
             "unit_observation": {
                 "function_name": "unit_observation",
-                "function_desc": "获取指定单位的观测信息",
+                "function_desc": "Get observation data for a unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要观测的单位ID",
+                        "param_desc": "Unit id to observe",
                         "param_type": "int",
                         "required": True,
                     }
@@ -261,10 +261,10 @@ class LLMActionHandler:
             },
             "faction_observation": {
                 "function_name": "faction_observation",
-                "function_desc": "获取指定阵营的观测信息",
+                "function_desc": "Get observation data for a faction",
                 "inputs": {
                     "faction": {
-                        "param_desc": "阵营名称 (WEI/SHU/WU)",
+                        "param_desc": "Faction name (WEI/SHU/WU)",
                         "param_type": "str",
                         "required": True,
                     }
@@ -272,15 +272,15 @@ class LLMActionHandler:
             },
             "godview_observation": {
                 "function_name": "godview_observation",
-                "function_desc": "获取全局视角的观测信息",
+                "function_desc": "Get observation data from a global (god) view",
                 "inputs": {},
             },
             "limited_observation": {
                 "function_name": "limited_observation",
-                "function_desc": "获取受限视角的观测信息",
+                "function_desc": "Get observation data from a restricted (faction) view",
                 "inputs": {
                     "faction": {
-                        "param_desc": "观测方阵营名称 (WEI/SHU/WU)",
+                        "param_desc": "Observer faction name (WEI/SHU/WU)",
                         "param_type": "str",
                         "required": True,
                     }
@@ -288,32 +288,32 @@ class LLMActionHandler:
             },
             "tactical_observation": {
                 "function_name": "tactical_observation",
-                "function_desc": "获取战术层面的观测信息",
+                "function_desc": "Get tactical-level observation data",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "观测中心的单位ID",
+                        "param_desc": "Center unit id (optional)",
                         "param_type": "int",
                         "required": False,
                     },
                     "radius": {
-                        "param_desc": "观测半径",
+                        "param_desc": "Observation radius (optional)",
                         "param_type": "int",
                         "required": False,
                     },
                 },
             },
-            # 状态查询指令
+            # State/query commands
             "get_unit_list": {
                 "function_name": "get_unit_list",
-                "function_desc": "获取所有单位的列表",
+                "function_desc": "List all units",
                 "inputs": {
                     "faction": {
-                        "param_desc": "筛选指定阵营的单位 (可选)",
+                        "param_desc": "Filter units by faction (optional)",
                         "param_type": "str",
                         "required": False,
                     },
                     "unit_type": {
-                        "param_desc": "筛选指定类型的单位 (可选)",
+                        "param_desc": "Filter units by unit type (optional)",
                         "param_type": "str",
                         "required": False,
                     },
@@ -321,10 +321,10 @@ class LLMActionHandler:
             },
             "get_unit_info": {
                 "function_name": "get_unit_info",
-                "function_desc": "获取指定单位的详细信息",
+                "function_desc": "Get detailed information for a unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要查询的单位ID",
+                        "param_desc": "Unit id to query",
                         "param_type": "int",
                         "required": True,
                     }
@@ -332,10 +332,10 @@ class LLMActionHandler:
             },
             "get_faction_units": {
                 "function_name": "get_faction_units",
-                "function_desc": "获取指定阵营的所有单位",
+                "function_desc": "List all units for a faction",
                 "inputs": {
                     "faction": {
-                        "param_desc": "阵营名称 (WEI/SHU/WU)",
+                        "param_desc": "Faction name (WEI/SHU/WU)",
                         "param_type": "str",
                         "required": True,
                     }
@@ -343,20 +343,20 @@ class LLMActionHandler:
             },
             "get_game_state": {
                 "function_name": "get_game_state",
-                "function_desc": "获取当前游戏状态信息",
+                "function_desc": "Get current game state",
                 "inputs": {},
             },
             "get_map_info": {
                 "function_name": "get_map_info",
-                "function_desc": "获取地图信息",
+                "function_desc": "Get map information",
                 "inputs": {
                     "position": {
-                        "param_desc": "查询特定位置的地图信息 [col, row] (可选)",
+                        "param_desc": "Query map info at a specific position [col, row] (optional)",
                         "param_type": "list[int]",
                         "required": False,
                     },
                     "area": {
-                        "param_desc": "查询区域范围 [[min_col, min_row], [max_col, max_row]] (可选)",
+                        "param_desc": "Query map info for an area [[min_col, min_row], [max_col, max_row]] (optional)",
                         "param_type": "list[list[int]]",
                         "required": False,
                     },
@@ -364,10 +364,10 @@ class LLMActionHandler:
             },
             "get_battle_status": {
                 "function_name": "get_battle_status",
-                "function_desc": "获取当前战斗状态信息",
+                "function_desc": "Get current battle status",
                 "inputs": {
                     "battle_id": {
-                        "param_desc": "特定战斗ID (可选)",
+                        "param_desc": "Specific battle id (optional)",
                         "param_type": "int",
                         "required": False,
                     }
@@ -375,10 +375,10 @@ class LLMActionHandler:
             },
             "get_available_actions": {
                 "function_name": "get_available_actions",
-                "function_desc": "获取指定单位可执行的动作列表",
+                "function_desc": "Get the list of actions available to a unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要查询的单位ID",
+                        "param_desc": "Unit id to query",
                         "param_type": "int",
                         "required": True,
                     }
@@ -386,10 +386,10 @@ class LLMActionHandler:
             },
             "get_unit_capabilities": {
                 "function_name": "get_unit_capabilities",
-                "function_desc": "获取指定单位的能力信息",
+                "function_desc": "Get capabilities for a unit",
                 "inputs": {
                     "unit_id": {
-                        "param_desc": "要查询的单位ID",
+                        "param_desc": "Unit id to query",
                         "param_type": "int",
                         "required": True,
                     }
@@ -397,15 +397,15 @@ class LLMActionHandler:
             },
             "get_visibility_info": {
                 "function_name": "get_visibility_info",
-                "function_desc": "获取视野和可见性信息",
+                "function_desc": "Get vision and visibility information",
                 "inputs": {
                     "faction": {
-                        "param_desc": "查询指定阵营的视野信息",
+                        "param_desc": "Faction name to query vision for",
                         "param_type": "str",
                         "required": True,
                     },
                     "position": {
-                        "param_desc": "查询特定位置的可见性 [col, row] (可选)",
+                        "param_desc": "Query visibility at a specific position [col, row] (optional)",
                         "param_type": "list[int]",
                         "required": False,
                     },
@@ -413,15 +413,15 @@ class LLMActionHandler:
             },
             "get_strategic_summary": {
                 "function_name": "get_strategic_summary",
-                "function_desc": "获取战略层面的摘要信息",
+                "function_desc": "Get a strategic-level summary",
                 "inputs": {
                     "faction": {
-                        "param_desc": "查询指定阵营的战略摘要 (可选)",
+                        "param_desc": "Faction name to scope the summary to (optional)",
                         "param_type": "str",
                         "required": False,
                     },
                     "detail_level": {
-                        "param_desc": "详细程度 (basic/detailed/full)",
+                        "param_desc": "Detail level (basic/detailed/full)",
                         "param_type": "str",
                         "required": False,
                     },
@@ -430,13 +430,13 @@ class LLMActionHandler:
         }
 
     def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理移动动作"""
+        """Handle the move action."""
         try:
-            # 参数类型验证和转换
+            # Validate and normalize parameter types
             unit_id = params.get("unit_id")
             target_position = params.get("target_position")
 
-            # 类型验证
+            # Required-field / type validation
             if unit_id is None:
                 return {
                     "success": False,
@@ -453,7 +453,7 @@ class LLMActionHandler:
                     "action": "move",
                 }
 
-            # 转换参数类型
+            # Convert parameter types
             try:
                 unit_id = int(unit_id)
             except (ValueError, TypeError):
@@ -464,7 +464,7 @@ class LLMActionHandler:
                     "action": "move",
                 }
 
-            # 处理target_position - 支持多种输入格式
+            # Handle target_position - support multiple input formats
             if isinstance(target_position, str):
                 try:
                     target_position = ast.literal_eval(target_position)
@@ -497,7 +497,7 @@ class LLMActionHandler:
                     "action": "move",
                 }
 
-            # 验证单位存在
+            # Validate that the unit exists
             if not self.world.has_entity(unit_id):
                 return {
                     "success": False,
@@ -507,7 +507,7 @@ class LLMActionHandler:
                     "unit_id": unit_id,
                 }
 
-            # 获取移动系统
+            # Get the movement system
             movement_system = self._get_movement_system()
             if not movement_system:
                 return {
@@ -517,7 +517,7 @@ class LLMActionHandler:
                     "action": "move",
                 }
 
-            # 执行移动 - 使用正确的参数类型 (entity: int, target_pos: Tuple[int, int])
+            # Execute movement - use correct parameter types (entity: int, target_pos: Tuple[int, int])
             success = movement_system.move_unit(unit_id, target_pos)
 
             if success:
@@ -549,13 +549,13 @@ class LLMActionHandler:
             }
 
     def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理攻击动作"""
+        """Handle the attack action."""
         try:
-            # 参数类型验证和转换
-            unit_id = params.get("unit_id")  # 现在使用unit_id而不是attacker_id
+            # Validate and normalize parameter types
+            unit_id = params.get("unit_id")  # Uses unit_id instead of attacker_id
             target_id = params.get("target_id")
 
-            # 验证必需参数存在
+            # Validate required parameters
             if unit_id is None:
                 return {
                     "success": False,
@@ -572,7 +572,7 @@ class LLMActionHandler:
                     "action": "attack",
                 }
 
-            # 类型转换
+            # Convert parameter types
             try:
                 unit_id = int(unit_id)
                 target_id = int(target_id)
@@ -584,7 +584,7 @@ class LLMActionHandler:
                     "action": "attack",
                 }
 
-            # 验证单位存在
+            # Validate that entities exist
             if not self.world.has_entity(unit_id):
                 return {
                     "success": False,
@@ -603,7 +603,7 @@ class LLMActionHandler:
                     "target_id": target_id,
                 }
 
-            # 获取战斗系统
+            # Get the combat system
             combat_system = self._get_combat_system()
             if not combat_system:
                 return {
@@ -613,11 +613,11 @@ class LLMActionHandler:
                     "action": "attack",
                 }
 
-            # 执行攻击 - 使用正确的参数类型 (attacker_entity: int, target_entity: int)
+            # Execute attack - use correct parameter types (attacker_entity: int, target_entity: int)
             success = combat_system.attack(unit_id, target_id)
 
             if success:
-                # 获取目标单位当前人数
+                # Get target unit's remaining headcount
                 target_unit_count = self.world.get_component(target_id, UnitCount)
                 return {
                     "success": True,
@@ -649,9 +649,9 @@ class LLMActionHandler:
             }
 
     def handle_defend_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理防御动作"""
+        """Handle the defend action."""
         try:
-            # 参数验证
+            # Parameter validation
             unit_id = params.get("unit_id")
 
             if unit_id is None:
@@ -662,7 +662,7 @@ class LLMActionHandler:
                     "action": "defend",
                 }
 
-            # 类型转换
+            # Convert parameter types
             try:
                 unit_id = int(unit_id)
             except (ValueError, TypeError):
@@ -673,7 +673,7 @@ class LLMActionHandler:
                     "action": "defend",
                 }
 
-            # 验证单位存在
+            # Validate that the unit exists
             if not self.world.has_entity(unit_id):
                 return {
                     "success": False,
@@ -683,7 +683,7 @@ class LLMActionHandler:
                     "unit_id": unit_id,
                 }
 
-            # 设置防御状态
+            # Set defending status
             unit_status = self.world.get_component(unit_id, UnitStatus)
             if unit_status:
                 unit_status.is_defending = True
@@ -692,7 +692,7 @@ class LLMActionHandler:
                     "message": f"Unit {unit_id} is now defending with bonus",
                     "action": "defend",
                     "unit_id": unit_id,
-                    "defense_bonus": 0.5,  # 50% 防御加成
+                    "defense_bonus": 0.5,  # 50% defense bonus
                     "status": "defending",
                 }
             else:
@@ -714,9 +714,9 @@ class LLMActionHandler:
             }
 
     def handle_garrison_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理驻守动作"""
+        """Handle the garrison action."""
         try:
-            # 参数验证
+            # Parameter validation
             unit_id = params.get("unit_id")
 
             if unit_id is None:
@@ -727,7 +727,7 @@ class LLMActionHandler:
                     "action": "garrison",
                 }
 
-            # 类型转换
+            # Convert parameter types
             try:
                 unit_id = int(unit_id)
             except (ValueError, TypeError):
@@ -738,7 +738,7 @@ class LLMActionHandler:
                     "action": "garrison",
                 }
 
-            # 验证单位存在
+            # Validate that the unit exists
             if not self.world.has_entity(unit_id):
                 return {
                     "success": False,
@@ -748,7 +748,7 @@ class LLMActionHandler:
                     "unit_id": unit_id,
                 }
 
-            # 获取动作系统并执行驻守
+            # Get the action system and execute garrison
             action_system = self._get_action_system()
             if not action_system:
                 return {
@@ -786,9 +786,9 @@ class LLMActionHandler:
             }
 
     def handle_wait_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理等待动作"""
+        """Handle the wait action."""
         try:
-            # 参数验证
+            # Parameter validation
             unit_id = params.get("unit_id")
 
             if unit_id is None:
@@ -799,7 +799,7 @@ class LLMActionHandler:
                     "action": "wait",
                 }
 
-            # 类型转换
+            # Convert parameter types
             try:
                 unit_id = int(unit_id)
             except (ValueError, TypeError):
@@ -810,7 +810,7 @@ class LLMActionHandler:
                     "action": "wait",
                 }
 
-            # 验证单位存在
+            # Validate that the unit exists
             if not self.world.has_entity(unit_id):
                 return {
                     "success": False,
@@ -820,7 +820,7 @@ class LLMActionHandler:
                     "unit_id": unit_id,
                 }
 
-            # 获取动作系统并执行等待
+            # Get the action system and execute wait
             action_system = self._get_action_system()
             if not action_system:
                 return {
@@ -858,9 +858,9 @@ class LLMActionHandler:
             }
 
     def handle_scout_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理侦察动作"""
+        """Handle the scout action."""
         unit_id = params.get("unit_id")
-        target_area = params.get("target_area")  # (col, row) 或区域范围
+        target_area = params.get("target_area")  # (col, row) or an area range
 
         if not unit_id:
             return {"success": False, "error": "Missing unit_id"}
@@ -868,7 +868,7 @@ class LLMActionHandler:
         if not self.world.has_entity(unit_id):
             return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
-        # 获取单位视野信息
+        # Get unit vision information
         vision = self.world.get_component(unit_id, Vision)
         position = self.world.get_component(unit_id, HexPosition)
 
@@ -878,11 +878,11 @@ class LLMActionHandler:
                 "error": "Unit lacks vision or position component",
             }
 
-        # 执行侦察 - 临时增加视野范围
+        # Execute scouting - temporarily increase sight range
         original_range = vision.sight_range
-        vision.sight_range = min(vision.sight_range + 2, 10)  # 增加2格视野，最大10格
+        vision.sight_range = min(vision.sight_range + 2, 10)  # +2 tiles, capped at 10
 
-        # TODO: 这里应该更新雾战系统
+        # TODO: Fog-of-war system should be updated here
 
         return {
             "success": True,
@@ -893,7 +893,7 @@ class LLMActionHandler:
         }
 
     def handle_retreat_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理撤退动作"""
+        """Handle the retreat action."""
         unit_id = params.get("unit_id")
         retreat_direction = params.get(
             "direction"
@@ -909,11 +909,11 @@ class LLMActionHandler:
         if not position:
             return {"success": False, "error": "Unit has no position"}
 
-        # 计算撤退目标位置
+        # Compute retreat target position
         current_pos = (position.col, position.row)
         retreat_pos = self._calculate_retreat_position(current_pos, retreat_direction)
 
-        # 执行移动（撤退）
+        # Execute movement (retreat)
         movement_system = self._get_movement_system()
         if movement_system:
             success = movement_system.move_unit(unit_id, retreat_pos)
@@ -928,7 +928,7 @@ class LLMActionHandler:
         return {"success": False, "error": "Retreat failed"}
 
     def handle_fortify_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理驻防/加固动作"""
+        """Handle the fortify action."""
         unit_id = params.get("unit_id")
 
         if not unit_id:
@@ -937,7 +937,7 @@ class LLMActionHandler:
         if not self.world.has_entity(unit_id):
             return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
-        # 设置驻防状态
+        # Set fortified status
         unit_status = self.world.get_component(unit_id, UnitStatus)
         if unit_status:
             unit_status.is_fortified = True
@@ -945,15 +945,15 @@ class LLMActionHandler:
                 "success": True,
                 "message": f"Unit {unit_id} is now fortified",
                 "unit_id": unit_id,
-                "fortification_bonus": 0.3,  # 30% 防御加成
+                "fortification_bonus": 0.3,  # 30% defense bonus
             }
 
         return {"success": False, "error": "Unable to set fortify status"}
 
     def handle_patrol_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理巡逻动作"""
+        """Handle the patrol action."""
         unit_id = params.get("unit_id")
-        patrol_points = params.get("patrol_points", [])  # 巡逻路径点列表
+        patrol_points = params.get("patrol_points", [])  # List of patrol path points
 
         if not unit_id:
             return {"success": False, "error": "Missing unit_id"}
@@ -961,7 +961,7 @@ class LLMActionHandler:
         if not self.world.has_entity(unit_id):
             return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
-        # TODO: 实现巡逻路径系统
+        # TODO: Implement patrol path logic
         return {
             "success": True,
             "message": f"Unit {unit_id} started patrolling",
@@ -970,13 +970,13 @@ class LLMActionHandler:
         }
 
     def handle_end_turn_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理结束回合动作"""
+        """Handle the end-turn action."""
         faction = params.get("faction")
 
-        # 获取回合系统
+        # Get the turn system
         turn_system = self._get_turn_system()
         if turn_system:
-            # TODO: 实现结束回合逻辑
+            # TODO: Implement end-turn logic
             return {
                 "success": True,
                 "message": f"Turn ended for faction {faction}",
@@ -986,7 +986,7 @@ class LLMActionHandler:
         return {"success": False, "error": "Turn system not available"}
 
     def handle_select_unit_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理选择单位动作"""
+        """Handle the select-unit action."""
         unit_id = params.get("unit_id")
 
         if not unit_id:
@@ -995,11 +995,11 @@ class LLMActionHandler:
         if not self.world.has_entity(unit_id):
             return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
-        # 清除其他单位的选择状态
+        # Clear selection state on other units
         for entity in self.world.query().with_all(Selected).entities():
             self.world.remove_component(entity, Selected)
 
-        # 选择目标单位
+        # Select the target unit
         self.world.add_component(unit_id, Selected())
 
         return {
@@ -1009,7 +1009,7 @@ class LLMActionHandler:
         }
 
     def handle_formation_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理阵型动作"""
+        """Handle the formation action."""
         unit_ids = params.get("unit_ids", [])
         formation_type = params.get(
             "formation_type", "line"
@@ -1018,7 +1018,7 @@ class LLMActionHandler:
         if not unit_ids:
             return {"success": False, "error": "Missing unit_ids"}
 
-        # TODO: 实现阵型系统
+        # TODO: Implement formation logic
         return {
             "success": True,
             "message": f"Formation {formation_type} set for {len(unit_ids)} units",
@@ -1026,30 +1026,30 @@ class LLMActionHandler:
             "formation_type": formation_type,
         }
 
-    # 辅助方法
+    # Helper methods
     def _get_movement_system(self):
-        """获取移动系统"""
+        """Get the movement system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "MovementSystem":
                 return system
         return None
 
     def _get_combat_system(self):
-        """获取战斗系统"""
+        """Get the combat system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "CombatSystem":
                 return system
         return None
 
     def _get_turn_system(self):
-        """获取回合系统"""
+        """Get the turn system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "TurnSystem":
                 return system
         return None
 
     def _get_action_system(self):
-        """获取动作系统"""
+        """Get the action system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "ActionSystem":
                 return system
@@ -1058,7 +1058,7 @@ class LLMActionHandler:
     def _calculate_retreat_position(
         self, current_pos: Tuple[int, int], direction: str
     ) -> Tuple[int, int]:
-        """计算撤退位置"""
+        """Calculate a retreat position."""
         col, row = current_pos
 
         direction_map = {
@@ -1072,15 +1072,15 @@ class LLMActionHandler:
             "west": (-1, 0),
         }
 
-        offset = direction_map.get(direction, (0, -1))  # 默认向北撤退
+        offset = direction_map.get(direction, (0, -1))  # Default: retreat north
         return (col + offset[0], row + offset[1])
 
     # =============================================
-    # 观测相关指令处理方法
+    # Observation command handlers
     # =============================================
 
     def handle_unit_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理单位观测请求"""
+        """Handle a unit observation request."""
         unit_id = params.get("unit_id")
 
         if not unit_id:
@@ -1089,24 +1089,24 @@ class LLMActionHandler:
         if not self.world.has_entity(unit_id):
             return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
-        # 获取观测系统
+        # Get the observation system
         obs_system = self._get_observation_system()
         if obs_system:
             observation = obs_system.get_observation("unit", unit_id=unit_id)
             return {"success": True, "observation": observation}
 
-        # 如果没有观测系统，返回基本信息
+        # Fallback: if no observation system exists, return basic info
         return {"success": True, "observation": self._get_basic_unit_info(unit_id)}
 
     def handle_faction_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理阵营观测请求"""
+        """Handle a faction observation request."""
         faction = params.get("faction")
         include_hidden = params.get("include_hidden", False)
 
         if not faction:
             return {"success": False, "error": "Missing faction parameter"}
 
-        # 转换字符串到Faction枚举
+        # Convert string to the Faction enum
         if isinstance(faction, str):
             try:
                 faction = Faction(faction.upper())
@@ -1123,7 +1123,7 @@ class LLMActionHandler:
         return {"success": True, "observation": self._get_basic_faction_info(faction)}
 
     def handle_godview_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理上帝视角观测请求"""
+        """Handle a god-view observation request."""
         obs_system = self._get_observation_system()
         if obs_system:
             observation = obs_system.get_observation("godview")
@@ -1132,7 +1132,7 @@ class LLMActionHandler:
         return {"success": True, "observation": self._get_basic_godview_info()}
 
     def handle_limited_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理受限观测请求"""
+        """Handle a restricted-view observation request."""
         faction = params.get("faction")
 
         if not faction:
@@ -1152,7 +1152,7 @@ class LLMActionHandler:
         return {"success": True, "observation": self._get_basic_faction_info(faction)}
 
     def handle_tactical_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理战术观测请求"""
+        """Handle a tactical observation request."""
         center_position = params.get("center_position")
         radius = params.get("radius", 3)
         faction = params.get("faction")
@@ -1164,11 +1164,11 @@ class LLMActionHandler:
         return {"success": True, "observation": tactical_info}
 
     # =============================================
-    # 状态查询指令处理方法
+    # State/query command handlers
     # =============================================
 
     def handle_get_unit_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取单位列表"""
+        """List units."""
         faction_filter = params.get("faction")
         unit_type_filter = params.get("unit_type")
         status_filter = params.get("status")  # "alive", "wounded", "ready"
@@ -1182,7 +1182,7 @@ class LLMActionHandler:
             if not unit:
                 continue
 
-            # 应用过滤条件
+            # Apply filters
             if faction_filter and unit.faction != faction_filter:
                 continue
             if unit_type_filter and unit.unit_type != unit_type_filter:
@@ -1246,7 +1246,7 @@ class LLMActionHandler:
         }
 
     def handle_get_unit_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取指定单位的详细信息"""
+        """Get detailed information for a unit."""
         unit_id = params.get("unit_id")
 
         if not unit_id:
@@ -1259,7 +1259,7 @@ class LLMActionHandler:
         return {"success": True, "unit_info": unit_info}
 
     def handle_get_faction_units(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取指定阵营的所有单位"""
+        """List all units for a faction."""
         faction = params.get("faction")
 
         if not faction:
@@ -1286,7 +1286,7 @@ class LLMActionHandler:
         }
 
     def handle_get_game_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取游戏状态信息"""
+        """Get game state information."""
         game_state = self.world.get_singleton_component(GameState)
 
         state_info = {"game_exists": game_state is not None}
@@ -1316,12 +1316,12 @@ class LLMActionHandler:
         return {"success": True, "game_state": state_info}
 
     def handle_get_map_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取地图信息"""
+        """Get map information."""
         include_terrain = params.get("include_terrain", True)
         include_units = params.get("include_units", True)
         area = params.get(
             "area"
-        )  # 可选：指定区域 {"min_col": 0, "max_col": 10, "min_row": 0, "max_row": 10}
+        )  # Optional: area bounds {"min_col": 0, "max_col": 10, "min_row": 0, "max_row": 10}
 
         map_info = {
             "terrain": [] if include_terrain else None,
@@ -1329,7 +1329,7 @@ class LLMActionHandler:
         }
 
         if include_terrain:
-            # 获取地形信息
+            # Collect terrain info
             from ..components import Terrain, Tile
 
             for entity in self.world.query().with_all(Tile, HexPosition).entities():
@@ -1367,7 +1367,7 @@ class LLMActionHandler:
                 map_info["terrain"].append(terrain_info)
 
         if include_units:
-            # 获取单位位置
+            # Collect unit positions
             for entity in self.world.query().with_all(Unit, HexPosition).entities():
                 position = self.world.get_component(entity, HexPosition)
                 unit = self.world.get_component(entity, Unit)
@@ -1397,18 +1397,18 @@ class LLMActionHandler:
         return {"success": True, "map_info": map_info}
 
     def handle_get_battle_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取战斗状态信息"""
+        """Get battle status information."""
         faction = params.get("faction")
 
         battle_status = {"active_battles": [], "recent_battles": [], "casualties": {}}
 
-        # 检查是否有战斗日志系统
+        # Check whether a battle log system exists
         from ..components import BattleLog
 
         battle_log = self.world.get_singleton_component(BattleLog)
 
         if battle_log and hasattr(battle_log, "entries"):
-            recent_entries = battle_log.entries[-5:]  # 最近5次战斗
+            recent_entries = battle_log.entries[-5:]  # Last 5 battle entries
             for entry in recent_entries:
                 battle_info = {
                     "turn": entry.turn,
@@ -1419,7 +1419,7 @@ class LLMActionHandler:
                 }
                 battle_status["recent_battles"].append(battle_info)
 
-        # 统计阵营伤亡情况
+        # Compute faction casualties (optional)
         if faction:
             if isinstance(faction, str):
                 try:
@@ -1453,11 +1453,11 @@ class LLMActionHandler:
         return {"success": True, "battle_status": battle_status}
 
     def handle_get_available_actions(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取可用动作列表"""
+        """Get available actions."""
         unit_id = params.get("unit_id")
 
         if unit_id:
-            # 获取指定单位的可用动作
+            # Get available actions for a specific unit
             if not self.world.has_entity(unit_id):
                 return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
@@ -1468,7 +1468,7 @@ class LLMActionHandler:
                 "available_actions": available_actions,
             }
         else:
-            # 返回所有支持的动作类型
+            # Return all supported action types
             return {
                 "success": True,
                 "all_supported_actions": self.get_supported_actions(),
@@ -1507,7 +1507,7 @@ class LLMActionHandler:
             }
 
     def handle_get_unit_capabilities(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取单位能力信息"""
+        """Get unit capability information."""
         unit_id = params.get("unit_id")
 
         if not unit_id:
@@ -1520,12 +1520,12 @@ class LLMActionHandler:
         return {"success": True, "unit_id": unit_id, "capabilities": capabilities}
 
     def handle_get_visibility_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取视野信息"""
+        """Get vision/visibility information."""
         unit_id = params.get("unit_id")
         faction = params.get("faction")
 
         if unit_id:
-            # 获取指定单位的视野信息
+            # Get visibility info for a specific unit
             if not self.world.has_entity(unit_id):
                 return {"success": False, "error": f"Unit {unit_id} does not exist"}
 
@@ -1537,7 +1537,7 @@ class LLMActionHandler:
             }
 
         elif faction:
-            # 获取阵营整体视野信息
+            # Get aggregated visibility info for a faction
             if isinstance(faction, str):
                 try:
                     faction = Faction(faction.upper())
@@ -1555,7 +1555,7 @@ class LLMActionHandler:
             return {"success": False, "error": "Must specify either unit_id or faction"}
 
     def handle_get_strategic_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """获取战略摘要"""
+        """Get a strategic summary."""
         faction = params.get("faction")
 
         if faction and isinstance(faction, str):
@@ -1568,18 +1568,18 @@ class LLMActionHandler:
         return {"success": True, "strategic_summary": strategic_summary}
 
     # =============================================
-    # 辅助方法 - 观测和查询相关
+    # Helper methods - observation & query
     # =============================================
 
     def _get_observation_system(self):
-        """获取观测系统"""
+        """Get the observation system."""
         for system in self.world.systems:
             if system.__class__.__name__ == "LLMObservationSystem":
                 return system
         return None
 
     def _get_basic_unit_info(self, unit_id: int) -> Dict[str, Any]:
-        """获取基本单位信息（无观测系统时的后备方案）"""
+        """Get basic unit info (fallback when no observation system is available)."""
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
         unit_count = self.world.get_component(unit_id, UnitCount)
@@ -1618,7 +1618,7 @@ class LLMActionHandler:
         return basic_info
 
     def _get_basic_faction_info(self, faction: Faction) -> Dict[str, Any]:
-        """获取基本阵营信息"""
+        """Get basic faction info."""
         faction_units = []
         for entity in self.world.query().with_all(Unit).entities():
             unit = self.world.get_component(entity, Unit)
@@ -1633,7 +1633,7 @@ class LLMActionHandler:
         }
 
     def _get_basic_godview_info(self) -> Dict[str, Any]:
-        """获取基本上帝视角信息"""
+        """Get basic god-view info."""
         all_units = []
         for entity in self.world.query().with_all(Unit).entities():
             unit_info = self._get_basic_unit_info(entity)
@@ -1647,12 +1647,12 @@ class LLMActionHandler:
         radius: int,
         faction: Optional[Faction] = None,
     ) -> Dict[str, Any]:
-        """获取战术区域信息"""
+        """Get tactical area information."""
         center_col, center_row = center_position
         area_units = []
         area_terrain = []
 
-        # 获取区域内的单位
+        # Collect units within the area
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
@@ -1673,7 +1673,7 @@ class LLMActionHandler:
         }
 
     def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
-        """获取详细单位信息"""
+        """Get detailed unit information."""
         unit = self.world.get_component(unit_id, Unit)
         position = self.world.get_component(unit_id, HexPosition)
         unit_count = self.world.get_component(unit_id, UnitCount)
@@ -1743,32 +1743,32 @@ class LLMActionHandler:
         return detailed_info
 
     def _get_unit_available_actions(self, unit_id: int) -> List[str]:
-        """获取单位可用动作"""
+        """Get a unit's available actions."""
         available_actions = []
 
         movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
         unit_count = self.world.get_component(unit_id, UnitCount)
 
-        # 检查生存状态
+        # Check survival status
         if unit_count and unit_count.current_count <= 0:
-            return ["dead"]  # 已死亡单位无法执行动作
+            return ["dead"]  # Eliminated units cannot act
 
-        # 移动相关动作
+        # Movement-related actions
         if movement and movement.current_mp > 0 and not movement.has_moved:
             available_actions.extend(["move", "retreat", "scout", "patrol"])
 
-        # 战斗相关动作
+        # Combat-related actions
         if combat and not combat.has_attacked:
             available_actions.append("attack")
 
-        # 总是可用的动作
+        # Always-available actions
         available_actions.extend(["defend", "fortify", "select_unit"])
 
         return available_actions
 
     def _get_unit_capabilities(self, unit_id: int) -> Dict[str, Any]:
-        """获取单位能力信息"""
+        """Get unit capabilities."""
         unit = self.world.get_component(unit_id, Unit)
         movement = self.world.get_component(unit_id, MovementPoints)
         combat = self.world.get_component(unit_id, Combat)
@@ -1792,14 +1792,14 @@ class LLMActionHandler:
         return capabilities
 
     def _get_unit_visibility_info(self, unit_id: int) -> Dict[str, Any]:
-        """获取单位视野信息"""
+        """Get unit visibility information."""
         position = self.world.get_component(unit_id, HexPosition)
         vision = self.world.get_component(unit_id, Vision)
 
         if not position or not vision:
             return {"error": "Unit lacks position or vision component"}
 
-        # 计算可见区域
+        # Compute visible area
         visible_positions = set()
         center = (position.col, position.row)
 
@@ -1812,10 +1812,10 @@ class LLMActionHandler:
                 if HexMath.hex_distance(center, (col, row)) <= vision.sight_range:
                     visible_positions.add((col, row))
 
-        # 获取视野内的单位
+        # Collect units within vision
         visible_units = []
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            if entity == unit_id:  # 跳过自己
+            if entity == unit_id:  # Skip self
                 continue
             other_pos = self.world.get_component(entity, HexPosition)
             if other_pos and (other_pos.col, other_pos.row) in visible_positions:
@@ -1842,11 +1842,11 @@ class LLMActionHandler:
         }
 
     def _get_faction_visibility_info(self, faction: Faction) -> Dict[str, Any]:
-        """获取阵营视野信息"""
+        """Get faction-level visibility information."""
         all_visible_positions = set()
         faction_units = []
 
-        # 收集阵营所有单位的视野
+        # Aggregate vision of all units in the faction
         for entity in self.world.query().with_all(Unit, HexPosition, Vision).entities():
             unit = self.world.get_component(entity, Unit)
             if unit and unit.faction == faction:
@@ -1854,7 +1854,7 @@ class LLMActionHandler:
                 position = self.world.get_component(entity, HexPosition)
                 vision = self.world.get_component(entity, Vision)
 
-                # 计算该单位的可见区域
+                # Compute this unit's visible area
                 center = (position.col, position.row)
                 for col in range(
                     position.col - vision.sight_range,
@@ -1870,7 +1870,7 @@ class LLMActionHandler:
                         ):
                             all_visible_positions.add((col, row))
 
-        # 获取视野内的敌方单位
+        # Collect enemy units that are within the visible area
         enemy_units = []
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
             unit = self.world.get_component(entity, Unit)
@@ -1905,10 +1905,10 @@ class LLMActionHandler:
     def _get_strategic_summary(
         self, faction: Optional[Faction] = None
     ) -> Dict[str, Any]:
-        """获取战略摘要"""
+        """Get a strategic summary."""
         summary = {"global_stats": {}, "faction_stats": {}}
 
-        # 全局统计
+        # Global stats
         all_units = list(self.world.query().with_all(Unit).entities())
         summary["global_stats"] = {
             "total_units": len(all_units),
@@ -1917,7 +1917,7 @@ class LLMActionHandler:
             ),
         }
 
-        # 按阵营统计
+        # Per-faction stats
         faction_stats = {}
         for entity in all_units:
             unit = self.world.get_component(entity, Unit)
@@ -1965,7 +1965,7 @@ class LLMActionHandler:
 
         summary["faction_stats"] = faction_stats
 
-        # 如果指定了阵营，返回该阵营的详细信息
+        # If a faction is specified, return details for that faction
         if faction:
             faction_name = faction.value if hasattr(faction, "value") else str(faction)
             summary["target_faction"] = faction_name

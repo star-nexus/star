@@ -343,7 +343,7 @@ class MapRenderSystem(System):
         self, texture: pygame.Surface, center_x: float, center_y: float, zoom: float
     ):
         """Render a hex tile using a texture with zoom-aware scaling."""
-        # 智能缩放：接近1.0时避免缩放
+        # Smart scaling: avoid rescaling when zoom is ~1.0
         if abs(zoom - 1.0) < 0.05:
             # Use original texture size when zoom≈1.0
             texture_rect = texture.get_rect(center=(int(center_x), int(center_y)))
@@ -451,7 +451,7 @@ class MapRenderSystem(System):
         # Apply fog overlay
         RMS.draw(explored_fog_surface, (0, 0))
 
-        # 绘制视野区域的外边界绿色轮廓
+        # Draw an outer green outline for the vision boundary (optional)
         # self._render_vision_boundary_optimized(
         #     visible_faction_tiles, camera_offset, zoom
         # )
@@ -690,7 +690,7 @@ class MapRenderSystem(System):
         if zoom < 0.3:
             return
 
-        # 遍历可见的地图块，绘制坐标
+        # Iterate visible tiles and draw coordinate labels
         for q, r in visible_tiles:
             # Compute hex center on screen
             world_x, world_y = self.hex_converter.hex_to_pixel(q, r)

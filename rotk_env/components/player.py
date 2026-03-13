@@ -1,5 +1,5 @@
 """
-玩家相关组件
+Player-related components.
 """
 
 from dataclasses import dataclass, field
@@ -10,7 +10,7 @@ from ..prefabs.config import Faction, PlayerType
 
 @dataclass
 class Player(Component):
-    """玩家组件"""
+    """Player component."""
 
     faction: Faction
     player_type: PlayerType
@@ -27,32 +27,32 @@ class Player(Component):
 
 @dataclass
 class TurnOrder(Component):
-    """回合顺序组件"""
+    """Turn order component."""
 
-    order: int  # 回合顺序
+    order: int  # Turn order
 
 
 @dataclass
 class TurnManager(SingletonComponent):
-    """回合管理单例组件"""
+    """Singleton turn manager."""
 
-    players: List[int] = field(default_factory=list)  # 玩家实体ID列表
+    players: List[int] = field(default_factory=list)  # Player entity ids
     current_player_index: int = 0
 
     def get_current_player(self) -> int:
-        """获取当前玩家实体ID"""
+        """Get current player entity id."""
         if self.players and 0 <= self.current_player_index < len(self.players):
             return self.players[self.current_player_index]
         return None
 
     def next_player(self):
-        """切换到下一个玩家"""
+        """Advance to the next player."""
         if self.players:
             self.current_player_index = (self.current_player_index + 1) % len(
                 self.players
             )
 
     def add_player(self, player_entity: int):
-        """添加玩家"""
+        """Add a player."""
         if player_entity not in self.players:
             self.players.append(player_entity)

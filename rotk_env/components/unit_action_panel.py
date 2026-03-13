@@ -1,5 +1,5 @@
 """
-单位行动面板组件
+Unit action panel components.
 """
 
 from dataclasses import dataclass, field
@@ -10,7 +10,7 @@ from ..prefabs.config import ActionType
 
 @dataclass
 class UnitActionButton:
-    """单位行动按钮"""
+    """Unit action button."""
 
     action_type: ActionType
     label: str
@@ -22,33 +22,33 @@ class UnitActionButton:
 
 @dataclass
 class UnitActionPanel(SingletonComponent):
-    """单位行动面板单例组件"""
+    """Singleton unit action panel."""
 
-    # 面板状态
+    # Panel state
     visible: bool = False
     selected_unit: Optional[int] = None
 
-    # 面板位置和大小
+    # Panel position and size
     x: int = 10
     y: int = 100
     width: int = 250
     height: int = 400
 
-    # 可用行动按钮
+    # Available action buttons
     available_actions: List[UnitActionButton] = field(default_factory=list)
 
-    # 单位信息显示
+    # Unit info to display
     unit_info: Dict[str, Any] = field(default_factory=dict)
 
     def clear(self):
-        """清空面板"""
+        """Clear panel state."""
         self.visible = False
         self.selected_unit = None
         self.available_actions.clear()
         self.unit_info.clear()
 
     def update_unit_info(self, unit_entity: int, world):
-        """更新单位信息"""
+        """Update displayed unit info."""
         from ..components import (
             Unit,
             HexPosition,
@@ -61,7 +61,7 @@ class UnitActionPanel(SingletonComponent):
         self.selected_unit = unit_entity
         self.unit_info.clear()
 
-        # 获取单位基本信息
+        # Fetch base unit info
         unit = world.get_component(unit_entity, Unit)
         position = world.get_component(unit_entity, HexPosition)
         unit_count = world.get_component(unit_entity, UnitCount)
@@ -70,7 +70,7 @@ class UnitActionPanel(SingletonComponent):
         combat = world.get_component(unit_entity, Combat)
 
         if unit:
-            self.unit_info["name"] = unit.name or f"{unit.unit_type.value}部队"
+            self.unit_info["name"] = unit.name or f"{unit.unit_type.value} Unit"
             self.unit_info["faction"] = unit.faction.value
             self.unit_info["type"] = unit.unit_type.value
 
@@ -81,7 +81,7 @@ class UnitActionPanel(SingletonComponent):
             self.unit_info["soldiers"] = (
                 f"{unit_count.current_count}/{unit_count.max_count}"
             )
-            # 计算"士气"为兵力比例百分比
+            # "Morale" is represented as troop strength percentage.
             morale_percentage = unit_count.percentage
             self.unit_info["morale"] = f"{morale_percentage:.1f}%"
             self.unit_info["is_decimated"] = unit_count.is_decimated()
@@ -104,7 +104,7 @@ class UnitActionPanel(SingletonComponent):
             self.unit_info["has_attacked"] = combat.has_attacked
 
     def update_available_actions(self, unit_entity: int, world):
-        """更新可用行动"""
+        """Update available actions."""
         from ..components import ActionPoints, MovementPoints, Combat
 
         self.available_actions.clear()
@@ -116,76 +116,76 @@ class UnitActionPanel(SingletonComponent):
         if not action_points:
             return
 
-        # 移动行动
+        # Move
         if movement and not movement.has_moved and movement.current_movement > 0:
             if action_points.can_perform_action(ActionType.MOVE):
                 self.available_actions.append(
                     UnitActionButton(
                         action_type=ActionType.MOVE,
-                        label="移动",
-                        description="移动到指定位置",
-                        cost_description=f"消耗: {action_points._get_action_cost(ActionType.MOVE)} AP",
+                        label="Move",
+                        description="Move to a target tile",
+                        cost_description=f"Cost: {action_points._get_action_cost(ActionType.MOVE)} AP",
                         hotkey="M",
                     )
                 )
 
-        # 攻击行动
+        # Attack
         if combat and not combat.has_attacked:
             if action_points.can_perform_action(ActionType.ATTACK):
                 self.available_actions.append(
                     UnitActionButton(
                         action_type=ActionType.ATTACK,
-                        label="攻击",
-                        description="攻击敌方单位",
-                        cost_description=f"消耗: {action_points._get_action_cost(ActionType.ATTACK)} AP",
+                        label="Attack",
+                        description="Attack an enemy unit",
+                        cost_description=f"Cost: {action_points._get_action_cost(ActionType.ATTACK)} AP",
                         hotkey="A",
                     )
                 )
 
-        # 占领行动
+        # Capture
         if action_points.can_perform_action(ActionType.CAPTURE):
             self.available_actions.append(
                 UnitActionButton(
                     action_type=ActionType.CAPTURE,
-                    label="占领",
-                    description="占领当前地块",
-                    cost_description=f"消耗: {action_points._get_action_cost(ActionType.CAPTURE)} AP",
+                    label="Capture",
+                    description="Capture the current tile",
+                    cost_description=f"Cost: {action_points._get_action_cost(ActionType.CAPTURE)} AP",
                     hotkey="C",
                 )
             )
 
-        # 工事建设
+        # Fortify
         if action_points.can_perform_action(ActionType.FORTIFY):
             self.available_actions.append(
                 UnitActionButton(
                     action_type=ActionType.FORTIFY,
-                    label="建设工事",
-                    description="在当前位置建设防御工事",
-                    cost_description=f"消耗: {action_points._get_action_cost(ActionType.FORTIFY)} AP",
+                    label="Fortify",
+                    description="Construct fortifications on this tile",
+                    cost_description=f"Cost: {action_points._get_action_cost(ActionType.FORTIFY)} AP",
                     hotkey="F",
                 )
             )
 
-        # 驻扎行动
+        # Garrison
         if action_points.can_perform_action(ActionType.GARRISON):
             self.available_actions.append(
                 UnitActionButton(
                     action_type=ActionType.GARRISON,
-                    label="驻扎",
-                    description="原地驻扎，恢复部分士气",
-                    cost_description=f"消耗: {action_points._get_action_cost(ActionType.GARRISON)} AP",
+                    label="Garrison",
+                    description="Hold position and recover some morale",
+                    cost_description=f"Cost: {action_points._get_action_cost(ActionType.GARRISON)} AP",
                     hotkey="G",
                 )
             )
 
-        # 待命行动
+        # Wait
         if action_points.can_perform_action(ActionType.WAIT):
             self.available_actions.append(
                 UnitActionButton(
                     action_type=ActionType.WAIT,
-                    label="待命",
-                    description="结束单位行动",
-                    cost_description=f"消耗: {action_points._get_action_cost(ActionType.WAIT)} AP",
+                    label="Wait",
+                    description="End this unit's actions",
+                    cost_description=f"Cost: {action_points._get_action_cost(ActionType.WAIT)} AP",
                     hotkey="W",
                 )
             )
@@ -193,7 +193,7 @@ class UnitActionPanel(SingletonComponent):
 
 @dataclass
 class ActionConfirmDialog(SingletonComponent):
-    """行动确认对话框"""
+    """Action confirmation dialog."""
 
     visible: bool = False
     action_type: Optional[ActionType] = None
@@ -204,7 +204,7 @@ class ActionConfirmDialog(SingletonComponent):
     def show_confirm(
         self, action_type: ActionType, message: str, target_pos=None, target_unit=None
     ):
-        """显示确认对话框"""
+        """Show the confirmation dialog."""
         self.visible = True
         self.action_type = action_type
         self.message = message
@@ -212,7 +212,7 @@ class ActionConfirmDialog(SingletonComponent):
         self.target_unit = target_unit
 
     def hide(self):
-        """隐藏对话框"""
+        """Hide the dialog."""
         self.visible = False
         self.action_type = None
         self.target_position = None
