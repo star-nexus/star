@@ -173,15 +173,15 @@ class MapRenderSystem(System):
         if tile_key in self.tile_texture_cache:
             return self.tile_texture_cache[tile_key]
 
-        # Seed by tile coordinates for stable, deterministic selection
-        random.seed(tile_key[0] * 10007 + tile_key[1] * 10009)
-        selected_texture = random.choice(textures)
+        # Seed by tile coordinates for stable, deterministic selection.
+        # Use a local Random instance to avoid mutating the global random state
+        # (the previous code called random.seed() to "restore" it, which actually
+        # reseeded from the OS rather than restoring the original sequence).
+        local_rng = random.Random(tile_key[0] * 10007 + tile_key[1] * 10009)
+        selected_texture = local_rng.choice(textures)
 
         # Cache selected texture
         self.tile_texture_cache[tile_key] = selected_texture
-
-        # Restore RNG
-        random.seed()
 
         return selected_texture
 

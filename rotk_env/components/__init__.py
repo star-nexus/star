@@ -71,6 +71,8 @@ from .random_events import (
     CombatRoll,
 )
 from .agent_info import AgentInfo, AgentInfoRegistry
+from .rng import RngService, resolve_seed
+from .team_collab import TeamCoordination
 
 __all__ = [
     # Base components
@@ -152,4 +154,9 @@ __all__ = [
     "CombatRoll",
     "AgentInfo",
     "AgentInfoRegistry",
+    # Reproducibility / RNG service
+    "RngService",
+    "resolve_seed",
+    # Multi-agent team coordination
+    "TeamCoordination",
 ]

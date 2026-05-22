@@ -2,6 +2,7 @@
 Random event related components.
 """
 
+import random as _random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from framework import Component, SingletonComponent
@@ -17,12 +18,16 @@ class DiceRoll(Component):
     result: Optional[int] = None  # Roll result
     success: Optional[bool] = None  # Whether the check succeeded
 
-    def roll(self) -> bool:
-        """Execute the dice roll."""
-        import random
+    def roll(self, rng: Optional[_random.Random] = None) -> bool:
+        """Execute the dice roll.
 
+        Pass a `random.Random` (e.g. from `RngService.get("events")`)
+        for reproducible results. Falls back to the module-level `random`
+        for backwards compatibility when called without a world handle.
+        """
+        rnd = rng if rng is not None else _random
         if self.dice_type == "1d6":
-            self.result = random.randint(1, 6)
+            self.result = rnd.randint(1, 6)
         self.success = self.result >= self.threshold
         return self.success
 
@@ -110,18 +115,16 @@ class CombatRoll(Component):
     hit_threshold: int = 1  # Hit threshold
     crit_threshold: int = 19  # Critical threshold
 
-    def roll_hit(self) -> bool:
-        """Roll to hit."""
-        import random
-
-        self.hit_roll = random.randint(1, 20)
+    def roll_hit(self, rng: Optional[_random.Random] = None) -> bool:
+        """Roll to hit. Pass a `random.Random` for reproducibility."""
+        rnd = rng if rng is not None else _random
+        self.hit_roll = rnd.randint(1, 20)
         return self.hit_roll >= self.hit_threshold
 
-    def roll_crit(self) -> bool:
-        """Roll a critical."""
-        import random
-
-        self.crit_roll = random.randint(1, 20)
+    def roll_crit(self, rng: Optional[_random.Random] = None) -> bool:
+        """Roll a critical. Pass a `random.Random` for reproducibility."""
+        rnd = rng if rng is not None else _random
+        self.crit_roll = rnd.randint(1, 20)
         return self.crit_roll >= self.crit_threshold
 
     def apply_forest_penalty(self):

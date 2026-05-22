@@ -87,6 +87,17 @@ Victory Conditions:
         help="Environment ID for Hub/WebSocket (default: env_1, or ENV_ID env var if set)",
     )
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Root RNG seed for reproducibility. Wires through map generation, "
+            "combat rolls, terrain/skill events, and visual particles. "
+            "Resolution priority: --seed > $STAR_SEED > .configs.toml[default].seed > wall-clock."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -159,11 +170,13 @@ def main():
 
             # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
-                "game", 
-                players=players_config, 
-                mode=args.mode, 
+                "game",
+                players=players_config,
+                mode=args.mode,
                 headless=True,
-                scenario=args.scenario
+                scenario=args.scenario,
+                seed=args.seed,
+                seed_source="cli" if args.seed is not None else "default",
             )
 
             print(f"Game mode: {args.mode}")
@@ -171,6 +184,8 @@ def main():
             print(f"Game scenario: {args.scenario}")
             if args.env_id is not None:
                 print(f"Environment ID: {args.env_id}")
+            if args.seed is not None:
+                print(f"Root seed: {args.seed}")
         else:
             # Default to start scene
             engine.scene_manager.switch_to("start")

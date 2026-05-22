@@ -17,6 +17,7 @@ from ..components import (
     RandomEventQueue,
     MapData,
     Terrain,
+    RngService,
 )
 from ..prefabs.config import GameConfig, TerrainType, UnitType, UnitState
 
@@ -33,6 +34,15 @@ class RandomEventSystem(System):
         # Ensure random event queue exists
         if not self.world.get_singleton_component(RandomEventQueue):
             self.world.add_singleton_component(RandomEventQueue())
+
+    def _events_rng(self) -> random.Random:
+        """Return the deterministic RNG for terrain/skill events.
+
+        Falls back to the global `random` module when no RngService is
+        registered, preserving pre-RngService (non-deterministic) behavior.
+        """
+        rng_service = self.world.get_singleton_component(RngService)
+        return rng_service.get("events") if rng_service else random
 
     def subscribe_events(self):
         pass
@@ -154,7 +164,7 @@ class RandomEventSystem(System):
             return None
 
         # Execute dice roll
-        dice_roll = random.randint(1, 6)
+        dice_roll = self._events_rng().randint(1, 6)
         success = dice_roll >= event_data["threshold"]
 
         return {
@@ -226,7 +236,7 @@ class RandomEventSystem(System):
             return None
 
         # Execute dice roll
-        dice_roll = random.randint(1, 6)
+        dice_roll = self._events_rng().randint(1, 6)
         success = dice_roll >= skill_data["threshold"]
 
         return {

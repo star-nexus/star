@@ -23,6 +23,7 @@ from ..components import (
     CombatRoll,
     RandomEventQueue,
     BattleLog,
+    RngService,
 )
 from ..prefabs.config import (
     GameConfig,
@@ -472,6 +473,11 @@ class CombatSystem(System):
 
         return True, None, None
 
+    def _combat_rng(self):
+        """Return the deterministic RNG handle for combat rolls (or None)."""
+        rng_service = self.world.get_singleton_component(RngService)
+        return rng_service.get("combat") if rng_service else None
+
     def _roll_hit(
         self,
         combat_roll: CombatRoll,
@@ -484,11 +490,11 @@ class CombatSystem(System):
         if target_terrain == TerrainType.FOREST:
             combat_roll.apply_forest_penalty()
 
-        return combat_roll.roll_hit()
+        return combat_roll.roll_hit(rng=self._combat_rng())
 
     def _roll_crit(self, combat_roll: CombatRoll) -> bool:
         """Roll for critical (1D6 ≥ 6)"""
-        return combat_roll.roll_crit()
+        return combat_roll.roll_crit(rng=self._combat_rng())
 
     def _calculate_damage(
         self,

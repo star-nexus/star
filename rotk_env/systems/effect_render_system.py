@@ -3,6 +3,7 @@ Effect Render System - Handles rendering of selection highlights, movement range
 attack range, tile hover effects, and visual effect animations
 """
 
+import random
 import pygame
 from typing import List, Set, Tuple
 from framework import System, RMS
@@ -19,6 +20,7 @@ from ..components import (
     EffectAnimation,
     AttackAnimation,
     ProjectileAnimation,
+    RngService,
 )
 from ..prefabs.config import GameConfig, HexOrientation
 from ..utils.hex_utils import HexConverter, HexMath, PathFinding
@@ -32,10 +34,21 @@ class EffectRenderSystem(System):
         self.hex_converter = HexConverter(
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
+        # Lazy-initialised: derived from RngService on first use.
+        self._render_rng: random.Random | None = None
 
     def initialize(self, world) -> None:
         """Initialize the effect render system"""
         self.world = world
+
+    def _rng(self) -> random.Random:
+        """Return the deterministic-when-seeded RNG for visual effects."""
+        if self._render_rng is None:
+            rng_service = self.world.get_singleton_component(RngService)
+            self._render_rng = (
+                rng_service.get("render") if rng_service else random.Random()
+            )
+        return self._render_rng
 
     def subscribe_events(self):
         """Subscribe to events (effect render system requires none)"""
@@ -517,7 +530,8 @@ class EffectRenderSystem(System):
     ):
         """Render an explosion visual effect"""
         import math
-        import random
+
+        rng = self._rng()
 
         # Radius grows over time
         explosion_radius = int(30 * size * effect.progress)
@@ -535,7 +549,7 @@ class EffectRenderSystem(System):
 
             # Random warm color (red, yellow, or orange)
             colors = [(255, 0, 0), (255, 255, 0), (255, 165, 0)]
-            color = random.choice(colors)
+            color = rng.choice(colors)
 
             RMS.circle(
                 (*color, alpha), (int(particle_x), int(particle_y)), particle_size

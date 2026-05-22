@@ -72,6 +72,8 @@ from ..components import (
     UIButtonCollection,
     UIPanel,
     TurnManager,
+    RngService,
+    resolve_seed,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 from performance_profiler import profiler
@@ -120,6 +122,10 @@ class GameScene(Scene):
         # Get scene parameters (optional)
         self.scenario = kwargs.get("scenario", "default")
 
+        # Root seed for reproducibility (None means resolve from env/config).
+        self.seed = kwargs.get("seed", None)
+        self.seed_source = kwargs.get("seed_source", "default")
+
         if not self.initialized:
             self._initialize_game()
             self.initialized = True
@@ -128,6 +134,9 @@ class GameScene(Scene):
         """Initialize game"""
         # First initialize game mode component
         self._initialize_game_mode()
+
+        # 🆕 Initialize the RNG service before any system reads it.
+        self._initialize_rng()
 
         # 🆕 Initialize Agent info registry
         self._initialize_agent_registry()
@@ -204,6 +213,49 @@ class GameScene(Scene):
         """Initialize game mode component"""
         game_mode = GameModeComponent(mode=self.game_mode)
         self.world.add_singleton_component(game_mode)
+
+    def _initialize_rng(self):
+        """Register the RNG service so reproducibility works downstream.
+
+        Resolves the root seed in this order:
+          1. CLI/env (passed via kwargs as `seed`).
+          2. `STAR_SEED` env variable.
+          3. `.configs.toml [default].seed`.
+          4. Wall-clock fallback (kept non-deterministic by default).
+
+        The resolved seed is stored on the RngService singleton and is
+        copied into GameStats.map_info by MapSystem so settlement reports
+        capture it for replay.
+        """
+        import os
+        import tomllib
+
+        # Read optional config seed from .configs.toml [default].seed.
+        config_seed = None
+        try:
+            config_path = ".configs.toml"
+            if os.path.exists(config_path):
+                with open(config_path, "rb") as f:
+                    cfg = tomllib.load(f)
+                config_seed = cfg.get("default", {}).get("seed")
+        except Exception as e:
+            print(f"[GameScene] ⚠️ Failed to read seed from .configs.toml: {e}")
+
+        seed = resolve_seed(cli_seed=self.seed, config_seed=config_seed)
+        source = self.seed_source
+        if source == "default":
+            if self.seed is not None:
+                source = "kwargs"
+            elif "STAR_SEED" in os.environ:
+                source = "env"
+            elif config_seed is not None:
+                source = "config"
+            else:
+                source = "wallclock"
+
+        rng_service = RngService(seed=seed, source=source)
+        self.world.add_singleton_component(rng_service)
+        print(f"[GameScene] 🎲 RngService initialized: seed={seed} source={source}")
 
     def _initialize_players(self):
         """Initialize players"""
@@ -558,6 +610,19 @@ class GameScene(Scene):
 
         # Initialize fog of war
         self.world.add_singleton_component(FogOfWar())
+
+        # Re-save map info now that GameStats exists. MapSystem.initialize()
+        # runs before _initialize_stats, so its first attempt to populate
+        # map_info no-ops with the warning "GameStats component not found".
+        # Doing it again here ensures the root seed and map seed actually
+        # land in the settlement report. This used to be a silent data loss.
+        try:
+            for system in self.world.systems:
+                if hasattr(system, "_save_map_info_to_stats"):
+                    system._save_map_info_to_stats()
+                    break
+        except Exception as e:
+            print(f"[GameScene] ⚠️ Failed to backfill map_info into GameStats: {e}")
 
     def update(self, delta_time: float) -> None:
         """Update scene"""

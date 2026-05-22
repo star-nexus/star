@@ -24,15 +24,28 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     """Map system - manages map generation and terrain, supports MOBA-style maps."""
 
     def __init__(
-        self, competitive_mode: bool = True, symmetry_type: str = "river_split_offset"
+        self,
+        competitive_mode: bool = True,
+        symmetry_type: str = "river_split_offset",
+        seed: int = 42,
     ):
         super().__init__(priority=100)
         self.competitive_mode = competitive_mode
         self.symmetry_type = symmetry_type  # "horizontal", "diagonal", "river_split", "river_split_offset", "square", "moba", "encounter"
-        self.seed = 42
+        # Default 42 preserves prior behavior. When wired up via GameScene,
+        # the seed comes from the world's RngService at initialize() time.
+        self.seed = seed
 
     def initialize(self, world: World) -> None:
         self.world = world
+        # If a RngService is registered, derive a "map" sub-seed from it so
+        # the map is reproducible from the root --seed CLI flag. We keep the
+        # constructor-provided seed only when no service is registered.
+        from ..components import RngService  # local import to avoid cycle on cold load
+        rng_service = self.world.get_singleton_component(RngService)
+        if rng_service is not None:
+            # Use a deterministic-but-domain-specific sub-seed for the map.
+            self.seed = rng_service.get("map").randint(0, 2**31 - 1)
         self.generate_map()
         # After generating the map, save map info to GameStats
         self._save_map_info_to_stats()
@@ -1831,7 +1844,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _save_map_info_to_stats(self):
         """Save map information to GameStats."""
         import time
-        from ..components import GameStats
+        from ..components import GameStats, RngService
         
         # Get GameStats component; skip if it doesn't exist yet
         game_stats = self.world.get_singleton_component(GameStats)
@@ -1846,7 +1859,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         spawn_positions = {}
         if self.competitive_mode:
             spawn_positions = self.get_competitive_spawn_positions()
-        
+
+        # Capture the root seed and its provenance so settlement reports can replay.
+        rng_service = self.world.get_singleton_component(RngService)
+        root_seed = rng_service.seed if rng_service else None
+        root_seed_source = rng_service.source if rng_service else "default"
+
         # Collect map info
         map_info = {
             "map_width": GameConfig.MAP_WIDTH,
@@ -1854,6 +1872,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             "map_type": self.symmetry_type,
             "competitive_mode": self.competitive_mode,
             "map_seed": self.seed,
+            "root_seed": root_seed,
+            "root_seed_source": root_seed_source,
             "spawn_positions": {faction.value: pos for faction, pos in spawn_positions.items()},
             "coordinate_system": coordinate_system,
             "symmetry_type": self.symmetry_type,
@@ -1868,6 +1888,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  - Map type: {map_info['map_type']}")
         print(f"  - Competitive mode: {map_info['competitive_mode']}")
         print(f"  - Coordinate system: {map_info['coordinate_system']}")
+        if root_seed is not None:
+            print(f"  - Root seed: {root_seed} (source={root_seed_source})")
         print(f"  - Spawn positions: {map_info['spawn_positions']}")
 
     def _generate_river_split_diagonal_map_offset_revised(self):
@@ -2052,7 +2074,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
     def _save_map_info_to_stats(self):
         """Save map information to GameStats."""
         import time
-        from ..components import GameStats
+        from ..components import GameStats, RngService
         
         # Get GameStats component; skip if it doesn't exist yet
         game_stats = self.world.get_singleton_component(GameStats)
@@ -2067,7 +2089,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         spawn_positions = {}
         if self.competitive_mode:
             spawn_positions = self.get_competitive_spawn_positions()
-        
+
+        # Capture the root seed and its provenance so settlement reports can replay.
+        rng_service = self.world.get_singleton_component(RngService)
+        root_seed = rng_service.seed if rng_service else None
+        root_seed_source = rng_service.source if rng_service else "default"
+
         # Collect map info
         map_info = {
             "map_width": GameConfig.MAP_WIDTH,
@@ -2075,6 +2102,8 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
             "map_type": self.symmetry_type,
             "competitive_mode": self.competitive_mode,
             "map_seed": self.seed,
+            "root_seed": root_seed,
+            "root_seed_source": root_seed_source,
             "spawn_positions": {faction.value: pos for faction, pos in spawn_positions.items()},
             "coordinate_system": coordinate_system,
             "symmetry_type": self.symmetry_type,
@@ -2089,4 +2118,6 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         print(f"  - Map type: {map_info['map_type']}")
         print(f"  - Competitive mode: {map_info['competitive_mode']}")
         print(f"  - Coordinate system: {map_info['coordinate_system']}")
+        if root_seed is not None:
+            print(f"  - Root seed: {root_seed} (source={root_seed_source})")
         print(f"  - Spawn positions: {map_info['spawn_positions']}")
