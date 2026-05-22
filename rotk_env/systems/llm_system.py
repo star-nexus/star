@@ -202,6 +202,197 @@ class LLMSystem(System):
             "report_llm_stats": self.handle_report_llm_stats,
             "retrieve_game_status": self.handle_retrieve_game_status,
             "register_agent_info": self.handle_register_agent_info,
+            # Multi-agent team coordination (item 10).
+            "claim_units": self.handle_claim_units,
+            "release_units": self.handle_release_units,
+            "list_team": self.handle_list_team,
+            "broadcast_to_team": self.handle_broadcast_to_team,
+            "read_team_messages": self.handle_read_team_messages,
+        }
+
+    # === Multi-agent coordination helpers =========================================
+    def _get_or_create_team_coordination(self):
+        """Lazy-init the TeamCoordination singleton on first use."""
+        from ..components import TeamCoordination
+
+        coord = self.world.get_singleton_component(TeamCoordination)
+        if coord is None:
+            coord = TeamCoordination()
+            self.world.add_singleton_component(coord)
+        return coord
+
+    # Mutating actions whose `unit_id` must belong to the calling agent
+    # when units have been claimed. Read-only actions (observation,
+    # get_unit_info, etc.) are *not* gated so teammates can freely query
+    # each other's state — that's the whole point of shared-observation
+    # multi-agent mode. This list mirrors the mutating entries in
+    # `LLMActionHandler.action_handlers`.
+    _OWNERSHIP_GATED_ACTIONS = frozenset(
+        {"move", "attack", "rest", "occupy", "fortify", "skill"}
+    )
+
+    def _check_unit_ownership(
+        self,
+        action: str,
+        agent_id: Optional[str],
+        params: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Reject the action when the agent doesn't own a claimed unit.
+
+        Returns None when the action is authorized (not gated, no claims,
+        or owner matches the requester). Returns a structured error dict
+        when the action should be rejected. Single-agent runs never hit
+        the rejection path because nobody calls `claim_units`.
+
+        Only fires for the small `_OWNERSHIP_GATED_ACTIONS` allow-list, so
+        read-only / observation actions remain free for the whole team.
+        """
+        if action not in self._OWNERSHIP_GATED_ACTIONS:
+            return None
+        if not isinstance(params, dict):
+            return None
+        unit_id = params.get("unit_id")
+        if not isinstance(unit_id, int):
+            return None
+        from ..components import TeamCoordination
+
+        coord = self.world.get_singleton_component(TeamCoordination)
+        if coord is None:
+            return None
+        owner = coord.owner_of(unit_id)
+        if owner is None or owner == agent_id:
+            return None
+        return self._create_system_error_response(
+            "unit_ownership",
+            (
+                f"Unit {unit_id} is claimed by teammate {owner!r}; "
+                f"agent {agent_id!r} is not authorized to act on it. "
+                "Use claim_units / release_units to negotiate."
+            ),
+            2005,
+        )
+
+    # === Team coordination action handlers ========================================
+
+    def handle_claim_units(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Action: agent claims ownership of a set of unit ids in its faction.
+
+        Required: `agent_id` (the caller), `unit_ids: list[int]`.
+        Optional: `exclusive: bool` (default True).
+        """
+        agent_id = params.get("agent_id")
+        unit_ids = params.get("unit_ids") or []
+        exclusive = bool(params.get("exclusive", True))
+
+        if not agent_id or not isinstance(unit_ids, list) or not all(
+            isinstance(u, int) for u in unit_ids
+        ):
+            return {
+                "success": False,
+                "message": "claim_units requires agent_id and unit_ids: list[int].",
+            }
+
+        # Sanity-check that all units belong to the agent's registered faction.
+        stats = self._get_or_create_stats()
+        mapped_faction = self._resolve_agent_faction(stats, agent_id)
+        if mapped_faction is None:
+            return {
+                "success": False,
+                "message": "Agent must call register_agent_info before claiming units.",
+            }
+
+        from ..components import Unit as _UnitComp
+
+        for uid in unit_ids:
+            unit_comp = self.world.get_component(uid, _UnitComp)
+            if unit_comp is None:
+                return {
+                    "success": False,
+                    "message": f"Unit {uid} does not exist.",
+                }
+            if unit_comp.faction != mapped_faction:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Unit {uid} belongs to {unit_comp.faction.value}, "
+                        f"not the requesting agent's faction "
+                        f"({mapped_faction.value})."
+                    ),
+                }
+
+        coord = self._get_or_create_team_coordination()
+        return coord.claim_units(agent_id, unit_ids, exclusive=exclusive)
+
+    def handle_release_units(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Action: agent releases ownership of units it owns.
+
+        Required: `agent_id`.
+        Optional: `unit_ids` (None → release everything the agent owns).
+        """
+        agent_id = params.get("agent_id")
+        unit_ids = params.get("unit_ids")
+        if not agent_id:
+            return {"success": False, "message": "release_units requires agent_id."}
+        coord = self._get_or_create_team_coordination()
+        return coord.release_units(agent_id, unit_ids)
+
+    def handle_list_team(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Action: list teammates of the requesting agent (same faction)."""
+        agent_id = params.get("agent_id")
+        if not agent_id:
+            return {"success": False, "message": "list_team requires agent_id."}
+        stats = self._get_or_create_stats()
+        mapped_faction = self._resolve_agent_faction(stats, agent_id)
+        if mapped_faction is None:
+            return {
+                "success": False,
+                "message": "Agent must register_agent_info before listing the team.",
+            }
+        coord = self._get_or_create_team_coordination()
+        teammates = coord.teammates_of(mapped_faction.value, agent_id)
+        return {
+            "success": True,
+            "faction": mapped_faction.value,
+            "teammates": teammates,
+            "team_size": len(teammates) + 1,
+        }
+
+    def handle_broadcast_to_team(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Action: send a text message to every teammate in the same faction.
+
+        Required: `agent_id`, `text: str`. Optional: `metadata: dict`.
+        """
+        agent_id = params.get("agent_id")
+        text = params.get("text")
+        metadata = params.get("metadata") or {}
+        if not agent_id or not isinstance(text, str) or not text:
+            return {
+                "success": False,
+                "message": "broadcast_to_team requires agent_id and a non-empty text.",
+            }
+        stats = self._get_or_create_stats()
+        mapped_faction = self._resolve_agent_faction(stats, agent_id)
+        if mapped_faction is None:
+            return {
+                "success": False,
+                "message": "Agent must register_agent_info before broadcasting.",
+            }
+        coord = self._get_or_create_team_coordination()
+        return coord.broadcast(
+            agent_id, mapped_faction.value, text, metadata=metadata
+        )
+
+    def handle_read_team_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Action: drain the requesting agent's team-message inbox (FIFO)."""
+        agent_id = params.get("agent_id")
+        if not agent_id:
+            return {"success": False, "message": "read_team_messages requires agent_id."}
+        coord = self._get_or_create_team_coordination()
+        messages = coord.drain_inbox(agent_id)
+        return {
+            "success": True,
+            "messages": messages,
+            "count": len(messages),
         }
 
     def add_listener(self):
@@ -776,6 +967,17 @@ class LLMSystem(System):
                     f"[LLMActionHandler] ⚠️ Failed to update registered_factions after registration: {_e}"
                 )
 
+            # Multi-agent: track every agent_id registered to this faction so
+            # broadcast_to_team / list_team can find teammates. Idempotent.
+            try:
+                if params.get("agent_id"):
+                    coord = self._get_or_create_team_coordination()
+                    coord.register_member(faction, params["agent_id"])
+            except Exception as _e:
+                print(
+                    f"[LLMSystem] ⚠️ Failed to track team membership: {_e}"
+                )
+
             if success:
                 return {
                     "success": True,
@@ -971,6 +1173,41 @@ class LLMSystem(System):
         try:
             # Any business action from the agent counts as "active": clear its pending turn_start ACK
             self._pending_turn_start_ack.pop(agent_id, None)
+
+            # Force `params["agent_id"]` to match the WebSocket-authenticated
+            # sender for any action whose semantics tie back to an agent's
+            # identity. This blocks impersonation (agent X spoofing agent Y
+            # in the payload) and also defends against benign mis-config
+            # where a script accidentally puts a wrong agent_id in params.
+            #
+            # `register_agent_info` is included because its params["agent_id"]
+            # is what gets recorded in AgentInfoRegistry AND in
+            # TeamCoordination.faction_members — if those don't equal the
+            # WS sender, team chat and ownership-based authorization both
+            # mis-route silently. Lifted above the registration-required
+            # branch so it ALSO runs for register_agent_info itself.
+            _AGENT_AUTHENTICATED_ACTIONS = {
+                "register_agent_info",
+                "claim_units",
+                "release_units",
+                "list_team",
+                "broadcast_to_team",
+                "read_team_messages",
+            }
+            if (
+                action in _AGENT_AUTHENTICATED_ACTIONS
+                and isinstance(params, dict)
+                and agent_id
+            ):
+                spoofed = params.get("agent_id")
+                if spoofed is not None and spoofed != agent_id:
+                    print(
+                        f"[LLMSystem] ⚠️ params.agent_id={spoofed!r} does not "
+                        f"match WS sender {agent_id!r} on {action!r}; "
+                        f"overriding with authenticated id"
+                    )
+                params["agent_id"] = agent_id
+
             if action != "register_agent_info":
                 mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
                 if mapped_faction is None:
@@ -1025,6 +1262,19 @@ class LLMSystem(System):
                                 return error_result
                         except Exception as _e:
                             print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
+
+                # Multi-agent: reject unit-targeted *mutating* actions whose
+                # target unit is claimed by a different teammate. No-op when
+                # no one has called `claim_units`, so single-agent runs are
+                # unaffected. Observation actions are never gated so the team
+                # can share situational awareness freely.
+                ownership_error = self._check_unit_ownership(action, agent_id, params)
+                if ownership_error is not None:
+                    if send_response and agent_id:
+                        self.client.response_to_agent(
+                            agent_id, action_id, ownership_error, "str"
+                        )
+                    return ownership_error
 
             request = ActionRequest(
                 agent_id=agent_id,
