@@ -39,8 +39,7 @@ from protocol.star_client_v2 import (
     MessageType,
 )
 
-# from .llm_action_handler_v2 import LLMActionHandlerV2 as LLMActionHandler
-from .llm_action_handler_v3 import LLMActionHandlerV3 as LLMActionHandler
+from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
 
 
@@ -774,7 +773,7 @@ class LLMSystem(System):
                 stats.registered_factions.add(reg_faction)
             except Exception as _e:
                 print(
-                    f"[LLMActionHandlerV3] ⚠️ Failed to update registered_factions after registration: {_e}"
+                    f"[LLMActionHandler] ⚠️ Failed to update registered_factions after registration: {_e}"
                 )
 
             if success:

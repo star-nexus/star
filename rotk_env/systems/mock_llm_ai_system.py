@@ -1,5 +1,5 @@
 """
-Mock LLM AI system - uses rule-based AI logic but executes actions via the LLM Action Handler V3 API.
+Mock LLM AI system - uses rule-based AI logic but executes actions via the LLM Action Handler API.
 
 It does not call a real LLM; instead it generates API action commands using heuristic rules.
 """
@@ -25,11 +25,11 @@ from ..components import (
 )
 from ..prefabs.config import GameConfig, TerrainType, ActionType, Faction
 from ..utils.hex_utils import HexMath, PathFinding
-from .llm_action_handler_v3 import LLMActionHandlerV3
+from .llm_action_handler import LLMActionHandler
 
 
 class MockLLMAISystem(System):
-    """Mock LLM AI system using the LLM Action Handler V3 API."""
+    """Mock LLM AI system using the LLM Action Handler API."""
 
     def __init__(self):
         super().__init__(required_components={Player, AIControlled})
@@ -44,8 +44,8 @@ class MockLLMAISystem(System):
         """Initialize the mock LLM AI system."""
         self.world = world
         # Create LLM Action Handler instance
-        self.llm_handler = LLMActionHandlerV3(world)
-        print("Mock LLM AI System initialized with LLM Action Handler V3")
+        self.llm_handler = LLMActionHandler(world)
+        print("Mock LLM AI System initialized with LLM Action Handler")
 
     def subscribe_events(self):
         pass
@@ -103,7 +103,7 @@ class MockLLMAISystem(System):
         return None
 
     def _execute_ai_turn(self, player_entity: int, is_realtime: bool = False):
-        """Execute an AI turn via the LLM Action Handler V3."""
+        """Execute an AI turn via the LLM Action Handler."""
         player = self.world.get_component(player_entity, Player)
         if not player:
             return
@@ -199,7 +199,7 @@ class MockLLMAISystem(System):
         faction: Faction,
         is_realtime: bool = False,
     ) -> bool:
-        """Execute strategy for a unit via the LLM Action Handler V3."""
+        """Execute strategy for a unit via the LLM Action Handler."""
 
         capabilities = unit_info.get("capabilities", {})
         unit_resources = capabilities.get("unit_resources", {})
@@ -573,7 +573,7 @@ class MockLLMAISystem(System):
         )
 
     def _execute_strategy(self, strategy: Dict[str, Any], faction: Faction) -> bool:
-        """Execute the chosen strategy via the LLM Action Handler V3."""
+        """Execute the chosen strategy via the LLM Action Handler."""
         action = strategy.get("action")
         params = strategy.get("params", {})
         reason = strategy.get("reason", "")

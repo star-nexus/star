@@ -1,13 +1,20 @@
 """
-LLM Action Handler - provides executable operation handlers for the LLM system.
+LLM Action Handler - Minimal, robust, and efficient action gateway
+- Validates inputs and game state consistently
+- Provides rich, structured error feedback for LLMs
+- Bridges unit/system actions (move, attack, occupy, fortify, skills)
+- Observation, faction state queries, and turn control
 
-Supports unit actions (move/battle/defend/scout, etc.), observation commands, and state/query utilities.
+Designed for clarity and reliability when driven by language models.
 """
 
-import ast
-import time
+import base64
+import io
 from typing import Dict, List, Any, Optional, Tuple, Set
+
+import pygame
 from framework import World
+from framework.engine.renders import RenderEngine
 from ..components import (
     Unit,
     UnitCount,
@@ -16,1959 +23,2892 @@ from ..components import (
     Combat,
     Vision,
     Player,
+    TurnManager,
     GameState,
     Selected,
     UnitStatus,
+    UnitSkills,
+    ActionPoints,  # now points to the new multi-layer ActionPoints
+    ConstructionPoints,
+    SkillPoints,
     Terrain,
     Tile,
     BattleLog,
+    MapData,
+    TerritoryControl,
+    FogOfWar,
+    GameModeComponent,
 )
-from ..prefabs.config import Faction
+from ..prefabs.config import (
+    Faction,
+    UnitType,
+    ActionType,
+    TerrainType,
+    UnitState,
+    GameConfig,
+)
 from ..utils.hex_utils import HexMath
 
 
 class LLMActionHandler:
-    """LLM action handler - a unified interface for unit-executable operations."""
+    """LLM Action Handler - clean and efficient interface design."""
 
     def __init__(self, world: World):
         self.world = world
-        self.supported_actions = {
-            # Unit actions
+
+        # Supported action handlers
+        self.action_handlers = {
+            # Unit control actions
             "move": self.handle_move_action,
             "attack": self.handle_attack_action,
-            "defend": self.handle_defend_action,
-            "garrison": self.handle_garrison_action,
-            "wait": self.handle_wait_action,
-            "scout": self.handle_scout_action,
-            "retreat": self.handle_retreat_action,
+            "rest": self.handle_rest_action,
+            "occupy": self.handle_occupy_action,
             "fortify": self.handle_fortify_action,
-            "patrol": self.handle_patrol_action,
-            "end_turn": self.handle_end_turn_action,
-            "select_unit": self.handle_select_unit_action,
-            "formation": self.handle_formation_action,
-            # Observation commands
-            "unit_observation": self.handle_unit_observation,
-            "faction_observation": self.handle_faction_observation,
-            "godview_observation": self.handle_godview_observation,
-            "limited_observation": self.handle_limited_observation,
-            "tactical_observation": self.handle_tactical_observation,
-            # State/query commands
-            "get_unit_list": self.handle_get_unit_list,
-            "get_unit_info": self.handle_get_unit_info,
-            "get_faction_units": self.handle_get_faction_units,
-            "get_game_state": self.handle_get_game_state,
-            "get_map_info": self.handle_get_map_info,
-            "get_battle_status": self.handle_get_battle_status,
-            "get_available_actions": self.handle_get_available_actions,
-            "get_unit_capabilities": self.handle_get_unit_capabilities,
-            "get_visibility_info": self.handle_get_visibility_info,
-            "get_strategic_summary": self.handle_get_strategic_summary,
+            "skill": self.handle_skill_action,
+            # Observation actions
+            "observation": self.handle_observation_action,
+            # Faction info actions
+            "get_faction_state": self.handle_faction_state,
+            "get_faction_state_vlm": self.handle_faction_state_vlm,
+            # System
+            "get_action_list": self.handle_action_list,
+            "end_turn": self.handle_end_turn,  # added end_turn
         }
 
     def execute_action(
-        self, action_type: str, params: Dict[str, Any]
+        self, action_type: str, params: Dict[str, Any] = {}
     ) -> Dict[str, Any]:
-        """Execute a specific action."""
-        if action_type not in self.supported_actions:
-            return {
-                "success": False,
-                "error": f"Unsupported action type: {action_type}",
-                "supported_actions": list(self.supported_actions.keys()),
-            }
-
+        """Unified entry point for executing an action."""
         try:
-            return self.supported_actions[action_type](params)
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Action execution failed: {str(e)}",
-                "action_type": action_type,
-                "params": params,
-            }
+            # parse action payload (if using wrapper)
+            # action_type = action_data.get("action")
+            # params = action_data.get("params", {})
 
-    def get_supported_actions(self) -> Dict[str, Dict[str, Any]]:
-        """Get supported actions and their detailed interface metadata."""
-        return {
-            # Unit actions
-            "move": {
-                "function_name": "move",
-                "function_desc": "Move a unit to a target position",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to move",
-                        "param_type": "int",
-                        "required": True,
+            if not action_type:
+                return self._create_error_response("Missing action field")
+
+            if action_type not in self.action_handlers:
+                return self._create_error_response(
+                    f"Unsupported action: {action_type}",
+                    {"supported_actions": list(self.action_handlers.keys())},
+                )
+
+            # dispatch
+            print(f"[LLM ACTION HANDLER] Executing action: {action_type} with params: {params}")
+            return self.action_handlers[action_type](params)
+
+        except Exception as e:
+            return self._create_error_response(f"Action execution failed: {str(e)}")
+
+    # ==================== Unit control actions ====================
+
+    def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle move action - multi-layer resource model with detailed errors."""
+        print(f"[MOVE_ACTION] Begin processing move action, params: {params}")
+
+        # Parameter validation and feedback
+        unit_id = params.get("unit_id")
+        target_position = params.get("target_position")
+
+        print(
+            f"[MOVE_ACTION] Parsed params: unit_id={unit_id}, target_position={target_position}"
+        )
+
+        if not isinstance(unit_id, int):
+            error_msg = (
+                f"Invalid unit_id type: expected int, got {type(unit_id).__name__}"
+            )
+            print(f"[MOVE_ACTION] Param validation failed: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "received_unit_id": unit_id,
+                    "expected_type": "int",
+                    "valid_example": {"unit_id": 123},
+                },
+            )
+
+        if not target_position or not isinstance(target_position, dict):
+            error_msg = f"Invalid target_position: expected dict with col/row, got {type(target_position).__name__}"
+            print(f"[MOVE_ACTION] Param validation failed: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "received_target_position": target_position,
+                    "expected_format": {"col": "int", "row": "int"},
+                    "valid_example": {"target_position": {"col": 5, "row": 8}},
+                },
+            )
+
+        target_col = target_position.get("col")
+        target_row = target_position.get("row")
+
+        # Validate target coordinate types
+        if not isinstance(target_col, int) or not isinstance(target_row, int):
+            error_msg = f"Invalid coordinate types: col must be int, row must be int"
+            print(f"[MOVE_ACTION] Coordinate type validation failed: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "received_col": target_col,
+                    "received_row": target_row,
+                    "received_col_type": type(target_col).__name__,
+                    "received_row_type": type(target_row).__name__,
+                    "expected_types": {"col": "int", "row": "int"},
+                    "valid_example": {"target_position": {"col": 5, "row": 8}},
+                },
+            )
+
+        # Check map bounds for target
+        # print(
+        #     f"[MOVE_ACTION] Checking target within map bounds: ({target_col}, {target_row})"
+        # )
+        if not self._is_position_within_map_bounds(target_col, target_row):
+            from ..prefabs.config import GameConfig
+
+            center = GameConfig.MAP_WIDTH // 2
+            min_coord = -center
+            max_coord = center - 1
+            error_msg = f"Target position ({target_col}, {target_row}) is outside map boundaries"
+            print(f"[MOVE_ACTION] Map boundary check failed: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "target_position": {"col": target_col, "row": target_row},
+                    "map_boundaries": {
+                        "min_col": min_coord,
+                        "max_col": max_coord,
+                        "min_row": min_coord,
+                        "max_row": max_coord,
                     },
-                    "target_position": {
-                        "param_desc": "Target position coordinates [col, row]",
-                        "param_type": "list[int]",
-                        "required": True,
+                    "map_size": {
+                        "width": GameConfig.MAP_WIDTH,
+                        "height": GameConfig.MAP_HEIGHT,
                     },
+                    "coordinate_system": "center-based",
+                    "explanation": f"Map uses center-based coordinates with (0,0) at center. For {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} map, valid range is [{min_coord}, {max_coord}]",
+                    "suggestion": f"Choose a position within bounds: col ({min_coord} to {max_coord}), row ({min_coord} to {max_coord})",
                 },
-            },
-            "attack": {
-                "function_name": "attack",
-                "function_desc": "Attack a target unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Attacker unit id",
-                        "param_type": "int",
-                        "required": True,
+            )
+
+        # print(f"[MOVE_ACTION] Target within bounds: ({target_col}, {target_row})")
+
+        # Unit existence check
+        # print(f"[MOVE_ACTION] Checking if unit {unit_id} exists...")
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            error_msg = f"Unit {unit_id} not found in world"
+            print(f"[MOVE_ACTION] Unit not found: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "requested_unit_id": unit_id,
+                    "suggestion": "Use get_faction_state action to see all units for a faction",
+                },
+            )
+
+        # print(
+        #     f"[MOVE_ACTION] Unit {unit_id} exists, type: {unit.unit_type.value}, faction: {unit.faction.value}"
+        # )
+
+        # === Faction turn permission validation ===
+        # print(f"[MOVE_ACTION] Checking faction turn permission for unit {unit_id}...")
+        permission_error = self._validate_faction_turn_permission(unit_id, "move")
+        if permission_error:
+            print(
+                f"[MOVE_ACTION] Faction permission denied: {permission_error['message']}"
+            )
+            return permission_error
+        # print(f"[MOVE_ACTION] Faction permission granted for {unit.faction.value}")
+
+        # Required components
+        # print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
+        position = self.world.get_component(unit_id, HexPosition)
+        movement_points = self.world.get_component(unit_id, MovementPoints)
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        unit_status = self.world.get_component(unit_id, UnitStatus)
+
+        # Note: ActionPoints no longer required for movement
+        # Detailed missing-components report
+        missing_components = []
+        component_info = {}
+
+        if not position:
+            missing_components.append("HexPosition")
+        else:
+            component_info["position"] = {"col": position.col, "row": position.row}
+            # print(f"[MOVE_ACTION] Current position: ({position.col}, {position.row})")
+
+        if not movement_points:
+            missing_components.append("MovementPoints")
+        else:
+            component_info["movement_points"] = {
+                "current_mp": movement_points.current_mp,
+                "max_mp": movement_points.max_mp,
+                "recovery_rate": getattr(movement_points, "recovery_rate", "unknown"),
+            }
+            # print(
+            #     f"[MOVE_ACTION] Movement points: {movement_points.current_mp}/{movement_points.max_mp}"
+            # )
+
+        if not unit_count:
+            missing_components.append("UnitCount")
+        else:
+            component_info["unit_count"] = {
+                "current_count": unit_count.current_count,
+                "max_count": unit_count.max_count,
+                "health_percentage": unit_count.current_count
+                / unit_count.max_count
+                * 100,
+            }
+            # print(
+            #     f"[MOVE_ACTION] Unit strength: {unit_count.current_count}/{unit_count.max_count}"
+            # )
+
+        if missing_components:
+            error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
+            print(f"[MOVE_ACTION] Missing components: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "missing_components": missing_components,
+                    "existing_components": component_info,
+                    "required_components": [
+                        "HexPosition",
+                        "MovementPoints",
+                        "UnitCount",
+                    ],
+                    "suggestion": "This unit may not be properly initialized",
+                },
+            )
+
+        # Unit status check
+        if unit_status:
+            # print(f"[MOVE_ACTION] Unit status: {unit_status.current_status}")
+            if unit_status.current_status == UnitState.CONFUSION:
+                error_msg = f"Unit {unit_id} is confused and cannot move"
+                print(f"[MOVE_ACTION] Status blocks movement: {error_msg}")
+                return self._create_error_response(
+                    error_msg,
+                    {
+                        "unit_id": unit_id,
+                        "current_status": unit_status.current_status.value,
+                        "blocking_statuses": [UnitState.CONFUSION.value],
+                        "suggestion": "Wait for confusion to clear or use skill to remove it",
+                        "unit_info": component_info,
                     },
-                    "target_id": {
-                        "param_desc": "Target unit id",
-                        "param_type": "int",
-                        "required": True,
+                )
+        else:
+            print(f"[MOVE_ACTION] Unit status component missing; assume normal")
+
+        # === Movement points check (execution layer) ===
+        # Note: Movement no longer requires action points, only movement points
+        # print(f"[MOVE_ACTION] Checking movement points...")
+        current_mp = movement_points.current_mp
+
+        if current_mp <= 0:
+            error_msg = f"Unit has no movement points left: {current_mp}"
+            print(f"[MOVE_ACTION] Insufficient MP: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "current_movement_points": current_mp,
+                    "movement_point_info": component_info.get("movement_points", {}),
+                    "suggestion": "Use end_turn tool or wait for movement points to recover",
+                },
+            )
+        # print(f"[MOVE_ACTION] MP check passed: {current_mp}/{movement_points.max_mp}")
+
+        # Compute effective movement (consider strength)
+        effective_movement = movement_points.get_effective_movement(unit_count)
+        current_pos = (position.col, position.row)
+        target_pos = (target_col, target_row)
+
+        # print(
+        #     f"[MOVE_ACTION] Effective movement: {effective_movement} (base: {current_mp}, strength: {unit_count.current_count}/{unit_count.max_count})"
+        # )
+        # print(f"[MOVE_ACTION] Path planning: {current_pos} -> {target_pos}")
+
+        # Path and reachability
+        # print(f"[MOVE_ACTION] Gathering map obstacles...")
+        obstacles = self._get_obstacles_excluding_unit(unit_id)  # exclude moving unit
+        # print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
+
+        # Check whether the target position is occupied
+        # if target_pos in obstacles:
+        #     # Find the unit occupying the target tile
+        #     occupying_unit_id = None
+        #     occupying_unit_info = None
+        #     for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        #         if entity == unit_id:
+        #             continue  # skip the moving unit itself
+        #         pos = self.world.get_component(entity, HexPosition)
+        #         if pos and (pos.col, pos.row) == target_pos:
+        #             occupying_unit_id = entity
+        #             unit_comp = self.world.get_component(entity, Unit)
+        #             if unit_comp:
+        #                 occupying_unit_info = {
+        #                     "unit_id": entity,
+        #                     "unit_type": unit_comp.unit_type.value,
+        #                     "faction": unit_comp.faction.value,
+        #                 }
+        #             break
+
+        #     error_msg = (
+        #         f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
+        #     )
+        #     print(f"[MOVE_ACTION] Target position occupied: {error_msg}")
+        #     return self._create_error_response(
+        #         error_msg,
+        #         {
+        #             "unit_id": unit_id,
+        #             "target_position": target_pos,
+        #             "occupying_unit_id": occupying_unit_id,
+        #             "occupying_unit_info": occupying_unit_info,
+        #             "current_position": current_pos,
+        #             "suggestion": "Choose an unoccupied adjacent position",
+        #             "adjacent_positions": self._get_adjacent_free_positions(
+        #                 current_pos, obstacles
+        #             ),
+        #         },
+        #     )
+
+        from ..utils.hex_utils import PathFinding
+
+        # print(f"[MOVE_ACTION] Running pathfinding...")
+        # print(f"[MOVE_ACTION] Start: {current_pos}")
+        # print(f"[MOVE_ACTION] Target: {target_pos}")
+        # print(f"[MOVE_ACTION] Effective movement range: {effective_movement}")
+        # print(
+        #     f"[MOVE_ACTION] Obstacles (sample): {list(obstacles)[:10]}..."
+        # )  # sample first 10
+
+        path = PathFinding.find_path(
+            current_pos, target_pos, obstacles, effective_movement
+        )
+
+        # print(f"[MOVE_ACTION] Path result: {path}")
+
+        if not path or len(path) < 2:
+            # Provide details for pathfinding failure
+            from ..utils.hex_utils import HexMath
+
+            hex_distance = HexMath.hex_distance(current_pos, target_pos)
+
+            # Range issue?
+            distance_issue = hex_distance > effective_movement
+
+            # Target blocked?
+            target_blocked = target_pos in obstacles
+
+            # Nearby reachable positions
+            adjacent_free_positions = self._get_adjacent_free_positions(
+                current_pos, obstacles
+            )
+
+            error_msg = f"No valid path to target position {target_pos}"
+            print(f"[MOVE_ACTION] Pathfinding failed: {error_msg}")
+            print(f"[MOVE_ACTION] Hex distance: {hex_distance}")
+            print(f"[MOVE_ACTION] Effective movement: {effective_movement}")
+            print(f"[MOVE_ACTION] Distance exceeds: {distance_issue}")
+            print(f"[MOVE_ACTION] Target blocked: {target_blocked}")
+            print(f"[MOVE_ACTION] Adjacent free: {adjacent_free_positions}")
+
+            return self._create_error_response(
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "start_position": current_pos,
+                    "target_position": target_pos,
+                    "effective_movement": effective_movement,
+                    "hex_distance": hex_distance,
+                    "distance_exceeds_range": distance_issue,
+                    "target_blocked": target_blocked,
+                    "path_found": path is not None,
+                    "path_length": len(path) if path else 0,
+                    "obstacle_count": len(obstacles),
+                    "obstacles_sample": list(obstacles)[:10],  # first 10 samples
+                    "adjacent_free_positions": adjacent_free_positions,
+                    "possible_causes": [
+                        (
+                            "Target position out of movement range"
+                            if distance_issue
+                            else None
+                        ),
+                        (
+                            "Target position blocked by obstacles"
+                            if target_blocked
+                            else None
+                        ),
+                        "No valid route exists",
+                        "PathFinding algorithm limitation",
+                    ],
+                    "suggestion": (
+                        f"Try one of these nearby positions: {adjacent_free_positions[:3]}"
+                        if adjacent_free_positions
+                        else "No adjacent free positions available"
+                    ),
+                },
+            )
+
+        # print(f"[MOVE_ACTION] Path found, length: {len(path)}, path: {path}")
+
+        # Total movement cost (terrain-aware)
+        # print(f"[MOVE_ACTION] Calculating path movement cost...")
+        total_movement_cost = self._calculate_total_movement_cost(path)
+        # print(f"[MOVE_ACTION] Total cost: {total_movement_cost} MP")
+
+        # Ensure current movement points suffice (using remaining MP)
+        if total_movement_cost > current_mp:
+            error_msg = f"Insufficient movement points this turn: need {total_movement_cost}, have {current_mp}."
+            print(f"[MOVE_ACTION] Insufficient MP for target: {error_msg}")
+
+            # Compute furthest reachable step along path with current MP
+            cumulative_cost = 0
+            reachable_positions_along_path = []
+            for step_index, pos in enumerate(path[1:]):  # skip origin
+                step_cost = self._get_terrain_movement_cost(pos)
+                if cumulative_cost + step_cost <= current_mp:
+                    cumulative_cost += step_cost
+                    reachable_positions_along_path.append(pos)
+                else:
+                    break
+
+            closest_reachable_position = (
+                reachable_positions_along_path[-1]
+                if reachable_positions_along_path
+                else current_pos
+            )
+
+            # Offer nearby reachable suggestions (prefer closer to target)
+            nearby_reachable_suggestions = []
+            try:
+                neighbor_candidates = self._get_adjacent_free_positions(
+                    current_pos, obstacles
+                )
+                scored = []
+                for cand in neighbor_candidates:
+                    cand_cost = self._get_terrain_movement_cost(cand)
+                    if cand_cost <= current_mp:
+                        dist = HexMath.hex_distance(cand, target_pos)
+                        scored.append((dist, cand))
+                scored.sort(key=lambda x: x[0])
+                nearby_reachable_suggestions = [c for _, c in scored[:3]]
+            except Exception:
+                pass
+
+            suggestion_text = (
+                f"Try moving to the closest reachable position this turn: {closest_reachable_position}"
+                if closest_reachable_position != current_pos
+                else (
+                    f"No step along the path is reachable this turn. Try one of these nearby positions: {nearby_reachable_suggestions}"
+                    if nearby_reachable_suggestions
+                    else "No nearby reachable positions this turn. Wait to recover movement points."
+                )
+            )
+
+            return self._create_error_response(
+                error_msg,
+                {
+                    "failure_reason": "insufficient_movement_points",
+                    "unit_id": unit_id,
+                    "required_movement_points": total_movement_cost,
+                    "current_movement_points": current_mp,
+                    "deficit": total_movement_cost - current_mp,
+                    "path": path,
+                    "path_length": len(path) - 1,
+                    "effective_movement": effective_movement,
+                    "terrain_costs": self._get_path_terrain_breakdown(path),
+                    "closest_reachable_position": (
+                        {
+                            "col": closest_reachable_position[0],
+                            "row": closest_reachable_position[1],
+                        }
+                        if isinstance(closest_reachable_position, tuple)
+                        else {
+                            "col": current_pos[0],
+                            "row": current_pos[1],
+                        }
+                    ),
+                    "reachable_steps": len(reachable_positions_along_path),
+                    "suggested_action": {
+                        "action": "move",
+                        "params": {
+                            "unit_id": unit_id,
+                            "target_position": {
+                                "col": (
+                                    closest_reachable_position[0]
+                                    if isinstance(closest_reachable_position, tuple)
+                                    else current_pos[0]
+                                ),
+                                "row": (
+                                    closest_reachable_position[1]
+                                    if isinstance(closest_reachable_position, tuple)
+                                    else current_pos[1]
+                                ),
+                            },
+                        },
                     },
+                    "nearby_reachable_positions": [
+                        {"col": p[0], "row": p[1]} for p in nearby_reachable_suggestions
+                    ],
+                    "suggestion": suggestion_text,
                 },
-            },
-            "defend": {
-                "function_name": "defend",
-                "function_desc": "Set a unit to defensive stance",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to set defending",
-                        "param_type": "int",
-                        "required": True,
-                    }
+            )
+
+        # print(
+        #     f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
+        # )
+
+        # Execute movement
+        # print(f"[MOVE_ACTION] Fetching MovementSystem...")
+        movement_system = self._get_movement_system()
+        if not movement_system:
+            error_msg = "Movement system not available"
+            print(f"[MOVE_ACTION] System error: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "system_error": "MovementSystem not found",
+                    "suggestion": "This is a game engine error - contact administrator",
                 },
-            },
-            "garrison": {
-                "function_name": "garrison",
-                "function_desc": "Put a unit into garrison to gain defensive bonuses",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to garrison",
-                        "param_type": "int",
-                        "required": True,
-                    }
+            )
+
+        # print(f"[MOVE_ACTION] Executing move...")
+        success = movement_system.move_unit(unit_id, target_pos)
+
+        if success:
+            # print(f"[MOVE_ACTION] Move succeeded")
+
+            # Use default speed from MovementAnimation, or fall back to a known constant.
+            # Here we use the default value 2.0 defined in rotk_env/components/animation.py.
+            animation_speed = 2.0
+            path_length = len(path) - 1 if path else 0
+            estimated_duration = (
+                path_length / animation_speed if animation_speed > 0 else 0
+            )
+
+            # After move_unit, movement_points.current_mp has been updated
+            result = {
+                "success": True,
+                "result": True,
+                "message": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
+                "details": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
+                "action_status": "in_progress",
+                "movement_descriptions": {
+                    "start_position": {"col": current_pos[0], "row": current_pos[1]},
+                    "target_position": {"col": target_pos[0], "row": target_pos[1]},
+                    "path": path,
+                    "path_length": path_length,
                 },
-            },
-            "wait": {
-                "function_name": "wait",
-                "function_desc": "Wait with a unit and skip this turn",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to wait",
-                        "param_type": "int",
-                        "required": True,
-                    }
+                "estimated_duration_seconds": round(estimated_duration, 2),
+                "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
+            }
+            # print(f"[MOVE_ACTION] Move done, result: {result}")
+            return result
+        else:
+            error_msg = "Movement system failed to execute move"
+            print(f"[MOVE_ACTION] Move execution failed: {error_msg}")
+            return self._create_error_response(
+                error_msg,
+                {
+                    "unit_id": unit_id,
+                    "start_position": current_pos,
+                    "target_position": target_pos,
+                    "path": path,
+                    "system_error": "MovementSystem.move_unit returned false",
+                    "possible_causes": [
+                        "Target position became occupied during execution",
+                        "Unit state changed during execution",
+                        "Internal movement system error",
+                    ],
+                    "suggestion": "Try the move again or check target position",
                 },
-            },
-            "scout": {
-                "function_name": "scout",
-                "function_desc": "Scout a target area",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id that performs scouting",
-                        "param_type": "int",
-                        "required": True,
+            )
+
+    def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle attack action - validation plus structured feedback."""
+        print(f"[ATTACK_ACTION] Begin processing attack action, params: {params}")
+
+        # === Layer 1: parameter format validation ===
+        unit_id = params.get("unit_id")
+        target_id = params.get("target_id")
+
+        if not isinstance(unit_id, int) or not isinstance(target_id, int):
+            return self._create_error_response(
+                "unit_id and target_id must be integers",
+                {
+                    "received_unit_id": unit_id,
+                    "received_target_id": target_id,
+                    "expected_types": {"unit_id": "int", "target_id": "int"},
+                    "valid_example": {"unit_id": 123, "target_id": 456},
+                },
+            )
+
+        # print(f"[ATTACK_ACTION] Params ok: attacker={unit_id}, target={target_id}")
+
+        # === Layer 2: attacker/target existence validation ===
+        attacker_unit = self.world.get_component(unit_id, Unit)
+        if not attacker_unit:
+            return self._create_error_response(
+                f"Attacker unit {unit_id} not found",
+                {
+                    "unit_id": unit_id,
+                    "suggestion": "Use get_faction_state action to see all available units",
+                },
+            )
+
+        target_unit = self.world.get_component(target_id, Unit)
+        if not target_unit:
+            return self._create_error_response(
+                f"Target unit {target_id} not found",
+                {
+                    "target_id": target_id,
+                    "suggestion": "Use observation action to see visible enemy units",
+                },
+            )
+
+        # print(
+        #     f"[ATTACK_ACTION] Units exist: {attacker_unit.unit_type.value}({attacker_unit.faction.value}) -> {target_unit.unit_type.value}({target_unit.faction.value})"
+        # )
+
+        # === Layer 3: faction turn permission validation ===
+        # print(f"[ATTACK_ACTION] Checking faction turn permission for unit {unit_id}...")
+        permission_error = self._validate_faction_turn_permission(unit_id, "attack")
+        if permission_error:
+            print(
+                f"[ATTACK_ACTION] Faction permission denied: {permission_error['message']}"
+            )
+            return permission_error
+        # print(
+        #     f"[ATTACK_ACTION] Faction permission granted for {attacker_unit.faction.value}"
+        # )
+
+        # === Layer 4: faction relation validation ===
+        if attacker_unit.faction == target_unit.faction:
+            return self._create_error_response(
+                "Cannot attack units of same faction",
+                {
+                    "attacker_faction": attacker_unit.faction.value,
+                    "target_faction": target_unit.faction.value,
+                    "suggestion": "Select an enemy unit from a different faction",
+                },
+            )
+
+        # === Layer 4: required components validation ===
+        # print(f"[ATTACK_ACTION] Checking attacker components...")
+        attacker_pos = self.world.get_component(unit_id, HexPosition)
+        attacker_combat = self.world.get_component(unit_id, Combat)
+        attacker_action_points = self.world.get_component(unit_id, ActionPoints)
+        attacker_count = self.world.get_component(unit_id, UnitCount)
+
+        missing_attacker_components = []
+        if not attacker_pos:
+            missing_attacker_components.append("HexPosition")
+        if not attacker_combat:
+            missing_attacker_components.append("Combat")
+        if not attacker_action_points:
+            missing_attacker_components.append("ActionPoints")
+        if not attacker_count:
+            missing_attacker_components.append("UnitCount")
+
+        if missing_attacker_components:
+            return self._create_error_response(
+                f"Attacker unit {unit_id} missing required components: {', '.join(missing_attacker_components)}",
+                {
+                    "unit_id": unit_id,
+                    "missing_components": missing_attacker_components,
+                    "required_components": [
+                        "HexPosition",
+                        "Combat",
+                        "ActionPoints",
+                        "UnitCount",
+                    ],
+                    "suggestion": "This unit may not be properly initialized",
+                },
+            )
+
+        # print(f"[ATTACK_ACTION] Checking target components...")
+        target_pos = self.world.get_component(target_id, HexPosition)
+        target_count = self.world.get_component(target_id, UnitCount)
+
+        missing_target_components = []
+        if not target_pos:
+            missing_target_components.append("HexPosition")
+        if not target_count:
+            missing_target_components.append("UnitCount")
+
+        if missing_target_components:
+            return self._create_error_response(
+                f"Target unit {target_id} missing required components: {', '.join(missing_target_components)}",
+                {
+                    "target_id": target_id,
+                    "missing_components": missing_target_components,
+                    "required_components": ["HexPosition", "UnitCount"],
+                    "suggestion": "Target unit may not be properly initialized",
+                },
+            )
+
+        # === Layer 5: action point validation ===
+        # print(f"[ATTACK_ACTION] Checking action points...")
+        if not attacker_action_points.can_perform_action(ActionType.ATTACK):
+            required_ap = 1  # requires 1 AP to attack
+            current_ap = attacker_action_points.current_ap
+            return self._create_error_response(
+                f"Insufficient action points for attack: need {required_ap}, have {current_ap}",
+                {
+                    "unit_id": unit_id,
+                    "required_action_points": required_ap,
+                    "current_action_points": current_ap,
+                    "deficit": required_ap - current_ap,
+                    "suggestion": "Wait for action points to recover or use rest action",
+                },
+            )
+
+        # Target must be alive
+        if target_count.current_count <= 0:
+            return self._create_error_response(
+                f"Target unit {target_id} is already destroyed",
+                {
+                    "target_id": target_id,
+                    "current_count": target_count.current_count,
+                    "suggestion": "Select a living enemy unit",
+                },
+            )
+
+        # === Layer 7: range validation ===
+        # print(f"[ATTACK_ACTION] Checking attack range...")
+        attacker_current_pos = (attacker_pos.col, attacker_pos.row)
+        target_current_pos = (target_pos.col, target_pos.row)
+        distance = HexMath.hex_distance(attacker_current_pos, target_current_pos)
+        attack_range = attacker_combat.attack_range
+
+        # print(f"[ATTACK_ACTION] Distance={distance}, Attack range={attack_range}")
+
+        if distance > attack_range:
+            return self._create_error_response(
+                f"Target out of attack range: distance {distance}, range {attack_range}",
+                {
+                    "unit_id": unit_id,
+                    "target_id": target_id,
+                    "attacker_position": attacker_current_pos,
+                    "target_position": target_current_pos,
+                    "distance": distance,
+                    "attack_range": attack_range,
+                    "range_deficit": distance - attack_range,
+                    "unit_type": attacker_unit.unit_type.value,
+                    "suggestion": f"Move {distance - attack_range} hexes closer or select a target within {attack_range} hexes",
+                },
+            )
+
+        # === Layer 8: execute attack ===
+        # print(f"[ATTACK_ACTION] All validations passed, executing attack...")
+        combat_system = self._get_combat_system()
+        if not combat_system:
+            return self._create_error_response(
+                "Combat system not available",
+                {
+                    "system_error": "CombatSystem not found",
+                    "suggestion": "This is a game engine error - contact administrator",
+                },
+            )
+
+        # Record pre-attack snapshot for diff
+        pre_attack_state = {
+            "attacker_action_points": attacker_action_points.current_ap,
+            "target_count": target_count.current_count,
+            "attacker_has_attacked": attacker_combat.has_attacked,
+        }
+
+        # Invoke CombatSystem
+        attack_result = combat_system.execute_attack(unit_id, target_id)
+
+        if not attack_result.get("success", False):
+            return self._create_error_response(
+                attack_result.get("message", "Attack execution failed"),
+                attack_result.get(
+                    "details",
+                    {
+                        "unit_id": unit_id,
+                        "target_id": target_id,
+                        "suggestion": "Attack validation passed but execution failed - possible game state conflict",
                     },
-                    "target_position": {
-                        "param_desc": "Scout target position [col, row]",
-                        "param_type": "list[int]",
-                        "required": True,
-                    },
+                ),
+            )
+
+        battle_result = attack_result.get("battle_result", {})
+
+        # === Layer 9: format result ===
+        # print(f"[ATTACK_ACTION] Attack executed successfully.")
+
+        # Post-attack snapshot
+        post_attack_state = {
+            "attacker_action_points": attacker_action_points.current_ap,
+            "target_count": target_count.current_count,
+            "attacker_has_attacked": attacker_combat.has_attacked,
+        }
+
+        # Compute deltas
+        action_points_used = (
+            pre_attack_state["attacker_action_points"]
+            - post_attack_state["attacker_action_points"]
+        )
+        casualties_inflicted = (
+            pre_attack_state["target_count"] - post_attack_state["target_count"]
+        )
+        target_destroyed = post_attack_state["target_count"] <= 0
+
+        # Terrain info
+        attacker_terrain = self._get_terrain_at_position(attacker_current_pos)
+        target_terrain = self._get_terrain_at_position(target_current_pos)
+
+        result = {
+            "success": True,
+            "result": True,
+            "message": f"Unit {unit_id} attacked unit {target_id} successfully",
+            "details": f"Unit {unit_id} attacked unit {target_id} successfully",
+            "battle_summary": {
+                "attacker_info": {
+                    "unit_id": unit_id,
+                    "unit_type": attacker_unit.unit_type.value,
+                    "faction": attacker_unit.faction.value,
+                    "position": attacker_current_pos,
+                    "terrain": attacker_terrain.value,
                 },
-            },
-            "retreat": {
-                "function_name": "retreat",
-                "function_desc": "Retreat a unit to a safe position",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to retreat",
-                        "param_type": "int",
-                        "required": True,
-                    }
+                "target_info": {
+                    "unit_id": target_id,
+                    "unit_type": target_unit.unit_type.value,
+                    "faction": target_unit.faction.value,
+                    "position": target_current_pos,
+                    "terrain": target_terrain.value,
                 },
+                "battle_result": battle_result,
+                "casualties_inflicted": casualties_inflicted,
+                "target_destroyed": target_destroyed,
+                "distance": distance,
             },
-            "fortify": {
-                "function_name": "fortify",
-                "function_desc": "Build fortifications at the current position",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id that builds fortifications",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
+            "resource_consumption": {
+                "action_points_used": action_points_used,
             },
-            "patrol": {
-                "function_name": "patrol",
-                "function_desc": "Patrol within a specified area",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id that performs patrol",
-                        "param_type": "int",
-                        "required": True,
-                    },
-                    "patrol_area": {
-                        "param_desc": "List of coordinates defining the patrol area",
-                        "param_type": "list[list[int]]",
-                        "required": True,
-                    },
-                },
+            "remaining_resources": {
+                "action_points": post_attack_state["attacker_action_points"],
+                # "can_attack_again": not post_attack_state["attacker_has_attacked"],  # Removed single-attack limit
             },
-            "end_turn": {
-                "function_name": "end_turn",
-                "function_desc": "End the current unit's turn",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id whose turn should end",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "select_unit": {
-                "function_name": "select_unit",
-                "function_desc": "Select a unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to select",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "formation": {
-                "function_name": "formation",
-                "function_desc": "Set unit formation",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to set formation for",
-                        "param_type": "int",
-                        "required": True,
-                    },
-                    "formation_type": {
-                        "param_desc": "Formation type (offensive/defensive/mobile)",
-                        "param_type": "str",
-                        "required": True,
-                    },
-                },
-            },
-            # Observation commands
-            "unit_observation": {
-                "function_name": "unit_observation",
-                "function_desc": "Get observation data for a unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to observe",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "faction_observation": {
-                "function_name": "faction_observation",
-                "function_desc": "Get observation data for a faction",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Faction name (WEI/SHU/WU)",
-                        "param_type": "str",
-                        "required": True,
-                    }
-                },
-            },
-            "godview_observation": {
-                "function_name": "godview_observation",
-                "function_desc": "Get observation data from a global (god) view",
-                "inputs": {},
-            },
-            "limited_observation": {
-                "function_name": "limited_observation",
-                "function_desc": "Get observation data from a restricted (faction) view",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Observer faction name (WEI/SHU/WU)",
-                        "param_type": "str",
-                        "required": True,
-                    }
-                },
-            },
-            "tactical_observation": {
-                "function_name": "tactical_observation",
-                "function_desc": "Get tactical-level observation data",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Center unit id (optional)",
-                        "param_type": "int",
-                        "required": False,
-                    },
-                    "radius": {
-                        "param_desc": "Observation radius (optional)",
-                        "param_type": "int",
-                        "required": False,
-                    },
-                },
-            },
-            # State/query commands
-            "get_unit_list": {
-                "function_name": "get_unit_list",
-                "function_desc": "List all units",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Filter units by faction (optional)",
-                        "param_type": "str",
-                        "required": False,
-                    },
-                    "unit_type": {
-                        "param_desc": "Filter units by unit type (optional)",
-                        "param_type": "str",
-                        "required": False,
-                    },
-                },
-            },
-            "get_unit_info": {
-                "function_name": "get_unit_info",
-                "function_desc": "Get detailed information for a unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to query",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "get_faction_units": {
-                "function_name": "get_faction_units",
-                "function_desc": "List all units for a faction",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Faction name (WEI/SHU/WU)",
-                        "param_type": "str",
-                        "required": True,
-                    }
-                },
-            },
-            "get_game_state": {
-                "function_name": "get_game_state",
-                "function_desc": "Get current game state",
-                "inputs": {},
-            },
-            "get_map_info": {
-                "function_name": "get_map_info",
-                "function_desc": "Get map information",
-                "inputs": {
-                    "position": {
-                        "param_desc": "Query map info at a specific position [col, row] (optional)",
-                        "param_type": "list[int]",
-                        "required": False,
-                    },
-                    "area": {
-                        "param_desc": "Query map info for an area [[min_col, min_row], [max_col, max_row]] (optional)",
-                        "param_type": "list[list[int]]",
-                        "required": False,
-                    },
-                },
-            },
-            "get_battle_status": {
-                "function_name": "get_battle_status",
-                "function_desc": "Get current battle status",
-                "inputs": {
-                    "battle_id": {
-                        "param_desc": "Specific battle id (optional)",
-                        "param_type": "int",
-                        "required": False,
-                    }
-                },
-            },
-            "get_available_actions": {
-                "function_name": "get_available_actions",
-                "function_desc": "Get the list of actions available to a unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to query",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "get_unit_capabilities": {
-                "function_name": "get_unit_capabilities",
-                "function_desc": "Get capabilities for a unit",
-                "inputs": {
-                    "unit_id": {
-                        "param_desc": "Unit id to query",
-                        "param_type": "int",
-                        "required": True,
-                    }
-                },
-            },
-            "get_visibility_info": {
-                "function_name": "get_visibility_info",
-                "function_desc": "Get vision and visibility information",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Faction name to query vision for",
-                        "param_type": "str",
-                        "required": True,
-                    },
-                    "position": {
-                        "param_desc": "Query visibility at a specific position [col, row] (optional)",
-                        "param_type": "list[int]",
-                        "required": False,
-                    },
-                },
-            },
-            "get_strategic_summary": {
-                "function_name": "get_strategic_summary",
-                "function_desc": "Get a strategic-level summary",
-                "inputs": {
-                    "faction": {
-                        "param_desc": "Faction name to scope the summary to (optional)",
-                        "param_type": "str",
-                        "required": False,
-                    },
-                    "detail_level": {
-                        "param_desc": "Detail level (basic/detailed/full)",
-                        "param_type": "str",
-                        "required": False,
-                    },
-                },
+            "tactical_info": {
+                "attack_was_effective": casualties_inflicted > 0,
+                "target_remaining_strength": f"{post_attack_state['target_count']}/{target_count.max_count}",
+                "target_strength_percentage": (
+                    round(
+                        (post_attack_state["target_count"] / target_count.max_count)
+                        * 100,
+                        1,
+                    )
+                    if target_count.max_count > 0
+                    else 0
+                ),
             },
         }
 
-    def handle_move_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the move action."""
-        try:
-            # Validate and normalize parameter types
-            unit_id = params.get("unit_id")
-            target_position = params.get("target_position")
+        print(
+            f"[ATTACK_ACTION] {casualties_inflicted} casualties, target {'destroyed' if target_destroyed else 'alive'}"
+        )
+        return result
 
-            # Required-field / type validation
-            if unit_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: unit_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "move",
-                }
+    def handle_rest_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle the rest (wait) action."""
+        unit_id = params.get("unit_id")
 
-            if target_position is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: target_position",
-                    "error_code": "MISSING_PARAM",
-                    "action": "move",
-                }
+        if not isinstance(unit_id, int):
+            return self._create_error_response("unit_id must be integer")
 
-            # Convert parameter types
-            try:
-                unit_id = int(unit_id)
-            except (ValueError, TypeError):
-                return {
-                    "success": False,
-                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
-                    "error_code": "INVALID_TYPE",
-                    "action": "move",
-                }
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(f"Unit {unit_id} not found")
 
-            # Handle target_position - support multiple input formats
-            if isinstance(target_position, str):
-                try:
-                    target_position = ast.literal_eval(target_position)
-                except (ValueError, SyntaxError):
-                    return {
-                        "success": False,
-                        "error": f"Invalid target_position format: {target_position}",
-                        "error_code": "INVALID_FORMAT",
-                        "action": "move",
-                    }
+        # Faction turn permission validation
+        permission_error = self._validate_faction_turn_permission(unit_id, "rest")
+        if permission_error:
+            return permission_error
 
-            if (
-                not isinstance(target_position, (list, tuple))
-                or len(target_position) != 2
-            ):
-                return {
-                    "success": False,
-                    "error": "target_position must be [col, row] or (col, row)",
-                    "error_code": "INVALID_FORMAT",
-                    "action": "move",
-                }
-
-            try:
-                target_pos = (int(target_position[0]), int(target_position[1]))
-            except (ValueError, TypeError, IndexError):
-                return {
-                    "success": False,
-                    "error": f"Invalid target_position coordinates: {target_position}",
-                    "error_code": "INVALID_COORDINATES",
-                    "action": "move",
-                }
-
-            # Validate that the unit exists
-            if not self.world.has_entity(unit_id):
-                return {
-                    "success": False,
-                    "error": f"Unit {unit_id} does not exist",
-                    "error_code": "UNIT_NOT_FOUND",
-                    "action": "move",
-                    "unit_id": unit_id,
-                }
-
-            # Get the movement system
-            movement_system = self._get_movement_system()
-            if not movement_system:
-                return {
-                    "success": False,
-                    "error": "Movement system not available",
-                    "error_code": "SYSTEM_UNAVAILABLE",
-                    "action": "move",
-                }
-
-            # Execute movement - use correct parameter types (entity: int, target_pos: Tuple[int, int])
-            success = movement_system.move_unit(unit_id, target_pos)
-
+        # Execute rest
+        action_system = self._get_action_system()
+        if action_system:
+            success = action_system.perform_wait(unit_id)
             if success:
+                action_points = self.world.get_component(unit_id, ActionPoints)
+                unit_status = self.world.get_component(unit_id, UnitStatus)
+
                 return {
                     "success": True,
-                    "message": f"Unit {unit_id} successfully moved to {target_pos}",
-                    "action": "move",
-                    "unit_id": unit_id,
-                    "new_position": {"col": target_pos[0], "row": target_pos[1]},
-                    "target_position": list(target_pos),
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Movement failed - check path, movement points, or obstacles",
-                    "error_code": "MOVEMENT_FAILED",
-                    "action": "move",
-                    "unit_id": unit_id,
-                    "target_position": list(target_pos),
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error in move action: {str(e)}",
-                "error_code": "INTERNAL_ERROR",
-                "action": "move",
-                "params": params,
-            }
-
-    def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the attack action."""
-        try:
-            # Validate and normalize parameter types
-            unit_id = params.get("unit_id")  # Uses unit_id instead of attacker_id
-            target_id = params.get("target_id")
-
-            # Validate required parameters
-            if unit_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: unit_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "attack",
-                }
-
-            if target_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: target_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "attack",
-                }
-
-            # Convert parameter types
-            try:
-                unit_id = int(unit_id)
-                target_id = int(target_id)
-            except (ValueError, TypeError):
-                return {
-                    "success": False,
-                    "error": f"Invalid parameter types: unit_id and target_id must be integers",
-                    "error_code": "INVALID_TYPE",
-                    "action": "attack",
-                }
-
-            # Validate that entities exist
-            if not self.world.has_entity(unit_id):
-                return {
-                    "success": False,
-                    "error": f"Attacker unit {unit_id} does not exist",
-                    "error_code": "UNIT_NOT_FOUND",
-                    "action": "attack",
-                    "unit_id": unit_id,
-                }
-
-            if not self.world.has_entity(target_id):
-                return {
-                    "success": False,
-                    "error": f"Target unit {target_id} does not exist",
-                    "error_code": "TARGET_NOT_FOUND",
-                    "action": "attack",
-                    "target_id": target_id,
-                }
-
-            # Get the combat system
-            combat_system = self._get_combat_system()
-            if not combat_system:
-                return {
-                    "success": False,
-                    "error": "Combat system not available",
-                    "error_code": "SYSTEM_UNAVAILABLE",
-                    "action": "attack",
-                }
-
-            # Execute attack - use correct parameter types (attacker_entity: int, target_entity: int)
-            success = combat_system.attack(unit_id, target_id)
-
-            if success:
-                # Get target unit's remaining headcount
-                target_unit_count = self.world.get_component(target_id, UnitCount)
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} successfully attacked unit {target_id}",
-                    "action": "attack",
-                    "attacker_id": unit_id,
-                    "target_id": target_id,
-                    "target_remaining_count": (
-                        target_unit_count.current_count if target_unit_count else 0
+                    "result": True,
+                    "message": f"Unit {unit_id} is resting and recovering",
+                    "details": f"Unit {unit_id} is resting and recovering",
+                    # "effects": {
+                    #     "morale_recovery": True,
+                    #     "fatigue_removed": unit_status.current_status
+                    #     != UnitState.FATIGUE,
+                    #     "turn_ended": True,
+                    # },
+                    "remaining_action_points": (
+                        action_points.current_ap - 1 if action_points else 0
                     ),
                 }
             else:
-                return {
-                    "success": False,
-                    "error": "Attack failed - check range, action points, or target validity",
-                    "error_code": "ATTACK_FAILED",
-                    "action": "attack",
-                    "attacker_id": unit_id,
-                    "target_id": target_id,
-                }
+                return self._create_error_response(
+                    "Action system failed to execute wait"
+                )
+        else:
+            return self._create_error_response("Action system not available")
 
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error in attack action: {str(e)}",
-                "error_code": "INTERNAL_ERROR",
-                "action": "attack",
-                "params": params,
-            }
-
-    def handle_defend_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the defend action."""
-        try:
-            # Parameter validation
-            unit_id = params.get("unit_id")
-
-            if unit_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: unit_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "defend",
-                }
-
-            # Convert parameter types
-            try:
-                unit_id = int(unit_id)
-            except (ValueError, TypeError):
-                return {
-                    "success": False,
-                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
-                    "error_code": "INVALID_TYPE",
-                    "action": "defend",
-                }
-
-            # Validate that the unit exists
-            if not self.world.has_entity(unit_id):
-                return {
-                    "success": False,
-                    "error": f"Unit {unit_id} does not exist",
-                    "error_code": "UNIT_NOT_FOUND",
-                    "action": "defend",
-                    "unit_id": unit_id,
-                }
-
-            # Set defending status
-            unit_status = self.world.get_component(unit_id, UnitStatus)
-            if unit_status:
-                unit_status.is_defending = True
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} is now defending with bonus",
-                    "action": "defend",
-                    "unit_id": unit_id,
-                    "defense_bonus": 0.5,  # 50% defense bonus
-                    "status": "defending",
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Unit {unit_id} does not have UnitStatus component",
-                    "error_code": "COMPONENT_MISSING",
-                    "action": "defend",
-                    "unit_id": unit_id,
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error in defend action: {str(e)}",
-                "error_code": "INTERNAL_ERROR",
-                "action": "defend",
-                "params": params,
-            }
-
-    def handle_garrison_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the garrison action."""
-        try:
-            # Parameter validation
-            unit_id = params.get("unit_id")
-
-            if unit_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: unit_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "garrison",
-                }
-
-            # Convert parameter types
-            try:
-                unit_id = int(unit_id)
-            except (ValueError, TypeError):
-                return {
-                    "success": False,
-                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
-                    "error_code": "INVALID_TYPE",
-                    "action": "garrison",
-                }
-
-            # Validate that the unit exists
-            if not self.world.has_entity(unit_id):
-                return {
-                    "success": False,
-                    "error": f"Unit {unit_id} does not exist",
-                    "error_code": "UNIT_NOT_FOUND",
-                    "action": "garrison",
-                    "unit_id": unit_id,
-                }
-
-            # Get the action system and execute garrison
-            action_system = self._get_action_system()
-            if not action_system:
-                return {
-                    "success": False,
-                    "error": "Action system not available",
-                    "error_code": "SYSTEM_UNAVAILABLE",
-                    "action": "garrison",
-                }
-
-            success = action_system.perform_garrison(unit_id)
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} is now garrisoned with defensive bonuses",
-                    "action": "garrison",
-                    "unit_id": unit_id,
-                    "status": "garrisoned",
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Garrison action failed - check unit status and action points",
-                    "error_code": "ACTION_FAILED",
-                    "action": "garrison",
-                    "unit_id": unit_id,
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error in garrison action: {str(e)}",
-                "error_code": "INTERNAL_ERROR",
-                "action": "garrison",
-                "params": params,
-            }
-
-    def handle_wait_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the wait action."""
-        try:
-            # Parameter validation
-            unit_id = params.get("unit_id")
-
-            if unit_id is None:
-                return {
-                    "success": False,
-                    "error": "Missing required parameter: unit_id",
-                    "error_code": "MISSING_PARAM",
-                    "action": "wait",
-                }
-
-            # Convert parameter types
-            try:
-                unit_id = int(unit_id)
-            except (ValueError, TypeError):
-                return {
-                    "success": False,
-                    "error": f"Invalid unit_id type: expected int, got {type(unit_id).__name__}",
-                    "error_code": "INVALID_TYPE",
-                    "action": "wait",
-                }
-
-            # Validate that the unit exists
-            if not self.world.has_entity(unit_id):
-                return {
-                    "success": False,
-                    "error": f"Unit {unit_id} does not exist",
-                    "error_code": "UNIT_NOT_FOUND",
-                    "action": "wait",
-                    "unit_id": unit_id,
-                }
-
-            # Get the action system and execute wait
-            action_system = self._get_action_system()
-            if not action_system:
-                return {
-                    "success": False,
-                    "error": "Action system not available",
-                    "error_code": "SYSTEM_UNAVAILABLE",
-                    "action": "wait",
-                }
-
-            success = action_system.perform_wait(unit_id)
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} is waiting this turn",
-                    "action": "wait",
-                    "unit_id": unit_id,
-                    "status": "waiting",
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Wait action failed - check unit status",
-                    "error_code": "ACTION_FAILED",
-                    "action": "wait",
-                    "unit_id": unit_id,
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error in wait action: {str(e)}",
-                "error_code": "INTERNAL_ERROR",
-                "action": "wait",
-                "params": params,
-            }
-
-    def handle_scout_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the scout action."""
+    def handle_occupy_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle the occupy action - does not consume construction points, but consumes action points."""
         unit_id = params.get("unit_id")
-        target_area = params.get("target_area")  # (col, row) or an area range
+        position = params.get("position")
 
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
+        if not isinstance(unit_id, int):
+            return self._create_error_response("unit_id must be integer")
 
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+        if not position or not isinstance(position, dict):
+            return self._create_error_response("position must be object with col/row")
 
-        # Get unit vision information
-        vision = self.world.get_component(unit_id, Vision)
-        position = self.world.get_component(unit_id, HexPosition)
+        col = position.get("col")
+        row = position.get("row")
 
-        if not vision or not position:
+        if not isinstance(col, int) or not isinstance(row, int):
+            return self._create_error_response("position col/row must be integers")
+
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(f"Unit {unit_id} not found")
+
+        # Faction turn permission validation
+        permission_error = self._validate_faction_turn_permission(unit_id, "occupy")
+        if permission_error:
+            return permission_error
+
+        # Check unit position and action points
+        unit_pos = self.world.get_component(unit_id, HexPosition)
+        action_points = self.world.get_component(unit_id, ActionPoints)
+
+        if not unit_pos:
+            return self._create_error_response("Unit missing position component")
+
+        if not action_points or not action_points.can_perform_action(ActionType.OCCUPY):
+            return self._create_error_response(
+                f"Insufficient action points for occupy: need 1, have {action_points.current_ap if action_points else 0}",
+            )
+
+        # Ensure target is current or adjacent position
+        current_pos = (unit_pos.col, unit_pos.row)
+        target_pos = (col, row)
+
+        from ..utils.hex_utils import HexMath
+
+        distance = HexMath.hex_distance(current_pos, target_pos)
+
+        if distance > 1:
+            return self._create_error_response(
+                f"Cannot occupy position {target_pos}: too far from unit position {current_pos}. Can only occupy current or adjacent positions.",
+            )
+
+        # Check whether the target is already occupied/controlled
+        territory_system = self._get_territory_system()
+        if not territory_system:
+            return self._create_error_response("Territory system not available")
+
+        # Check whether it is already controlled by the unit's faction
+        current_control = territory_system.get_territory_control(target_pos)
+        if current_control and current_control == unit.faction:
+            return self._create_error_response(
+                f"Position {target_pos} already controlled by faction {unit.faction.value}",
+            )
+
+        # Execute occupy
+        success = territory_system.occupy_territory(unit_id, target_pos)
+
+        if success:
+            # Consume action points
+            action_points.consume_ap(ActionType.OCCUPY)
+
+            # Terrain info (optional)
+            terrain_type = self._get_terrain_at_position(target_pos)
+
             return {
-                "success": False,
-                "error": "Unit lacks vision or position component",
+                "success": True,
+                "result": True,
+                "message": f"Unit {unit_id} occupied territory at {target_pos}",
+                "details": f"Unit {unit_id} occupied territory at {target_pos}",
+                # "occupation_details": {
+                #     "position": target_pos,
+                #     "terrain_type": terrain_type.value,
+                #     "previous_controller": (
+                #         current_control.value if current_control else "neutral"
+                #     ),
+                #     "new_controller": unit.faction.value,
+                #     "occupation_method": "military_control",
+                # },
+                # "resource_consumption": {
+                #     "action_points_used": 1,
+                #     "construction_points_used": 0,  # Occupy does not consume construction points
+                # },
+                # "remaining_resources": {
+                #     "action_points": action_points.current_ap,
+                # },
+                # "strategic_value": {
+                #     "terrain_bonus": self._get_terrain_occupation_bonus(terrain_type),
+                #     "resource_production": self._get_terrain_resource_value(
+                #         terrain_type
+                #     ),
+                # },
             }
-
-        # Execute scouting - temporarily increase sight range
-        original_range = vision.sight_range
-        vision.sight_range = min(vision.sight_range + 2, 10)  # +2 tiles, capped at 10
-
-        # TODO: Fog-of-war system should be updated here
-
-        return {
-            "success": True,
-            "message": f"Unit {unit_id} is scouting",
-            "unit_id": unit_id,
-            "enhanced_vision_range": vision.sight_range,
-            "original_vision_range": original_range,
-        }
-
-    def handle_retreat_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the retreat action."""
-        unit_id = params.get("unit_id")
-        retreat_direction = params.get(
-            "direction"
-        )  # "north", "south", "east", "west", etc.
-
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
-
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-        position = self.world.get_component(unit_id, HexPosition)
-        if not position:
-            return {"success": False, "error": "Unit has no position"}
-
-        # Compute retreat target position
-        current_pos = (position.col, position.row)
-        retreat_pos = self._calculate_retreat_position(current_pos, retreat_direction)
-
-        # Execute movement (retreat)
-        movement_system = self._get_movement_system()
-        if movement_system:
-            success = movement_system.move_unit(unit_id, retreat_pos)
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Unit {unit_id} retreated to {retreat_pos}",
-                    "unit_id": unit_id,
-                    "retreat_position": retreat_pos,
-                }
-
-        return {"success": False, "error": "Retreat failed"}
+        else:
+            return self._create_error_response(
+                f"Failed to occupy position {target_pos}. Position may be contested or invalid."
+            )
 
     def handle_fortify_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the fortify action."""
+        """Handle the fortify (build fortification) action."""
         unit_id = params.get("unit_id")
+        position = params.get("position")
 
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
+        if not isinstance(unit_id, int):
+            return self._create_error_response("unit_id must be integer")
 
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+        if not position or not isinstance(position, dict):
+            return self._create_error_response("position must be object with col/row")
 
-        # Set fortified status
-        unit_status = self.world.get_component(unit_id, UnitStatus)
-        if unit_status:
-            unit_status.is_fortified = True
-            return {
-                "success": True,
-                "message": f"Unit {unit_id} is now fortified",
-                "unit_id": unit_id,
-                "fortification_bonus": 0.3,  # 30% defense bonus
-            }
+        col = position.get("col")
+        row = position.get("row")
 
-        return {"success": False, "error": "Unable to set fortify status"}
+        if not isinstance(col, int) or not isinstance(row, int):
+            return self._create_error_response("position col/row must be integers")
 
-    def handle_patrol_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the patrol action."""
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(f"Unit {unit_id} not found")
+
+        # Faction turn permission validation
+        permission_error = self._validate_faction_turn_permission(unit_id, "fortify")
+        if permission_error:
+            return permission_error
+
+        # Check action points and construction points
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        construction_points = self.world.get_component(unit_id, ConstructionPoints)
+
+        if not action_points or not action_points.can_perform_action(
+            ActionType.FORTIFY
+        ):
+            return self._create_error_response(
+                f"Insufficient action points for fortify: need 1, have {action_points.current_ap if action_points else 0}",
+            )
+
+        if not construction_points or not construction_points.can_build(1):
+            return self._create_error_response(
+                f"Insufficient construction points for fortify: need 1, have {construction_points.current_cp if construction_points else 0}",
+            )
+
+        # Get terrain type and fortification level cap
+        terrain_type = self._get_terrain_at_position((col, row))
+        max_level = self._get_max_fortification_level(terrain_type)
+
+        # Check current fortification level
+        current_level = self._get_current_fortification_level((col, row))
+
+        if current_level >= max_level:
+            return self._create_error_response(
+                f"Fortification already at max level for terrain {terrain_type.value}: {current_level}/{max_level}",
+            )
+
+        # Execute fortification build
+        territory_system = self._get_territory_system()
+        if territory_system:
+            success = territory_system.build_fortification(unit_id, (col, row))
+            if success:
+                new_level = current_level + 1
+                defense_bonus = self._calculate_fortification_defense_bonus(new_level)
+
+                return {
+                    "success": True,
+                    "result": True,
+                    "details": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
+                    "message": f"Unit {unit_id} built fortification at {(col, row)}, increasing level to {new_level}/{max_level}",
+                    # "defense_bonus": defense_bonus,
+                    # "terrain_type": terrain_type.value,
+                    "remaining_action_points": action_points.current_ap - 1,
+                }
+            else:
+                return self._create_error_response(
+                    "Cannot build fortification at this position"
+                )
+        else:
+            return self._create_error_response("Territory system not available")
+
+    def handle_skill_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle the skill action."""
         unit_id = params.get("unit_id")
-        patrol_points = params.get("patrol_points", [])  # List of patrol path points
+        skill_name = params.get("skill_name")
+        target = params.get("target")
 
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
+        if not isinstance(unit_id, int):
+            return self._create_error_response("unit_id must be integer")
 
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+        if not isinstance(skill_name, str):
+            return self._create_error_response("skill_name must be string")
 
-        # TODO: Implement patrol path logic
-        return {
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(f"Unit {unit_id} not found")
+
+        # Faction turn permission validation
+        permission_error = self._validate_faction_turn_permission(unit_id, "skill")
+        if permission_error:
+            return permission_error
+
+        # Check skill-related components
+        unit_skills = self.world.get_component(unit_id, UnitSkills)
+        skill_points = self.world.get_component(unit_id, SkillPoints)
+
+        if not unit_skills:
+            return self._create_error_response("Unit has no skills")
+
+        if not skill_points:
+            return self._create_error_response("Unit has no skill points")
+
+        # Check skill availability (UnitSkills controls list & cooldown)
+        if not unit_skills.can_use_skill(skill_name):
+            if skill_name not in unit_skills.available_skills:
+                return self._create_error_response(f"Skill {skill_name} not available")
+            else:
+                cooldown = unit_skills.skill_cooldowns.get(skill_name, 0)
+                return self._create_error_response(
+                    f"Skill {skill_name} on cooldown: {cooldown} turns"
+                )
+
+        # Check skill points (SkillPoints controls cost)
+        if not skill_points.can_use_skill(skill_name, 1):
+            return self._create_error_response(
+                f"Insufficient skill points: need 1, have {skill_points.current_sp}",
+            )
+
+        # Check action points
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        if not action_points or not action_points.can_perform_action(ActionType.SKILL):
+            return self._create_error_response(
+                f"Insufficient action points for skill: need 2, have {action_points.current_ap if action_points else 0}",
+            )
+
+        # Check terrain and skill requirements
+        unit_pos = self.world.get_component(unit_id, HexPosition)
+        if unit_pos:
+            current_terrain = self._get_terrain_at_position(
+                (unit_pos.col, unit_pos.row)
+            )
+            skill_result = self._execute_terrain_skill(
+                unit_id, skill_name, current_terrain, target
+            )
+
+            if skill_result.get("result", False):
+                # Consume resources: multi-layer resource system
+                # 1) Action points (decision layer)
+                action_points.consume_ap(ActionType.SKILL)
+
+                # 2) Skill points (execution layer)
+                skill_points.use_skill(skill_name, 1, skill_result.get("cooldown", 0))
+
+                # 3) Cooldown (via UnitSkills)
+                unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))
+
+                return {
+                    "success": True,
+                    "result": True,
+                    "message": f"Unit {unit_id} used skill {skill_name}",
+                    "details": f"Unit {unit_id} used skill {skill_name}",
+                    "skill_result": skill_result,
+                    "remaining_action_points": action_points.current_ap,
+                    "remaining_skill_points": skill_points.current_sp,
+                }
+            else:
+                return self._create_error_response(
+                    skill_result.get("error", "Skill execution failed")
+                )
+        else:
+            return self._create_error_response("Unit position not found")
+
+    # ==================== Observation ====================
+
+    def handle_observation_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle unit observation."""
+        unit_id = params.get("unit_id")
+        observation_level = params.get("observation_level", "basic")
+
+        if not isinstance(unit_id, int):
+            return self._create_error_response("unit_id must be integer")
+
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(f"Unit {unit_id} not found")
+
+        # Get unit info
+        unit_info = self._get_detailed_unit_info(unit_id)
+
+        # Get visible environment
+        visible_environment = self._get_visible_environment(unit_id, observation_level)
+
+        result = {
             "success": True,
-            "message": f"Unit {unit_id} started patrolling",
-            "unit_id": unit_id,
-            "patrol_points": patrol_points,
+            "result": True,
+            "unit_info": unit_info,
+            "visible_environment": visible_environment,
         }
 
-    def handle_end_turn_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the end-turn action."""
-        faction = params.get("faction")
+        # Add extras based on observation level
+        if observation_level in ["detailed", "tactical"]:
+            result["tactical_info"] = self._get_tactical_info(unit_id)
 
-        # Get the turn system
+        return result
+
+    # ==================== Faction control ====================
+
+    def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get high-level faction state."""
+        faction_str = params.get("faction")
+
+        if not faction_str:
+            return self._create_error_response("faction parameter required")
+
+        try:
+            faction = Faction(faction_str)
+            print(f"Handling faction state for {faction.value}")
+        except ValueError:
+            return self._create_error_response(f"Invalid faction: {faction_str}")
+
+        # Get all units for faction
+        faction_units = self._get_faction_units(faction)
+
+        # Compute faction statistics
+        total_units_count = len(faction_units)
+        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
+        alive_units_count = len(alive_units)
+
+        # Count actionable units (alive and with action points)
+        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
+        actionable_units_count = len(actionable_units)
+
+        # Get current faction status
+        faction_status = self._get_faction_status(faction)
+
+        print(f"[FACTION_STATE] Completed for {faction.value}")
+        return {
+            "success": True,
+            "result": True,
+            "state": faction_status,
+            "faction": faction.value,
+            "total_units": total_units_count,
+            "alive_units": alive_units_count,  # Number of alive units (count > 0)
+            "actionable_units": actionable_units_count,  # Alive units with action points
+            "units": [
+                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
+            ],  # Return details for alive units (limited)
+        }
+
+    def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Capture the current rendered frame from the display and return as base64 PNG.
+        For VLM: the agent can decode and pass to a vision model.
+
+        Returns:
+            (base64_str, None) on success; (None, error_message) on failure.
+        """
+        try:
+            re = RenderEngine()
+            screen = re.screen
+        except Exception as e:
+            return None, f"RenderEngine/screen not available: {e}"
+
+        try:
+            surf = screen.copy()
+        except Exception as e:
+            return None, f"Screen copy failed: {e}"
+
+        try:
+            buf = io.BytesIO()
+            pygame.image.save(surf, buf)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return b64, None
+        except Exception as e:
+            return None, f"Encode frame to base64 failed: {e}"
+
+    def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        VLM version of get_faction_state: returns the same state as
+        handle_faction_state, plus the current rendered frame as base64 PNG
+        (frame_base64) for vision-language models.
+        """
+        # Reuse validation and state logic from handle_faction_state
+        faction_str = params.get("faction")
+        if not faction_str:
+            return self._create_error_response("faction parameter required")
+        try:
+            faction = Faction(faction_str)
+            print(f"[FACTION_STATE_VLM] Handling for {faction.value}")
+        except ValueError:
+            return self._create_error_response(f"Invalid faction: {faction_str}")
+
+        faction_units = self._get_faction_units(faction)
+        total_units_count = len(faction_units)
+        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
+        alive_units_count = len(alive_units)
+        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
+        actionable_units_count = len(actionable_units)
+        faction_status = self._get_faction_status(faction)
+
+        # Capture rendered frame for VLM
+        frame_b64, frame_err = self._capture_frame_base64()
+        payload = {
+            "success": True,
+            "result": True,
+            "state": faction_status,
+            "faction": faction.value,
+            "total_units": total_units_count,
+            "alive_units": alive_units_count,
+            "actionable_units": actionable_units_count,
+            "units": [
+                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
+            ],
+            "frame_base64": frame_b64,
+            "frame_format": "png" if frame_b64 else None,
+        }
+        if frame_err is not None:
+            payload["frame_error"] = frame_err
+
+        print(f"[FACTION_STATE_VLM] Completed for {faction.value}, frame={'ok' if frame_b64 else 'failed'}")
+        return payload
+
+    def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return concise documentation for available actions."""
+        action_docs = {
+            "actions": {
+                "move": {
+                    "description": "Move a unit to target position (may repeat until AP is exhausted)",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "ID of the moving unit (must be alive)",
+                        },
+                        "target_position": {
+                            "type": "object",
+                            "required": True,
+                            "description": "Target position (col/row)",
+                            "properties": {
+                                "col": {"type": "int", "description": "column"},
+                                "row": {"type": "int", "description": "row"},
+                            },
+                        },
+                    },
+                },
+                "attack": {
+                    "description": "Attack a target enemy unit (may repeat until AP is exhausted)",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Attacker unit ID",
+                        },
+                        "target_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Target unit ID",
+                        },
+                    },
+                },
+                "get_faction_state": {
+                    "description": "Get state for a faction: surviving unit positions and remaining strength",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei | shu | wu)",
+                        }
+                    },
+                },
+                "get_faction_state_vlm": {
+                    "description": "VLM: Get faction state plus the current rendered frame as base64 PNG (frame_base64). Use for vision-language models.",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei | shu | wu)",
+                        }
+                    },
+                },
+                "end_turn": {
+                    "description": "End the current faction's turn and pass control to the next faction. After ending the turn, no further actions (such as move, attack, etc.) can be performed by this faction until their next turn; only observation and information queries are allowed. Use this action when you have completed all desired actions for your faction in the current turn. The optional 'force' parameter can be used to forcibly end the turn in special cases (e.g., deadlock or error).",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Your current faction (wei | shu | wu)",
+                        },
+                        "force": {
+                            "type": "bool",
+                            "required": False,
+                            "description": "Force end turn (only use in special situations, default is False)",
+                            "default": False,
+                        },
+                    },
+                    "prerequisites": ["Game running", "Current faction's turn"],
+                },
+            },
+        }
+
+        return {"result": True, **action_docs}
+
+    def handle_action_list_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return full documentation for available actions."""
+        action_docs = {
+            "total_actions": len(self.action_handlers),
+            "actions": {
+                # Unit control
+                "move": {
+                    "category": "unit_control",
+                    "description": "Move a unit to the target position",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        },
+                        "target_position": {
+                            "type": "object",
+                            "required": True,
+                            "description": "Target position",
+                            "properties": {
+                                "col": {"type": "int", "description": "column"},
+                                "row": {"type": "int", "description": "row"},
+                            },
+                        },
+                    },
+                    "returns": {
+                        "result": {
+                            "type": "bool",
+                            "description": "Whether execution succeeded",
+                        },
+                        "details": {"type": "string", "description": "details message"},
+                        "resource_consumption": {
+                            "type": "object",
+                            "description": "Resource consumption details",
+                        },
+                        "remaining_resources": {
+                            "type": "object",
+                            "description": "Remaining resources",
+                        },
+                    },
+                    "prerequisites": [
+                        "Unit exists",
+                        "Sufficient action & movement points",
+                        "Target reachable",
+                        "Valid unit status",
+                    ],
+                },
+                "attack": {
+                    "category": "unit_control",
+                    "description": "Attack a target enemy unit",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Attacker unit ID",
+                        },
+                        "target_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Target unit ID",
+                        },
+                    },
+                    "prerequisites": [
+                        "Unit exists",
+                        "Target in range",
+                        "Enemy faction",
+                        "Sufficient action points",
+                    ],
+                },
+                "rest": {
+                    "category": "unit_control",
+                    "description": "Unit rests and recovers",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        }
+                    },
+                    "prerequisites": ["Unit exists"],
+                },
+                "occupy": {
+                    "category": "unit_control",
+                    "description": "Occupy a tile; consumes AP but not construction points",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        },
+                        "position": {
+                            "type": "object",
+                            "required": True,
+                            "description": "Target position",
+                            "properties": {
+                                "col": {"type": "int", "description": "column"},
+                                "row": {"type": "int", "description": "row"},
+                            },
+                        },
+                    },
+                    "prerequisites": [
+                        "Unit exists",
+                        "Tile not already friendly",
+                        "Current or adjacent tile",
+                        "Sufficient action points",
+                    ],
+                },
+                "fortify": {
+                    "category": "unit_control",
+                    "description": "Build fortification on friendly tile; increases defense; consumes CP and AP",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        },
+                        "position": {
+                            "type": "object",
+                            "required": True,
+                            "description": "Position to fortify",
+                        },
+                    },
+                    "prerequisites": [
+                        "Unit exists",
+                        "Tile friendly",
+                        "Below max fortification level",
+                        "Terrain allows",
+                        "Sufficient AP and CP",
+                    ],
+                },
+                "skill": {
+                    "category": "unit_control",
+                    "description": "Use a unit skill",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        },
+                        "skill_name": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Skill name",
+                        },
+                        "target": {
+                            "type": "any",
+                            "required": False,
+                            "description": "Skill target (optional)",
+                        },
+                    },
+                    "prerequisites": [
+                        "Unit exists",
+                        "Skill available",
+                        "Not on cooldown",
+                        "Sufficient action points",
+                    ],
+                },
+                # Observation
+                "observation": {
+                    "category": "observation",
+                    "description": "Get unit observation info",
+                    "parameters": {
+                        "unit_id": {
+                            "type": "int",
+                            "required": True,
+                            "description": "Unit ID",
+                        },
+                        "observation_level": {
+                            "type": "string",
+                            "required": False,
+                            "description": "Observation level",
+                            "default": "basic",
+                            "options": ["basic", "detailed", "tactical"],
+                        },
+                    },
+                    "prerequisites": ["Unit exists"],
+                },
+                # Faction
+                "get_faction_state": {
+                    "category": "faction_control",
+                    "description": "Get overall faction status including battles and outcomes",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei/shu/wu)",
+                        }
+                    },
+                    "returns": {
+                        "result": {
+                            "type": "bool",
+                            "description": "Whether execution succeeded",
+                        },
+                        "state": {
+                            "type": "string",
+                            "description": "Faction state: active/in_battle/victory/defeat/eliminated/draw",
+                        },
+                        "status_details": {
+                            "type": "object",
+                            "description": "Detailed status info",
+                        },
+                        "faction": {"type": "string", "description": "Faction name"},
+                        "total_units": {
+                            "type": "int",
+                            "description": "Total unit count",
+                        },
+                        "alive_units": {
+                            "type": "int",
+                            "description": "Alive unit count",
+                        },
+                        "units": {
+                            "type": "array",
+                            "description": "Detailed unit info list",
+                        },
+                    },
+                    "prerequisites": ["Valid faction name"],
+                },
+                "get_faction_state_vlm": {
+                    "category": "faction_control",
+                    "description": "VLM: Get faction state plus current rendered frame as base64 PNG (frame_base64) for vision-language models.",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Faction name (wei/shu/wu)",
+                        }
+                    },
+                    "returns": {
+                        "result": {"type": "bool", "description": "Whether execution succeeded"},
+                        "state": {"type": "string", "description": "Faction state"},
+                        "faction": {"type": "string", "description": "Faction name"},
+                        "total_units": {"type": "int", "description": "Total unit count"},
+                        "alive_units": {"type": "int", "description": "Alive unit count"},
+                        "units": {"type": "array", "description": "Detailed unit info list"},
+                        "frame_base64": {"type": "string", "description": "Current frame as base64 PNG, or null if capture failed"},
+                        "frame_format": {"type": "string", "description": "'png' when frame_base64 is present"},
+                        "frame_error": {"type": "string", "description": "Error message when frame capture failed"},
+                    },
+                    "prerequisites": ["Valid faction name", "Display/screen available for frame capture"],
+                },
+                # System
+                "get_action_list": {
+                    "category": "system",
+                    "description": "Get concise docs for all actions",
+                    "parameters": {},
+                    "prerequisites": ["none"],
+                },
+                "end_turn": {
+                    "category": "system",
+                    "description": "End the current faction's turn and pass control to the next faction. After ending the turn, no further actions (such as move, attack, etc.) can be performed by this faction until their next turn; only observation and information queries are allowed. Use this action when you have completed all desired actions for your faction in the current turn. The optional 'force' parameter can be used to forcibly end the turn in special cases (e.g., deadlock or error).",
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Your current faction (wei | shu | wu)",
+                        },
+                        "force": {
+                            "type": "bool",
+                            "required": False,
+                            "description": "Force end turn (only use in special situations, default is False)",
+                            "default": False,
+                        },
+                    },
+                    "prerequisites": ["Game running", "Current faction's turn"],
+                },
+            },
+            "usage_examples": {
+                "move_unit": {
+                    "action": "move",
+                    "params": {"unit_id": 123, "target_position": {"col": 5, "row": 8}},
+                },
+                "attack_enemy": {
+                    "action": "attack",
+                    "params": {"unit_id": 123, "target_id": 456},
+                },
+                "rest_unit": {
+                    "action": "rest",
+                    "params": {"unit_id": 123},
+                },
+                "occupy_territory": {
+                    "action": "occupy",
+                    "params": {"unit_id": 123, "position": {"col": 5, "row": 8}},
+                },
+                "build_fortification": {
+                    "action": "fortify",
+                    "params": {"unit_id": 123, "position": {"col": 5, "row": 8}},
+                },
+                "use_skill": {
+                    "action": "skill",
+                    "params": {"unit_id": 123, "skill_name": "hide", "target": None},
+                },
+                "observe_surroundings": {
+                    "action": "observation",
+                    "params": {"unit_id": 123, "observation_level": "detailed"},
+                },
+                "get_faction_overview": {
+                    "action": "get_faction_state",
+                    "params": {"faction": "wei"},
+                },
+                "get_faction_overview_vlm": {
+                    "action": "get_faction_state_vlm",
+                    "params": {"faction": "wei"},
+                },
+                "finish_turn": {
+                    "action": "end_turn",
+                    "params": {"faction": "wei", "force": False},
+                },
+            },
+        }
+
+        return {"result": True, **action_docs}
+
+    def handle_end_turn(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle end-turn action for the current faction."""
+        faction_str = params.get("faction")
+        force = params.get("force", False)
+
+        if not faction_str:
+            return self._create_error_response("faction parameter required")
+
+        try:
+            faction = Faction(faction_str)
+        except ValueError:
+            return self._create_error_response(f"Invalid faction: {faction_str}")
+
+        # Check game state
+        game_state = self.world.get_singleton_component(GameState)
+        if not game_state:
+            return self._create_error_response("Game not initialized")
+
+        if game_state.game_over:
+            return self._create_error_response("Game is already over")
+
+        # Get turn system
         turn_system = self._get_turn_system()
-        if turn_system:
-            # TODO: Implement end-turn logic
+        if not turn_system:
+            return self._create_error_response("Turn system not available")
+
+        # Ensure it's the current player's turn
+        current_player = self._get_current_player()
+        if not current_player or current_player.faction != faction:
+            return self._create_error_response(
+                f"Not {faction.value}'s turn. Current turn: {current_player.faction.value if current_player else 'unknown'}",
+            )
+
+        # Execute end turn
+        success = turn_system.agent_end_turn()
+
+        if success:
+            # Get new current player
+            new_current_player = self._get_current_player()
+            next_faction = (
+                new_current_player.faction.value if new_current_player else "unknown"
+            )
+
             return {
                 "success": True,
-                "message": f"Turn ended for faction {faction}",
-                "faction": faction,
+                "result": True,
+                "details": f"Turn ended for faction {faction.value}",
+                "message": f"Turn ended for faction {faction.value}",
+                "turn_summary": {
+                    "ended_faction": faction.value,
+                    "next_faction": next_faction,
+                    "turn_number": game_state.turn_number,
+                    "forced": force,
+                },
+                "game_status": {
+                    "game_running": not game_state.game_over,
+                    "current_turn": game_state.turn_number,
+                    "current_player": next_faction,
+                },
+            }
+        else:
+            return self._create_error_response(
+                f"Failed to end turn for faction {faction.value}"
+            )
+
+    # ==================== Helper methods ====================
+
+    def _create_error_response(
+        self, message: str, extra_data: Dict = None
+    ) -> Dict[str, Any]:
+        """Create a structured error response (uniform schema)."""
+        response = {
+            "success": False,
+            "result": False,
+            "details": message,
+            "message": message,
+        }
+
+        if extra_data:
+            response.update(extra_data)
+
+        return response
+
+    def _validate_faction_turn_permission(
+        self, unit_id: int, action_name: str = "action"
+    ) -> Dict[str, Any]:
+        """Validate whether the unit's faction has permission to act this turn.
+
+        Args:
+            unit_id: Unit id
+            action_name: Action name (used for error messages)
+
+        Returns:
+            Dict: Error response dict on failure; None on success.
+        """
+        # Validate that the unit exists
+        unit = self.world.get_component(unit_id, Unit)
+        if not unit:
+            return self._create_error_response(
+                f"Unit {unit_id} not found", {"unit_id": unit_id, "action": action_name}
+            )
+
+        # Check game mode
+        game_mode = self.world.get_singleton_component(GameModeComponent)
+        is_realtime = game_mode and game_mode.is_real_time()
+
+        # In real-time mode all factions can act concurrently, so skip turn checks
+        if is_realtime:
+            return None
+
+        # Get the currently active faction (turn-based mode only)
+        current_player = self._get_current_player()
+        if not current_player:
+            return self._create_error_response(
+                "Unable to determine current player",
+                {"unit_id": unit_id, "action": action_name},
+            )
+
+        # Check whether it's this faction's turn
+        if unit.faction != current_player.faction:
+            return self._create_error_response(
+                f"Not {unit.faction.value}'s turn to act. Current turn: {current_player.faction.value}",
+                {
+                    "unit_id": unit_id,
+                    "unit_faction": unit.faction.value,
+                    "current_turn_faction": current_player.faction.value,
+                    "action": action_name,
+                    "suggestion": f"Wait for {unit.faction.value}'s turn or switch to a {current_player.faction.value} unit",
+                },
+            )
+
+        # Validation passed: None means no error
+        return None
+
+    def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
+        """Get detailed unit information with safe fallbacks."""
+        try:
+
+            if not isinstance(unit_id, int) or unit_id <= 0:
+                return {
+                    "unit_id": unit_id,
+                    "error": "Invalid unit_id",
+                    "unit_type": "unknown",
+                    "faction": "unknown",
+                    "position": {"col": 0, "row": 0},
+                    "unit_status": {
+                        "current_count": 0,
+                        "max_count": 0,
+                        "health_percentage": 0.0,
+                        "morale": "unknown",
+                        "fatigue": "none",
+                    },
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                        },
+                        "unit_resources": {
+                            "action_points": 0,
+                            "max_action_points": 2,
+                            "movement_points": 0,
+                            "max_movement_points": 3,
+                        },
+                    },
+                    "available_skills": [],
+                }
+
+            unit = self.world.get_component(unit_id, Unit)
+            unit_count = self.world.get_component(unit_id, UnitCount)
+            position = self.world.get_component(unit_id, HexPosition)
+            movement_points = self.world.get_component(unit_id, MovementPoints)
+            combat = self.world.get_component(unit_id, Combat)
+            vision = self.world.get_component(unit_id, Vision)
+            action_points = self.world.get_component(unit_id, ActionPoints)
+            construction_points = self.world.get_component(unit_id, ConstructionPoints)
+            skill_points = self.world.get_component(unit_id, SkillPoints)
+            unit_status = self.world.get_component(unit_id, UnitStatus)
+            unit_skills = self.world.get_component(unit_id, UnitSkills)
+
+            if not unit:
+                return {
+                    "unit_id": unit_id,
+                    "error": "Unit not found",
+                    "unit_type": "unknown",
+                    "faction": "unknown",
+                    "position": {"col": 0, "row": 0},
+                    "unit_status": {
+                        "current_count": 0,
+                        "max_count": 0,
+                        "health_percentage": 0.0,
+                        "morale": "unknown",
+                        "fatigue": "none",
+                    },
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                        },
+                        "unit_resources": {
+                            "action_points": 0,
+                            "max_action_points": 2,
+                            "movement_points": 0,
+                            "max_movement_points": 3,
+                        },
+                    },
+                    "available_skills": [],
+                }
+
+            try:
+                unit_type_value = unit.unit_type.value if unit.unit_type else "unknown"
+            except (AttributeError, ValueError):
+                unit_type_value = "unknown"
+
+            try:
+                faction_value = unit.faction.value if unit.faction else "unknown"
+            except (AttributeError, ValueError):
+                faction_value = "unknown"
+
+            position_info = {"col": 0, "row": 0}
+            if position:
+                try:
+                    position_info = {
+                        "col": int(position.col) if hasattr(position, "col") else 0,
+                        "row": int(position.row) if hasattr(position, "row") else 0,
+                    }
+                except (AttributeError, ValueError, TypeError):
+                    position_info = {"col": 0, "row": 0}
+
+            status_info = {
+                "current_count": 0,
+                "max_count": 0,
+                "health_percentage": 0.0,
+                "morale": "normal",
+                "fatigue": "none",
             }
 
-        return {"success": False, "error": "Turn system not available"}
+            if unit_count:
+                try:
+                    status_info.update(
+                        {
+                            "current_count": (
+                                int(unit_count.current_count)
+                                if hasattr(unit_count, "current_count")
+                                else 0
+                            ),
+                            "max_count": (
+                                int(unit_count.max_count)
+                                if hasattr(unit_count, "max_count")
+                                else 0
+                            ),
+                            "health_percentage": (
+                                float(unit_count.ratio * 100)
+                                if hasattr(unit_count, "ratio")
+                                else 0.0
+                            ),
+                        }
+                    )
+                except (AttributeError, ValueError, TypeError):
+                    pass  # keep defaults
 
-    def handle_select_unit_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the select-unit action."""
-        unit_id = params.get("unit_id")
+            if unit_status:
+                try:
+                    if (
+                        hasattr(unit_status, "current_status")
+                        and unit_status.current_status
+                    ):
+                        if hasattr(unit_status.current_status, "value"):
+                            status_info["morale"] = str(
+                                unit_status.current_status.value
+                            )
+                        else:
+                            status_info["morale"] = str(unit_status.current_status)
+                except (AttributeError, ValueError, TypeError):
+                    status_info["morale"] = "normal"
 
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id"}
+            capabilities_info = {
+                "properties": {
+                    "attack_range": 1,
+                    "attack_power": 10,  # Default attack power
+                    "vision_range": 2,
+                },
+                "unit_resources": {
+                    "remaining_action_points": 0,
+                    # "max_action_points": 2,
+                    "remaining_movement_points": 0,
+                    # "max_movement_points": 3,
+                },
+            }
 
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
+            if movement_points:
+                try:
+                    capabilities_info["unit_resources"]["remaining_movement_points"] = (
+                        int(movement_points.current_mp)
+                        if hasattr(movement_points, "current_mp")
+                        else 0
+                    )
+                except (AttributeError, ValueError, TypeError):
+                    pass
 
-        # Clear selection state on other units
-        for entity in self.world.query().with_all(Selected).entities():
-            self.world.remove_component(entity, Selected)
+            if combat:
+                try:
+                    capabilities_info["properties"]["attack_range"] = (
+                        int(combat.attack_range)
+                        if hasattr(combat, "attack_range")
+                        else 1
+                    )
+                    capabilities_info["properties"]["attack_power"] = (
+                        int(combat.base_attack)
+                        if hasattr(combat, "base_attack")
+                        else 10
+                    )
+                    # Add defense info after attack info
+                    capabilities_info["properties"]["defense"] = (
+                        int(combat.base_defense)
+                        if hasattr(combat, "base_defense")
+                        else 5
+                    )
+                except (AttributeError, ValueError, TypeError):
+                    pass
 
-        # Select the target unit
-        self.world.add_component(unit_id, Selected())
+            if vision:
+                try:
+                    capabilities_info["properties"]["vision_range"] = (
+                        int(vision.range) if hasattr(vision, "range") else 2
+                    )
+                except (AttributeError, ValueError, TypeError):
+                    pass
+
+            if action_points:
+                try:
+                    capabilities_info["unit_resources"].update(
+                        {
+                            "remaining_action_points": (
+                                int(action_points.current_ap)
+                                if hasattr(action_points, "current_ap")
+                                else 0
+                            ),
+                            # "max_action_points": (
+                            #     int(action_points.max_ap) # not used
+                            #     if hasattr(action_points, "max_ap")
+                            #     else 2
+                            # ),
+                        }
+                    )
+                except (AttributeError, ValueError, TypeError):
+                    pass
+
+            if construction_points:
+
+                pass
+
+            if skill_points:
+                pass
+
+
+            available_skills = []
+            if unit_skills:
+                try:
+                    if (
+                        hasattr(unit_skills, "available_skills")
+                        and unit_skills.available_skills
+                    ):
+                        available_skills = [
+                            str(skill) for skill in unit_skills.available_skills
+                        ]
+                except (AttributeError, ValueError, TypeError):
+                    available_skills = []
+
+            return {
+                "unit_id": unit_id,
+                "unit_type": unit_type_value,
+                "faction": faction_value,
+                "position": position_info,
+                "unit_status": status_info,
+                "capabilities": capabilities_info,
+                "available_skills": available_skills,
+            }
+
+        except Exception as e:
+            # Return safe defaults on exception
+            return {
+                "unit_id": unit_id,
+                "error": f"Failed to get unit info: {str(e)}",
+                "unit_type": "unknown",
+                "faction": "unknown",
+                "position": {"col": 0, "row": 0},
+                "unit_status": {
+                    "current_count": 0,
+                    "max_count": 0,
+                    "health_percentage": 0.0,
+                    "morale": "unknown",
+                    "fatigue": "none",
+                },
+                "capabilities": {
+                    "properties": {
+                        "attack_range": 1,
+                        "attack_power": 10,
+                        "vision_range": 2,
+                    },
+                    "unit_resources": {
+                        "remaining_action_points": 0,
+                        # "max_action_points": 2,
+                        "remaining_movement_points": 0,
+                        # "max_movement_points": 3,
+                    },
+                },
+                "available_skills": [],
+            }
+
+    def _get_visible_environment(
+        self, unit_id: int, observation_level: str
+    ) -> List[Dict[str, Any]]:
+        """Get visible environment around the unit."""
+        vision = self.world.get_component(unit_id, Vision)
+        if not vision:
+            return []
+
+        unit_position = self.world.get_component(unit_id, HexPosition)
+        movement_points = self.world.get_component(unit_id, MovementPoints)
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        combat = self.world.get_component(unit_id, Combat)
+        unit = self.world.get_component(unit_id, Unit)
+        current_pos = (unit_position.col, unit_position.row) if unit_position else None
+
+        visible_tiles = []
+        for pos in vision.visible_tiles:
+            tile_info = {
+                "position": {"col": pos[0], "row": pos[1]},
+                "terrain": self._get_terrain_at_position(pos).value,
+                "units": self._get_units_at_position(pos),
+                "fortifications": self._get_current_fortification_level(pos),
+                # Territory info
+                "territory_control": self._get_territory_control_info(
+                    pos, unit.faction if unit else None
+                ),
+                # Movement accessibility
+                "movement_accessibility": self._get_movement_accessibility_info(
+                    unit_id, current_pos, pos, movement_points, unit_count
+                ),
+                # Attack range info
+                "attack_range_info": self._get_attack_range_info(
+                    current_pos, pos, combat
+                ),
+            }
+
+            visible_tiles.append(tile_info)
+
+        return visible_tiles
+
+    def _calculate_movement_info(
+        self,
+        unit_id: int,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+        movement_points: MovementPoints,
+        unit_count: UnitCount,
+    ) -> Dict[str, Any]:
+        """Compute movement info from current to target tile."""
+
+        if current_pos == target_pos:
+            return {
+                "reachable": True,
+                "is_current_position": True,
+                "movement_cost": 0,
+                "path_length": 0,
+                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
+                "effective_movement_range": movement_points.get_effective_movement(
+                    unit_count
+                ),
+                "current_movement_points": movement_points.current_mp,
+                # "path": [current_pos],
+            }
+
+        # Effective movement (consider strength)
+        effective_movement = movement_points.get_effective_movement(unit_count)
+
+        # Get obstacles and compute a path
+        obstacles = self._get_obstacles()
+        from ..utils.hex_utils import PathFinding
+
+        try:
+            # Attempt to find a path
+            path = PathFinding.find_path(
+                current_pos, target_pos, obstacles, effective_movement
+            )
+
+            if path and len(path) > 1:
+                # Compute total path cost
+                total_movement_cost = self._calculate_total_movement_cost(path)
+
+                # Check reachability
+                reachable = total_movement_cost <= movement_points.current_mp
+
+                return {
+                    "reachable": reachable,
+                    "is_current_position": False,
+                    "movement_cost": total_movement_cost,
+                    "path_length": len(path) - 1,
+                    "terrain_movement_cost": self._get_terrain_movement_cost(
+                        target_pos
+                    ),
+                    "effective_movement_range": effective_movement,
+                    "current_movement_points": movement_points.current_mp,
+                    # "path": path,
+                    "reachable_reason": (
+                        "sufficient_movement_points"
+                        if reachable
+                        else f"need_{total_movement_cost}_have_{movement_points.current_mp}"
+                    ),
+                }
+            else:
+                # No valid path
+                return {
+                    "reachable": False,
+                    "is_current_position": False,
+                    "movement_cost": -1,
+                    "path_length": -1,
+                    "terrain_movement_cost": self._get_terrain_movement_cost(
+                        target_pos
+                    ),
+                    "effective_movement_range": effective_movement,
+                    "current_movement_points": movement_points.current_mp,
+                    # "path": [],
+                    "reachable_reason": "no_valid_path",
+                }
+        except Exception as e:
+            # Path calculation error
+            return {
+                "reachable": False,
+                "is_current_position": False,
+                "movement_cost": -1,
+                "path_length": -1,
+                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
+                "effective_movement_range": effective_movement,
+                "current_movement_points": movement_points.current_mp,
+                # "path": [],
+                "reachable_reason": f"path_calculation_error: {str(e)}",
+            }
+
+    def _get_tactical_info(self, unit_id: int) -> Dict[str, Any]:
+        """Get tactical info (placeholder)."""
+        # Simplified placeholder implementation
+        return {"threats": [], "opportunities": [], "movement_options": []}
+
+    def _get_faction_units(self, faction: Faction) -> List[int]:
+        """Get all unit IDs belonging to a faction."""
+        units = []
+        for entity in self.world.query().with_component(Unit).entities():
+            unit = self.world.get_component(entity, Unit)
+            if unit and unit.faction == faction:
+                units.append(entity)
+        return units
+
+    def _is_unit_alive(self, unit_id: int) -> bool:
+        """Check if unit is alive (count > 0)."""
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        return unit_count and unit_count.current_count > 0
+
+    def _can_unit_take_action(self, unit_id: int) -> bool:
+        """Check if unit can act (alive and has AP)."""
+        if not self._is_unit_alive(unit_id):
+            return False
+
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        return action_points and action_points.current_ap > 0
+
+    def _calculate_territory_control(self, faction: Faction) -> int:
+        """Calculate territory control percentage (placeholder)."""
+        # Simplified placeholder implementation
+        return 30  # fixed value; real calculation TBD
+
+    def _calculate_resource_summary(self, faction_units: List[int]) -> Dict[str, Any]:
+        """Calculate resource summary (simplified)."""
+        total_manpower = 0
+        for unit_id in faction_units:
+            unit_count = self.world.get_component(unit_id, UnitCount)
+            if unit_count:
+                total_manpower += unit_count.current_count
 
         return {
-            "success": True,
-            "message": f"Unit {unit_id} selected",
-            "unit_id": unit_id,
+            "total_manpower": total_manpower,
+            "fortification_points": 0,  # simplified
+            "controlled_cities": 0,  # simplified
         }
 
-    def handle_formation_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle the formation action."""
-        unit_ids = params.get("unit_ids", [])
-        formation_type = params.get(
-            "formation_type", "line"
-        )  # "line", "column", "wedge", etc.
-
-        if not unit_ids:
-            return {"success": False, "error": "Missing unit_ids"}
-
-        # TODO: Implement formation logic
+    def _get_strategic_summary(self, faction: Faction) -> Dict[str, Any]:
+        """Get strategic summary (simplified)."""
         return {
-            "success": True,
-            "message": f"Formation {formation_type} set for {len(unit_ids)} units",
-            "unit_ids": unit_ids,
-            "formation_type": formation_type,
+            "active_battles": 0,
+            "territory_threats": [],
+            "expansion_opportunities": [],
         }
 
-    # Helper methods
+    # ==================== System getters ====================
+
     def _get_movement_system(self):
-        """Get the movement system."""
+        """Get MovementSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "MovementSystem":
                 return system
         return None
 
     def _get_combat_system(self):
-        """Get the combat system."""
+        """Get CombatSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "CombatSystem":
                 return system
         return None
 
-    def _get_turn_system(self):
-        """Get the turn system."""
-        for system in self.world.systems:
-            if system.__class__.__name__ == "TurnSystem":
-                return system
-        return None
-
     def _get_action_system(self):
-        """Get the action system."""
+        """Get ActionSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 
-    def _calculate_retreat_position(
-        self, current_pos: Tuple[int, int], direction: str
-    ) -> Tuple[int, int]:
-        """Calculate a retreat position."""
-        col, row = current_pos
-
-        direction_map = {
-            "north": (0, -1),
-            "south": (0, 1),
-            "northeast": (1, -1),
-            "northwest": (-1, 0),
-            "southeast": (1, 0),
-            "southwest": (-1, 1),
-            "east": (1, 0),
-            "west": (-1, 0),
-        }
-
-        offset = direction_map.get(direction, (0, -1))  # Default: retreat north
-        return (col + offset[0], row + offset[1])
-
-    # =============================================
-    # Observation command handlers
-    # =============================================
-
-    def handle_unit_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle a unit observation request."""
-        unit_id = params.get("unit_id")
-
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id parameter"}
-
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-        # Get the observation system
-        obs_system = self._get_observation_system()
-        if obs_system:
-            observation = obs_system.get_observation("unit", unit_id=unit_id)
-            return {"success": True, "observation": observation}
-
-        # Fallback: if no observation system exists, return basic info
-        return {"success": True, "observation": self._get_basic_unit_info(unit_id)}
-
-    def handle_faction_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle a faction observation request."""
-        faction = params.get("faction")
-        include_hidden = params.get("include_hidden", False)
-
-        if not faction:
-            return {"success": False, "error": "Missing faction parameter"}
-
-        # Convert string to the Faction enum
-        if isinstance(faction, str):
-            try:
-                faction = Faction(faction.upper())
-            except ValueError:
-                return {"success": False, "error": f"Invalid faction: {faction}"}
-
-        obs_system = self._get_observation_system()
-        if obs_system:
-            observation = obs_system.get_observation(
-                "faction", faction=faction, include_hidden=include_hidden
-            )
-            return {"success": True, "observation": observation}
-
-        return {"success": True, "observation": self._get_basic_faction_info(faction)}
-
-    def handle_godview_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle a god-view observation request."""
-        obs_system = self._get_observation_system()
-        if obs_system:
-            observation = obs_system.get_observation("godview")
-            return {"success": True, "observation": observation}
-
-        return {"success": True, "observation": self._get_basic_godview_info()}
-
-    def handle_limited_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle a restricted-view observation request."""
-        faction = params.get("faction")
-
-        if not faction:
-            return {"success": False, "error": "Missing faction parameter"}
-
-        if isinstance(faction, str):
-            try:
-                faction = Faction(faction.upper())
-            except ValueError:
-                return {"success": False, "error": f"Invalid faction: {faction}"}
-
-        obs_system = self._get_observation_system()
-        if obs_system:
-            observation = obs_system.get_observation("limited", faction=faction)
-            return {"success": True, "observation": observation}
-
-        return {"success": True, "observation": self._get_basic_faction_info(faction)}
-
-    def handle_tactical_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle a tactical observation request."""
-        center_position = params.get("center_position")
-        radius = params.get("radius", 3)
-        faction = params.get("faction")
-
-        if not center_position:
-            return {"success": False, "error": "Missing center_position parameter"}
-
-        tactical_info = self._get_tactical_area_info(center_position, radius, faction)
-        return {"success": True, "observation": tactical_info}
-
-    # =============================================
-    # State/query command handlers
-    # =============================================
-
-    def handle_get_unit_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List units."""
-        faction_filter = params.get("faction")
-        unit_type_filter = params.get("unit_type")
-        status_filter = params.get("status")  # "alive", "wounded", "ready"
-
-        unit_list = []
-        for entity in self.world.query().with_all(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            position = self.world.get_component(entity, HexPosition)
-            unit_count = self.world.get_component(entity, UnitCount)
-
-            if not unit:
-                continue
-
-            # Apply filters
-            if faction_filter and unit.faction != faction_filter:
-                continue
-            if unit_type_filter and unit.unit_type != unit_type_filter:
-                continue
-            if status_filter:
-                if (
-                    status_filter == "alive"
-                    and unit_count
-                    and unit_count.current_count <= 0
-                ):
-                    continue
-                elif (
-                    status_filter == "wounded"
-                    and unit_count
-                    and unit_count.current_count < unit_count.max_count
-                ):
-                    continue
-                elif status_filter == "ready":
-                    movement = self.world.get_component(entity, MovementPoints)
-                    combat = self.world.get_component(entity, Combat)
-                    if (movement and movement.has_moved) or (
-                        combat and combat.has_attacked
-                    ):
-                        continue
-
-            unit_info = {
-                "id": entity,
-                "name": unit.name,
-                "faction": (
-                    unit.faction.value
-                    if hasattr(unit.faction, "value")
-                    else str(unit.faction)
-                ),
-                "type": (
-                    unit.unit_type.value
-                    if hasattr(unit.unit_type, "value")
-                    else str(unit.unit_type)
-                ),
-            }
-
-            if position:
-                unit_info["position"] = {"col": position.col, "row": position.row}
-            if unit_count:
-                unit_info["unit_count_percentage"] = (
-                    unit_count.current_count / unit_count.max_count
-                    if unit_count.max_count > 0
-                    else 0
-                )
-
-            unit_list.append(unit_info)
-
-        return {
-            "success": True,
-            "units": unit_list,
-            "total_count": len(unit_list),
-            "filters_applied": {
-                "faction": faction_filter,
-                "unit_type": unit_type_filter,
-                "status": status_filter,
-            },
-        }
-
-    def handle_get_unit_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get detailed information for a unit."""
-        unit_id = params.get("unit_id")
-
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id parameter"}
-
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-        unit_info = self._get_detailed_unit_info(unit_id)
-        return {"success": True, "unit_info": unit_info}
-
-    def handle_get_faction_units(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List all units for a faction."""
-        faction = params.get("faction")
-
-        if not faction:
-            return {"success": False, "error": "Missing faction parameter"}
-
-        if isinstance(faction, str):
-            try:
-                faction = Faction(faction.upper())
-            except ValueError:
-                return {"success": False, "error": f"Invalid faction: {faction}"}
-
-        faction_units = []
-        for entity in self.world.query().with_all(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                unit_info = self._get_detailed_unit_info(entity)
-                faction_units.append(unit_info)
-
-        return {
-            "success": True,
-            "faction": faction.value if hasattr(faction, "value") else str(faction),
-            "units": faction_units,
-            "total_count": len(faction_units),
-        }
-
-    def handle_get_game_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get game state information."""
-        game_state = self.world.get_singleton_component(GameState)
-
-        state_info = {"game_exists": game_state is not None}
-
-        if game_state:
-            state_info.update(
-                {
-                    "current_player": (
-                        game_state.current_player.value
-                        if hasattr(game_state.current_player, "value")
-                        else str(game_state.current_player)
-                    ),
-                    "game_mode": (
-                        game_state.game_mode.value
-                        if hasattr(game_state.game_mode, "value")
-                        else str(game_state.game_mode)
-                    ),
-                    "turn_number": getattr(game_state, "turn_number", 1),
-                    "phase": getattr(game_state, "phase", "action"),
-                    "time_limit": getattr(game_state, "time_limit", None),
-                    "victory_condition": getattr(
-                        game_state, "victory_condition", "elimination"
-                    ),
-                }
-            )
-
-        return {"success": True, "game_state": state_info}
-
-    def handle_get_map_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get map information."""
-        include_terrain = params.get("include_terrain", True)
-        include_units = params.get("include_units", True)
-        area = params.get(
-            "area"
-        )  # Optional: area bounds {"min_col": 0, "max_col": 10, "min_row": 0, "max_row": 10}
-
-        map_info = {
-            "terrain": [] if include_terrain else None,
-            "unit_positions": [] if include_units else None,
-        }
-
-        if include_terrain:
-            # Collect terrain info
-            from ..components import Terrain, Tile
-
-            for entity in self.world.query().with_all(Tile, HexPosition).entities():
-                position = self.world.get_component(entity, HexPosition)
-                tile = self.world.get_component(entity, Tile)
-                terrain = self.world.get_component(entity, Terrain)
-
-                if area:
-                    if (
-                        position.col < area.get("min_col", 0)
-                        or position.col > area.get("max_col", 999)
-                        or position.row < area.get("min_row", 0)
-                        or position.row > area.get("max_row", 999)
-                    ):
-                        continue
-
-                terrain_info = {
-                    "position": {"col": position.col, "row": position.row},
-                    "passable": tile.passable if tile else True,
-                }
-
-                if terrain:
-                    terrain_info.update(
-                        {
-                            "type": (
-                                terrain.terrain_type.value
-                                if hasattr(terrain.terrain_type, "value")
-                                else str(terrain.terrain_type)
-                            ),
-                            "movement_cost": terrain.movement_cost,
-                            "defense_bonus": terrain.defense_bonus,
-                        }
-                    )
-
-                map_info["terrain"].append(terrain_info)
-
-        if include_units:
-            # Collect unit positions
-            for entity in self.world.query().with_all(Unit, HexPosition).entities():
-                position = self.world.get_component(entity, HexPosition)
-                unit = self.world.get_component(entity, Unit)
-
-                if area:
-                    if (
-                        position.col < area.get("min_col", 0)
-                        or position.col > area.get("max_col", 999)
-                        or position.row < area.get("min_row", 0)
-                        or position.row > area.get("max_row", 999)
-                    ):
-                        continue
-
-                unit_pos = {
-                    "unit_id": entity,
-                    "name": unit.name,
-                    "faction": (
-                        unit.faction.value
-                        if hasattr(unit.faction, "value")
-                        else str(unit.faction)
-                    ),
-                    "position": {"col": position.col, "row": position.row},
-                }
-
-                map_info["unit_positions"].append(unit_pos)
-
-        return {"success": True, "map_info": map_info}
-
-    def handle_get_battle_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get battle status information."""
-        faction = params.get("faction")
-
-        battle_status = {"active_battles": [], "recent_battles": [], "casualties": {}}
-
-        # Check whether a battle log system exists
-        from ..components import BattleLog
-
-        battle_log = self.world.get_singleton_component(BattleLog)
-
-        if battle_log and hasattr(battle_log, "entries"):
-            recent_entries = battle_log.entries[-5:]  # Last 5 battle entries
-            for entry in recent_entries:
-                battle_info = {
-                    "turn": entry.turn,
-                    "attacker": entry.attacker_name,
-                    "defender": entry.defender_name,
-                    "damage": entry.damage,
-                    "result": entry.result,
-                }
-                battle_status["recent_battles"].append(battle_info)
-
-        # Compute faction casualties (optional)
-        if faction:
-            if isinstance(faction, str):
-                try:
-                    faction = Faction(faction.upper())
-                except ValueError:
-                    pass
-
-            total_units = 0
-            wounded_units = 0
-            dead_units = 0
-
-            for entity in self.world.query().with_all(Unit).entities():
-                unit = self.world.get_component(entity, Unit)
-                unit_count = self.world.get_component(entity, UnitCount)
-
-                if unit and unit.faction == faction:
-                    total_units += 1
-                    if unit_count:
-                        if unit_count.current_count <= 0:
-                            dead_units += 1
-                        elif unit_count.current_count < unit_count.max_count:
-                            wounded_units += 1
-
-            battle_status["casualties"] = {
-                "total_units": total_units,
-                "wounded_units": wounded_units,
-                "dead_units": dead_units,
-                "full_strength_units": total_units - wounded_units - dead_units,
-            }
-
-        return {"success": True, "battle_status": battle_status}
-
-    def handle_get_available_actions(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get available actions."""
-        unit_id = params.get("unit_id")
-
-        if unit_id:
-            # Get available actions for a specific unit
-            if not self.world.has_entity(unit_id):
-                return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-            available_actions = self._get_unit_available_actions(unit_id)
-            return {
-                "success": True,
-                "unit_id": unit_id,
-                "available_actions": available_actions,
-            }
-        else:
-            # Return all supported action types
-            return {
-                "success": True,
-                "all_supported_actions": self.get_supported_actions(),
-                "action_categories": {
-                    "unit_actions": [
-                        "move",
-                        "attack",
-                        "defend",
-                        "scout",
-                        "retreat",
-                        "fortify",
-                        "patrol",
-                    ],
-                    "selection_actions": ["select_unit", "formation"],
-                    "game_actions": ["end_turn"],
-                    "observation_actions": [
-                        "unit_observation",
-                        "faction_observation",
-                        "godview_observation",
-                        "limited_observation",
-                        "tactical_observation",
-                    ],
-                    "query_actions": [
-                        "get_unit_list",
-                        "get_unit_info",
-                        "get_faction_units",
-                        "get_game_state",
-                        "get_map_info",
-                        "get_battle_status",
-                        "get_available_actions",
-                        "get_unit_capabilities",
-                        "get_visibility_info",
-                        "get_strategic_summary",
-                    ],
-                },
-            }
-
-    def handle_get_unit_capabilities(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get unit capability information."""
-        unit_id = params.get("unit_id")
-
-        if not unit_id:
-            return {"success": False, "error": "Missing unit_id parameter"}
-
-        if not self.world.has_entity(unit_id):
-            return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-        capabilities = self._get_unit_capabilities(unit_id)
-        return {"success": True, "unit_id": unit_id, "capabilities": capabilities}
-
-    def handle_get_visibility_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get vision/visibility information."""
-        unit_id = params.get("unit_id")
-        faction = params.get("faction")
-
-        if unit_id:
-            # Get visibility info for a specific unit
-            if not self.world.has_entity(unit_id):
-                return {"success": False, "error": f"Unit {unit_id} does not exist"}
-
-            visibility_info = self._get_unit_visibility_info(unit_id)
-            return {
-                "success": True,
-                "unit_id": unit_id,
-                "visibility_info": visibility_info,
-            }
-
-        elif faction:
-            # Get aggregated visibility info for a faction
-            if isinstance(faction, str):
-                try:
-                    faction = Faction(faction.upper())
-                except ValueError:
-                    return {"success": False, "error": f"Invalid faction: {faction}"}
-
-            faction_visibility = self._get_faction_visibility_info(faction)
-            return {
-                "success": True,
-                "faction": str(faction),
-                "visibility_info": faction_visibility,
-            }
-
-        else:
-            return {"success": False, "error": "Must specify either unit_id or faction"}
-
-    def handle_get_strategic_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a strategic summary."""
-        faction = params.get("faction")
-
-        if faction and isinstance(faction, str):
-            try:
-                faction = Faction(faction.lower())
-            except ValueError:
-                return {"success": False, "error": f"Invalid faction: {faction}"}
-
-        strategic_summary = self._get_strategic_summary(faction)
-        return {"success": True, "strategic_summary": strategic_summary}
-
-    # =============================================
-    # Helper methods - observation & query
-    # =============================================
-
-    def _get_observation_system(self):
-        """Get the observation system."""
+    def _get_territory_system(self):
+        """Get TerritorySystem instance if present."""
         for system in self.world.systems:
-            if system.__class__.__name__ == "LLMObservationSystem":
+            if system.__class__.__name__ == "TerritorySystem":
                 return system
         return None
 
-    def _get_basic_unit_info(self, unit_id: int) -> Dict[str, Any]:
-        """Get basic unit info (fallback when no observation system is available)."""
-        unit = self.world.get_component(unit_id, Unit)
-        position = self.world.get_component(unit_id, HexPosition)
-        unit_count = self.world.get_component(unit_id, UnitCount)
+    def _get_turn_system(self):
+        """Get TurnSystem instance if present."""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "TurnSystem":
+                return system
+        return None
 
-        if not unit:
-            return {"error": "Unit component not found"}
+    def _get_current_player(self):
+        """Get current player (by faction) from GameState."""
+        # turn_manager = self.world.get_singleton_component(TurnManager)
+        # if turn_manager:
+        #     current_player_entity = turn_manager.get_current_player()
+        #     if current_player_entity:
+        #         return self.world.get_component(current_player_entity, Player)
 
-        basic_info = {
-            "id": unit_id,
-            "name": unit.name,
-            "faction": (
-                unit.faction.value
-                if hasattr(unit.faction, "value")
-                else str(unit.faction)
-            ),
-            "type": (
-                unit.unit_type.value
-                if hasattr(unit.unit_type, "value")
-                else str(unit.unit_type)
-            ),
-        }
+        # Fallback: obtain current player via GameState
+        game_state = self.world.get_singleton_component(GameState)
+        if game_state:
+            for entity in self.world.query().with_component(Player).entities():
+                player = self.world.get_component(entity, Player)
+                if player and player.faction == game_state.current_player:
+                    return player
+        return None
 
-        if position:
-            basic_info["position"] = {"col": position.col, "row": position.row}
-        if unit_count:
-            basic_info["health"] = {
-                "current": unit_count.current_count,
-                "max": unit_count.max_count,
-                "percentage": (
-                    unit_count.current_count / unit_count.max_count
-                    if unit_count.max_count > 0
-                    else 0
-                ),
-            }
+    # ==================== Game logic helpers ====================
 
-        return basic_info
+    def _get_obstacles(self) -> Set[Tuple[int, int]]:
+        """Get movement obstacles - only units as blockers."""
+        obstacles = set()
+        # Collect all unit positions as obstacles
+        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            pos = self.world.get_component(entity, HexPosition)
+            if pos:
+                obstacles.add((pos.col, pos.row))
+        return obstacles
 
-    def _get_basic_faction_info(self, faction: Faction) -> Dict[str, Any]:
-        """Get basic faction info."""
-        faction_units = []
-        for entity in self.world.query().with_all(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                unit_info = self._get_basic_unit_info(entity)
-                faction_units.append(unit_info)
+    def _get_obstacles_excluding_unit(
+        self, exclude_unit_id: int
+    ) -> Set[Tuple[int, int]]:
+        """Get obstacles excluding a unit - other units + impassable terrain."""
+        obstacles = set()
+        # Collect unit positions as obstacles but exclude the given unit
+        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            if entity == exclude_unit_id:
+                continue  # skip moving unit itself
+            pos = self.world.get_component(entity, HexPosition)
+            if pos:
+                obstacles.add((pos.col, pos.row))
 
-        return {
-            "faction": faction.value if hasattr(faction, "value") else str(faction),
-            "units": faction_units,
-            "unit_count": len(faction_units),
-        }
+        # Include impassable terrain (e.g., water) as obstacles, matching MovementSystem
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data:
+            for (q, r), tile_entity in map_data.tiles.items():
+                terrain = self.world.get_component(tile_entity, Terrain)
+                if terrain and terrain.terrain_type == TerrainType.WATER:
+                    obstacles.add((q, r))
 
-    def _get_basic_godview_info(self) -> Dict[str, Any]:
-        """Get basic god-view info."""
-        all_units = []
-        for entity in self.world.query().with_all(Unit).entities():
-            unit_info = self._get_basic_unit_info(entity)
-            all_units.append(unit_info)
+        # print(
+        #     f"[DEBUG] Obstacles (including water): {len(obstacles)} (excluding unit {exclude_unit_id})"
+        # )
+        return obstacles
 
-        return {"all_units": all_units, "total_unit_count": len(all_units)}
+    def _get_adjacent_free_positions(
+        self, center_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]
+    ) -> List[Tuple[int, int]]:
+        """Get unblocked adjacent positions around the given tile."""
+        from ..utils.hex_utils import HexMath
 
-    def _get_tactical_area_info(
-        self,
-        center_position: Tuple[int, int],
-        radius: int,
-        faction: Optional[Faction] = None,
-    ) -> Dict[str, Any]:
-        """Get tactical area information."""
-        center_col, center_row = center_position
-        area_units = []
-        area_terrain = []
+        col, row = center_pos
 
-        # Collect units within the area
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            position = self.world.get_component(entity, HexPosition)
-            unit = self.world.get_component(entity, Unit)
+        # Six adjacent axial directions
+        adjacent_positions = []
+        directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
 
-            distance = HexMath.hex_distance(
-                (center_col, center_row), (position.col, position.row)
-            )
-            if distance <= radius:
-                unit_info = self._get_basic_unit_info(entity)
-                unit_info["distance_from_center"] = distance
-                area_units.append(unit_info)
+        for dx, dy in directions:
+            adj_pos = (col + dx, row + dy)
+            if adj_pos not in obstacles:
+                adjacent_positions.append(adj_pos)
 
-        return {
-            "center_position": {"col": center_col, "row": center_row},
-            "radius": radius,
-            "units_in_area": area_units,
-            "unit_count": len(area_units),
-        }
+        return adjacent_positions
 
-    def _get_detailed_unit_info(self, unit_id: int) -> Dict[str, Any]:
-        """Get detailed unit information."""
-        unit = self.world.get_component(unit_id, Unit)
-        position = self.world.get_component(unit_id, HexPosition)
-        unit_count = self.world.get_component(unit_id, UnitCount)
-        movement = self.world.get_component(unit_id, MovementPoints)
-        combat = self.world.get_component(unit_id, Combat)
-        vision = self.world.get_component(unit_id, Vision)
-        status = self.world.get_component(unit_id, UnitStatus)
+    def _calculate_total_movement_cost(self, path: List[Tuple[int, int]]) -> int:
+        """Compute total movement cost for a path."""
+        total_cost = 0
+        for pos in path[1:]:  # skip origin
+            terrain_cost = self._get_terrain_movement_cost(pos)
+            total_cost += terrain_cost
+        return total_cost
 
-        detailed_info = {
-            "id": unit_id,
-            "name": unit.name if unit else "Unknown",
-            "faction": (
-                unit.faction.value
-                if unit and hasattr(unit.faction, "value")
-                else str(unit.faction) if unit else "Unknown"
-            ),
-            "type": (
-                unit.unit_type.value
-                if unit and hasattr(unit.unit_type, "value")
-                else str(unit.unit_type) if unit else "Unknown"
-            ),
-        }
+    def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
+        """Get terrain movement cost (movement points)."""
+        from ..prefabs.config import GameConfig
 
-        if position:
-            detailed_info["position"] = {"col": position.col, "row": position.row}
+        terrain_type = self._get_terrain_at_position(position)
+        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
+        return terrain_effect.movement_cost if terrain_effect else 1
 
-        if unit_count:
-            detailed_info["health"] = {
-                "current": unit_count.current_count,
-                "max": unit_count.max_count,
-                "percentage": (
-                    unit_count.current_count / unit_count.max_count
-                    if unit_count.max_count > 0
-                    else 0
-                ),
-            }
+    def _get_path_terrain_breakdown(
+        self, path: List[Tuple[int, int]]
+    ) -> List[Dict[str, Any]]:
+        """Break down terrain and cost for each step along a path."""
+        breakdown = []
 
-        if movement:
-            detailed_info["movement"] = {
-                "current": movement.current_mp,
-                "max": movement.max_mp,
-                "has_moved": movement.has_moved,
-                "remaining_movement": movement.current_mp,
-            }
-
-        if combat:
-            detailed_info["combat"] = {
-                "attack": combat.base_attack,
-                "defense": combat.base_defense,
-                "range": combat.attack_range,
-                "has_attacked": combat.has_attacked,
-            }
-
-        if vision:
-            detailed_info["vision"] = {"sight_range": vision.sight_range}
-
-        if status:
-            detailed_info["status"] = {
-                "current_status": status.current_status,
-                "is_defending": getattr(status, "is_defending", False),
-                "is_fortified": getattr(status, "is_fortified", False),
-                "is_moving": getattr(status, "is_moving", False),
-                "is_patrolling": getattr(status, "is_patrolling", False),
-                "is_scouting": getattr(status, "is_scouting", False),
-            }
-
-        return detailed_info
-
-    def _get_unit_available_actions(self, unit_id: int) -> List[str]:
-        """Get a unit's available actions."""
-        available_actions = []
-
-        movement = self.world.get_component(unit_id, MovementPoints)
-        combat = self.world.get_component(unit_id, Combat)
-        unit_count = self.world.get_component(unit_id, UnitCount)
-
-        # Check survival status
-        if unit_count and unit_count.current_count <= 0:
-            return ["dead"]  # Eliminated units cannot act
-
-        # Movement-related actions
-        if movement and movement.current_mp > 0 and not movement.has_moved:
-            available_actions.extend(["move", "retreat", "scout", "patrol"])
-
-        # Combat-related actions
-        if combat and not combat.has_attacked:
-            available_actions.append("attack")
-
-        # Always-available actions
-        available_actions.extend(["defend", "fortify", "select_unit"])
-
-        return available_actions
-
-    def _get_unit_capabilities(self, unit_id: int) -> Dict[str, Any]:
-        """Get unit capabilities."""
-        unit = self.world.get_component(unit_id, Unit)
-        movement = self.world.get_component(unit_id, MovementPoints)
-        combat = self.world.get_component(unit_id, Combat)
-        vision = self.world.get_component(unit_id, Vision)
-
-        capabilities = {
-            "can_move": movement is not None,
-            "can_attack": combat is not None,
-            "has_vision": vision is not None,
-        }
-
-        if movement:
-            capabilities["movement_range"] = movement.current_mp
-        if combat:
-            capabilities["attack_range"] = combat.attack_range
-            capabilities["attack_power"] = combat.base_attack
-            capabilities["defense_power"] = combat.base_defense
-        if vision:
-            capabilities["sight_range"] = vision.sight_range
-
-        return capabilities
-
-    def _get_unit_visibility_info(self, unit_id: int) -> Dict[str, Any]:
-        """Get unit visibility information."""
-        position = self.world.get_component(unit_id, HexPosition)
-        vision = self.world.get_component(unit_id, Vision)
-
-        if not position or not vision:
-            return {"error": "Unit lacks position or vision component"}
-
-        # Compute visible area
-        visible_positions = set()
-        center = (position.col, position.row)
-
-        for col in range(
-            position.col - vision.sight_range, position.col + vision.sight_range + 1
-        ):
-            for row in range(
-                position.row - vision.sight_range, position.row + vision.sight_range + 1
-            ):
-                if HexMath.hex_distance(center, (col, row)) <= vision.sight_range:
-                    visible_positions.add((col, row))
-
-        # Collect units within vision
-        visible_units = []
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            if entity == unit_id:  # Skip self
+        for i, pos in enumerate(path):
+            if i == 0:  # skip origin
                 continue
-            other_pos = self.world.get_component(entity, HexPosition)
-            if other_pos and (other_pos.col, other_pos.row) in visible_positions:
-                other_unit = self.world.get_component(entity, Unit)
-                visible_units.append(
-                    {
-                        "id": entity,
-                        "name": other_unit.name if other_unit else "Unknown",
-                        "faction": (
-                            other_unit.faction.value
-                            if other_unit and hasattr(other_unit.faction, "value")
-                            else str(other_unit.faction) if other_unit else "Unknown"
-                        ),
-                        "position": {"col": other_pos.col, "row": other_pos.row},
-                    }
-                )
 
-        return {
-            "sight_range": vision.sight_range,
-            "center_position": {"col": position.col, "row": position.row},
-            "visible_area_size": len(visible_positions),
-            "visible_units": visible_units,
-            "visible_unit_count": len(visible_units),
-        }
+            terrain_type = self._get_terrain_at_position(pos)
+            movement_cost = self._get_terrain_movement_cost(pos)
 
-    def _get_faction_visibility_info(self, faction: Faction) -> Dict[str, Any]:
-        """Get faction-level visibility information."""
-        all_visible_positions = set()
-        faction_units = []
-
-        # Aggregate vision of all units in the faction
-        for entity in self.world.query().with_all(Unit, HexPosition, Vision).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                faction_units.append(entity)
-                position = self.world.get_component(entity, HexPosition)
-                vision = self.world.get_component(entity, Vision)
-
-                # Compute this unit's visible area
-                center = (position.col, position.row)
-                for col in range(
-                    position.col - vision.sight_range,
-                    position.col + vision.sight_range + 1,
-                ):
-                    for row in range(
-                        position.row - vision.sight_range,
-                        position.row + vision.sight_range + 1,
-                    ):
-                        if (
-                            HexMath.hex_distance(center, (col, row))
-                            <= vision.sight_range
-                        ):
-                            all_visible_positions.add((col, row))
-
-        # Collect enemy units that are within the visible area
-        enemy_units = []
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            unit = self.world.get_component(entity, Unit)
-            position = self.world.get_component(entity, HexPosition)
-            if (
-                unit
-                and unit.faction != faction
-                and position
-                and (position.col, position.row) in all_visible_positions
-            ):
-                enemy_units.append(
-                    {
-                        "id": entity,
-                        "name": unit.name,
-                        "faction": (
-                            unit.faction.value
-                            if hasattr(unit.faction, "value")
-                            else str(unit.faction)
-                        ),
-                        "position": {"col": position.col, "row": position.row},
-                    }
-                )
-
-        return {
-            "faction": faction.value if hasattr(faction, "value") else str(faction),
-            "observing_units": len(faction_units),
-            "total_visible_area": len(all_visible_positions),
-            "visible_enemy_units": enemy_units,
-            "enemy_unit_count": len(enemy_units),
-        }
-
-    def _get_strategic_summary(
-        self, faction: Optional[Faction] = None
-    ) -> Dict[str, Any]:
-        """Get a strategic summary."""
-        summary = {"global_stats": {}, "faction_stats": {}}
-
-        # Global stats
-        all_units = list(self.world.query().with_all(Unit).entities())
-        summary["global_stats"] = {
-            "total_units": len(all_units),
-            "active_factions": len(
-                set(self.world.get_component(e, Unit).faction for e in all_units)
-            ),
-        }
-
-        # Per-faction stats
-        faction_stats = {}
-        for entity in all_units:
-            unit = self.world.get_component(entity, Unit)
-            unit_count = self.world.get_component(entity, UnitCount)
-            movement = self.world.get_component(entity, MovementPoints)
-            combat = self.world.get_component(entity, Combat)
-
-            faction_name = (
-                unit.faction.value
-                if hasattr(unit.faction, "value")
-                else str(unit.faction)
+            breakdown.append(
+                {
+                    "position": {"col": pos[0], "row": pos[1]},
+                    "terrain": terrain_type.value,
+                    "movement_cost": movement_cost,
+                    "step": i,
+                }
             )
 
-            if faction_name not in faction_stats:
-                faction_stats[faction_name] = {
-                    "total_units": 0,
-                    "full_strength_units": 0,
-                    "wounded_units": 0,
-                    "dead_units": 0,
-                    "ready_to_move": 0,
-                    "ready_to_attack": 0,
-                    "total_attack_power": 0,
-                    "total_defense_power": 0,
+        return breakdown
+
+    def _get_terrain_at_position(self, position: Tuple[int, int]) -> TerrainType:
+        """Get terrain type at tile position."""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return TerrainType.PLAIN
+
+        tile_entity = map_data.tiles.get(position)
+        if not tile_entity:
+            return TerrainType.PLAIN
+
+        terrain = self.world.get_component(tile_entity, Terrain)
+        return terrain.terrain_type if terrain else TerrainType.PLAIN
+
+    def _is_position_within_map_bounds(self, col: int, row: int) -> bool:
+        """Check whether a position is within map bounds."""
+        from ..prefabs.config import GameConfig
+
+        # Center-based coordinate system: for width/height W,H
+        # center = W // 2; valid col,row in [-center, center-1]
+        center = GameConfig.MAP_WIDTH // 2
+        min_coord = -center
+        max_coord = center - 1
+
+        return (min_coord <= col <= max_coord) and (min_coord <= row <= max_coord)
+
+    def _get_terrain_attack_bonus(
+        self, position: Tuple[int, int], faction: Faction
+    ) -> float:
+        """Get attack bonus from terrain/territory (fractional)."""
+        territory_system = self._get_territory_system()
+        if territory_system:
+            return (
+                territory_system.get_territory_attack_bonus(position, faction) / 10.0
+            )  # convert to fraction
+        return 0.0
+
+    def _get_max_fortification_level(self, terrain_type: TerrainType) -> int:
+        """Get max fortification level allowed by terrain type."""
+        level_limits = {
+            TerrainType.PLAIN: 1,
+            TerrainType.FOREST: 2,
+            TerrainType.HILL: 2,
+            TerrainType.MOUNTAIN: 2,
+            TerrainType.CITY: 3,
+            TerrainType.URBAN: 3,
+            TerrainType.WATER: 0,
+        }
+        return level_limits.get(terrain_type, 1)
+
+    def _get_current_fortification_level(self, position: Tuple[int, int]) -> int:
+        """Get current fortification level at a tile."""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return 0
+
+        tile_entity = map_data.tiles.get(position)
+        if not tile_entity:
+            return 0
+
+        territory_control = self.world.get_component(tile_entity, TerritoryControl)
+        if territory_control and territory_control.fortified:
+            return territory_control.fortification_level
+        return 0
+
+    def _calculate_fortification_defense_bonus(self, level: int) -> float:
+        """Calculate defense bonus provided by fortification level."""
+        return level * 0.2  # +20% defense per level
+
+    def _get_units_at_position(self, position: Tuple[int, int]) -> List[Dict[str, Any]]:
+        """Get all units at a given position."""
+        units = []
+        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            pos = self.world.get_component(entity, HexPosition)
+            unit = self.world.get_component(entity, Unit)
+
+            if pos and unit and (pos.col, pos.row) == position:
+                units.append(
+                    {
+                        "unit_id": entity,
+                        "unit_type": unit.unit_type.value,
+                        "faction": unit.faction.value,
+                    }
+                )
+
+        return units
+
+    def _execute_terrain_skill(
+        self, unit_id: int, skill_name: str, terrain: TerrainType, target: Any
+    ) -> Dict[str, Any]:
+        """Execute terrain-dependent skill, returning effect/cooldown."""
+        # Skill execution mapping
+        skill_effects = {
+            "hide": {
+                "allowed_terrains": [
+                    TerrainType.FOREST,
+                    TerrainType.MOUNTAIN,
+                    TerrainType.HILL,
+                ],
+                "effect": "Unit gains concealment",
+                "cooldown": 0,
+                "success": terrain
+                in [TerrainType.FOREST, TerrainType.MOUNTAIN, TerrainType.HILL],
+            },
+            "rockslide": {
+                "allowed_terrains": [TerrainType.MOUNTAIN],
+                "effect": "Area damage to enemies on plains",
+                "cooldown": 3,
+                "success": terrain == TerrainType.MOUNTAIN,
+            },
+            "arrow_evasion": {
+                "allowed_terrains": [TerrainType.HILL],
+                "effect": "Reduce archer damage by 90%",
+                "cooldown": 0,
+                "success": terrain == TerrainType.HILL,
+            },
+        }
+
+        skill_data = skill_effects.get(skill_name)
+        if not skill_data:
+            return {"success": False, "error": f"Unknown skill: {skill_name}"}
+
+        if not skill_data["success"]:
+            return {
+                "success": False,
+                "error": f"Skill {skill_name} cannot be used on terrain {terrain.value}",
+            }
+
+        return {
+            "success": True,
+            "effect": skill_data["effect"],
+            "cooldown": skill_data["cooldown"],
+        }
+
+    def _get_terrain_occupation_bonus(self, terrain_type: TerrainType) -> float:
+        """Get occupation bonus for a terrain type."""
+        occupation_bonuses = {
+            TerrainType.PLAIN: 0.0,
+            TerrainType.FOREST: 0.1,  # concealment bonus
+            TerrainType.HILL: 0.15,  # vision bonus
+            TerrainType.MOUNTAIN: 0.2,  # defense bonus
+            TerrainType.CITY: 0.3,  # resource bonus
+            TerrainType.URBAN: 0.25,  # population bonus
+            TerrainType.WATER: 0.0,  # cannot be occupied
+        }
+        return occupation_bonuses.get(terrain_type, 0.0)
+
+    def _get_terrain_resource_value(self, terrain_type: TerrainType) -> int:
+        """Get resource value for a terrain type (simplified)."""
+        resource_values = {
+            TerrainType.PLAIN: 2,  # basic agriculture
+            TerrainType.FOREST: 1,  # timber
+            TerrainType.HILL: 1,  # minerals
+            TerrainType.MOUNTAIN: 1,  # rare minerals
+            TerrainType.CITY: 5,  # high value
+            TerrainType.URBAN: 3,  # medium value
+            TerrainType.WATER: 0,  # none
+        }
+        return resource_values.get(terrain_type, 1)
+
+    def _get_faction_status(self, faction: Faction) -> str:
+        """Get faction status: in_battle, victory, defeat, eliminated, active, or draw."""
+        # Game over check
+        game_state = self.world.get_singleton_component(GameState)
+        if game_state and game_state.game_over:
+            # Winner check
+            if game_state.winner == faction:
+                return "victory"
+            elif game_state.winner is not None:
+                return "defeat"
+            else:
+                return "draw"
+
+        # Winner component check
+        from ..components.game_over import Winner
+
+        winner_component = self.world.get_singleton_component(Winner)
+        if winner_component and winner_component.faction is not None:
+            if winner_component.faction == faction:
+                return "victory"
+            else:
+                return "defeat"
+
+        # During game, if faction has no living units → eliminated
+        alive_units = [
+            u for u in self._get_faction_units(faction) if self._is_unit_alive(u)
+        ]
+        if not alive_units:
+            return "eliminated"  # Eliminated
+
+        # If other factions have living units, inspect recent battles to infer in_battle
+        other_factions_exist = False
+        for other_faction in Faction:
+            if other_faction != faction:
+                other_alive_units = [
+                    u
+                    for u in self._get_faction_units(other_faction)
+                    if self._is_unit_alive(u)
+                ]
+                if other_alive_units:
+                    other_factions_exist = True
+                    break
+
+        if other_factions_exist:
+            # Check for recent battle activity
+            battle_log = self.world.get_singleton_component(BattleLog)
+            if battle_log and hasattr(battle_log, "entries") and battle_log.entries:
+                # Recent battles imply in_battle
+                recent_battles = battle_log.entries[-3:]
+                for entry in recent_battles:
+                    if (
+                        hasattr(entry, "attacker_faction")
+                        and entry.attacker_faction == faction
+                    ) or (
+                        hasattr(entry, "defender_faction")
+                        and entry.defender_faction == faction
+                    ):
+                        return "in_battle"
+
+            return "active"
+        else:
+            return "victory"
+
+    def _get_territory_control_info(
+        self, position: Tuple[int, int], unit_faction: Faction = None
+    ) -> Dict[str, Any]:
+        """Get territory control info for a tile."""
+        territory_system = self._get_territory_system()
+        if not territory_system:
+            return {
+                "controlled_by": None,
+                "is_friendly": False,
+                "is_enemy": False,
+                "is_neutral": True,
+                "can_occupy": False,
+                "occupation_bonus": 0.0,
+            }
+
+        # Get controlling faction
+        current_control = territory_system.get_territory_control(position)
+
+        # Determine relation to unit faction
+        is_friendly = (
+            current_control == unit_faction
+            if current_control and unit_faction
+            else False
+        )
+        is_enemy = (
+            current_control != unit_faction
+            if current_control and unit_faction
+            else False
+        )
+        is_neutral = current_control is None
+
+        # Determine whether the tile can be occupied (not controlled by own faction)
+        can_occupy = not is_friendly if unit_faction else False
+
+        # Terrain occupation bonus
+        terrain_type = self._get_terrain_at_position(position)
+        occupation_bonus = self._get_terrain_occupation_bonus(terrain_type)
+
+        return {
+            "controlled_by": current_control.value if current_control else None,
+            # "is_friendly": is_friendly,
+            # "is_enemy": is_enemy,
+            # "is_neutral": is_neutral,
+            # "can_occupy": can_occupy,
+            # "occupation_bonus": occupation_bonus,
+        }
+
+    def _get_movement_accessibility_info(
+        self,
+        unit_id: int,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+        movement_points: MovementPoints,
+        unit_count: UnitCount,
+    ) -> Dict[str, Any]:
+
+        if not current_pos or not movement_points or not unit_count:
+            return {
+                "reachable": False,
+                "reason": "missing_movement_components",
+                "movement_cost": -1,
+                "remaining_movement_points": 0,
+            }
+
+        if current_pos == target_pos:
+            return {
+                "reachable": True,
+                "reason": "current_position",
+                "movement_cost": 0,
+                "remaining_movement_points": movement_points.current_mp,
+                "is_current_position": True,
+            }
+
+        effective_movement = movement_points.get_effective_movement(unit_count)
+
+        obstacles = self._get_obstacles_excluding_unit(unit_id)
+        if target_pos in obstacles:
+            return {
+                "reachable": False,
+                "reason": "position_occupied",
+                "movement_cost": -1,
+                "remaining_movement_points": movement_points.current_mp,
+                "blocked_by": "other_unit",
+            }
+
+        # Try to find a path
+        try:
+            from ..utils.hex_utils import PathFinding
+
+            path = PathFinding.find_path(
+                current_pos, target_pos, obstacles, effective_movement
+            )
+
+            if path and len(path) > 1:
+                # Calculate total movement cost
+                total_movement_cost = self._calculate_total_movement_cost(path)
+
+                # Check if reachable
+                reachable = total_movement_cost <= movement_points.current_mp
+
+                return {
+                    "reachable": reachable,
+                    # "reason": (
+                    #     "sufficient_movement" if reachable else "insufficient_movement"
+                    # ),
+                    # "movement_cost": total_movement_cost,
+                    # "remaining_movement": movement_points.current_mp,
+                    # "path_length": len(path) - 1,
+                    # "effective_movement_range": effective_movement,
                 }
+            else:
+                return {
+                    "reachable": False,
+                    "reason": "no_valid_path",
+                    "movement_cost": -1,
+                    "remaining_movement_points": movement_points.current_mp,
+                    "effective_movement_range": effective_movement,
+                }
+        except Exception as e:
+            return {
+                "reachable": False,
+                "reason": f"path_calculation_error",
+                "movement_cost": -1,
+                "remaining_movement_points": movement_points.current_mp,
+                "error": str(e),
+            }
 
-            stats = faction_stats[faction_name]
-            stats["total_units"] += 1
+    def _get_attack_range_info(
+        self, current_pos: Tuple[int, int], target_pos: Tuple[int, int], combat: Combat
+    ) -> Dict[str, Any]:
+        """Get attack-range information between current and target tiles."""
+        if not current_pos or not combat:
+            return {
+                "in_attack_range": False,
+                "distance": -1,
+                "attack_range": 0,
+                "can_attack": False,
+            }
 
-            if unit_count:
-                if unit_count.current_count <= 0:
-                    stats["dead_units"] += 1
-                elif unit_count.current_count < unit_count.max_count:
-                    stats["wounded_units"] += 1
-                else:
-                    stats["full_strength_units"] += 1
+        # Compute distance
+        from ..utils.hex_utils import HexMath
 
-            if movement and movement.current_mp > 0 and not movement.has_moved:
-                stats["ready_to_move"] += 1
+        distance = HexMath.hex_distance(current_pos, target_pos)
+        attack_range = combat.attack_range
 
-            if combat:
-                if not combat.has_attacked:
-                    stats["ready_to_attack"] += 1
-                stats["total_attack_power"] += combat.base_attack
-                stats["total_defense_power"] += combat.base_defense
+        # In range?
+        in_range = distance <= attack_range
 
-        summary["faction_stats"] = faction_stats
+        # Attack allowed when in range and not attacking self tile
+        can_attack = in_range and distance > 0
 
-        # If a faction is specified, return details for that faction
-        if faction:
-            faction_name = faction.value if hasattr(faction, "value") else str(faction)
-            summary["target_faction"] = faction_name
-            summary["target_faction_details"] = faction_stats.get(faction_name, {})
-
-        return summary
+        # return {
+        #     "in_attack_range": in_range,
+        #     # "distance": distance,
+        #     # "attack_range": attack_range,
+        #     # "can_attack": can_attack,
+        #     # "range_status": "in_range" if in_range else "out_of_range",
+        # }
+        return in_range

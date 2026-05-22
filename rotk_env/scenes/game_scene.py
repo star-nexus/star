@@ -161,7 +161,7 @@ class GameScene(Scene):
             CombatSystem(),  # Combat system
             TerritorySystem(),  # Territory system
             ResourceRecoverySystem(),  # Resource recovery system
-            # MockLLMAISystem(),  # Mock LLM AI system - new AI using LLM Action Handler V3
+            # MockLLMAISystem(),  # Mock LLM AI system - new AI using LLM Action Handler
             LLMSystem(),  # LLM system (priority 5)
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)
