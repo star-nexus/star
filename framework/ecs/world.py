@@ -7,7 +7,7 @@ from .core import (
     ComponentType,
 )
 from .builder import QueryBuilder
-from typing import Dict, Set, Type, List, Any, Optional
+from typing import Dict, Set, Type, List, Any, Optional, FrozenSet
 from collections import defaultdict
 import time
 from performance_profiler import profiler
@@ -35,12 +35,23 @@ class World:
             Type[SingletonComponent], SingletonComponent
         ] = {}
 
-        # Query cache
+        # Query cache: cache_key -> result set. The parallel
+        # `_cache_key_types` map records which component types a given
+        # cached query depends on, so we can do *selective* invalidation
+        # (only evict cache entries that actually touch the changed types).
         self._query_cache: Dict[QueryKey, Set[Entity]] = {}
+        self._cache_key_types: Dict[QueryKey, FrozenSet[Type[Component]]] = {}
+        # Reverse index: component_type -> set(cache_key). Lets selective
+        # invalidation run in O(types_changed) instead of O(cache_size).
+        self._type_to_cache_keys: Dict[Type[Component], Set[QueryKey]] = defaultdict(
+            set
+        )
         self._cache_version = 0  # cache version for invalidation tracking
         self._last_cache_cleanup = time.time()
         self._cache_hit_count = 0
         self._cache_miss_count = 0
+        self._cache_selective_evictions = 0
+        self._cache_global_invalidations = 0
         self._max_cache_size = 1000  # maximum number of cached entries
 
         # Systems list
@@ -49,27 +60,49 @@ class World:
         # Entity ID counter
         self.entity_counter = 0
 
+    def _drop_cache_entry(self, cache_key: QueryKey) -> None:
+        """Internal helper: remove a cache entry from all three indices."""
+        self._query_cache.pop(cache_key, None)
+        touched = self._cache_key_types.pop(cache_key, None)
+        if touched:
+            for comp_type in touched:
+                bucket = self._type_to_cache_keys.get(comp_type)
+                if bucket is not None:
+                    bucket.discard(cache_key)
+                    if not bucket:
+                        del self._type_to_cache_keys[comp_type]
+
     def _invalidate_cache(self, component_types: Set[Type[Component]] = None) -> None:
         """Invalidate query cache.
 
         Args:
-            component_types: If provided, clear only entries related to these types.
+            component_types: If provided, evict only cached queries whose
+                required-or-excluded type set intersects with these types.
+                When None, perform a global invalidation.
         """
         if component_types is None:
             # Global invalidation
             self._query_cache.clear()
+            self._cache_key_types.clear()
+            self._type_to_cache_keys.clear()
             self._cache_version += 1
-        else:
-            # Selective invalidation — remove queries involving specified components
-            keys_to_remove = []
-            for cache_key in self._query_cache.keys():
-                # Note: requires cache key structure awareness; simplified here
-                keys_to_remove.append(cache_key)
+            self._cache_global_invalidations += 1
+            return
 
-            for key in keys_to_remove:
-                del self._query_cache[key]
+        # Selective invalidation — only evict cache entries that depend on
+        # at least one of the changed component types.
+        keys_to_remove: Set[QueryKey] = set()
+        for comp_type in component_types:
+            bucket = self._type_to_cache_keys.get(comp_type)
+            if bucket:
+                keys_to_remove.update(bucket)
 
+        for key in keys_to_remove:
+            self._drop_cache_entry(key)
+
+        if keys_to_remove:
             self._cache_version += 1
+            self._cache_selective_evictions += len(keys_to_remove)
 
     def _cleanup_cache_if_needed(self) -> None:
         """Cleanup cache periodically and enforce size limits."""
@@ -78,12 +111,12 @@ class World:
         # Check every 5 seconds
         if current_time - self._last_cache_cleanup > 5.0:
             if len(self._query_cache) > self._max_cache_size:
-                # Simple LRU-ish strategy: remove half of entries
-                keys_to_remove = list(self._query_cache.keys())[ 
+                # Simple FIFO-ish strategy: drop the oldest half (dict insertion order).
+                keys_to_remove = list(self._query_cache.keys())[
                     : len(self._query_cache) // 2
                 ]
                 for key in keys_to_remove:
-                    del self._query_cache[key]
+                    self._drop_cache_entry(key)
 
             self._last_cache_cleanup = current_time
 
@@ -96,10 +129,34 @@ class World:
         self._cache_miss_count += 1
         return None
 
-    def _cache_query_result(self, cache_key: QueryKey, result: Set[Entity]) -> None:
-        """Store query result in cache."""
+    def _cache_query_result(
+        self,
+        cache_key: QueryKey,
+        result: Set[Entity],
+        touched_types: Optional[FrozenSet[Type[Component]]] = None,
+    ) -> None:
+        """Store query result in cache.
+
+        Args:
+            cache_key: stable hash identifying this query.
+            result: set of matching entity ids.
+            touched_types: union of required + excluded component types for
+                this query, used to wire the type-to-keys reverse index.
+                When omitted, the entry will only be evicted by global
+                invalidation (back-compat for callers that don't supply it).
+        """
         self._cleanup_cache_if_needed()
+        # If this key was already present with a different signature, drop it
+        # cleanly first so the indices stay consistent.
+        if cache_key in self._query_cache:
+            self._drop_cache_entry(cache_key)
+
         self._query_cache[cache_key] = result.copy()
+        if touched_types:
+            signature = frozenset(touched_types)
+            self._cache_key_types[cache_key] = signature
+            for comp_type in signature:
+                self._type_to_cache_keys[comp_type].add(cache_key)
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -115,19 +172,26 @@ class World:
             "miss_count": self._cache_miss_count,
             "hit_rate": hit_rate,
             "max_cache_size": self._max_cache_size,
+            "selective_evictions": self._cache_selective_evictions,
+            "global_invalidations": self._cache_global_invalidations,
+            "tracked_types": len(self._type_to_cache_keys),
         }
 
     def clear_cache(self) -> None:
         """Manually clear query cache."""
         self._query_cache.clear()
+        self._cache_key_types.clear()
+        self._type_to_cache_keys.clear()
         self._cache_version += 1
 
     def set_max_cache_size(self, size: int) -> None:
         """Set maximum cache size."""
         self._max_cache_size = max(1, size)
         self._cleanup_cache_if_needed()
-        self.systems: List[System] = []
-        self.entity_counter = 0
+        # NOTE: the previous version of this method also reset `self.systems`
+        # and `self.entity_counter` to their initial values, which was a
+        # latent footgun (changing the cache size silently wiped registered
+        # systems and entity ids). The reset has been removed.
         
     def create_entity(self) -> Entity:
         """Create a new entity and return its ID."""
@@ -301,6 +365,8 @@ class World:
         self._component_to_entities.clear()
         self._singleton_components.clear()
         self._query_cache.clear()
+        self._cache_key_types.clear()
+        self._type_to_cache_keys.clear()
         self.systems.clear()
         self.entity_counter = 0
         self._cache_version = 0

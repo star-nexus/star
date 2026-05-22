@@ -107,9 +107,15 @@ class QueryBuilder:
                 component_entities = self._world._component_to_entities[component_type]
                 result_entities -= component_entities
 
-        # 缓存结果
+        # 缓存结果，并告知 World 该查询依赖的组件类型集合，
+        # 以便后续的"按组件类型选择性失效"能精确命中此条目。
         self._entities = result_entities
-        self._world._cache_query_result(cache_key, result_entities)
+        touched_types = frozenset(
+            self._required_components | self._excluded_components
+        )
+        self._world._cache_query_result(
+            cache_key, result_entities, touched_types=touched_types
+        )
 
         return self._entities
 
