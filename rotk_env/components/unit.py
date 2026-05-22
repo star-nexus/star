@@ -4,7 +4,7 @@ Unit-related components.
 
 from dataclasses import dataclass, field
 import math
-from typing import Set, Optional, Dict
+from typing import Set, Optional, Dict, Tuple
 from framework import Component
 from ..prefabs.config import UnitType, Faction, UnitState, ActionType
 
@@ -112,10 +112,21 @@ class Combat(Component):
 
 @dataclass
 class Vision(Component):
-    """Vision component."""
+    """Vision component.
+
+    `visible_tiles` is recomputed only when the unit's position or vision
+    range changes (see `VisionSystem`). `_last_observed_pos`/`_last_range`
+    are bookkeeping for that incremental update; readers should not rely
+    on them. Setting `dirty=True` forces a recompute on the next tick
+    (e.g. after a terrain change invalidates line-of-sight).
+    """
 
     range: int
     visible_tiles: Set[tuple] = field(default_factory=set)
+    # Cache invalidation bookkeeping for VisionSystem.
+    _last_observed_pos: Optional[Tuple[int, int]] = None
+    _last_range: int = -1
+    dirty: bool = True
 
 
 @dataclass

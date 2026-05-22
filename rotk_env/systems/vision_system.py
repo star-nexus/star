@@ -1,5 +1,17 @@
 """
 Vision system - handles fog of war and line-of-sight calculation.
+
+Performance: per-unit visibility is the most expensive O(units × range^2 × LOS)
+loop in the frame. Most ticks however have *no movement* — units recompute
+the same tile set every frame. This system therefore keeps a per-unit cache
+on the `Vision` component (`_last_observed_pos`, `_last_range`, `dirty`) and
+skips the raycasting work when nothing relevant has changed; only the cheap
+faction-level union still runs every tick.
+
+Cache invalidation rules:
+  * unit moved (HexPosition changed) → recompute
+  * `Vision.range` changed → recompute
+  * `Vision.dirty == True` → recompute (used after terrain edits that change LOS)
 """
 
 from typing import Set, Tuple
@@ -14,6 +26,9 @@ class VisionSystem(System):
 
     def __init__(self):
         super().__init__(required_components={HexPosition, Vision, Unit})
+        # Performance counters; exposed via `get_stats()` for profiling.
+        self._stat_recomputes = 0
+        self._stat_cache_hits = 0
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -24,6 +39,26 @@ class VisionSystem(System):
     def update(self, delta_time: float) -> None:
         """Update vision system."""
         self._update_fog_of_war()
+
+    def invalidate_all(self) -> None:
+        """Force every unit's vision to recompute on the next tick.
+
+        Call this after a terrain edit that could change line-of-sight
+        (e.g. demolishing a mountain) — otherwise stale `visible_tiles`
+        would persist on units that did not move.
+        """
+        for entity in self.world.query().with_component(Vision).entities():
+            vision = self.world.get_component(entity, Vision)
+            if vision is not None:
+                vision.dirty = True
+
+    def get_stats(self) -> dict:
+        total = self._stat_recomputes + self._stat_cache_hits
+        return {
+            "recomputes": self._stat_recomputes,
+            "cache_hits": self._stat_cache_hits,
+            "hit_rate": (self._stat_cache_hits / total) if total else 0.0,
+        }
 
     def _update_fog_of_war(self):
         """Update fog of war."""
@@ -44,13 +79,26 @@ class VisionSystem(System):
             if not position or not vision or not unit:
                 continue
 
-            # Compute visible tile set.
-            visible_tiles = self._calculate_vision(
-                (position.col, position.row), vision.range, entity
-            )
-
-            # Update the unit's visible tiles.
-            vision.visible_tiles = visible_tiles
+            # Reuse cached visibility when the inputs are unchanged.
+            current_pos = (position.col, position.row)
+            if (
+                not vision.dirty
+                and vision._last_observed_pos == current_pos
+                and vision._last_range == vision.range
+                and vision.visible_tiles  # guard against initial empty cache
+            ):
+                visible_tiles = vision.visible_tiles
+                self._stat_cache_hits += 1
+            else:
+                # Compute visible tile set.
+                visible_tiles = self._calculate_vision(
+                    current_pos, vision.range, entity
+                )
+                vision.visible_tiles = visible_tiles
+                vision._last_observed_pos = current_pos
+                vision._last_range = vision.range
+                vision.dirty = False
+                self._stat_recomputes += 1
 
             # Update faction-level visibility.
             if unit.faction not in fog_of_war.faction_vision:
