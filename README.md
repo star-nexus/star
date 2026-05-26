@@ -40,13 +40,7 @@ The framework is designed to decouple simulation logic, agent reasoning, and com
 
 ## Components
 
-STAR is organized around three complementary components:
-
-### 🏗️ The Engine (`STAREngine`)
-A modular simulation core built on an Entity–Component–System (ECS) architecture.
-*   **Data-Oriented:** Data-oriented design for scalable execution.
-*   **LLM-friendly modular design:** The decoupling design enables LLMs to intuitively understand and refactor project mechanics without navigating complex inheritance trees.
-*   **Extensible:** Researchers can plug in new environments or swap agent backends (DeepSeek, Qwen, GPT-4) without reinventing the wheel.
+STAR is organized around four complementary components:
 
 ### 🏆 The Benchmark (`STARBench`)
 A benchmarking suite for strategic multi-agent scenarios.
@@ -54,10 +48,22 @@ A benchmarking suite for strategic multi-agent scenarios.
 *   **Modes:** Configurable real-time and turn-based execution modes.
 *   **Metrics:** Standardized evaluation metrics and reporting.
 
+### 🤖 The Agents (`STAR Agents`)
+An agent architecture for competitive evaluation in STARBench.
+*   **Model-Agnostic:** Supports different LLM backends and provider configurations.
+*   **Agent-vs-Agent Evaluation:** Enables LLM agents to compete in standardized STARBench scenarios.
+*   **Custom Agent Support:** Researchers can plug in their own agent architectures and evaluate them under the same environment and protocol.
+
 ### 🔌 The Protocol (`Star Protocol`)
 An asynchronous communication layer for integrating heterogeneous agents and ENVs.
 *   **Router Bridge:** Structured message interface between agents and environments
 *   **Remote Support:** Runtime-agnostic integration (local or remote)
+
+### 🏗️ The Engine (`STAREngine`)
+A modular simulation core built on an Entity–Component–System (ECS) architecture.
+*   **Data-Oriented:** Data-oriented design for scalable execution.
+*   **LLM-friendly modular design:** The decoupling design enables LLMs to intuitively understand and refactor project mechanics without navigating complex inheritance trees.
+*   **Extensible:** Researchers can plug in new environments or swap agent backends (DeepSeek, Qwen, GPT-4) without reinventing the wheel.
 
 ---
 
