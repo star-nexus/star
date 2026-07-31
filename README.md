@@ -182,6 +182,8 @@ cd GameServer
 uv run fastapi dev gameserver/main.py
 ```
 
+> **VPN/Proxy notice:** Ensure `localhost`, `127.0.0.1`, and `::1` bypass your VPN or proxy before starting the ENV. Otherwise, the ENV or Agents may be unable to connect to the local GameServer. If you cannot configure a bypass rule, disable the VPN/proxy while running STAR.
+
 Second, launch the RoTK environment.
 
 ```bash
