@@ -846,6 +846,17 @@ class SettlementReportSystem(System):
                         print(f"     Total API calls: {stats.get('total_calls', 0)}")
                         print(f"     Successful calls: {stats.get('successful_calls', 0)}")
                         print(f"     Success rate: {stats.get('success_rate', 0.0):.2f}%")
+                        print(f"     Prompt tokens: {stats.get('prompt_tokens', 0)}")
+                        print(
+                            f"     Cache hit/miss: "
+                            f"{stats.get('prompt_cache_hit_tokens', 0)}/"
+                            f"{stats.get('prompt_cache_miss_tokens', 0)} "
+                            f"({stats.get('cache_hit_rate', 0.0):.2f}%)"
+                        )
+                        print(
+                            f"     Completion tokens: {stats.get('completion_tokens', 0)}"
+                            f" (reasoning: {stats.get('reasoning_tokens', 0)})"
+                        )
                         print(f"     HTTP errors: {stats.get('http_error_total', 0)}")
                         print(f"     Tool call errors: {stats.get('toolcall_error_total', 0)}")
                         print(f"     Spatial awareness errors: {stats.get('spatial_awareness_error', 0)}")

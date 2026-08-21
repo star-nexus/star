@@ -771,6 +771,8 @@ class LLMSystem(System):
             - successful_calls: int - Number of successful calls  
             - failed_calls: int - Number of failed calls
             - success_rate: float - Success rate
+            - prompt_tokens / completion_tokens / reasoning_tokens
+            - prompt_cache_hit_tokens / prompt_cache_miss_tokens / cache_hit_rate
           - toolcall_error_total: int - Total tool call generation errors
           - http_error_total: int - Total HTTP errors
           - spatial_awareness_error: int - Spatial awareness errors (LLM capability)
@@ -826,6 +828,12 @@ class LLMSystem(System):
                 "spatial_awareness_error": spatial_awareness_error,
                 "failed_calls": api_stats.get("failed_calls", 0),
                 "success_rate": api_stats.get("success_rate", 0.0),
+                "prompt_tokens": api_stats.get("prompt_tokens", 0),
+                "completion_tokens": api_stats.get("completion_tokens", 0),
+                "prompt_cache_hit_tokens": api_stats.get("prompt_cache_hit_tokens", 0),
+                "prompt_cache_miss_tokens": api_stats.get("prompt_cache_miss_tokens", 0),
+                "reasoning_tokens": api_stats.get("reasoning_tokens", 0),
+                "cache_hit_rate": api_stats.get("cache_hit_rate", 0.0),
                 "provider": provider,
                 "model_id": model_id,
                 "timestamp": time.time()
@@ -2170,11 +2178,12 @@ class LLMSystem(System):
         include_hidden = params.get("include_hidden", False)
 
         # Convert string faction to Faction enum if necessary.
+        # Faction values are lowercase ("wei"/"shu"/"wu"), so normalize down.
         if faction and isinstance(faction, str):
             try:
                 from ..prefabs.config import Faction
 
-                faction = Faction(faction.upper())
+                faction = Faction(faction.lower())
             except ValueError:
                 return {"error": f"Invalid faction: {faction}"}
 
@@ -2201,11 +2210,12 @@ class LLMSystem(System):
             return {"error": "Missing faction parameter"}
 
         # Convert string to the Faction enum
+        # Faction values are lowercase ("wei"/"shu"/"wu"), so normalize down.
         if isinstance(faction, str):
             try:
                 from ..prefabs.config import Faction
 
-                faction = Faction(faction.upper())
+                faction = Faction(faction.lower())
             except ValueError:
                 return {"error": f"Invalid faction: {faction}"}
 

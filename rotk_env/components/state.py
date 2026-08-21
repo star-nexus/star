@@ -135,6 +135,8 @@ class GameStats(SingletonComponent):
     # - successful_calls: int - successful calls
     # - failed_calls: int - failed calls
     # - success_rate: float - success rate
+    # - prompt_tokens / completion_tokens / reasoning_tokens
+    # - prompt_cache_hit_tokens / prompt_cache_miss_tokens / cache_hit_rate
     # - provider: str - LLM provider
     # - model_id: str - model id
     # - timestamp: float - last update timestamp
