@@ -608,9 +608,6 @@ class GameScene(Scene):
         self.world.add_singleton_component(InputState())
         self.world.add_singleton_component(FogOfWar())
 
-        # Initialize fog of war
-        self.world.add_singleton_component(FogOfWar())
-
         # Re-save map info now that GameStats exists. MapSystem.initialize()
         # runs before _initialize_stats, so its first attempt to populate
         # map_info no-ops with the warning "GameStats component not found".

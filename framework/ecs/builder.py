@@ -178,7 +178,7 @@ class QueryBuilder:
         entities = self._compute_entities()
         if entity not in entities:
             return []
-        return self._world.get_components(entity)
+        return self._world.get_all_components(entity)
 
     def get_component(
         self, entity: Entity, component_type: Type[ComponentType]

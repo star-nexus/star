@@ -414,27 +414,31 @@ class LLMObservationSystem:
         }
 
     def _get_visible_area(self, unit_id: int) -> Set[Tuple[int, int]]:
-        """Get the unit's visible area."""
+        """Get the unit's visible area.
+
+        Reads the tile set maintained by `VisionSystem`, which accounts for
+        terrain vision bonuses and mountain line-of-sight blocking. Computing
+        visibility here independently would let agent-facing observations
+        disagree with the simulation's own fog of war.
+        """
         position = self.world.get_component(unit_id, HexPosition)
         vision = self.world.get_component(unit_id, Vision)
 
         if not position or not vision:
             return set()
 
-        visible_positions = set()
+        if vision.visible_tiles:
+            return set(vision.visible_tiles)
+
+        # VisionSystem has not ticked yet (or is not registered): fall back to a
+        # plain distance disc so callers still get a usable approximation.
         center = (position.col, position.row)
-
-        # Simple vision calculation (hex range)
-        for col in range(
-            position.col - vision.sight_range, position.col + vision.sight_range + 1
-        ):
-            for row in range(
-                position.row - vision.sight_range, position.row + vision.sight_range + 1
-            ):
-                if HexMath.hex_distance(center, (col, row)) <= vision.sight_range:
-                    visible_positions.add((col, row))
-
-        return visible_positions
+        return {
+            (col, row)
+            for col in range(position.col - vision.range, position.col + vision.range + 1)
+            for row in range(position.row - vision.range, position.row + vision.range + 1)
+            if HexMath.hex_distance(center, (col, row)) <= vision.range
+        }
 
     def _get_visible_units(
         self, observer_id: int, visible_area: Set[Tuple[int, int]]
