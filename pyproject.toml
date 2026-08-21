@@ -16,4 +16,18 @@ dependencies = [
     "websockets>=15.0.1",
     "httpx",
     "toml",
+    "openai",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+# The project is run as scripts from the repo root, not installed as a package.
+pythonpath = ["."]
+testpaths = ["rotk_agent/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

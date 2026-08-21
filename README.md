@@ -167,6 +167,7 @@ Before running any agent, you need to specify the API keys for the providers you
 model_id = "deepseek-chat"
 api_key = "YOUR_API_KEY"
 base_url = "https://api.deepseek.com/chat/completions"
+max_tokens = 8192
 ```
 
 ### Running a Demo (AI v.s. AI)
@@ -182,7 +183,24 @@ cd GameServer
 uv run fastapi dev gameserver/main.py
 ```
 
-> **VPN/Proxy notice:** Ensure `localhost`, `127.0.0.1`, and `::1` bypass your VPN or proxy before starting the ENV. Otherwise, the ENV or Agents may be unable to connect to the local GameServer. If you cannot configure a bypass rule, disable the VPN/proxy while running STAR.
+> **VPN/Proxy notice:** Ensure `localhost`, `127.0.0.1`, and `::1` bypass your VPN or proxy before starting the ENV. Otherwise the ENV or Agents cannot reach the local GameServer.
+>
+> On macOS this bites even with no proxy environment variables set, because the
+> websocket client reads the system proxy settings directly. The failure looks
+> unrelated to networking — the ENV exits immediately with:
+>
+> ```
+> Game running error: Connection failed: python-socks is required to use a SOCKS proxy
+> Game Over
+> ```
+>
+> The quickest fix is to export a bypass list for every STAR process (ENV and Agents alike):
+>
+> ```bash
+> export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
+> ```
+>
+> Otherwise, add the bypass rule in your VPN/proxy client, or disable it while running STAR.
 
 Second, launch the RoTK environment.
 
@@ -196,27 +214,87 @@ Click the `Star Game` button.
 
 Next, launch LLM Agents for different factions.
 
+All agents share one entry point, `rotk_agent/main.py`. Which model API it talks
+is derived from `--provider` by the profile table in `rotk_agent/profiles.py`, so
+adding a model normally means adding a section to `.configs.toml` and nothing else.
+
 ```bash
 # Launch an agent for the first faction (Wei).
-uv run rotk_agent/qwen3_agent.py \
+uv run rotk_agent/main.py \
     --env-id env_1 \
     --agent-id agent_1 \
     --faction "wei" \
-    --provider deepseek 
+    --provider deepseek \
+    --mode real_time
 
 # Launch an agent for the second faction (Shu)
-uv run rotk_agent/qwen3_agent.py \
+uv run rotk_agent/main.py \
     --env-id env_1 \
     --agent-id agent_2 \
     --faction "shu" \
-    --provider deepseek 
+    --provider deepseek \
+    --mode real_time
 
 # Launch an agent for the third faction (Wu). Requires Three Kingdoms Epic mode.
-uv run rotk_agent/qwen3_agent.py \
+uv run rotk_agent/main.py \
     --env-id env_1 \
     --agent-id agent_3 \
     --faction "wu" \
-    --provider deepseek 
+    --provider deepseek \
+    --mode real_time
+```
+
+`--mode` must match how the ENV was started: `real_time` or `turn_based`.
+`./run_agent.sh ENV_ID AGENT_ID FACTION PROVIDER MODE` is a shorthand for the above.
+
+To check the wiring without spending tokens, run an agent with `--provider fake`.
+It plays a short scripted game (look, move, attack, end turn) through the real
+hub and ENV, which exercises everything except the model itself:
+
+```bash
+uv run rotk_agent/main.py --faction wei --provider fake --mode turn_based
+```
+
+#### Controlling reasoning
+
+Two flags govern how much the model thinks and how much of that thinking stays
+in context. They only affect model families that expose the corresponding knob
+(DeepSeek and the Responses API); elsewhere they are ignored.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--reasoning-effort low\|high\|max` | `low` | Per-turn thinking budget. |
+| `--carry-reasoning` / `--no-carry-reasoning` | on | Keep the model's own reasoning in the conversation history. |
+
+Reasoning is off entirely for a provider whose `.configs.toml` section sets
+`enable_thinking = false`, which is how the baseline control group is defined.
+
+`--carry-reasoning` is on by default because DeepSeek's tool-calling protocol
+requires the field back on every later request, and sending the chain verbatim
+lets the model continue its previous thought — which is usually cheaper than
+re-deriving it as new output tokens. Pass `--no-carry-reasoning` to echo an
+empty field instead (still valid, but the model re-thinks each turn). Strategy
+scoring reads the reasoning from the reply either way, so the metric is unaffected.
+
+Each successful API call logs `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`.
+Those totals are included in the end-of-game report sent to the ENV.
+
+`max_tokens` defaults to 8192 (reasoning plus the answer). Set it in
+`.configs.toml` per provider to override.
+
+Model variants can be defined without duplicating credentials by using
+`inherits` in `.configs.toml`:
+
+```toml
+[deepseek-v4-flash]
+model_id = "deepseek-v4-flash"
+api_key = "sk-..."
+base_url = "https://api.deepseek.com/chat/completions"
+max_tokens = 8192
+
+[deepseek-v4-flash-off]
+inherits = "deepseek-v4-flash"
+enable_thinking = false
 ```
 
 ### Running Agent Evaluation in Batch

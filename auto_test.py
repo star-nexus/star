@@ -1,10 +1,9 @@
 """
 Batch run StarBench matches. Loads WEI_PROVIDER,SHU_PROVIDER from --list.
 
-Agent script is chosen by run_agent_generic.sh from the provider name:
-  - provider contains 'nvidia' (e.g. vllm_nvidia_9b)  → nv_nemotron_agent / nv_nemotron_agent_turn
-  - provider contains 'gpt' (e.g. vllm_gpt_oss)      → gpt_oss_agent / gpt_oss_agent_turn
-  - otherwise (qwen, siliconflow, etc.)              → qwen3_agent / qwen3_agent_turn
+Both agents run from the single entry point rotk_agent/main.py via run_agent.sh.
+Which model API it talks is derived from the provider name by the profile table
+in rotk_agent/profiles.py.
 
 用户 Ctrl+C 中断时，会在当次 run 的 logs/run_{pid}/ 下写入 _INTERRUPTED 标记。
 筛出异常中断的目录: find logs -name _INTERRUPTED -exec dirname {} \\;
@@ -168,34 +167,39 @@ def run_match(
     
     # 2. 启动 Wei Agent
     # agent_id 按 run 隔离，避免多 auto_test 并行时与同一 Hub 上其它 run 的 agent_id 冲突
-    # run_agent_generic.sh 按 PROVIDER 选 agent：nvidia→nv_nemotron_agent*，gpt→gpt_oss_agent*，否则→qwen3_agent*
     wei_agent_id = f"agent_wei_{match_index}_{pid}"
     shu_agent_id = f"agent_shu_{match_index}_{pid}"
     print(f"  Launching Wei Agent ({wei_model}) (Log: {wei_log_path})...")
 
     wei_cmd = [
-        "./run_agent_generic.sh",
+        "./run_agent.sh",
         env_id,         # ENV_ID，与本次 ENV 的 ENV_ID 一致，确保连到同一局
         wei_agent_id,  # AGENT_ID
         "wei",         # FACTION
-        wei_model,     # PROVIDER（含 nvidia/gpt 时自动选用对应 agent）
+        wei_model,     # PROVIDER（决定使用哪个模型档案）
         mode           # MODE
     ]
     wei_start_time = time.time()
-    wei_process = subprocess.Popen(wei_cmd, stdout=wei_log, stderr=subprocess.STDOUT)
+    # env_vars 带上 PYTHONUNBUFFERED：Agent 被 kill 时块缓冲会丢掉日志尾部，
+    # 而这正是排查启动失败最需要日志的时候。
+    wei_process = subprocess.Popen(
+        wei_cmd, stdout=wei_log, stderr=subprocess.STDOUT, env=env_vars
+    )
 
-    # 3. 启动 Shu Agent（run_agent_generic.sh 按 PROVIDER 选 nv_nemotron / gpt_oss / qwen3）
+    # 3. 启动 Shu Agent
     print(f"  Launching Shu Agent ({shu_model}) (Log: {shu_log_path})...")
     shu_cmd = [
-        "./run_agent_generic.sh",
+        "./run_agent.sh",
         env_id,         # ENV_ID，与本次 ENV 的 ENV_ID 一致
         shu_agent_id,  # AGENT_ID
         "shu",         # FACTION
-        shu_model,     # PROVIDER（含 nvidia/gpt 时自动选用对应 agent）
+        shu_model,     # PROVIDER（决定使用哪个模型档案）
         mode           # MODE
     ]
     shu_start_time = time.time()
-    shu_process = subprocess.Popen(shu_cmd, stdout=shu_log, stderr=subprocess.STDOUT)
+    shu_process = subprocess.Popen(
+        shu_cmd, stdout=shu_log, stderr=subprocess.STDOUT, env=env_vars
+    )
 
     # 4. 监控环境进程
     try:
@@ -323,7 +327,7 @@ def main():
         "--list",
         default="match_list.txt",
         help="Path to match list (WEI_PROVIDER,SHU_PROVIDER per line). "
-        "Agent script is chosen by run_agent_generic.sh: provider containing 'nvidia'→nv_nemotron_agent, 'gpt'→gpt_oss_agent, else→qwen3_agent."
+        "Providers must exist as sections in .configs.toml."
     )
     parser.add_argument("--mode", default="turn_based", choices=["turn_based", "real_time"], help="Game mode")
     parser.add_argument("--players", default="ai_vs_ai", choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms"], help="Player configuration")
@@ -334,7 +338,7 @@ def main():
     if not os.path.exists(args.list):
         print(f"Error: Match list file '{args.list}' not found.")
         print("Please create it with format: WEI_PROVIDER,SHU_PROVIDER (one match per line)")
-        print("  Provider names with 'nvidia' (e.g. vllm_nvidia_9b) use nv_nemotron_agent; with 'gpt' (e.g. vllm_gpt_oss) use gpt_oss_agent.")
+        print("  Each provider must be a section in .configs.toml (e.g. vllm_qwen3_14b, vllm_gpt_oss).")
         return
 
     with open(args.list, "r") as f:
