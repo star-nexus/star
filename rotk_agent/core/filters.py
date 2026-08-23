@@ -205,18 +205,14 @@ def filter_tool_result(
         return result
 
     data = copy.deepcopy(result)
-    if function_name != "perform_action":
-        return data
+    if function_name == "perform_action":
+        action = (tool_arguments or {}).get("action")
+        action = action.strip().lower() if isinstance(action, str) else None
+        handler = ACTION_FILTERS.get(action)
+        if handler is not None:
+            data = handler(data)
 
-    action = (tool_arguments or {}).get("action")
-    action = action.strip().lower() if isinstance(action, str) else None
-
-    handler = ACTION_FILTERS.get(action)
-    if handler is None:
-        return data
-
-    filtered = handler(data)
-    return replace_booleans_with_strings(filtered) if booleans_as_strings else filtered
+    return replace_booleans_with_strings(data) if booleans_as_strings else data
 
 
 __all__ = [

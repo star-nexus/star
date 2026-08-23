@@ -209,3 +209,23 @@ class TestBooleanStringification:
         )
         assert plain["result"] is True
         assert stringified["result"] == "true"
+
+    def test_unfiltered_actions_are_still_stringified(self):
+        # GPT-OSS copies bare JSON booleans back as tool arguments.
+        payload = {"result": True, "ok": False}
+        result = filters.filter_tool_result(
+            "perform_action",
+            payload,
+            {"action": "occupy"},
+            booleans_as_strings=True,
+        )
+        assert result == {"result": "true", "ok": "false"}
+
+    def test_non_perform_action_tools_are_stringified_when_requested(self):
+        result = filters.filter_tool_result(
+            "end_turn",
+            {"success": True},
+            {},
+            booleans_as_strings=True,
+        )
+        assert result == {"success": "true"}
