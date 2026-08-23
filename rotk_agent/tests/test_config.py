@@ -164,3 +164,16 @@ class TestCliDefaults:
 
         assert parse_args([]).carry_reasoning is True
         assert parse_args(["--no-carry-reasoning"]).carry_reasoning is False
+
+    def test_api_key_is_omitted_from_repr(self):
+        from rotk_agent.core.config import LLMConfig
+
+        config = LLMConfig(
+            provider="deepseek",
+            model_id="deepseek-chat",
+            api_key="sk-secret-should-not-leak",
+            base_url="https://api.deepseek.com/chat/completions",
+        )
+        rendered = repr(config)
+        assert "sk-secret-should-not-leak" not in rendered
+        assert "deepseek-chat" in rendered

@@ -8,7 +8,7 @@ old per-file agents disagreed about it. The caller must decide.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import toml
@@ -26,7 +26,7 @@ class LLMConfig:
 
     provider: str
     model_id: str
-    api_key: str
+    api_key: str = field(repr=False)
     base_url: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
