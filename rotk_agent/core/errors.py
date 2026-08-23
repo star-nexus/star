@@ -183,35 +183,43 @@ def _blob(exc: Exception, error_details: dict | None) -> str:
     return text.lower()
 
 
+def _message_text(exc: Exception, error_details: dict | None) -> str:
+    """Provider-facing text only. Never the traceback — it mentions `tokens`."""
+    parts = [str(exc) if exc else ""]
+    details = error_details or {}
+    for key in ("exception_message", "response_body"):
+        value = details.get(key)
+        if value:
+            parts.append(str(value))
+    rsp = details.get("response_json")
+    if isinstance(rsp, dict):
+        message = (rsp.get("error") or {}).get("message", "")
+        if message:
+            parts.append(str(message))
+    return " ".join(parts).lower()
+
+
+# Phrases that mean the prompt itself was too big. Keep them paired so a
+# rate-limit or quota error that merely mentions "tokens" does not match.
+OVERFLOW_PHRASES = (
+    "maximum context length",
+    "max context length",
+    "context length is",
+    "context window",
+    "prompt is too long",
+    "too many tokens",
+    "context_length_exceeded",
+    "exceeds the maximum context",
+    "this model's maximum context",
+    "reduce the length of the messages",
+)
+
+
 def is_context_overflow_error(
     exc: Exception, error_details: dict | None = None
 ) -> bool:
     """Recoverable: the prompt outgrew the model's context window."""
-    s = _blob(exc, error_details)
-
-    triggers = [
-        "maximum context length",
-        "max context length",
-        "context length is",
-        "context window",
-        "prompt is too long",
-        "too many tokens",
-        "exceeds the maximum",
-        "requested",  # paired with "tokens" in most provider messages
-        "tokens",
-    ]
-    if any(k in s for k in triggers):
-        return True
-
-    try:
-        rsp = (error_details or {}).get("response_json") or {}
-        msg = (rsp.get("error") or {}).get("message", "")
-        if msg and any(k in msg.lower() for k in ["context", "token", "too long"]):
-            return True
-    except Exception:
-        pass
-
-    return False
+    return any(phrase in _message_text(exc, error_details) for phrase in OVERFLOW_PHRASES)
 
 
 def is_account_balance_error(exc: Exception, error_details: dict | None = None) -> bool:
@@ -250,7 +258,13 @@ def is_network_unreachable_error(
     return any(p in msg for p in phrases)
 
 
-TERMINAL_CHAT_REASONS = frozenset({"game_ended", "account_balance_insufficient"})
+TERMINAL_CHAT_REASONS = frozenset(
+    {
+        "game_ended",
+        "account_balance_insufficient",
+        "llm_unreachable",
+    }
+)
 
 
 def is_terminal_chat_result(result: Any) -> bool:
@@ -275,4 +289,5 @@ __all__ = [
     "is_network_unreachable_error",
     "is_terminal_chat_result",
     "TERMINAL_CHAT_REASONS",
+    "OVERFLOW_PHRASES",
 ]
