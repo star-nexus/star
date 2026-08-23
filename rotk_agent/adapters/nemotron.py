@@ -41,8 +41,14 @@ class NemotronAdapter(ChatCompletionsAdapter):
 
     name = "nemotron"
 
-    def __init__(self, config, stats, thinking_budget: int = DEFAULT_THINKING_BUDGET):
-        super().__init__(config, stats)
+    def __init__(
+        self,
+        config,
+        stats,
+        thinking_budget: int = DEFAULT_THINKING_BUDGET,
+        carry_reasoning: bool = True,
+    ):
+        super().__init__(config, stats, carry_reasoning=carry_reasoning)
         self.thinking_budget = thinking_budget
 
     def _stage_budgets(self) -> tuple[int, int]:
@@ -61,6 +67,9 @@ class NemotronAdapter(ChatCompletionsAdapter):
         tools: Optional[List[ToolDefinition]] = None,
         instructions: str = "",
     ) -> NormalizedReply:
+        if not self.config.enable_thinking:
+            return await super().complete(messages, tools, instructions)
+
         thinking_budget, answer_budget = self._stage_budgets()
 
         console.print(
@@ -98,4 +107,4 @@ class NemotronAdapter(ChatCompletionsAdapter):
         return reply
 
 
-__all__ = ["NemotronAdapter", "ensure_closed_think_block"]
+__all__ = ["NemotronAdapter", "ensure_closed_think_block", "DEFAULT_THINKING_BUDGET"]

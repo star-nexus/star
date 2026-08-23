@@ -5,17 +5,20 @@ from types import SimpleNamespace
 
 import pytest
 
+from rotk_agent.adapters import build_adapter
 from rotk_agent.adapters.chat_completions import (
     ChatCompletionsAdapter,
     resolve_base_url,
 )
-from rotk_agent.adapters.nemotron import ensure_closed_think_block
+from rotk_agent.adapters.fake import FakeAdapter
+from rotk_agent.adapters.nemotron import NemotronAdapter, ensure_closed_think_block
 from rotk_agent.adapters.responses import (
     ResponsesAdapter,
     clean_tool_name,
     sanitize_model_text,
 )
 from rotk_agent.core.types import Message, NormalizedReply
+from rotk_agent.profiles import PROFILES, Profile
 
 
 class TestBaseUrlResolution:
@@ -310,6 +313,24 @@ class TestResponsesInputProjection:
         )
         assert items == [{"role": "assistant", "content": "plan"}]
 
+    def test_carrying_reasoning_emits_a_reasoning_item(self):
+        items = ResponsesAdapter._build_input_items(
+            [Message(role="assistant", content="move", reasoning="flank first")],
+            carry_reasoning=True,
+        )
+        assert items[0] == {
+            "type": "reasoning",
+            "content": [{"type": "reasoning_text", "text": "flank first"}],
+        }
+        assert items[1] == {"role": "assistant", "content": "move"}
+
+    def test_not_carrying_reasoning_omits_the_item(self):
+        items = ResponsesAdapter._build_input_items(
+            [Message(role="assistant", content="move", reasoning="flank first")],
+            carry_reasoning=False,
+        )
+        assert items == [{"role": "assistant", "content": "move"}]
+
 
 class TestResponsesNormalization:
     @staticmethod
@@ -403,3 +424,45 @@ class TestNemotronThinkBlock:
 
     def test_empty_reasoning_still_produces_a_valid_block(self):
         assert ensure_closed_think_block("") == "</think>\n\n"
+
+
+class TestNemotronThinkingSwitch:
+    @pytest.mark.asyncio
+    async def test_thinking_off_uses_a_single_parent_call(self, config, stats, monkeypatch):
+        config.enable_thinking = False
+        adapter = NemotronAdapter(config, stats)
+
+        async def no_post(*_args, **_kwargs):
+            raise AssertionError("stage-1 thinking must not run when thinking is off")
+
+        async def parent_complete(self, messages, tools=None, instructions=""):
+            return NormalizedReply(text="answer", finish_reason="stop")
+
+        adapter._post = no_post
+        monkeypatch.setattr(ChatCompletionsAdapter, "complete", parent_complete)
+
+        reply = await adapter.complete([])
+        assert reply.text == "answer"
+
+
+class TestAdapterFactory:
+    def test_unknown_adapter_is_rejected(self, config, stats):
+        with pytest.raises(ValueError, match="Unknown adapter"):
+            build_adapter(Profile(name="x", adapter="nope"), config, stats)
+
+    def test_profile_rows_construct_the_named_transport(self, config, stats):
+        mapping = {
+            "qwen3": ChatCompletionsAdapter,
+            "gpt_oss": ResponsesAdapter,
+            "nemotron": NemotronAdapter,
+            "fake": FakeAdapter,
+        }
+        for name, expected in mapping.items():
+            adapter = build_adapter(PROFILES[name], config, stats)
+            assert isinstance(adapter, expected)
+
+    def test_carry_reasoning_reaches_the_responses_adapter(self, config, stats):
+        adapter = build_adapter(
+            PROFILES["gpt_oss"], config, stats, carry_reasoning=False
+        )
+        assert adapter.carry_reasoning is False

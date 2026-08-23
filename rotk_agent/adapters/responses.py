@@ -80,8 +80,9 @@ class ResponsesAdapter(ModelAdapter):
     # tool arguments, which the ENV then rejects.
     booleans_as_strings = True
 
-    def __init__(self, config, stats):
+    def __init__(self, config, stats, carry_reasoning: bool = True):
         super().__init__(config, stats)
+        self.carry_reasoning = carry_reasoning
         self.client = AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
         # "none" is how this API spells thinking-off, so the on/off switch and
         # the intensity knob collapse into one value here.
@@ -119,7 +120,9 @@ class ResponsesAdapter(ModelAdapter):
         return formatted
 
     @staticmethod
-    def _build_input_items(messages: List[Message]) -> List[Dict[str, Any]]:
+    def _build_input_items(
+        messages: List[Message], carry_reasoning: bool = True
+    ) -> List[Dict[str, Any]]:
         """Project the message history onto Responses API input items."""
         items: List[Dict[str, Any]] = []
 
@@ -141,6 +144,15 @@ class ResponsesAdapter(ModelAdapter):
                 continue
 
             if msg.role == "assistant":
+                if carry_reasoning and msg.reasoning:
+                    items.append(
+                        {
+                            "type": "reasoning",
+                            "content": [
+                                {"type": "reasoning_text", "text": msg.reasoning}
+                            ],
+                        }
+                    )
                 text = sanitize_model_text(msg.content or "")
                 if text:
                     items.append({"role": "assistant", "content": text})
@@ -222,7 +234,9 @@ class ResponsesAdapter(ModelAdapter):
         tools: Optional[List[ToolDefinition]] = None,
         instructions: str = "",
     ) -> NormalizedReply:
-        input_items = self._build_input_items(messages)
+        input_items = self._build_input_items(
+            messages, carry_reasoning=self.carry_reasoning
+        )
 
         self.stats.add_total_api_call_count()
         console.print(
