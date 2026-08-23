@@ -20,7 +20,7 @@ from ..core.console import console
 from ..core.delays import no_delay
 from ..core.types import Message, ToolDefinition
 from ..core.tools import end_turn_tool
-from ..profiles import faction_info
+from ..profiles import DEFAULT_LANGUAGE, faction_info
 from .base import ModeStrategy
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -54,6 +54,37 @@ END_TURN_MISUSE_CORRECTION = (
     "请直接使用 end_turn 工具来结束当前回合。"
 )
 
+OPENING_PROMPT_CN = (
+    "**当前配置**:\n"
+    "- **我方势力**: {own_name} ({faction})\n"
+    "- **主要敌人**: {enemy_name} ({enemy})\n"
+    "- 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。\n"
+    "- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。\n"
+    "- 本回合行动完毕后，调用 end_turn 结束回合。"
+)
+
+OPENING_PROMPT_EN = (
+    "**Current setup**:\n"
+    "- **Our faction**: {own_name} ({faction})\n"
+    "- **Main enemy**: {enemy_name} ({enemy})\n"
+    "- When using tools, add a short rationale so the strategy score can register.\n"
+    "- Read the board, pick a plan, and use every unit to eliminate all enemies.\n"
+    "- When you are done for this turn, call end_turn."
+)
+
+TURN_START_HINT_CN = "你的回合开始（第{turn}回合）。所有资源已恢复。请开始行动。"
+TURN_START_HINT_EN = (
+    "Your turn has started (turn {turn}). All resources have been restored. Begin acting."
+)
+
+
+def is_not_our_turn_rejection(response: Any) -> bool:
+    """ENV said this faction does not own the turn."""
+    if not isinstance(response, dict):
+        return False
+    message = str(response.get("details") or response.get("message") or "")
+    return "current turn" in message.lower()
+
 
 class TurnBasedMode(ModeStrategy):
     """Gate model calls on turn ownership."""
@@ -68,15 +99,26 @@ class TurnBasedMode(ModeStrategy):
         bridge: EnvBridge,
         faction: str,
         max_api_calls_per_turn: int = DEFAULT_MAX_API_CALLS_PER_TURN,
+        language: str = DEFAULT_LANGUAGE,
     ):
         self.bridge = bridge
         self.faction = faction
         self.max_api_calls_per_turn = max_api_calls_per_turn
+        self.language = language
 
         self._gate = asyncio.Event()
-        self._gate.set()  # the first turn may already be ours
+        self.reset()
+
+    def reset(self) -> None:
+        """Start closed. A leftover open gate would burn tokens out of turn.
+
+        The first `turn_start` is either already in `RemoteContext` or the ENV
+        will resend it until we ACK, so waiting is safe for every faction.
+        """
+        self._gate.clear()
         self._last_turn_notified = -1
         self._api_calls_this_turn = 0
+        self._log_gate("RESET (closed)")
 
     # ---- gate plumbing ----
 
@@ -135,7 +177,10 @@ class TurnBasedMode(ModeStrategy):
                 )
                 return False
 
-            hint = f"你的回合开始（第{turn_number}回合）。所有资源已恢复。请开始行动。"
+            template = (
+                TURN_START_HINT_EN if self.language == "en" else TURN_START_HINT_CN
+            )
+            hint = template.format(turn=turn_number)
             async with agent.history_lock:
                 agent.conversation_history.append(Message(role="user", content=hint))
 
@@ -233,10 +278,8 @@ class TurnBasedMode(ModeStrategy):
         # The ENV refused, most often because it is not our turn. Closing the
         # gate anyway is deliberate: leaving it open lets an exhausted budget
         # retry end_turn forever.
-        message = ""
-        if isinstance(response, dict):
+        if is_not_our_turn_rejection(response):
             message = str(response.get("details") or response.get("message") or "")
-        if "current turn" in message.lower():
             console.print(
                 f"⏹️ ENV says it is not our turn ({message}); closing gate to wait.",
                 style="yellow",
@@ -244,6 +287,20 @@ class TurnBasedMode(ModeStrategy):
             self.close_gate("end_turn rejected - not our turn")
 
         return response
+
+    def on_tool_result(
+        self,
+        agent: "RoTKChatAgent",
+        name: str,
+        arguments: Dict[str, Any],
+        result: Any,
+    ) -> None:
+        """A move/attack rejected as 'not your turn' means we should stop calling."""
+        if not isinstance(result, dict):
+            return
+        failed = result.get("success") is False or result.get("result") is False
+        if failed and is_not_our_turn_rejection(result):
+            self.close_gate("action rejected - not our turn")
 
     def tools(self, agent: "RoTKChatAgent") -> List[ToolDefinition]:
         return [end_turn_tool(self._end_turn)]
@@ -305,13 +362,12 @@ class TurnBasedMode(ModeStrategy):
     def opening_prompt(self, faction: str) -> str:
         own = faction_info(faction)
         enemy = faction_info(own["enemy"])
-        return (
-            f"**当前配置**:\n"
-            f"- **我方势力**: {own['name']} ({faction})\n"
-            f"- **主要敌人**: {enemy['name']} ({own['enemy']})\n"
-            "- 你在使用工具的时候，建议附加简短的决策说明，以增加决策分指标。\n"
-            "- 了解当前敌我态势，思考对战策略，调动你的所有unit消灭所有敌人。\n"
-            "- 本回合行动完毕后，调用 end_turn 结束回合。"
+        template = OPENING_PROMPT_EN if self.language == "en" else OPENING_PROMPT_CN
+        return template.format(
+            own_name=own["name"],
+            faction=faction,
+            enemy_name=enemy["name"],
+            enemy=own["enemy"],
         )
 
     def nudge_on_length(self) -> str:
@@ -321,4 +377,8 @@ class TurnBasedMode(ModeStrategy):
         return STOP_NUDGE
 
 
-__all__ = ["TurnBasedMode", "DEFAULT_MAX_API_CALLS_PER_TURN"]
+__all__ = [
+    "TurnBasedMode",
+    "DEFAULT_MAX_API_CALLS_PER_TURN",
+    "is_not_our_turn_rejection",
+]

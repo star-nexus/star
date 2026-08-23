@@ -170,8 +170,6 @@ class AgentRunner:
 
     async def play(self) -> None:
         """Relaunch the agent until something says to stop."""
-        opening_prompt = self.mode.opening_prompt(self.faction)
-
         expedition = 0
         while True:
             expedition += 1
@@ -181,7 +179,12 @@ class AgentRunner:
             try:
                 agent = self.agent_factory()
                 self.current_agent = agent
-                result = await agent.chat(opening_prompt)
+                # The factory may reuse a mode; reset so turn-gate bookkeeping
+                # cannot leak from a previous expedition (stale last-turn
+                # numbers make the next turn_start look already-consumed).
+                self.mode = agent.mode
+                self.mode.reset()
+                result = await agent.chat(self.mode.opening_prompt(self.faction))
                 console_system.print(f"Chat task completed: {result}")
 
                 if is_terminal_chat_result(result):

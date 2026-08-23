@@ -32,11 +32,11 @@ def turn_start(faction="wei", turn_number=1):
 
 
 class TestGateLifecycle:
-    def test_the_gate_starts_open(self):
-        # The first turn may already belong to us, and a closed gate would wait
-        # for a turn_start that already happened.
+    def test_the_gate_starts_closed(self):
+        # Starting open burned tokens for Shu/Wu on Wei's first turn. The ENV
+        # either already parked turn_start in RemoteContext or will resend it.
         mode = TurnBasedMode(RecordingBridge(), "wei")
-        assert mode._gate.is_set()
+        assert not mode._gate.is_set()
 
     @pytest.mark.asyncio
     async def test_a_confirmed_end_turn_closes_the_gate(self):
@@ -52,6 +52,7 @@ class TestGateLifecycle:
         # The ENV may have dropped the request; staying open lets us retry.
         bridge = RecordingBridge(responses={"end_turn": {"success": False}})
         mode = TurnBasedMode(bridge, "wei")
+        mode.open_gate("test")
 
         await mode._end_turn()
 
@@ -125,6 +126,7 @@ class TestTurnStartConsumption:
         bridge = RecordingBridge()
         mode = TurnBasedMode(bridge, "wei")
         agent = build_agent([], bridge=bridge, mode=mode)
+        mode.open_gate("already playing")
         turn_start(turn_number=1)
 
         # The gate is open, so we are mid-turn already.
@@ -193,12 +195,27 @@ class TestWaiting:
         assert mode._gate.is_set()
 
 
+    @pytest.mark.asyncio
+    async def test_a_parked_turn_start_opens_the_closed_gate(self):
+        # First iteration of a new expedition: gate starts closed, the ENV
+        # already filed turn_start. Acting immediately would skip this path.
+        bridge = RecordingBridge()
+        mode = TurnBasedMode(bridge, "wei")
+        agent = build_agent([], bridge=bridge, mode=mode)
+        turn_start(turn_number=1)
+
+        assert await mode.before_iteration(agent)
+        assert mode._gate.is_set()
+        assert mode._last_turn_notified == 1
+
+
 class TestCallBudget:
     @pytest.mark.asyncio
     async def test_each_iteration_spends_one_call(self):
         bridge = RecordingBridge()
         mode = TurnBasedMode(bridge, "wei", max_api_calls_per_turn=5)
         agent = build_agent([], bridge=bridge, mode=mode)
+        mode.open_gate("test")
 
         assert await mode.before_iteration(agent)
         assert mode._api_calls_this_turn == 1
@@ -208,6 +225,7 @@ class TestCallBudget:
         bridge = RecordingBridge(responses={"end_turn": {"success": True}})
         mode = TurnBasedMode(bridge, "wei", max_api_calls_per_turn=2)
         agent = build_agent([], bridge=bridge, mode=mode)
+        mode.open_gate("test")
 
         assert await mode.before_iteration(agent)
         assert await mode.before_iteration(agent)
@@ -235,6 +253,7 @@ class TestEndTurnMisuse:
             finish_reason="tool_calls",
         )
         agent = build_agent([reply], bridge=bridge, mode=mode, max_iterations=1)
+        mode.open_gate("test")
 
         await agent.chat("start")
 
@@ -256,6 +275,7 @@ class TestEndTurnMisuse:
             mode=mode,
             max_iterations=1,
         )
+        mode.open_gate("test")
 
         await agent.chat("start")
 
@@ -286,3 +306,78 @@ class TestModeWiring:
         # Delays exist for real-time animation races, which turn mode does not have.
         mode = TurnBasedMode(RecordingBridge(), "wei")
         assert mode.delay_policy("move", {}, {"result": True}) == 0.0
+
+
+class TestOutOfTurnActionClosesGate:
+    def test_a_not_our_turn_rejection_closes_the_gate(self):
+        mode = TurnBasedMode(RecordingBridge(), "wei")
+        mode.open_gate("test")
+        agent = build_agent([], mode=mode)
+
+        mode.on_tool_result(
+            agent,
+            "perform_action",
+            {"action": "move"},
+            {
+                "result": False,
+                "details": "Not wei's turn to act. Current turn: shu",
+            },
+        )
+
+        assert not mode._gate.is_set()
+
+    def test_an_ordinary_failure_leaves_the_gate_alone(self):
+        mode = TurnBasedMode(RecordingBridge(), "wei")
+        mode.open_gate("test")
+        agent = build_agent([], mode=mode)
+
+        mode.on_tool_result(
+            agent,
+            "perform_action",
+            {"action": "move"},
+            {"result": False, "details": "No valid path"},
+        )
+
+        assert mode._gate.is_set()
+
+
+class TestModeReset:
+    """F7: leftover last-turn numbers make the next turn_start look consumed."""
+
+    @pytest.mark.asyncio
+    async def test_reset_forgets_the_last_turn_so_a_replayed_event_is_accepted(self):
+        bridge = RecordingBridge()
+        mode = TurnBasedMode(bridge, "wei")
+        agent = build_agent([], bridge=bridge, mode=mode)
+        turn_start(turn_number=5)
+        assert await mode._consume_turn_start(agent)
+        assert mode._last_turn_notified == 5
+
+        mode.reset()
+
+        assert not mode._gate.is_set()
+        assert mode._last_turn_notified == -1
+        assert mode._api_calls_this_turn == 0
+        # Same event, new expedition conversation: consume it again.
+        assert await mode._consume_turn_start(agent)
+        assert mode._gate.is_set()
+
+
+class TestPromptLanguage:
+    def test_opening_prompt_follows_language(self):
+        cn = TurnBasedMode(RecordingBridge(), "wei", language="cn")
+        en = TurnBasedMode(RecordingBridge(), "wei", language="en")
+        assert "我方势力" in cn.opening_prompt("wei")
+        assert "Our faction" in en.opening_prompt("wei")
+        assert "魏" in en.opening_prompt("wei")
+
+    @pytest.mark.asyncio
+    async def test_turn_start_hint_follows_language(self):
+        bridge = RecordingBridge()
+        mode = TurnBasedMode(bridge, "wei", language="en")
+        agent = build_agent([], bridge=bridge, mode=mode)
+        turn_start(turn_number=4)
+
+        assert await mode._consume_turn_start(agent)
+        assert "turn 4" in agent.conversation_history[-1].content
+        assert "第4回合" not in agent.conversation_history[-1].content

@@ -47,6 +47,23 @@ class ModeStrategy(ABC):
     def on_game_ended(self, agent: "RoTKChatAgent") -> None:
         """Runs once the ENV reports the game is over, before shutdown."""
 
+    def on_tool_result(
+        self,
+        agent: "RoTKChatAgent",
+        name: str,
+        arguments: Dict[str, Any],
+        result: Any,
+    ) -> None:
+        """Runs after a tool returns, before the result is written to history."""
+
+    def reset(self) -> None:
+        """Clear per-expedition mutable state.
+
+        The runner calls this at the start of every expedition so a shared
+        mode instance cannot leak turn-gate bookkeeping into the next launch.
+        Stateless modes leave this as a no-op.
+        """
+
     async def intercept_tool_call(
         self,
         agent: "RoTKChatAgent",

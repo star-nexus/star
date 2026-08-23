@@ -250,6 +250,7 @@ class RoTKChatAgent:
 
             result = await self.tool_manager.execute_tool(call.name, arguments)
             self._record_env_rejection(result)
+            self.mode.on_tool_result(self, call.name, arguments, result)
 
             filtered = filter_tool_result(
                 call.name,

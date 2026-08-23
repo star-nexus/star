@@ -19,11 +19,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rotk_agent.adapters.base import ModelAdapter
-from rotk_agent.adapters.chat_completions import ChatCompletionsAdapter
-from rotk_agent.adapters.fake import FakeAdapter, ProbeScript
-from rotk_agent.adapters.nemotron import NemotronAdapter
-from rotk_agent.adapters.responses import ResponsesAdapter
+from rotk_agent.adapters import build_adapter
 from rotk_agent.core.agent import RoTKChatAgent
 from rotk_agent.core.bridge import EnvBridge
 from rotk_agent.core.config import (
@@ -40,7 +36,6 @@ from rotk_agent.modes.turn import DEFAULT_MAX_API_CALLS_PER_TURN, TurnBasedMode
 from rotk_agent.profiles import (
     DEFAULT_LANGUAGE,
     PROFILES,
-    Profile,
     load_prompt,
     render_prompt,
     resolve_profile,
@@ -49,36 +44,21 @@ from rotk_agent.profiles import (
 MODES = {"real_time": RealTimeMode, "turn_based": TurnBasedMode}
 
 
-def build_adapter(
-    profile: Profile,
-    config: LLMConfig,
-    stats: ErrorStatsCollector,
-    carry_reasoning: bool = True,
-) -> ModelAdapter:
-    """Instantiate the transport this profile calls for."""
-    if profile.adapter == "chat_completions":
-        return ChatCompletionsAdapter(config, stats, carry_reasoning=carry_reasoning)
-    if profile.adapter == "responses":
-        return ResponsesAdapter(config, stats)
-    if profile.adapter == "nemotron":
-        return NemotronAdapter(
-            config, stats, thinking_budget=profile.thinking_budget or 256
-        )
-    if profile.adapter == "fake":
-        return FakeAdapter(config, stats)
-    raise ValueError(f"Unknown adapter '{profile.adapter}' in profile '{profile.name}'")
-
-
 def build_mode(
-    mode_name: str, bridge: EnvBridge, faction: str, max_api_calls_per_turn: int
+    mode_name: str,
+    bridge: EnvBridge,
+    faction: str,
+    max_api_calls_per_turn: int,
+    language: str = DEFAULT_LANGUAGE,
 ) -> ModeStrategy:
     if mode_name == "real_time":
-        return RealTimeMode()
+        return RealTimeMode(language=language)
     if mode_name == "turn_based":
         return TurnBasedMode(
             bridge=bridge,
             faction=faction,
             max_api_calls_per_turn=max_api_calls_per_turn,
+            language=language,
         )
     raise ValueError(f"Unknown mode '{mode_name}'. Available: {', '.join(MODES)}")
 
@@ -190,8 +170,20 @@ async def run(args: argparse.Namespace) -> int:
             return 2
 
     bridge = EnvBridge()
-    mode = build_mode(args.mode, bridge, faction, args.max_api_calls_per_turn)
-    # The mode decides the pacing, so hand its policy to the already-built bridge.
+
+    def make_mode() -> ModeStrategy:
+        return build_mode(
+            args.mode,
+            bridge,
+            faction,
+            args.max_api_calls_per_turn,
+            language=args.lang,
+        )
+
+    # Bootstrap mode: delay policy is a function, so sharing it across
+    # per-expedition mode instances is safe. Mutable turn-gate state is not,
+    # which is why make_agent() builds a fresh mode each time.
+    mode = make_mode()
     bridge.delay_policy = mode.delay_policy
 
     system_prompt = render_prompt(
@@ -201,12 +193,13 @@ async def run(args: argparse.Namespace) -> int:
     stats = ErrorStatsCollector()
 
     def make_agent() -> RoTKChatAgent:
-        # A fresh adapter per expedition, so a closed transport never gets reused.
+        # A fresh adapter *and* mode per expedition, so a closed transport
+        # never gets reused and turn-gate counters cannot leak.
         return RoTKChatAgent(
             adapter=build_adapter(
                 profile, config, stats, carry_reasoning=args.carry_reasoning
             ),
-            mode=mode,
+            mode=make_mode(),
             bridge=bridge,
             stats=stats,
             faction=faction,

@@ -98,6 +98,14 @@ class TestPromptRendering:
         assert profiles.faction_info("qi") == profiles.faction_info("wei")
 
 
+class TestRealtimeOpeningLanguage:
+    def test_follows_language(self):
+        from rotk_agent.modes.realtime import RealTimeMode
+
+        assert "我方势力" in RealTimeMode(language="cn").opening_prompt("shu")
+        assert "Our faction" in RealTimeMode(language="en").opening_prompt("shu")
+
+
 class TestHistoryLimits:
     def test_both_modes_trim_at_one_hundred_messages(self):
         from rotk_agent.modes.realtime import RealTimeMode
