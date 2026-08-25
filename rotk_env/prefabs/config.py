@@ -140,7 +140,8 @@ class GameConfig:
     HEX_ORIENTATION = HexOrientation.FLAT_TOP  # 六边形方向：尖顶向上或平顶向上
 
     # 游戏配置
-    MAX_TURNS = 100  # 最大回合数
+    MAX_TURNS = 100  # 回合制超时回合数（超过后平局）
+    MAX_REALTIME_SECONDS = 3600  # 实时制超时秒数（到达后平局）
     VISION_FADE_ALPHA = 128  # 战争迷雾透明度
 
     # 战争迷雾颜色配置

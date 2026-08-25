@@ -26,6 +26,7 @@ from ..components import (
 from ..prefabs.config import GameConfig, TerrainType, ActionType, Faction
 from ..utils.hex_utils import HexMath, PathFinding
 from .llm_action_handler import LLMActionHandler
+from .game_over_policy import GameOverPolicy
 
 
 class MockLLMAISystem(System):
@@ -43,6 +44,7 @@ class MockLLMAISystem(System):
     def initialize(self, world: World) -> None:
         """Initialize the mock LLM AI system."""
         self.world = world
+        self._game_over_policy = GameOverPolicy(world)
         # Create LLM Action Handler instance
         self.llm_handler = LLMActionHandler(world)
         print("Mock LLM AI System initialized with LLM Action Handler")
@@ -74,7 +76,7 @@ class MockLLMAISystem(System):
                     ai_controlled = self.world.get_component(
                         current_player, AIControlled
                     )
-                    if ai_controlled:
+                    if ai_controlled and not self._faction_has_llm_agent(current_player):
                         self._execute_ai_turn(current_player, is_realtime=False)
 
             self.decision_timer = 0.0
@@ -88,6 +90,8 @@ class MockLLMAISystem(System):
 
         # Execute decisions per AI player
         for player_entity in ai_players:
+            if self._faction_has_llm_agent(player_entity):
+                continue
             self._execute_ai_turn(player_entity, is_realtime=True)
 
     def _get_current_player(self) -> Optional[int]:
@@ -140,7 +144,7 @@ class MockLLMAISystem(System):
             # If no units are alive, trigger defeat.
             if alive_units == 0:
                 print(f"💀 {player.faction.value} has no surviving units - defeat!")
-                self._trigger_game_over(player.faction, "defeat")
+                self._game_over_policy.apply()
                 return
 
             if not is_realtime:  # End turn only in turn-based mode
@@ -719,6 +723,16 @@ class MockLLMAISystem(System):
             print(f"💥 Exception ending turn: {e}")
             return False
 
+    def _faction_has_llm_agent(self, player_entity: int) -> bool:
+        """Skip BOT control when an LLM agent has registered for this faction."""
+        player = self.world.get_component(player_entity, Player)
+        if not player:
+            return False
+        from ..components.agent_info import AgentInfoRegistry
+
+        registry = self.world.get_singleton_component(AgentInfoRegistry)
+        return bool(registry and registry.has_agent(player.faction.value))
+
     def _get_turn_system(self):
         """Get the turn system."""
         for system in self.world.systems:
@@ -726,59 +740,8 @@ class MockLLMAISystem(System):
                 return system
         return None
 
-    def _trigger_game_over(self, losing_faction: Faction, reason: str):
-        """Trigger game over."""
-        print(f"🏁 Game Over! {losing_faction.value} {reason}")
-
-        game_state = self.world.get_singleton_component(GameState)
-        if game_state:
-            game_state.game_over = True
-            # Winner/finalization can be set here if needed
-            print(f"🎉 Game marked as over")
-
     def _check_victory_conditions(self):
-        """Check victory conditions."""
-        faction_status = {}
-
-        # Count alive units per faction
-        for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
-            alive_units = 0
-            for entity in self.world.query().with_component(Unit).entities():
-                unit = self.world.get_component(entity, Unit)
-                unit_count = self.world.get_component(entity, UnitCount)
-
-                if (
-                    unit
-                    and unit.faction == faction
-                    and unit_count
-                    and unit_count.current_count > 0
-                ):
-                    alive_units += 1
-
-            faction_status[faction] = alive_units
-
-        # Determine eliminated factions
-        eliminated_factions = [
-            faction for faction, count in faction_status.items() if count == 0
-        ]
-        surviving_factions = [
-            faction for faction, count in faction_status.items() if count > 0
-        ]
-
-        if len(surviving_factions) <= 1:
-            if len(surviving_factions) == 1:
-                winner = surviving_factions[0]
-                print(f"🎉 {winner.value} wins! All other factions eliminated.")
-            else:
-                print(f"🤝 Draw! All factions eliminated.")
-
-            self._trigger_game_over(
-                eliminated_factions[0] if eliminated_factions else Faction.WEI,
-                "eliminated",
-            )
-            return True
-
-        return False
+        return self._game_over_policy.apply()
 
     def get_ai_memory_summary(self) -> Dict[str, Any]:
         """Get AI memory summary (debug)."""

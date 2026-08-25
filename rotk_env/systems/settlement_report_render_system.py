@@ -151,8 +151,7 @@ class SettlementReportRenderSystem(System):
             result_color = (255, 255, 0)  # yellow
         else:
             winner = report.winner_faction
-            victory_type = "Decisive Victory" if not report.is_half_win else "Partial Victory"
-            result_text = f"   Result: {winner.value} faction — {victory_type}"
+            result_text = f"   Result: {winner.value} faction — Victory"
             # Use a neutral highlight color
             result_color = (180, 220, 255)
         
@@ -175,7 +174,9 @@ class SettlementReportRenderSystem(System):
             y_offset += 25
         else:
             # Real-time: already covered by duration
-            realtime_text = f"⚡ Real-time mode: no turn limit"
+            realtime_text = (
+                f"⚡ Real-time mode: draw at {GameConfig.MAX_REALTIME_SECONDS}s"
+            )
             realtime_surface = content_font.render(realtime_text, True, (150, 200, 150))
             screen.blit(realtime_surface, (40, y_offset))
             y_offset += 25

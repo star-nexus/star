@@ -19,6 +19,7 @@ from .llm_system import LLMSystem
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem
 from .mock_llm_ai_system import MockLLMAISystem
+from .game_over_policy import GameOverPolicy
 
 # Render system split into multiple independent systems
 from .map_render_system import MapRenderSystem
@@ -48,6 +49,7 @@ __all__ = [
     "LLMActionHandler",
     "LLMObservationSystem",
     "MockLLMAISystem",
+    "GameOverPolicy",
     # New render systems
     "MapRenderSystem",
     "UnitRenderSystem",

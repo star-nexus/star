@@ -23,7 +23,8 @@ class SettlementReport(SingletonComponent):
     # Game result
     is_tie: bool = False  # draw or not
     winner_faction: Optional[Faction] = None  # winning faction (if any)
-    is_half_win: bool = False  # partial victory (timeout with higher survivors)
+    is_half_win: bool = False  # unused; kept for settlement JSON compatibility
+    end_reason: Optional[str] = None  # annihilation | mutual_annihilation | timeout
     game_duration_seconds: float = 0.0  # duration in seconds
     game_duration_formatted: str = ""  # formatted duration string
     

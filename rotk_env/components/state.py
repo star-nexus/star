@@ -18,7 +18,9 @@ class GameState(SingletonComponent):
     game_over: bool = False
     paused: bool = False
     winner: Optional[Faction] = None
-    max_turns: int = 50
+    max_turns: int = 100
+    # annihilation | mutual_annihilation | timeout. None while the match is running.
+    end_reason: Optional[str] = None
 
 
 @dataclass

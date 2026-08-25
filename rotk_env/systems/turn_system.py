@@ -16,6 +16,7 @@ from ..components import (
 )
 from ..prefabs.config import GameConfig, GameMode, Faction
 from ..utils.env_events import TurnStartEvent
+from .game_over_policy import GameOverPolicy
 
 
 class TurnSystem(System):
@@ -28,6 +29,7 @@ class TurnSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
+        self._game_over_policy = GameOverPolicy(world)
 
         # Check if a GameState component already exists.
         game_state = self.world.get_singleton_component(GameState)
@@ -282,28 +284,4 @@ class TurnSystem(System):
     #     return None
 
     def _check_game_over(self) -> bool:
-        """Check whether the game is over."""
-        game_state = self.world.get_singleton_component(GameState)
-
-        # Check the turn limit.
-        if game_state.turn_number > game_state.max_turns:
-            game_state.game_over = True
-            return True
-
-        # Check whether only one faction still has units.
-        factions_with_units = set()
-        for entity in self.world.query().with_component(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            unit_count = self.world.get_component(entity, UnitCount)
-
-            # Only count units with troops remaining.
-            if unit and unit_count and unit_count.current_count > 0:
-                factions_with_units.add(unit.faction)
-
-        if len(factions_with_units) <= 1:
-            game_state.game_over = True
-            if factions_with_units:
-                game_state.winner = list(factions_with_units)[0]
-            return True
-
-        return False
+        return self._game_over_policy.apply()

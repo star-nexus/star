@@ -48,7 +48,9 @@ Controls:
   ESC: Cancel selection
 
 Victory Conditions:
-  Eliminate all enemy units, or achieve the highest score by the end of the game.
+  Annihilate every opposing unit to win. Being wiped is a loss.
+  A draw is called if every living unit on the field dies at once, or when
+  the clock expires (turn-based: after 100 turns; real-time: 3600 seconds).
         """,
     )
 

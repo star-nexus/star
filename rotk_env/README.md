@@ -144,17 +144,19 @@ uv run rotk/main.py --scenario chibi
 
 ## 获胜条件
 
-### 主要获胜方式
+胜负由 `GameOverPolicy` 统一判定，回合制与实时制共用：
 
-1. **全歼胜利**: 消灭所有敌方单位
-2. **积分胜利**: 回合数用尽时，积分最高的阵营获胜
+1. **胜利**: 全歼对手（场上只剩己方有存活单位）
+2. **失败**: 被全歼（与胜利相反）
+3. **平局**:
+   - 双方存活单位同时归零
+   - 超时：回合制 `turn_number` 超过 100；实时制 `GameTime` 已过 3600 秒。超时一律平局，不按剩余兵力判胜负
 
-### 积分计算
+没有积分胜利，也没有半歼。
 
-- 击杀敌方单位: +1 分
-- 己方单位阵亡: -1 分
-- 造成伤害: +伤害值/100
-- 承受伤害: -伤害值/100
+### BOT baseline
+
+`MockLLMAISystem` 是规则 BOT：通过 `LLMActionHandler` 下达 move/attack。只控制带 `AIControlled` 且**尚未注册 LLM agent** 的阵营，因此 `auto_test` 的 LLM vs LLM 对局不会被 BOT 抢操作。人机或 LLM vs BOT 时，未挂 agent 的 AI 阵营由 BOT 接手。
 
 ## 技术架构
 
@@ -173,7 +175,7 @@ uv run rotk/main.py --scenario chibi
 3. **MovementSystem**: 单位移动和寻路
 4. **CombatSystem**: 战斗计算和处理
 5. **VisionSystem**: 视野和战争迷雾
-6. **AISystem**: AI 决策和行为
+6. **MockLLMAISystem**: 规则 BOT baseline（`AISystem` 仍保留源码，当前未挂入对局）
 7. **InputHandlingSystem**: 输入处理
 8. **RenderSystem**: 图形渲染
 

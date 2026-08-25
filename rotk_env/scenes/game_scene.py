@@ -170,7 +170,7 @@ class GameScene(Scene):
             CombatSystem(),  # Combat system
             TerritorySystem(),  # Territory system
             ResourceRecoverySystem(),  # Resource recovery system
-            # MockLLMAISystem(),  # Mock LLM AI system - new AI using LLM Action Handler
+            MockLLMAISystem(),  # Rule BOT baseline; skips factions with a registered LLM agent
             LLMSystem(),  # LLM system (priority 5)
             StatisticsSystem(),  # Statistics system
             AnimationSystem(),  # Animation system (priority 15)

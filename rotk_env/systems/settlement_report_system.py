@@ -184,14 +184,12 @@ class SettlementReportSystem(System):
         # Victory type
         is_tie = False
         winner_faction = None
-        is_half_win = False
-        
+        end_reason = None
+
         if game_state:
             winner_faction = game_state.winner
-            if winner_faction:
-                # Check if it is a half-win (more surviving units)
-                is_half_win = self._check_half_win_condition(winner_faction)
-            else:
+            end_reason = getattr(game_state, "end_reason", None)
+            if not winner_faction:
                 is_tie = True
         
         # Detect game mode
@@ -203,7 +201,8 @@ class SettlementReportSystem(System):
         return {
             "is_tie": is_tie,
             "winner_faction": winner_faction,
-            "is_half_win": is_half_win,
+            "is_half_win": False,
+            "end_reason": end_reason,
             "game_duration_seconds": game_duration,
             "game_duration_formatted": f"{game_duration:.2f}s",
             "game_mode": game_mode,
@@ -619,26 +618,7 @@ class SettlementReportSystem(System):
                     return f"Custom map ({symmetry_type})"
         
         return "Standard random map"
-    
-    def _check_half_win_condition(self, winner_faction: Faction) -> bool:
-
-        # Count both sides' surviving units
-        winner_surviving = 0
-        loser_surviving = 0
-        
-        for entity in self.world.query().with_component(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            unit_count = self.world.get_component(entity, UnitCount)
-            
-            if unit_count and unit_count.current_count > 0:
-                if unit.faction == winner_faction:
-                    winner_surviving += 1
-                else:
-                    loser_surviving += 1
-        
-        # If the loser has more surviving units, it is a partial victory
-        return loser_surviving > winner_surviving * 0.3  # If the loser has more surviving units, it is a partial victory
-    
+ 
     def _get_unit_position(self, entity: int) -> Optional[Dict[str, int]]:
 
         from ..components import HexPosition
@@ -799,8 +779,7 @@ class SettlementReportSystem(System):
             print("   Result: Draw")
         else:
             winner = report_data["winner_faction"]
-            victory_type = "Partial Victory" if report_data["is_half_win"] else "Decisive Victory"
-            print(f"   Result: {winner.value} faction — {victory_type}")
+            print(f"   Result: {winner.value} faction — Victory")
         
         print(f"⏱️ Game duration: {report_data['game_duration_formatted']}")
         
