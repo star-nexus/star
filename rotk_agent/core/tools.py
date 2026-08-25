@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Callable, Dict, List
+import os
+
+from rotk_env.prefabs.action_catalog import BENCH, action_names, resolve_profile
 
 from .types import ToolDefinition
 
@@ -118,24 +121,46 @@ FACTION_STATE_PARAMS = {
     "title": "get_faction_state",
 }
 
-PERFORM_ACTION_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "action": {
-            "type": "string",
-            "description": "The name of the action to execute.",
-            "enum": ["move", "attack", "get_faction_state"],
-        },
-        "params": {
-            "description": "Parameters object for the specified action.",
-            "oneOf": [MOVE_PARAMS, ATTACK_PARAMS, FACTION_STATE_PARAMS],
-        },
-    },
-    "required": ["action", "params"],
-}
-
 PERFORM_ACTION_DESCRIPTION = "Execute a specific action in the game environment."
+
+
+def perform_action_schema(profile: str = BENCH) -> Dict[str, Any]:
+    """JSON schema for ``perform_action``. Enum comes from the shared catalog."""
+    names = sorted(action_names(profile))
+    schema: Dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "The name of the action to execute.",
+                "enum": names,
+            },
+            "params": {
+                "description": "Parameters object for the specified action.",
+                "oneOf": [MOVE_PARAMS, ATTACK_PARAMS, FACTION_STATE_PARAMS],
+            },
+        },
+        "required": ["action", "params"],
+    }
+    if profile != BENCH:
+        # Full/debug: advertise every catalog verb; params stay a free object
+        # so occupy/skill/etc. are not forced into the three bench shapes.
+        schema["properties"]["params"] = {
+            "description": "Parameters object for the specified action.",
+            "type": "object",
+        }
+    return schema
+
+
+def _default_action_profile() -> str:
+    try:
+        return resolve_profile(os.environ.get("STAR_ACTION_PROFILE"), BENCH)
+    except ValueError:
+        return BENCH
+
+
+PERFORM_ACTION_SCHEMA = perform_action_schema(_default_action_profile())
 
 END_TURN_SCHEMA = {"type": "object", "properties": {}, "required": []}
 
@@ -171,6 +196,7 @@ __all__ = [
     "PERFORM_ACTION_DESCRIPTION",
     "END_TURN_SCHEMA",
     "END_TURN_DESCRIPTION",
+    "perform_action_schema",
     "perform_action_tool",
     "end_turn_tool",
 ]

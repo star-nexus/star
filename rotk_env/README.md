@@ -173,6 +173,20 @@ uv run python -m rotk_env.maps.hex_sample path/to/chibi_source.png \
 
 `MockLLMAISystem` 是规则 BOT：通过 `LLMActionHandler` 下达 move/attack。只控制带 `AIControlled` 且**尚未注册 LLM agent** 的阵营，因此 `auto_test` 的 LLM vs LLM 对局不会被 BOT 抢操作。人机或 LLM vs BOT 时，未挂 agent 的 AI 阵营由 BOT 接手。
 
+### LLM 动作目录
+
+`rotk_env/prefabs/action_catalog.py` 是 agent `perform_action` 的 enum 和 ENV `get_action_list` 的同一份名单。单位动词必须等于 `ActionType.value`；查询 / meta / 观测是 LLM 网关名，不是额外的 ECS 动作。
+
+| Profile | 内容 |
+| :--- | :--- |
+| `bench`（默认） | `move` / `attack` / `get_faction_state`。评测 agent 的 schema 就是这三项，不必先调 `get_action_list`。 |
+| `full` | occupy / skill / 观测 / `get_action_list` / `end_turn` 等 |
+| `debug` | 另含 `godview_observation`（只出现在 debug 名单；ENV 公开入口仍按 `full` 拒绝） |
+
+`get_action_list` 默认返回 `bench`；传 `profile=full` 看完整文档。未知动作失败关闭（error 2010），不再用 `get_*` / `*_observation` 前缀猜测。
+
+回合制里模型要结束回合，必须走独立 tool `end_turn`（agent 注册，不经过 `perform_action`）。ENV 协议名仍是 `end_turn`，catalog 的 `full` 里有这条；实时模式没有该 tool。
+
 ## 技术架构
 
 ### ECS 架构

@@ -1,8 +1,19 @@
 # LLM Action Handler API 接口文档
 
+> **现行名单以 [`rotk_env/prefabs/action_catalog.py`](../prefabs/action_catalog.py) 为准。**
+> Agent 的 `perform_action` enum 和 ENV 的 `get_action_list` 都从这份 catalog 生成。
+> 下文大量条目（defend / scout / patrol、若干 `get_*` 查询）是历史接口草稿，评测默认只暴露 bench 三个动词。
+
 ## 概述
 
 LLM Action Handler 是为 LLM 系统提供的统一动作执行接口，支持单位操作、观测查询和状态管理等功能。该系统提供了标准化的 API 接口，使 LLM 能够通过结构化的方式与游戏世界进行交互。
+
+**评测约定（2026-08）：**
+
+- **Catalog profiles：** `bench`（默认：`move` / `attack` / `get_faction_state`）→ `full` → `debug`（另含 `godview_observation`）。
+- **`get_action_list`：** 文档由 catalog 生成，默认 `bench`。实时评测 agent 不必先调这一步。
+- **`end_turn`：** ENV 协议动作仍叫 `end_turn`。回合制 agent 把它做成**独立 LLM tool**（空参数），不放进 `perform_action` 的 enum；经 `perform_action` 调用会被 agent 拦截。实时模式没有该 tool。
+- **未知动作：** 失败关闭（error 2010）。不再用 `get_*` / `*_observation` 前缀猜测观测。
 
 ## 目录 (Table of Contents)
 
@@ -225,11 +236,13 @@ result = handler.execute_action("move", {
 
 #### end_turn - 结束回合
 
-**功能描述：** 结束当前单位或阵营的回合
+**功能描述：** 结束当前阵营的回合（仅回合制）。ENV 侧在 `LLMActionHandler.handle_end_turn`；agent 侧必须用独立 tool `end_turn`，不能 `perform_action(action="end_turn")`。
 
-**输入参数：**
-- `unit_id` (int, 可选): 要结束回合的单位 ID
-- `faction` (str, 可选): 要结束回合的阵营
+**输入参数（ENV / WebSocket）：**
+- `faction` (str, 必需): 阵营（`wei` | `shu` | `wu`）
+- `force` (bool, 可选): 强制结束
+
+Agent 的 `end_turn` tool 参数为空对象；faction 由 agent 自己填进 `bridge.send_end_turn`。
 
 **返回结果：**
 ```json
@@ -850,7 +863,8 @@ summary = handler.execute_action("get_strategic_summary", {"faction": "SHU"})
 
 ## 更新日志
 
+- 2026-08: 动作名单收到 `prefabs/action_catalog.py`。`get_action_list` 按 profile 生成；评测默认 bench。回合制 `end_turn` 为独立 agent tool。未知动作 2010 失败关闭。
 - v1.0: 初始版本，包含基本单位操作、观测和查询功能
-- 支持的动作类型: 移动、攻击、防御、侦察、撤退、加固、巡逻等
+- 支持的动作类型: 移动、攻击、防御、侦察、撤退、加固、巡逻等（部分仅为历史草稿 / NOT_IMPLEMENTED）
 - 支持的观测类型: 单位观测、阵营观测、全局观测、受限观测、战术观测
 - 支持的查询类型: 单位列表、单位信息、游戏状态、地图信息、战斗状态等

@@ -38,6 +38,7 @@ from protocol.star_client_v2 import (
     ClientType,
     MessageType,
 )
+from ..prefabs.action_catalog import FULL, action_names, is_observation
 
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
@@ -85,6 +86,7 @@ class ActionExecutor:
         """
         action = request.action_name
         params = request.parameters
+        public = action_names(FULL)
         
         # 1. Check if this is a system-level action
         if action in self.llm_system.system_actions:
@@ -94,8 +96,8 @@ class ActionExecutor:
         elif action in self.llm_system.action_handler.action_handlers:
             result = self.llm_system.action_handler.execute_action(action, params)
             
-        # 3. Check if this is an observation action (delegate to ObservationSystem)
-        elif self.llm_system._is_observation_action(action):
+        # 3. Named observation only — no get_* / *_observation prefix match
+        elif is_observation(action) and action in public:
             result = self.llm_system._handle_observation_action(action, params)
             
         # 4. Unknown action
@@ -1433,33 +1435,11 @@ class LLMSystem(System):
         )
 
     def _is_observation_action(self, action: str) -> bool:
-        """Return True if the given action is an observation-related action."""
-        observation_actions = [
-            "observation",
-            "unit_observation",
-            "faction_observation",
-            "godview_observation",
-            "limited_observation",
-            "tactical_observation",
-            "get_unit_list",
-            "get_unit_info",
-            "get_faction_units",
-            "get_game_state",
-            "get_map_info",
-            "get_battle_status",
-            "get_unit_capabilities",
-            "get_visibility_info",
-            "get_strategic_summary",
-        ]
-        return (
-            action in observation_actions
-            or action.startswith("get_")
-            or action.endswith("_observation")
-        )
+        """True only for catalogued observation names (exact match)."""
+        return is_observation(action) and action in action_names(FULL)
 
     def _handle_observation_action(self, action: str, params: Dict) -> Dict:
         """Route observation actions to the appropriate handler."""
-        # For known observation actions, route to specific handlers.
         if action == "observation":
             return self.handle_observation(params)
         elif action == "unit_observation":
@@ -1472,9 +1452,9 @@ class LLMSystem(System):
             return self.handle_limited_observation(params)
         elif action == "tactical_observation":
             return self.handle_tactical_observation(params)
-        else:
-            # Generic observation action: delegate directly to the observation_system.
-            return self.observation_system.get_observation_by_action(action, params)
+        return self._create_system_error_response(
+            action, f"UNKNOWN ACTION: {action}", 2010
+        )
 
     def _standardize_response(
         self, result: Dict, action: str, params: Dict, execution_time: float

@@ -10,7 +10,7 @@ core/
   runner.py      hub connection, listener, one agent per expedition
   agent.py       the chat loop: ask, run tools, feed results back
   bridge.py      awaitable ENV actions (perform_action, end_turn, ...)
-  tools.py       tool schemas the model sees
+  tools.py       tool schemas the model sees (catalog-backed perform_action)
   filters.py     trims ENV responses before they enter the history
   scoring.py     the strategy rubric (single source of truth)
   stats.py       API and error accounting reported at game end
@@ -39,6 +39,25 @@ Useful flags: `--profile` pins the model profile instead of inferring it from
 before the turn is ended for it. `--reasoning-effort low|high|max` (default
 `low`) and `--no-carry-reasoning` control thinking budget and whether the
 chain stays in context.
+
+## Tools the model sees
+
+The LLM only calls what is registered as a tool. There is one shared
+`perform_action` tool in every mode; turn-based mode adds a second tool.
+
+| Tool | When | What it does |
+| :--- | :--- | :--- |
+| `perform_action` | every mode | ENV verbs. The `action` enum is generated from `rotk_env/prefabs/action_catalog.py`. |
+| `end_turn` | turn-based only | Empty-arg tool. Ends the faction's turn and closes the turn gate. Real-time has no turn to end. |
+
+Default catalog profile is `bench` (`move`, `attack`, `get_faction_state`) so an
+eval agent can act without a `get_action_list` round-trip. Set
+`STAR_ACTION_PROFILE=full` (or `debug`) to widen the enum.
+
+`end_turn` is not a `perform_action` action. Nesting it there is intercepted
+and rejected: the dedicated tool owns gate handling, and routing through
+`perform_action` would skip it. The agent also calls `end_turn` itself when
+the per-turn API budget is exhausted.
 
 ## Dry run, no model
 
