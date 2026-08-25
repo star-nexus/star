@@ -79,6 +79,9 @@ class ActionType(Enum):
     SKILL = "skill"  # 技能
     OCCUPY = "occupy"  # 占领
     FORTIFY = "fortify"  # 建设工事
+    DEFEND = "defend"  # 防御（规则预留）
+    SCOUT = "scout"  # 侦察（规则预留）
+    RETREAT = "retreat"  # 撤退（规则预留）
 
 
 @dataclass

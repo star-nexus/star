@@ -54,21 +54,78 @@ class CombatSystem(System):
         """Update combat system"""
         pass
 
-    def execute_attack(
+    def can_attack(
+        self, attacker_entity: int, target_entity: Optional[int] = None
+    ) -> bool:
+        """World-level attack readiness. Single query used by observation, AI, and handlers.
+
+        Without a target: the unit is alive, has Combat, Combat.can_attack()
+        (no realtime cooldown), and has AP for ATTACK.
+        With a target: plus range, enemy faction, and required components.
+        """
+        combat = self.world.get_component(attacker_entity, Combat)
+        if not combat or not combat.can_attack():
+            return False
+
+        unit_count = self.world.get_component(attacker_entity, UnitCount)
+        if not unit_count or unit_count.current_count <= 0:
+            return False
+
+        action_points = self.world.get_component(attacker_entity, ActionPoints)
+        if not action_points or not action_points.can_perform_action(ActionType.ATTACK):
+            return False
+
+        if target_entity is None:
+            return True
+
+        valid, _, _ = self._validate_attack(attacker_entity, target_entity)
+        return valid
+
+    def _attack_rejection(
         self, attacker_entity: int, target_entity: int
-    ) -> Optional[Dict[str, Any]]:
-        """Execute an attack and return detailed combat result (for LLM layer)"""
-        # Basic validation (LLM layer is responsible; keep final guard here)
-        valid, reason, context = self._validate_attack(attacker_entity, target_entity)
-        if not valid:
+    ) -> Dict[str, Any]:
+        """Detailed LLM error payload for a can_attack() failure."""
+        combat = self.world.get_component(attacker_entity, Combat)
+        if not combat:
             return {
                 "success": False,
-                "error": reason or "invalid_attack",
+                "error": "missing_components",
                 "message": "Attack validation failed",
-                "details": context or {},
+                "details": {
+                    "missing": ["attacker_combat"],
+                    "attacker_entity": attacker_entity,
+                    "target_entity": target_entity,
+                    "suggestion": (
+                        "Ensure both attacker and target units exist "
+                        "and are initialized correctly"
+                    ),
+                },
+            }
+        if not combat.can_attack():
+            return {
+                "success": False,
+                "error": "attack_on_cooldown",
+                "message": "Unit cannot attack until cooldown expires",
+                "details": {
+                    "attacker_entity": attacker_entity,
+                    "attack_cooldown": combat.attack_cooldown,
+                },
             }
 
-        # Check action points (LLM layer is responsible; final guard here)
+        unit_count = self.world.get_component(attacker_entity, UnitCount)
+        if not unit_count or unit_count.current_count <= 0:
+            return {
+                "success": False,
+                "error": "unit_not_alive",
+                "message": "Attacker is destroyed and cannot attack",
+                "details": {
+                    "attacker_entity": attacker_entity,
+                    "current_count": (
+                        unit_count.current_count if unit_count else None
+                    ),
+                },
+            }
+
         action_points = self.world.get_component(attacker_entity, ActionPoints)
         if not action_points or not action_points.can_perform_action(ActionType.ATTACK):
             return {
@@ -82,6 +139,34 @@ class CombatSystem(System):
                     "suggestion": "Wait for action points to recover before attacking",
                 },
             }
+
+        valid, reason, context = self._validate_attack(attacker_entity, target_entity)
+        if not valid:
+            return {
+                "success": False,
+                "error": reason or "invalid_attack",
+                "message": "Attack validation failed",
+                "details": context or {},
+            }
+
+        return {
+            "success": False,
+            "error": "cannot_attack",
+            "message": "Unit cannot attack",
+            "details": {
+                "attacker_entity": attacker_entity,
+                "target_entity": target_entity,
+            },
+        }
+
+    def execute_attack(
+        self, attacker_entity: int, target_entity: int
+    ) -> Optional[Dict[str, Any]]:
+        """Execute an attack and return detailed combat result (for LLM layer)"""
+        if not self.can_attack(attacker_entity, target_entity):
+            return self._attack_rejection(attacker_entity, target_entity)
+
+        action_points = self.world.get_component(attacker_entity, ActionPoints)
 
         # Snapshot pre-battle state
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
@@ -274,14 +359,11 @@ class CombatSystem(System):
 
     def attack(self, attacker_entity: int, target_entity: int) -> bool:
         """Execute attack (full rules implementation)"""
-        # Basic validation
-        valid, _, _ = self._validate_attack(attacker_entity, target_entity)
-        if not valid:
+        if not self.can_attack(attacker_entity, target_entity):
             return False
 
-        # Check action points
         action_points = self.world.get_component(attacker_entity, ActionPoints)
-        if not action_points or not action_points.can_perform_action(ActionType.ATTACK):
+        if not action_points:
             return False
 
         # Get components

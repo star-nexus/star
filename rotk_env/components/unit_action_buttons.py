@@ -87,7 +87,7 @@ class UnitActionPanel(Component):
             )
 
         # Attack
-        if combat and not combat.has_attacked:
+        if combat and combat.can_attack():
             self.add_action(
                 UnitActionButton(
                     action_type=ActionType.ATTACK,

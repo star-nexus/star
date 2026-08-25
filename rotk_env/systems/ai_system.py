@@ -156,12 +156,13 @@ class AISystem(System):
                 return False
 
             can_move = movement and movement.current_mp > 0
-            can_attack = combat and not combat.has_attacked
+            can_attack = self._unit_can_attack(unit_entity)
             if not can_move and not can_attack:
                 return False
         else:
-            # Turn-based: check whether the unit has already moved and attacked.
-            if (movement and movement.has_moved) and (combat and combat.has_attacked):
+            can_move = movement and movement.current_mp > 0
+            can_attack = self._unit_can_attack(unit_entity)
+            if not can_move and not can_attack:
                 return False
 
         # Record action time
@@ -182,12 +183,7 @@ class AISystem(System):
                 )
 
                 # Priority 1: attack if within range
-                if (
-                    combat
-                    and not combat.has_attacked
-                    and action_points.can_perform_action(ActionType.ATTACK)
-                    and distance <= combat.attack_range
-                ):
+                if self._unit_can_attack(unit_entity, enemy_target):
                     if self._try_attack(unit_entity, enemy_target):
                         return True
 
@@ -733,7 +729,7 @@ class AISystem(System):
 
             if unit_count and unit_count.current_count > 0:
                 can_move = movement and movement.current_mp > 0
-                can_attack = combat and not combat.has_attacked
+                can_attack = self._unit_can_attack(entity)
                 has_ap = action_points and action_points.current_ap > 0
 
                 if (can_move or can_attack) and has_ap:
@@ -747,6 +743,19 @@ class AISystem(System):
 
         print(f"Total AI units: {ai_unit_count}, Active AI units: {active_ai_units}")
         print("======================")
+
+    def _get_combat_system(self):
+        for system in self.world.systems:
+            if system.__class__.__name__ == "CombatSystem":
+                return system
+        return None
+
+    def _unit_can_attack(self, unit_entity: int, target_entity: int = None) -> bool:
+        combat_system = self._get_combat_system()
+        if combat_system:
+            return combat_system.can_attack(unit_entity, target_entity)
+        combat = self.world.get_component(unit_entity, Combat)
+        return bool(combat and combat.can_attack())
 
     def _get_movement_system(self):
         """Get the movement system."""

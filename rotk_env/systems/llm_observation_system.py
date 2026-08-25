@@ -20,6 +20,7 @@ from ..components import (
     UnitStatus,
     GameStats,
     BattleLog,
+    MapData,
 )
 from ..prefabs.config import Faction, TerrainType
 from ..utils.hex_utils import HexMath
@@ -266,12 +267,7 @@ class LLMObservationSystem:
                     "attack": combat.base_attack,
                     "defense": combat.base_defense,
                     "range": combat.attack_range,
-                    # "has_attacked": (  # Removed single-attack limitation display
-                    #     combat.has_attacked
-                    #     if hasattr(combat, "has_attacked")
-                    #     else False
-                    # ),
-                    "can_attack": True,  # Any combat capability allows attacking
+                    "can_attack": self._unit_can_attack(unit_id),
                 }
 
             # Information within the unit's sight range
@@ -388,30 +384,53 @@ class LLMObservationSystem:
         }
 
     def _get_limited_observation(self, faction: Faction) -> Dict[str, Any]:
-        """Get limited observation data (based on fog of war system)"""
-        # Similar to faction observation but constrained by fog of war
+        """Get limited observation data (based on fog of war).
+
+        When FogOfWar.enabled is False the whole map is treated as explored
+        and currently visible. When enabled, explored/visible tiles come from
+        the sets VisionSystem maintains on FogOfWar.
+        """
         fog_of_war = self.world.get_singleton_component(FogOfWar)
+        fog_enabled = bool(fog_of_war and fog_of_war.enabled)
 
-        # Get explored areas
-        explored_areas = set()
-        if fog_of_war:
-            # TODO: get explored areas from the fog of war system
-            pass
+        if not fog_enabled:
+            all_tiles = self._all_map_tiles()
+            return {
+                "faction": faction.value if hasattr(faction, "value") else str(faction),
+                "explored_areas": self._serialize_tiles(all_tiles),
+                "current_visible_areas": self._serialize_tiles(all_tiles),
+                "fog_of_war_status": "disabled",
+            }
 
-        # Get currently visible areas
-        visible_areas = set()
-        for entity in self.world.query().with_all(Unit, Vision, HexPosition).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit and unit.faction == faction:
-                unit_visible = self._get_visible_area(entity)
-                visible_areas.update(unit_visible)
+        explored = fog_of_war.explored_for(faction)
+        # Empty current vision is valid (all units dead / seeing nothing).
+        # Only fall back when VisionSystem has never recorded this faction.
+        if faction in fog_of_war.faction_vision:
+            visible = set(fog_of_war.faction_vision[faction])
+        else:
+            visible = set()
+            for entity in self.world.query().with_all(Unit, Vision, HexPosition).entities():
+                unit = self.world.get_component(entity, Unit)
+                if unit and unit.faction == faction:
+                    visible.update(self._get_visible_area(entity))
 
         return {
             "faction": faction.value if hasattr(faction, "value") else str(faction),
-            "explored_areas": list(explored_areas),
-            "current_visible_areas": list(visible_areas),
-            "fog_of_war_status": "active" if fog_of_war else "disabled",
+            "explored_areas": self._serialize_tiles(explored),
+            "current_visible_areas": self._serialize_tiles(visible),
+            "fog_of_war_status": "active",
         }
+
+    def _serialize_tiles(
+        self, tiles: Set[Tuple[int, int]]
+    ) -> List[Dict[str, int]]:
+        return [{"col": col, "row": row} for col, row in sorted(tiles)]
+
+    def _all_map_tiles(self) -> Set[Tuple[int, int]]:
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data and map_data.tiles:
+            return set(map_data.tiles.keys())
+        return set()
 
     def _get_visible_area(self, unit_id: int) -> Set[Tuple[int, int]]:
         """Get the unit's visible area.
@@ -541,11 +560,10 @@ class LLMObservationSystem:
 
             if combat:
                 unit_info["combat"] = {
-                    "attack": combat.attack,
-                    "defense": combat.defense,
+                    "attack": combat.base_attack,
+                    "defense": combat.base_defense,
                     "range": combat.attack_range,
-                    # "has_attacked": combat.has_attacked,  # Removed single-attack limitation display
-                    "can_attack": True,  # Any combat capability allows attacking
+                    "can_attack": self._unit_can_attack(entity),
                 }
 
             if status:
@@ -560,19 +578,32 @@ class LLMObservationSystem:
     def _get_unit_action_options(self, unit_id: int) -> List[str]:
         """Get action options the unit can execute."""
         movement = self.world.get_component(unit_id, MovementPoints)
-        combat = self.world.get_component(unit_id, Combat)
 
         actions = []
 
-        if movement and movement.current_mp > 0:  # Any positive MP allows movement
+        if movement and movement.current_mp > 0:
             actions.append("move")
 
-        if combat:  # Any combat component enables attack (do not check has_attacked)
+        if self._unit_can_attack(unit_id):
             actions.append("attack")
 
+        # Reserved verbs: registered handlers exist, current ruleset does not spend them.
         actions.extend(["defend", "scout", "retreat", "fortify"])
 
         return actions
+
+    def _get_combat_system(self):
+        for system in self.world.systems:
+            if system.__class__.__name__ == "CombatSystem":
+                return system
+        return None
+
+    def _unit_can_attack(self, unit_id: int) -> bool:
+        combat_system = self._get_combat_system()
+        if combat_system:
+            return combat_system.can_attack(unit_id)
+        combat = self.world.get_component(unit_id, Combat)
+        return bool(combat and combat.can_attack())
 
     def _get_strategic_info(self, faction: Faction) -> Dict[str, Any]:
         """Get faction-level strategic info."""
@@ -610,14 +641,12 @@ class LLMObservationSystem:
         }
 
     def _get_territory_control(self, faction: Faction) -> Dict[str, Any]:
-        """Get territory control info."""
-        # TODO: Implement territory control calculation
+        """Territory control placeholder. Not used by the current eval ruleset."""
         return {"controlled_tiles": 0, "contested_tiles": 0, "strategic_points": []}
 
     def _get_faction_resources(self, faction: Faction) -> Dict[str, Any]:
-        """Get faction resources."""
-        # TODO: Implement resource system
-        return {"manpower": 1000, "supplies": 500, "morale": 80}
+        """Economy placeholder. manpower / supplies / morale are not simulated."""
+        return {"manpower": 0, "supplies": 0, "morale": 0}
 
     def _get_full_map_info(self) -> Dict[str, Any]:
         """Get full map information."""

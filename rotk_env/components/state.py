@@ -65,6 +65,16 @@ class FogOfWar(SingletonComponent):
 
     faction_vision: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
     explored_tiles: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
+    # Simulation switch. When False, limited observation treats the whole map
+    # as explored and visible. VisionSystem still maintains the tile sets so
+    # toggling back on is instant.
+    enabled: bool = True
+
+    def explored_for(self, faction: Faction) -> Set[Tuple[int, int]]:
+        return set(self.explored_tiles.get(faction, set()))
+
+    def visible_for(self, faction: Faction) -> Set[Tuple[int, int]]:
+        return set(self.faction_vision.get(faction, set()))
 
 
 @dataclass

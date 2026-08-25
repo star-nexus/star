@@ -39,6 +39,9 @@ class ActionPoints(Component):
             ActionType.SKILL: 1,  # Skill: fixed cost 1
             ActionType.OCCUPY: 1,  # Occupy: fixed cost 1
             ActionType.FORTIFY: 1,  # Fortify: fixed cost 1
+            ActionType.DEFEND: 1,
+            ActionType.SCOUT: 1,
+            ActionType.RETREAT: 1,
         }
         return action_costs.get(action_type, 1)
 

@@ -64,6 +64,9 @@ class LLMActionHandler:
             "rest": self.handle_rest_action,
             "occupy": self.handle_occupy_action,
             "fortify": self.handle_fortify_action,
+            "defend": self.handle_defend_action,
+            "scout": self.handle_scout_action,
+            "retreat": self.handle_retreat_action,
             "skill": self.handle_skill_action,
             # Observation actions
             "observation": self.handle_observation_action,
@@ -1150,6 +1153,36 @@ class LLMActionHandler:
         else:
             return self._create_error_response("Territory system not available")
 
+    def _handle_reserved_action(
+        self, action_name: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Placeholder handler for verbs reserved by the observation surface."""
+        unit_id = params.get("unit_id")
+        if isinstance(unit_id, int):
+            permission_error = self._validate_faction_turn_permission(
+                unit_id, action_name
+            )
+            if permission_error:
+                return permission_error
+        return {
+            "success": False,
+            "result": False,
+            "implemented": False,
+            "action": action_name,
+            "error": f"{action_name} is reserved and not active in the current ruleset",
+            "error_code": "NOT_IMPLEMENTED",
+            "unit_id": unit_id,
+        }
+
+    def handle_defend_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._handle_reserved_action("defend", params)
+
+    def handle_scout_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._handle_reserved_action("scout", params)
+
+    def handle_retreat_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._handle_reserved_action("retreat", params)
+
     def handle_skill_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle the skill action."""
         unit_id = params.get("unit_id")
@@ -2228,7 +2261,7 @@ class LLMActionHandler:
                 ),
                 # Attack range info
                 "attack_range_info": self._get_attack_range_info(
-                    current_pos, pos, combat
+                    current_pos, pos, combat, unit_id=unit_id
                 ),
             }
 
@@ -2881,9 +2914,17 @@ class LLMActionHandler:
             }
 
     def _get_attack_range_info(
-        self, current_pos: Tuple[int, int], target_pos: Tuple[int, int], combat: Combat
+        self,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+        combat: Combat,
+        unit_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Get attack-range information between current and target tiles."""
+        """Attack-range information between current and target tiles.
+
+        `in_attack_range` is geometric (Combat.in_attack_range).
+        `can_attack` is unit readiness AND in range, via CombatSystem.
+        """
         if not current_pos or not combat:
             return {
                 "in_attack_range": False,
@@ -2892,23 +2933,22 @@ class LLMActionHandler:
                 "can_attack": False,
             }
 
-        # Compute distance
-        from ..utils.hex_utils import HexMath
-
         distance = HexMath.hex_distance(current_pos, target_pos)
-        attack_range = combat.attack_range
+        in_range = combat.in_attack_range(distance)
 
-        # In range?
-        in_range = distance <= attack_range
+        if unit_id is not None:
+            combat_system = self._get_combat_system()
+            unit_ready = (
+                combat_system.can_attack(unit_id)
+                if combat_system
+                else combat.can_attack()
+            )
+        else:
+            unit_ready = combat.can_attack()
 
-        # Attack allowed when in range and not attacking self tile
-        can_attack = in_range and distance > 0
-
-        # return {
-        #     "in_attack_range": in_range,
-        #     # "distance": distance,
-        #     # "attack_range": attack_range,
-        #     # "can_attack": can_attack,
-        #     # "range_status": "in_range" if in_range else "out_of_range",
-        # }
-        return in_range
+        return {
+            "in_attack_range": in_range,
+            "distance": distance,
+            "attack_range": combat.attack_range,
+            "can_attack": bool(unit_ready and in_range),
+        }

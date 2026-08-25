@@ -89,8 +89,8 @@ class EffectRenderSystem(System):
             if movement and not movement.has_moved:
                 self._render_movement_range(ui_state.selected_unit, camera_offset, zoom)
 
-            # Show attack range if the unit hasn't attacked yet
-            if combat and not combat.has_attacked:
+            # Show attack range if the unit can currently attack
+            if combat and combat.can_attack():
                 self._render_attack_range(ui_state.selected_unit, camera_offset, zoom)
 
     def _render_unit_selection(

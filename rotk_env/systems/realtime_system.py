@@ -108,13 +108,10 @@ class RealtimeSystem(System):
             combat = self.world.get_component(entity, Combat)
 
             if combat and combat.has_attacked:
-                if not hasattr(combat, "attack_cooldown"):
-                    combat.attack_cooldown = 0.5  # 0.5-second attack cooldown to increase attack frequency
-                else:
-                    combat.attack_cooldown -= delta_time
-                    if combat.attack_cooldown <= 0:
-                        combat.has_attacked = False
-                        combat.attack_cooldown = 0.0
+                combat.attack_cooldown -= delta_time
+                if combat.attack_cooldown <= 0:
+                    combat.has_attacked = False
+                    combat.attack_cooldown = 0.0
 
     def _update_ai_decisions(self, delta_time: float) -> None:
         """Per-tick AI decision update for real-time mode."""

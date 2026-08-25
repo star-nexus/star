@@ -1880,29 +1880,22 @@ class LLMSystem(System):
         }
 
     def handle_toggle_fog_of_war(self, params: Dict) -> Dict:
-        """Toggle the fog-of-war visualization."""
+        """Toggle the fog-of-war simulation switch (FogOfWar.enabled)."""
         enabled = params.get("enabled")
         fog_of_war = self.world.get_singleton_component(FogOfWar)
+        if fog_of_war is None:
+            fog_of_war = FogOfWar()
+            self.world.add_singleton_component(fog_of_war)
 
-        if fog_of_war:
-            if enabled is not None:
-                # If explicit enabled state is provided, apply it directly.
-                fog_enabled = bool(enabled)
-            else:
-                # Otherwise toggle the current state.
-                fog_enabled = not getattr(fog_of_war, "enabled", True)
-
-            # TODO: Wire fog_enabled into the actual FogOfWar logic.
-            return {
-                "success": True,
-                "message": f"Fog of war {'enabled' if fog_enabled else 'disabled'}",
-                "fog_enabled": fog_enabled,
-            }
+        if enabled is not None:
+            fog_of_war.enabled = bool(enabled)
+        else:
+            fog_of_war.enabled = not fog_of_war.enabled
 
         return {
-            "success": False,
-            "error_code": 2008,
-            "message": "Fog of war component not available",
+            "success": True,
+            "message": f"Fog of war {'enabled' if fog_of_war.enabled else 'disabled'}",
+            "fog_enabled": fog_of_war.enabled,
         }
 
     def handle_show_ui_panel(self, params: Dict) -> Dict:
@@ -2239,7 +2232,7 @@ class LLMSystem(System):
             try:
                 from ..prefabs.config import Faction
 
-                faction = Faction(faction.upper())
+                faction = Faction(faction.lower())
             except ValueError:
                 return {"success": False, "error": f"Invalid faction: {faction}"}
 

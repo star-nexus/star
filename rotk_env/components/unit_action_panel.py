@@ -130,7 +130,7 @@ class UnitActionPanel(SingletonComponent):
                 )
 
         # Attack
-        if combat and not combat.has_attacked:
+        if combat and combat.can_attack():
             if action_points.can_perform_action(ActionType.ATTACK):
                 self.available_actions.append(
                     UnitActionButton(

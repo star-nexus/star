@@ -28,6 +28,6 @@ dev = [
 [tool.pytest.ini_options]
 # The project is run as scripts from the repo root, not installed as a package.
 pythonpath = ["."]
-testpaths = ["rotk_agent/tests"]
+testpaths = ["rotk_agent/tests", "rotk_env/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

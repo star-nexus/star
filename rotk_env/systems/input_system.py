@@ -195,9 +195,8 @@ class InputHandlingSystem(System):
 
         # View mode hotkeys
         elif event.key == pygame.K_1:
-            # 1: God view
-            print("Switch to God view")
-            self._set_god_mode(ui_state, True)
+            # 1: toggle God view (fog off) vs faction fog
+            self._set_god_mode(ui_state, not ui_state.god_mode)
 
         elif event.key == pygame.K_2:
             # 2: Wei view
