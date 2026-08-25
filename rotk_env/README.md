@@ -187,6 +187,15 @@ uv run python -m rotk_env.maps.hex_sample path/to/chibi_source.png \
 
 回合制里模型要结束回合，必须走独立 tool `end_turn`（agent 注册，不经过 `perform_action`）。ENV 协议名仍是 `end_turn`，catalog 的 `full` 里有这条；实时模式没有该 tool。
 
+### 可复现性与实时
+
+`--seed`（其次 `$STAR_SEED`、配置）锁的是**地图生成和战斗掷骰**（`RngService`），不是整局逐帧回放。
+
+- **回合制**：世界只在行动 / `end_turn` 时变。LLM 想多久不影响棋盘。这是可复现 bench。
+- **实时**：模型思考时主循环仍在跑，AP/MP 按模拟时间回复，对手可以行动。思考耗时进入战局，这是评测定义，不是 bug。同一 seed 换模型或换推理延迟，对局可以不同。
+
+主循环锁定 **60 FPS**，每帧模拟步长固定为 `1/60` 秒（不是墙钟帧间隔）。因此实时 AP 约为每秒 1 点、MP 约每 3 秒回满；不要改成 30 FPS，否则同样墙钟下回复会减半。观测缓存按 `World.revision` 失效，单位刚移动后不会在 1 秒内读到旧坐标。
+
 ## 技术架构
 
 ### ECS 架构

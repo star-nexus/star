@@ -40,9 +40,9 @@ class LLMObservationSystem:
 
     def __init__(self, world: World):
         self.world = world
-        self.cache = {}
-        self.cache_timestamp = 0
-        self.cache_duration = 1.0  # Cache for 1 second
+        # key -> (world.revision, result). Hit only while the world has
+        # not changed; never keyed on wall-clock.
+        self.cache: Dict[str, Tuple[int, Dict[str, Any]]] = {}
 
     def get_observation(
         self,
@@ -128,13 +128,11 @@ class LLMObservationSystem:
                         "observation_level": observation_level,
                     }
 
-            # Check cache
             cache_key = f"{observation_level}_{faction}_{unit_id}_{include_hidden}"
-            if (
-                cache_key in self.cache
-                and current_time - self.cache_timestamp < self.cache_duration
-            ):
-                cached_result = self.cache[cache_key]
+            revision = getattr(self.world, "revision", 0)
+            hit = self.cache.get(cache_key)
+            if hit is not None and hit[0] == revision:
+                cached_result = dict(hit[1])
                 cached_result["from_cache"] = True
                 return cached_result
 
@@ -182,9 +180,8 @@ class LLMObservationSystem:
                     "operation": "get_observation",
                 }
 
-            # Update cache
-            self.cache[cache_key] = result
-            self.cache_timestamp = current_time
+            # Store under the revision this snapshot was built from.
+            self.cache[cache_key] = (revision, result)
 
             return result
 
@@ -735,4 +732,3 @@ class LLMObservationSystem:
     def clear_cache(self):
         """Clear observation cache."""
         self.cache.clear()
-        self.cache_timestamp = 0

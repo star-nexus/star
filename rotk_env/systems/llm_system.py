@@ -38,7 +38,7 @@ from protocol.star_client_v2 import (
     ClientType,
     MessageType,
 )
-from ..prefabs.action_catalog import FULL, action_names, is_observation
+from ..prefabs.action_catalog import FULL, action_names, is_observation, is_world_mutating
 
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
@@ -105,7 +105,16 @@ class ActionExecutor:
             result = self.llm_system._create_system_error_response(
                 action, f"UNKNOWN ACTION: {action}", 2010
             )
-            
+
+        # In-place component writes do not bump World.revision. Mutating
+        # actions must, or the next observation can reuse a stale cache.
+        if (
+            result.get("error_code") != 2010
+            and is_world_mutating(action)
+            and self.world is not None
+        ):
+            self.world.bump_revision()
+
         return result
 
 

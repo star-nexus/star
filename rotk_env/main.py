@@ -27,7 +27,7 @@ sys.path.append(str(Path(__file__).parent.parent / "framework"))
 from framework.engine.game_engine import GameEngine
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
-from rotk_env.prefabs.config import PLAYER_PRESETS
+from rotk_env.prefabs.config import PLAYER_PRESETS, GameConfig
 
 
 def parse_arguments():
@@ -156,7 +156,7 @@ def main():
             title="Romance of the Three Kingdoms Strategy Game",
             width=1200,
             height=800,
-            fps=60,
+            fps=GameConfig.FPS,
         )
 
         # Register game scenes

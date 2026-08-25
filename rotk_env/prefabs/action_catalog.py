@@ -252,6 +252,25 @@ def resolve_profile(name: str | None, default: str = BENCH) -> str:
     return key
 
 
+_READ_KINDS = frozenset({"query", "observation"})
+_READ_META = frozenset({"get_action_list"})
+
+
+def is_world_mutating(name: str) -> bool:
+    """Whether executing ``name`` can change what an observation would see.
+
+    ``get_action_list`` is catalogued as meta but is a docs read. Unknown
+    names are treated as mutating so a successful handler-only verb still
+    invalidates the observation cache.
+    """
+    if name in _READ_META:
+        return False
+    for spec in ACTIONS:
+        if spec.name == name:
+            return spec.kind not in _READ_KINDS
+    return True
+
+
 __all__ = [
     "ACTIONS",
     "ActionSpec",
@@ -261,6 +280,7 @@ __all__ = [
     "action_names",
     "docs_for",
     "is_observation",
+    "is_world_mutating",
     "observation_names",
     "resolve_profile",
     "specs_for",

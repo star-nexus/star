@@ -195,3 +195,33 @@ def test_key_1_toggles_god_view():
     assert ui_state.god_mode is False
     system._handle_key_down(event)
     assert ui_state.god_mode is True
+
+
+def test_observation_cache_hits_same_revision():
+    world, _ = _world_with_combat()
+    unit_id = _spawn_unit(world)
+    obs = LLMObservationSystem(world)
+    first = obs.get_observation(ObservationLevel.UNIT, unit_id=unit_id)
+    second = obs.get_observation(ObservationLevel.UNIT, unit_id=unit_id)
+    assert first.get("success") is True
+    assert first.get("from_cache") is not True
+    assert second.get("from_cache") is True
+
+
+def test_observation_cache_misses_after_world_changes():
+    world, _ = _world_with_combat()
+    unit_id = _spawn_unit(world)
+    obs = LLMObservationSystem(world)
+    obs.get_observation(ObservationLevel.UNIT, unit_id=unit_id)
+    world.get_component(unit_id, HexPosition).col = 3
+    world.bump_revision()
+    again = obs.get_observation(ObservationLevel.UNIT, unit_id=unit_id)
+    assert again.get("from_cache") is not True
+    assert again["data"]["unit"]["position"]["col"] == 3
+
+
+def test_world_update_bumps_revision():
+    world = World()
+    assert world.revision == 0
+    world.update(1.0 / 60)
+    assert world.revision == 1

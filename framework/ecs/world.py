@@ -60,6 +60,13 @@ class World:
         # Entity ID counter
         self.entity_counter = 0
 
+        # Monotonic world revision. Observation caches key on this so a
+        # move in the same wall-clock second cannot return a stale view.
+        # Bumped on every ``update`` and via ``bump_revision`` after
+        # mutating LLM actions (in-place component writes do not touch
+        # the query cache).
+        self.revision = 0
+
     def _drop_cache_entry(self, cache_key: QueryKey) -> None:
         """Internal helper: remove a cache entry from all three indices."""
         self._query_cache.pop(cache_key, None)
@@ -320,8 +327,13 @@ class World:
         # Sort by priority (ascending)
         self.systems.sort(key=lambda s: s.priority)
 
+    def bump_revision(self) -> None:
+        """Mark observable world state as changed."""
+        self.revision += 1
+
     def update(self, delta_time: float) -> None:
         """Update all systems once with the provided delta time."""
+        self.bump_revision()
         for system in self.systems:
             system_name = system.__class__.__name__
             with profiler.time_system(system_name):
@@ -370,4 +382,5 @@ class World:
         self.systems.clear()
         self.entity_counter = 0
         self._cache_version = 0
+        self.revision = 0
         print("World has been reset")

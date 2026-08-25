@@ -17,8 +17,7 @@ class ResourceRecoverySystem(System):
         super().__init__(priority=50)  # runs early to ensure resource state is ready for other systems
 
         # Action Point (AP) recovery config: recovers 1 AP per interval by default.
-        # Note: to prevent action spam, consider pairing this with an operation cooldown system
-        # (see AP_RECOVERY_IMPROVEMENT_PROPOSAL.md).
+        # Interval is in sim seconds. The engine steps 1/60 s at 60 FPS.
         self.ap_recovery_interval = 1.0
         self.ap_recovery_amount = 1
 

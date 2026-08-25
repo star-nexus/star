@@ -147,7 +147,7 @@ class PlayerConfig:
 class GameConfig:
     """游戏总配置类"""
 
-    # 显示配置
+    # Display. Real-time AP/MP recover 1/FPS seconds per frame; keep at 60.
     WINDOW_WIDTH = 1200
     WINDOW_HEIGHT = 800
     FPS = 60

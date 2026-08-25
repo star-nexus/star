@@ -8,6 +8,7 @@ from rotk_env.prefabs.action_catalog import (
     action_names,
     docs_for,
     is_observation,
+    is_world_mutating,
 )
 from rotk_env.prefabs.config import ActionType
 from rotk_agent.core.tools import PERFORM_ACTION_SCHEMA, perform_action_schema
@@ -84,3 +85,46 @@ def test_guessed_observation_names_fail_closed():
     )
     assert god["success"] is False
     assert god["error_code"] == 2010
+
+
+def test_catalog_mutating_vs_read():
+    assert is_world_mutating("move")
+    assert is_world_mutating("attack")
+    assert is_world_mutating("end_turn")
+    assert not is_world_mutating("get_faction_state")
+    assert not is_world_mutating("get_action_list")
+    assert not is_world_mutating("unit_observation")
+
+
+def test_mutating_action_bumps_world_revision():
+    from rotk_env.systems.llm_system import ActionExecutor, ActionRequest
+
+    world = World()
+
+    class _Handler:
+        action_handlers = {"move": True, "get_faction_state": True}
+
+        def execute_action(self, action, params):
+            return {"success": True}
+
+    class _FakeLLM:
+        def __init__(self, world):
+            self.world = world
+            self.system_actions = {}
+            self.action_handler = _Handler()
+
+        def _create_system_error_response(self, action, msg, code):
+            return {"success": False, "message": msg, "error_code": code}
+
+        def _handle_observation_action(self, action, params):
+            raise AssertionError("not an observation")
+
+    executor = ActionExecutor(_FakeLLM(world))
+    before = world.revision
+    executor.execute(ActionRequest(None, 1, "move", {}, 0.0))
+    assert world.revision == before + 1
+    after_move = world.revision
+    executor.execute(
+        ActionRequest(None, 2, "get_faction_state", {"faction": "wei"}, 0.0)
+    )
+    assert world.revision == after_move

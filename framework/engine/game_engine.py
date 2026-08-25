@@ -13,6 +13,11 @@ from ..ecs.world import World
 from .engine_event import QuitEvent
 from performance_profiler import profiler
 
+# Eval and interactive play share this cap. Real-time AP/MP recover from
+# fixed 1/FPS seconds per frame, so a 30fps loop would recover at half
+# the intended rate. Do not lower this without changing recovery intervals.
+DEFAULT_FPS = 60
+
 
 class GameEngine:
     """Game engine - runs the main loop and core managers."""
@@ -25,10 +30,17 @@ class GameEngine:
         return cls._instance
 
     def __init__(
-        self, title: str = "Game", width: int = 1200, height: int = 800, fps: int = 60
+        self,
+        title: str = "Game",
+        width: int = 1200,
+        height: int = 800,
+        fps: int = DEFAULT_FPS,
     ):
         """Initialize the game engine (idempotent for singleton)."""
         if hasattr(self, "_initialized"):
+            # Module import constructs GAMEENGINE with defaults; the ENV
+            # entry point still pins FPS so recovery rate stays 1 AP / 60 frames.
+            self.fps = fps
             return
 
         # Load config to check for headless mode
@@ -103,21 +115,20 @@ class GameEngine:
         self.run()
 
     def run(self) -> None:
-        """Run the main game loop."""
+        """Run the main game loop.
+
+        Simulation uses a fixed timestep of 1/FPS, not wall-clock frame
+        jitter. ``clock.tick`` caps the loop at FPS so one wall-clock
+        second of LLM think time is about FPS sim frames (and thus the
+        intended AP/MP recovery) as long as the machine keeps up.
+        """
         self.running = True
-        last_time = time.time()
+        frame_dt = 1.0 / float(self.fps)
 
         try:
             while self.running:
-                # Compute delta time
-                current_time = time.time()
-                self.delta_time = current_time - last_time
-                last_time = current_time
-
-                # Main update
+                self.delta_time = frame_dt
                 self._update()
-
-                # Frame limiting
                 self.clock.tick(self.fps)
 
         except KeyboardInterrupt:
