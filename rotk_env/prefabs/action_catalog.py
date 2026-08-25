@@ -69,7 +69,10 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state",
-        "Get state for a faction: surviving unit positions and remaining strength",
+        "Get the full unit list for a faction (own or enemy). Each unit has "
+        "owner (claiming agent_id, or null) and commandable (whether this "
+        "agent may issue mutating actions). Action layer still rejects "
+        "orders on units you do not own.",
         "query",
         BENCH,
         {
@@ -124,7 +127,8 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state_vlm",
-        "Faction state plus the current rendered frame as base64 PNG",
+        "Same JSON as get_faction_state (full army, owner/commandable on "
+        "each unit), plus a PNG of the current full-board render.",
         "query",
         FULL,
         {

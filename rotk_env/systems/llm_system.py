@@ -283,6 +283,40 @@ class LLMSystem(System):
             2005,
         )
 
+    def _check_agent_unit_faction(
+        self,
+        action: str,
+        mapped_faction: Faction,
+        params: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Reject mutating unit actions whose unit is not the agent's faction.
+
+        Turn permission only asks "is it this unit's turn?". Realtime skips
+        that entirely. Without this check a Shu agent can move a Wei unit.
+        """
+        if action not in self._OWNERSHIP_GATED_ACTIONS:
+            return None
+        if not isinstance(params, dict):
+            return None
+        unit_id = params.get("unit_id")
+        if not isinstance(unit_id, int):
+            return None
+        from ..components import Unit as _UnitComp
+
+        unit = self.world.get_component(unit_id, _UnitComp)
+        if unit is None:
+            return None
+        if unit.faction == mapped_faction:
+            return None
+        return self._create_system_error_response(
+            action,
+            (
+                f"Unit {unit_id} belongs to {unit.faction.value}; "
+                f"this agent is registered to {mapped_faction.value}."
+            ),
+            2005,
+        )
+
     # === Team coordination action handlers ========================================
 
     def handle_claim_units(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1212,6 +1246,8 @@ class LLMSystem(System):
                 "list_team",
                 "broadcast_to_team",
                 "read_team_messages",
+                "get_faction_state",
+                "get_faction_state_vlm",
             }
             if (
                 action in _AGENT_AUTHENTICATED_ACTIONS
@@ -1243,7 +1279,7 @@ class LLMSystem(System):
                     return error_result
 
                 if isinstance(params, dict) and "faction" in params:
-                    if action == "get_faction_state":
+                    if action in ("get_faction_state", "get_faction_state_vlm"):
                         try:
                             from ..prefabs.config import Faction as _Faction
 
@@ -1281,6 +1317,16 @@ class LLMSystem(System):
                                 return error_result
                         except Exception as _e:
                             print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
+
+                faction_error = self._check_agent_unit_faction(
+                    action, mapped_faction, params if isinstance(params, dict) else {}
+                )
+                if faction_error is not None:
+                    if send_response and agent_id:
+                        self.client.response_to_agent(
+                            agent_id, action_id, faction_error, "str"
+                        )
+                    return faction_error
 
                 # Multi-agent: reject unit-targeted *mutating* actions whose
                 # target unit is claimed by a different teammate. No-op when
@@ -1327,9 +1373,9 @@ class LLMSystem(System):
 
                                 registry = self.world.get_singleton_component(AgentInfoRegistry)
                                 if registry:
-                                    agent_info = registry.get_agent_info(faction_key)
-                                    if agent_info and getattr(agent_info, "agent_id", None):
-                                        target_agent_ids.add(agent_info.agent_id)
+                                    for agent_info in registry.get_agents(faction_key):
+                                        if getattr(agent_info, "agent_id", None):
+                                            target_agent_ids.add(agent_info.agent_id)
                             except Exception as _e:
                                 print(f"[LLMSystem] Failed to get AgentInfoRegistry: {_e}")
 

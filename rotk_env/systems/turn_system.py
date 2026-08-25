@@ -8,13 +8,12 @@ from ..components import (
     Player,
     GameState,
     MovementPoints,
-    Combat,
-    Unit,
     GameModeComponent,
     ActionPoints,
     UnitCount,
+    UnitStatus,
 )
-from ..prefabs.config import GameConfig, GameMode, Faction
+from ..prefabs.config import GameConfig, GameMode, Faction, UnitState
 from ..utils.env_events import TurnStartEvent
 from .game_over_policy import GameOverPolicy
 
@@ -145,38 +144,32 @@ class TurnSystem(System):
             EBS.publish(TurnStartEvent(game_state.current_player))
 
     def _reset_unit_actions(self):
-        """Reset all units' action states."""
-        # Retrieve ActionSystem to reset turn actions.
-        action_system = self._get_action_system()
-        if action_system:
-            action_system.reset_turn_actions()
-        else:
-            # Fallback: reset directly.
-            self._manual_reset_actions()
-
-    def _manual_reset_actions(self):
-        """Manually reset action states."""
+        """Reset AP/MP and tick status at the start of a new round."""
         for entity in self.world.query().with_component(MovementPoints).entities():
             movement = self.world.get_component(entity, MovementPoints)
             unit_count = self.world.get_component(entity, UnitCount)
             action_points = self.world.get_component(entity, ActionPoints)
 
             if movement:
-                # First restore movement to maximum.
                 movement.reset()
-                # Then scale by effective movement given unit count.
                 if unit_count:
-                    effective_mp = movement.get_effective_movement(unit_count)
-                    movement.current_mp = effective_mp
-                # movement.has_moved = False  # single-move restriction removed
+                    movement.current_mp = movement.get_effective_movement(unit_count)
 
             if action_points:
                 action_points.reset()
 
-        for entity in self.world.query().with_component(Combat).entities():
-            combat = self.world.get_component(entity, Combat)
-            if combat:
-                pass  # combat.has_attacked = False  # single-attack restriction removed
+        for entity in self.world.query().with_component(UnitStatus).entities():
+            unit_status = self.world.get_component(entity, UnitStatus)
+            if not unit_status:
+                continue
+            if unit_status.status_duration > 0:
+                unit_status.status_duration -= 1
+                if unit_status.status_duration <= 0:
+                    unit_status.current_status = UnitState.NORMAL
+            if unit_status.wait_turns > 0:
+                unit_status.current_status = UnitState.HIGH_MORALE
+                unit_status.status_duration = 1
+                unit_status.wait_turns = 0
 
     def _start_next_turn(self):
         """Start the next turn with a full reset (used at game start, etc.)."""
@@ -266,13 +259,6 @@ class TurnSystem(System):
         """Get the StatisticsSystem instance."""
         for system in self.world.systems:
             if system.__class__.__name__ == "StatisticsSystem":
-                return system
-        return None
-
-    def _get_action_system(self):
-        """Get the ActionSystem instance."""
-        for system in self.world.systems:
-            if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 

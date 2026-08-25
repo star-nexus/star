@@ -2,7 +2,6 @@
 Main game scene
 """
 
-import pygame
 import time
 from typing import Dict, Any
 from framework.engine.scenes import Scene, SMS
@@ -16,12 +15,10 @@ from ..systems import (
     MovementSystem,
     CombatSystem,
     VisionSystem,
-    AISystem,
     InputHandlingSystem,
     MiniMapSystem,
     TerritorySystem,
     UnitActionButtonSystem,
-    ActionSystem,
     UIButtonSystem,
     UIRenderSystem,
     MockLLMAISystem,
@@ -167,7 +164,6 @@ class GameScene(Scene):
             GameTimeSystem(),  # Game time system (priority 10) - earliest execution
             MapSystem(scenario=self.scenario),  # Map system (priority 100)
             VisionSystem(),  # Vision system
-            ActionSystem(),  # Action system
             MovementSystem(),  # Movement system
             CombatSystem(),  # Combat system
             TerritorySystem(),  # Territory system
@@ -557,13 +553,8 @@ class GameScene(Scene):
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
-            # Check exit event
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.engine.quit()
-                    return
-
-            # Update world
+            # Quit is handled by GameEngine.InputSystem (QuitEvent).
+            # Do not drain pygame.event here — get() empties the queue.
             with profiler.time_system("world_update"):
                 self.world.update(delta_time)
 

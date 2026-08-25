@@ -454,30 +454,49 @@ class SettlementReportSystem(System):
 
         model_info = {}
         agent_endpoints = {}
-        # enable_thinking capture
         enable_thinking_by_faction = {}
         action_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
         interaction_counts: Dict[str, int] = {"wei": 0, "shu": 0, "wu": 0}
-        # Provider info (used for file names, etc.)
         providers: Dict[str, Optional[str]] = {"wei": None, "shu": None, "wu": None}
+        registered_agents: List[Dict[str, Any]] = []
 
         if registry:
             print(f"[SettlementReport] 📋 Agent registry found, registered factions: {list(registry.agents.keys())}")
-            
+
             for faction in ["wei", "shu", "wu"]:
-                agent_info = registry.get_agent_info(faction)
-                if agent_info:
-                    model_info[faction] = agent_info.model_id
-                    agent_endpoints[faction] = agent_info.base_url
-                    # capture enable_thinking flag
-                    enable_thinking_by_faction[faction] = agent_info.enable_thinking
-                    # Record provider for file name generation
-                    providers[faction] = agent_info.provider
-                    print(f"[SettlementReport] ✅ {faction}: {agent_info.provider}:{agent_info.model_id} (thinking: {agent_info.enable_thinking})")
+                infos = registry.get_agents(faction)
+                if infos:
+                    model_info[faction] = " + ".join(info.model_id for info in infos)
+                    agent_endpoints[faction] = " + ".join(info.base_url for info in infos)
+                    thinking_vals = {info.enable_thinking for info in infos}
+                    enable_thinking_by_faction[faction] = (
+                        next(iter(thinking_vals)) if len(thinking_vals) == 1 else None
+                    )
+                    provider_names = [
+                        info.provider for info in infos if info.provider and info.provider != "unknown"
+                    ]
+                    providers[faction] = "+".join(dict.fromkeys(provider_names)) or infos[0].provider
+                    for info in infos:
+                        registered_agents.append(
+                            {
+                                "faction": faction,
+                                "agent_id": info.agent_id,
+                                "provider": info.provider,
+                                "model_id": info.model_id,
+                                "base_url": info.base_url,
+                                "enable_thinking": info.enable_thinking,
+                                "version": info.version,
+                                "note": info.note,
+                                "registration_time": info.registration_time,
+                            }
+                        )
+                        print(
+                            f"[SettlementReport] ✅ {faction}/{info.agent_id}: "
+                            f"{info.provider}:{info.model_id} (thinking: {info.enable_thinking})"
+                        )
                 else:
                     model_info[faction] = "placeholder_model"
                     agent_endpoints[faction] = "unknown"
-                    # default for unregistered faction
                     enable_thinking_by_faction[faction] = None
                     providers[faction] = None
                     print(f"[SettlementReport] ⚠️ {faction}: Agent info not registered, using placeholder")
@@ -557,6 +576,7 @@ class SettlementReportSystem(System):
             # Provider info for each faction and a short slug used in file names
             "providers": providers,
             "providers_slug": self._build_providers_slug(providers),
+            "registered_agents": registered_agents,
         }
     
     def _build_providers_slug(self, providers: Dict[str, Optional[str]]) -> str:

@@ -105,12 +105,18 @@ class ActionType(Enum):
 
 @dataclass
 class TerrainEffect:
-    """地形效果配置"""
+    """Numeric terrain modifiers the sim actually applies.
 
-    movement_cost: int = 1  # 通行消耗
-    defense_bonus: int = 0  # 基础防御修正
-    attack_bonus: int = 0  # 基础攻击修正
-    special_rules: str = ""  # 额外规则描述
+    ``movement_cost``: MovementSystem (999 is impassable; water is also an
+    obstacle). ``defense_bonus`` / ``attack_bonus``: CombatSystem, then
+    multiplied by ``TERRAIN_COEFFICIENTS``. ``vision_bonus``: added to unit
+    vision range by VisionSystem. Mountains also block line of sight.
+    """
+
+    movement_cost: int = 1
+    defense_bonus: int = 0
+    attack_bonus: int = 0
+    vision_bonus: int = 0
 
 
 @dataclass
@@ -189,87 +195,37 @@ class GameConfig:
     CURRENT_VISION_OUTLINE_COLOR = (0, 255, 0)  # 当前视野轮廓：绿色
     VISION_OUTLINE_WIDTH = 2  # 视野轮廓线宽度
 
-    # 地形基础属性（按规则手册v1.2）
+    # Applied by MovementSystem / CombatSystem / VisionSystem. No other
+    # terrain special-cases exist (no hit-chance, range cut, regen, ships).
     TERRAIN_EFFECTS: Dict[TerrainType, TerrainEffect] = {
-        TerrainType.PLAIN: TerrainEffect(
-            movement_cost=1, defense_bonus=0, attack_bonus=0, special_rules="无"
-        ),
+        TerrainType.PLAIN: TerrainEffect(movement_cost=1),
         TerrainType.MOUNTAIN: TerrainEffect(
-            movement_cost=3,
-            defense_bonus=2,
-            attack_bonus=1,
-            special_rules="高地优势+1攻击，远程单位射程-1",
+            movement_cost=3, defense_bonus=2, attack_bonus=1, vision_bonus=2
         ),
-        TerrainType.URBAN: TerrainEffect(
-            movement_cost=2,
-            defense_bonus=4,
-            attack_bonus=0,
-            special_rules="被围攻时每回合自动恢复5%耐久",
-        ),
-        TerrainType.WATER: TerrainEffect(
-            movement_cost=999,
-            defense_bonus=0,
-            attack_bonus=0,
-            special_rules="仅「船只」或「飞行」单位可通过",
-        ),
-        TerrainType.FOREST: TerrainEffect(
-            movement_cost=2,
-            defense_bonus=1,
-            attack_bonus=0,
-            special_rules="隐蔽优势，远程命中率-20%",
-        ),
+        TerrainType.URBAN: TerrainEffect(movement_cost=2, defense_bonus=4),
+        TerrainType.WATER: TerrainEffect(movement_cost=999),
+        TerrainType.FOREST: TerrainEffect(movement_cost=2, defense_bonus=1),
         TerrainType.HILL: TerrainEffect(
-            movement_cost=2,
-            defense_bonus=1,
-            attack_bonus=1,
-            special_rules="高地优势+1攻击，近战先攻权+1",
+            movement_cost=2, defense_bonus=1, attack_bonus=1, vision_bonus=1
         ),
-        # MOBA-specific terrain effects
-        TerrainType.LANE: TerrainEffect(
-            movement_cost=1,
-            defense_bonus=0,
-            attack_bonus=0,
-            special_rules="兵线路径，移动速度+25%",
-        ),
-        TerrainType.JUNGLE: TerrainEffect(
-            movement_cost=2,
-            defense_bonus=1,
-            attack_bonus=0,
-            special_rules="野区隐蔽，视野-1，可能有中性生物",
-        ),
-        TerrainType.RIVER: TerrainEffect(
-            movement_cost=2,
-            defense_bonus=0,
-            attack_bonus=0,
-            special_rules="河流减速，但提供战略视野",
-        ),
+        TerrainType.LANE: TerrainEffect(movement_cost=1),
+        TerrainType.JUNGLE: TerrainEffect(movement_cost=2, defense_bonus=1),
+        TerrainType.RIVER: TerrainEffect(movement_cost=2),
         TerrainType.BASE: TerrainEffect(
-            movement_cost=1,
-            defense_bonus=3,
-            attack_bonus=1,
-            special_rules="基地区域，己方单位恢复+50%，敌方单位攻击力-25%",
+            movement_cost=1, defense_bonus=3, attack_bonus=1
         ),
         TerrainType.TOWER: TerrainEffect(
-            movement_cost=1,
-            defense_bonus=5,
-            attack_bonus=2,
-            special_rules="防御塔区域，提供强大防御加成和攻击支援",
+            movement_cost=1, defense_bonus=5, attack_bonus=2
         ),
         TerrainType.INHIBITOR: TerrainEffect(
-            movement_cost=1,
-            defense_bonus=3,
-            attack_bonus=1,
-            special_rules="兵营区域，控制超级兵生成",
+            movement_cost=1, defense_bonus=3, attack_bonus=1
         ),
         TerrainType.ANCIENT: TerrainEffect(
-            movement_cost=1,
-            defense_bonus=8,
-            attack_bonus=3,
-            special_rules="主堡，摧毁即获胜，拥有最强防御",
+            movement_cost=1, defense_bonus=8, attack_bonus=3
         ),
     }
 
-    # 兵种基础属性（按规则手册v1.2）
+    # Spawned onto units by the unit factory.
     UNIT_BASE_STATS: Dict[UnitType, UnitBaseStats] = {
         UnitType.INFANTRY: UnitBaseStats(
             max_count=100,

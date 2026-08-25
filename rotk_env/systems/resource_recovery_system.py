@@ -38,7 +38,7 @@ class ResourceRecoverySystem(System):
         # Last observed MP value per entity, used to detect when a move action has been spent
         self.mp_last_points: Dict[int, int] = {}
 
-        # ===== Option 2: Decision-quality bonus (optional; requires ActionSystem integration) =====
+        # Optional: accelerate recovery from decision quality. Not wired.
         # Tracks each unit's "decision quality score" to accelerate resource recovery.
         # self.unit_decision_quality: Dict[int, float] = {}  # 0.0-1.0; 1.0 = perfect decision
 

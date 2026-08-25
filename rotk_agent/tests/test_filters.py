@@ -43,6 +43,8 @@ class TestUnitStateKeys:
                             "properties": {"attack_range": 1},
                         },
                         "available_skills": [],
+                        "owner": "wei_vanguard",
+                        "commandable": False,
                     }
                 ],
             }
@@ -55,6 +57,8 @@ class TestUnitStateKeys:
         assert "long_rest_resources" not in unit["capabilities"]
         assert unit["capabilities"]["properties"] == {"attack_range": 1}
         assert "available_skills" not in unit
+        assert unit["owner"] == "wei_vanguard"
+        assert unit["commandable"] is False
         assert "success" not in result
 
 

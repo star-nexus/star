@@ -4,7 +4,7 @@ Agent information registry components.
 
 import datetime
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from framework import SingletonComponent
 
@@ -22,59 +22,77 @@ class AgentInfo:
     enable_thinking: Optional[bool] = None  # Whether "thinking mode" is enabled
 
 
-@dataclass 
+@dataclass
 class AgentInfoRegistry(SingletonComponent):
-    """Singleton registry for agent information."""
-    
-    # Stores agent info by faction key: "wei", "shu", "wu"
-    agents: Dict[str, AgentInfo] = field(default_factory=dict)
-    
+    """Singleton registry for agent information.
+
+    Each faction holds a list so two agents on Wei both appear in
+    settlement. Re-registering the same ``agent_id`` replaces that row.
+    """
+
+    agents: Dict[str, List[AgentInfo]] = field(default_factory=dict)
+
     def register_agent(self, faction: str, agent_info: AgentInfo) -> bool:
         """Register agent information."""
         try:
-            if faction in ["wei", "shu", "wu"]:
-                # Attach registration timestamp
-                agent_info.registration_time = datetime.datetime.now().isoformat()
-                self.agents[faction] = agent_info
-                print(
-                    f"[AgentInfoRegistry] ✅ Registered {faction} faction agent: "
-                    f"{agent_info.provider}:{agent_info.model_id}"
-                )
-                return True
-            else:
+            if faction not in ["wei", "shu", "wu"]:
                 print(f"[AgentInfoRegistry] ❌ Invalid faction name: {faction}")
                 return False
+            agent_info.registration_time = datetime.datetime.now().isoformat()
+            bucket = self.agents.setdefault(faction, [])
+            if agent_info.agent_id:
+                for i, existing in enumerate(bucket):
+                    if existing.agent_id == agent_info.agent_id:
+                        bucket[i] = agent_info
+                        print(
+                            f"[AgentInfoRegistry] ✅ Updated {faction} agent "
+                            f"{agent_info.agent_id}: "
+                            f"{agent_info.provider}:{agent_info.model_id}"
+                        )
+                        return True
+            bucket.append(agent_info)
+            print(
+                f"[AgentInfoRegistry] ✅ Registered {faction} faction agent: "
+                f"{agent_info.provider}:{agent_info.model_id}"
+                + (f" ({agent_info.agent_id})" if agent_info.agent_id else "")
+            )
+            return True
         except Exception as e:
             print(f"[AgentInfoRegistry] ❌ Failed to register agent info: {e}")
             return False
-    
+
+    def get_agents(self, faction: str) -> List[AgentInfo]:
+        """All agents registered to ``faction``, in registration order."""
+        return list(self.agents.get(faction) or [])
+
     def get_agent_info(self, faction: str) -> Optional[AgentInfo]:
-        """Get agent info for a given faction."""
-        return self.agents.get(faction)
-    
-    def get_all_agents(self) -> Dict[str, AgentInfo]:
-        """Get all registered agents."""
-        return self.agents.copy()
-    
+        """The most recently registered agent for ``faction``, if any."""
+        infos = self.agents.get(faction) or []
+        return infos[-1] if infos else None
+
+    def get_all_agents(self) -> Dict[str, List[AgentInfo]]:
+        """Copy of the faction → agents map."""
+        return {faction: list(infos) for faction, infos in self.agents.items()}
+
     def has_agent(self, faction: str) -> bool:
         """Return whether the faction has a registered agent."""
-        return faction in self.agents
-    
+        return bool(self.agents.get(faction))
+
     def get_summary(self) -> Dict[str, str]:
-        """Get a short summary (faction -> provider:model)."""
+        """Get a short summary (faction -> provider:model[, ...])."""
         summary = {}
-        for faction, info in self.agents.items():
-            summary[faction] = f"{info.provider}:{info.model_id}"
+        for faction, infos in self.agents.items():
+            summary[faction] = ", ".join(
+                f"{info.provider}:{info.model_id}" for info in infos
+            )
         return summary
-    
+
     @staticmethod
     def sanitize_url(url: str) -> str:
         """Sanitize a URL by removing sensitive parts."""
         try:
             parsed = urlparse(url)
-            # Build safe URL: scheme + netloc + path
             safe_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-            # Strip trailing slash
             return safe_url.rstrip("/")
         except Exception as e:
             print(f"[AgentInfoRegistry] ⚠️ URL sanitization failed: {e}")

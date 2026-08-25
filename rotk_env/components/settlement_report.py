@@ -33,7 +33,7 @@ class SettlementReport(SingletonComponent):
     
     units_info: Dict[str, Any] = field(default_factory=dict)  # unit details by faction
     
-    model_info: Dict[str, str] = field(default_factory=dict)  # model id by faction
+    registered_agents: List[Dict[str, Any]] = field(default_factory=list)
     
     agent_endpoints: Dict[str, str] = field(default_factory=dict)  # agent endpoint by faction
     

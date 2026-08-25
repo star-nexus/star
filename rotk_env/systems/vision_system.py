@@ -168,5 +168,6 @@ class VisionSystem(System):
             return 0
 
         terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain.terrain_type)
-        # Terrain currently provides no vision bonus; always returns 0.
-        return 0
+        if terrain_effect is None:
+            return 0
+        return int(terrain_effect.vision_bonus)

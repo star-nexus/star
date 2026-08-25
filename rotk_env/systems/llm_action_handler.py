@@ -38,6 +38,8 @@ from ..components import (
     TerritoryControl,
     FogOfWar,
     GameModeComponent,
+    GameStats,
+    TeamCoordination,
 )
 from ..prefabs.config import (
     Faction,
@@ -938,35 +940,30 @@ class LLMActionHandler:
         if permission_error:
             return permission_error
 
-        # Execute rest
-        action_system = self._get_action_system()
-        if action_system:
-            success = action_system.perform_wait(unit_id)
-            if success:
-                action_points = self.world.get_component(unit_id, ActionPoints)
-                unit_status = self.world.get_component(unit_id, UnitStatus)
+        # Rest: increment wait streak. Two waits while confused clears it.
+        # Does not consume action points (same as the old ActionSystem wait).
+        unit_status = self.world.get_component(unit_id, UnitStatus)
+        if not unit_status:
+            return self._create_error_response(f"Unit {unit_id} has no status")
 
-                return {
-                    "success": True,
-                    "result": True,
-                    "message": f"Unit {unit_id} is resting and recovering",
-                    "details": f"Unit {unit_id} is resting and recovering",
-                    # "effects": {
-                    #     "morale_recovery": True,
-                    #     "fatigue_removed": unit_status.current_status
-                    #     != UnitState.FATIGUE,
-                    #     "turn_ended": True,
-                    # },
-                    "remaining_action_points": (
-                        action_points.current_ap - 1 if action_points else 0
-                    ),
-                }
-            else:
-                return self._create_error_response(
-                    "Action system failed to execute wait"
-                )
-        else:
-            return self._create_error_response("Action system not available")
+        unit_status.wait_turns += 1
+        if (
+            unit_status.wait_turns >= 2
+            and unit_status.current_status == UnitState.CONFUSION
+        ):
+            unit_status.current_status = UnitState.NORMAL
+            unit_status.status_duration = 0
+
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        return {
+            "success": True,
+            "result": True,
+            "message": f"Unit {unit_id} is resting and recovering",
+            "details": f"Unit {unit_id} is resting and recovering",
+            "remaining_action_points": (
+                action_points.current_ap if action_points else 0
+            ),
+        }
 
     def handle_occupy_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle the occupy action - does not consume construction points, but consumes action points."""
@@ -1313,7 +1310,13 @@ class LLMActionHandler:
     # ==================== Faction control ====================
 
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get high-level faction state."""
+        """Get high-level faction state.
+
+        Always the full army for ``faction``. Each unit is stamped with
+        ``owner`` (claiming ``agent_id``, or ``None``) and ``commandable``
+        (whether the requesting agent may issue mutating actions). No
+        ``agent_id`` (BOT / single-agent) → every unit is commandable.
+        """
         faction_str = params.get("faction")
 
         if not faction_str:
@@ -1325,20 +1328,22 @@ class LLMActionHandler:
         except ValueError:
             return self._create_error_response(f"Invalid faction: {faction_str}")
 
-        # Get all units for faction
         faction_units = self._get_faction_units(faction)
+        agent_id = params.get("agent_id")
 
-        # Compute faction statistics
         total_units_count = len(faction_units)
         alive_units = [u for u in faction_units if self._is_unit_alive(u)]
         alive_units_count = len(alive_units)
 
-        # Count actionable units (alive and with action points)
         actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
         actionable_units_count = len(actionable_units)
 
-        # Get current faction status
         faction_status = self._get_faction_status(faction)
+        units = []
+        for unit_id in alive_units[:10]:
+            info = self._get_detailed_unit_info(unit_id)
+            info.update(self._unit_command_fields(unit_id, agent_id, faction))
+            units.append(info)
 
         print(f"[FACTION_STATE] Completed for {faction.value}")
         return {
@@ -1347,11 +1352,36 @@ class LLMActionHandler:
             "state": faction_status,
             "faction": faction.value,
             "total_units": total_units_count,
-            "alive_units": alive_units_count,  # Number of alive units (count > 0)
-            "actionable_units": actionable_units_count,  # Alive units with action points
-            "units": [
-                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
-            ],  # Return details for alive units (limited)
+            "alive_units": alive_units_count,
+            "actionable_units": actionable_units_count,
+            "units": units,
+        }
+
+    def _unit_command_fields(
+        self,
+        unit_id: int,
+        agent_id: Optional[str],
+        queried_faction: Faction,
+    ) -> Dict[str, Any]:
+        """``owner`` is who claimed; ``commandable`` is who may order.
+
+        Cross-faction queries still list every unit, but none are commandable.
+        Unclaimed units on the agent's own faction remain commandable.
+        """
+        coord = self.world.get_singleton_component(TeamCoordination)
+        owner = coord.owner_of(unit_id) if coord is not None else None
+        if not agent_id:
+            return {"owner": owner, "commandable": True}
+
+        stats = self.world.get_singleton_component(GameStats)
+        mapped = None
+        if stats and getattr(stats, "agent_id_to_faction", None):
+            mapped = stats.agent_id_to_faction.get(agent_id)
+        same_faction = mapped is None or mapped == queried_faction
+        authorized = True if coord is None else coord.is_authorized(agent_id, unit_id)
+        return {
+            "owner": owner,
+            "commandable": bool(same_faction and authorized),
         }
 
     def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
@@ -1382,49 +1412,21 @@ class LLMActionHandler:
             return None, f"Encode frame to base64 failed: {e}"
 
     def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        VLM version of get_faction_state: returns the same state as
-        handle_faction_state, plus the current rendered frame as base64 PNG
-        (frame_base64) for vision-language models.
-        """
-        # Reuse validation and state logic from handle_faction_state
-        faction_str = params.get("faction")
-        if not faction_str:
-            return self._create_error_response("faction parameter required")
-        try:
-            faction = Faction(faction_str)
-            print(f"[FACTION_STATE_VLM] Handling for {faction.value}")
-        except ValueError:
-            return self._create_error_response(f"Invalid faction: {faction_str}")
+        """Same JSON as ``get_faction_state``, plus a full-board PNG."""
+        payload = self.handle_faction_state(params)
+        if not payload.get("success"):
+            return payload
 
-        faction_units = self._get_faction_units(faction)
-        total_units_count = len(faction_units)
-        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
-        alive_units_count = len(alive_units)
-        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
-        actionable_units_count = len(actionable_units)
-        faction_status = self._get_faction_status(faction)
-
-        # Capture rendered frame for VLM
         frame_b64, frame_err = self._capture_frame_base64()
-        payload = {
-            "success": True,
-            "result": True,
-            "state": faction_status,
-            "faction": faction.value,
-            "total_units": total_units_count,
-            "alive_units": alive_units_count,
-            "actionable_units": actionable_units_count,
-            "units": [
-                self._get_detailed_unit_info(unit_id) for unit_id in alive_units[:10]
-            ],
-            "frame_base64": frame_b64,
-            "frame_format": "png" if frame_b64 else None,
-        }
+        payload["frame_base64"] = frame_b64
+        payload["frame_format"] = "png" if frame_b64 else None
         if frame_err is not None:
             payload["frame_error"] = frame_err
 
-        print(f"[FACTION_STATE_VLM] Completed for {faction.value}, frame={'ok' if frame_b64 else 'failed'}")
+        print(
+            f"[FACTION_STATE_VLM] Completed for {payload.get('faction')}, "
+            f"frame={'ok' if frame_b64 else 'failed'}"
+        )
         return payload
 
     def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1590,7 +1592,7 @@ class LLMActionHandler:
         """Get detailed unit information with safe fallbacks."""
         try:
 
-            if not isinstance(unit_id, int) or unit_id <= 0:
+            if not isinstance(unit_id, int) or unit_id < 0:
                 return {
                     "unit_id": unit_id,
                     "error": "Invalid unit_id",
@@ -2060,13 +2062,6 @@ class LLMActionHandler:
         """Get CombatSystem instance if present."""
         for system in self.world.systems:
             if system.__class__.__name__ == "CombatSystem":
-                return system
-        return None
-
-    def _get_action_system(self):
-        """Get ActionSystem instance if present."""
-        for system in self.world.systems:
-            if system.__class__.__name__ == "ActionSystem":
                 return system
         return None
 
