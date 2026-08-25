@@ -7,7 +7,9 @@ Usage:
 Options:
     --mode [turn_based|real_time]  Game mode (default: turn_based)
     --scenario [default|chibi|three_kingdoms]  Game scenario (default: default)
-    --players [human_vs_ai|ai_vs_ai|three_kingdoms]  Player configuration (default: human_vs_ai)
+    --players [human_vs_ai|ai_vs_ai|three_kingdoms|human_vs_two_ai]  Player configuration (default: human_vs_ai)
+    --skip-start  Skip the start UI and apply --players/--mode/--scenario
+    --headless  Skip start UI, dummy display, auto end (eval / CI)
     --help  Show help information   
 """
 
@@ -25,7 +27,7 @@ sys.path.append(str(Path(__file__).parent.parent / "framework"))
 from framework.engine.game_engine import GameEngine
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
-from rotk_env.prefabs.config import Faction, PlayerType
+from rotk_env.prefabs.config import PLAYER_PRESETS
 
 
 def parse_arguments():
@@ -58,7 +60,13 @@ Victory Conditions:
         "--headless",
         action="store_true",
         default=False,
-        help="Skip start scene, enter game directly, auto end, suitable for automation testing or server environment",
+        help="Skip start scene, dummy display, auto end (eval / CI)",
+    )
+    parser.add_argument(
+        "--skip-start",
+        action="store_true",
+        default=False,
+        help="Skip start UI and apply --players/--mode/--scenario with a visible window",
     )
 
     parser.add_argument(
@@ -67,19 +75,19 @@ Victory Conditions:
         default="turn_based",
         help="Game mode (default: turn_based)",
     )
-    # TODO: Implement scenario differentiation
+    # TODO: scenario three_kingdoms still uses the default river-split map.
     parser.add_argument(
         "--scenario",
         choices=["default", "chibi", "three_kingdoms"],
         default="default",
-        help="Game scenario (default: default)",
+        help="Game scenario (default: default). chibi loads rotk_env/maps/chibi.map",
     )
 
     parser.add_argument(
         "--players",
-        choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms"],
+        choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms", "human_vs_two_ai"],
         default="human_vs_ai",
-        help="Player configuration (default: human_vs_ai)",
+        help="Player configuration (default: human_vs_ai). three_kingdoms is AI/AI/AI for eval.",
     )
 
     parser.add_argument(
@@ -105,18 +113,8 @@ Victory Conditions:
 
 def create_game_from_args(args):
     """Create game from arguments"""
-    players_config = {
-        "human_vs_ai": {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
-        "ai_vs_ai": {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
-        "three_kingdoms": {
-            Faction.WEI: PlayerType.HUMAN,
-            Faction.SHU: PlayerType.AI,
-            Faction.WU: PlayerType.AI,
-        },
-    }
-
-    return players_config.get(
-        args.players, {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
+    return PLAYER_PRESETS.get(
+        args.players, PLAYER_PRESETS["human_vs_ai"]
     )
 
 
@@ -149,6 +147,10 @@ def main():
         # Display welcome message
         print_welcome()
 
+        if args.headless:
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
+            os.environ["HEADLESS"] = "1"
+
         # Create game engine
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
@@ -163,19 +165,13 @@ def main():
         engine.scene_manager.register_scene("game_over", GameOverScene)
 
         # Determine initial scene based on command line arguments
-        if args.headless:
-            # If start scene is skipped, enter game scene directly
-            os.environ["SDL_VIDEODRIVER"] = "dummy"
-
-            # Get player configuration
+        if args.headless or args.skip_start:
             players_config = create_game_from_args(args)
-
-            # Set initial scene, pass parameters
             engine.scene_manager.switch_to(
                 "game",
                 players=players_config,
                 mode=args.mode,
-                headless=True,
+                headless=args.headless,
                 scenario=args.scenario,
                 seed=args.seed,
                 seed_source="cli" if args.seed is not None else "default",

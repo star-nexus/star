@@ -28,6 +28,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         competitive_mode: bool = True,
         symmetry_type: str = "river_split_offset",
         seed: int = 42,
+        scenario: str = "default",
     ):
         super().__init__(priority=100)
         self.competitive_mode = competitive_mode
@@ -35,6 +36,7 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         # Default 42 preserves prior behavior. When wired up via GameScene,
         # the seed comes from the world's RngService at initialize() time.
         self.seed = seed
+        self.scenario = scenario
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -60,6 +62,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
 
     def generate_map(self):
         """Generate the map - choose generation method based on mode."""
+        if self.scenario == "chibi":
+            print("[MapSystem] Generating Chibi (Red Cliff) from ASCII overlay")
+            from ..maps.ascii_map import MAPS_DIR, load_ascii_map
+
+            self._generate_ascii_map(MAPS_DIR / "chibi.map", load_ascii_map)
+            return
         if self.competitive_mode:
             if self.symmetry_type == "river_split":
                 print("[MapSystem] 🏆 Generating river-split diagonal competitive map (offset coords)")
@@ -85,6 +93,16 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         else:
             print("[MapSystem] 🌍 Generating standard random map")
             self._generate_standard_map()
+
+    def _generate_ascii_map(self, path, load_ascii_map):
+        """Load a centered-offset ASCII terrain overlay (Chibi, etc.)."""
+        map_data = MapData(
+            width=GameConfig.MAP_WIDTH, height=GameConfig.MAP_HEIGHT, tiles={}
+        )
+        terrain_map = load_ascii_map(path)
+        self._create_river_split_map_entities_offset(map_data, terrain_map)
+        self.world.add_singleton_component(map_data)
+        print(f"[MapSystem] Loaded ASCII map {path}")
 
     def _generate_square_map(self):
         """Generate the map - produce a visually square hexagonal map (using offset coordinates)."""

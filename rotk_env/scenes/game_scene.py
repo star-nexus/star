@@ -38,7 +38,7 @@ from ..systems.game_time_system import GameTimeSystem
 from ..systems.llm_system import LLMSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
-from ..utils.hex_utils import HexMath
+from ..utils.hex_utils import HexConverter
 from ..components.settlement_report import SettlementReport
 from ..components import (
     GameState,
@@ -149,7 +149,9 @@ class GameScene(Scene):
 
         # Initialize units
         # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units([[1, 3, 1], [1, 3, 1], [1, 3, 1]])
+        self._initialize_units(
+            [GameConfig.UNIT_MIX, GameConfig.UNIT_MIX, GameConfig.UNIT_MIX]
+        )
 
         # Initialize game statistics
         self._initialize_stats()
@@ -163,7 +165,7 @@ class GameScene(Scene):
 
         systems = [
             GameTimeSystem(),  # Game time system (priority 10) - earliest execution
-            MapSystem(),  # Map system (priority 100)
+            MapSystem(scenario=self.scenario),  # Map system (priority 100)
             VisionSystem(),  # Vision system
             ActionSystem(),  # Action system
             MovementSystem(),  # Movement system
@@ -287,13 +289,6 @@ class GameScene(Scene):
     def _initialize_units(self, unit_assignments: list[list[int]]):
         """Initialize units - automatically generate units and positions based on quantity"""
 
-        # Define the starting area center for each faction
-        faction_centers = {
-            Faction.WEI: (3, 3),
-            Faction.SHU: (-3, -3),
-            Faction.WU: (3, -3),
-        }
-
         # Define unit quantity (only process factions participating in the game)
         unit_counts = {}
         for faction in self.players.keys():
@@ -322,6 +317,8 @@ class GameScene(Scene):
                 f"[GameScene] Preparing to record {faction.value} faction initial unit count: {total_units}"
             )
 
+        positions_by_faction = self._formation_positions(unit_counts)
+
         for faction, count in unit_counts.items():
             if sum(count) == 0:
                 continue
@@ -331,18 +328,10 @@ class GameScene(Scene):
                 continue
 
             player = self.world.get_component(player_entity, Player)
-            center_col, center_row = faction_centers[faction]
+            positions = positions_by_faction.get(faction, [])
 
-            # Generate all unit positions for this faction
-            positions = self._generate_unit_positions_simple(
-                center_col, center_row, sum(count), faction
-            )
-
-            # Generate diverse unit types
+            # Same mix and slot order for every faction so 180-paired cells match.
             unit_types = self._generate_unit_types(count)
-            if len(unit_types) > 1 and faction == Faction.WEI:
-                unit_types[0], unit_types[1] = unit_types[1], unit_types[0]
-                unit_types[2], unit_types[-1] = unit_types[-1], unit_types[2]
 
             for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
                 unit_entity = self._create_unit(
@@ -353,77 +342,21 @@ class GameScene(Scene):
                 )
                 player.units.add(unit_entity)
 
-
-    def _generate_unit_positions_simple(
-        self, center_col: int, center_row: int, count: int, faction: Faction
-    ) -> list:
-        """Generate unit positions based on count - uses spiral distribution from center"""
-        # Use the existing _generate_unit_positions method which properly handles count
-        if faction == Faction.WEI:
-            return [(1, 3), (2, 3), (1, 4), (2, 4), (3, 3)]
-        elif faction == Faction.SHU:
-            return [(-2,-3), (-1,-4), (-3,-4), (-2,-4), (-1, -5)]
-        elif faction == Faction.WU:
-            return [(1, -3), (2, -3), (1, -4), (2, -4), (3, -3)]
-        else:
-            return self._generate_unit_positions(center_col, center_row, count)
-        # return self._generate_unit_positions(center_col, center_row, count)
-
-
-    def _generate_unit_positions(
-        self, center_col: int, center_row: int, count: int
-    ) -> list:
-        """Generate unit positions - based on the center point, spiral distribution"""
-        positions = []
-        if count == 0:
-            return []
-
-        if count == 1:
-            return [(center_col, center_row)]
-
-        # The first unit is placed in the center
-        positions.append((center_col, center_row))
-        remaining = count - 1
-
-        # Six hexagon directions (flat-top orientation)
-        hex_directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-
-        radius = 1
-        while remaining > 0 and radius <= 5:  # Limit maximum radius
-            # Current ring position count
-            positions_in_ring = min(remaining, 6 * radius)
-
-            # Uniformly distribute positions on the current ring
-            for i in range(positions_in_ring):
-                if i < 6:  # First layer (6 directions each)
-                    dq, dr = hex_directions[i]
-                    col = center_col + dq * radius
-                    row = center_row + dr * radius
-                else:  # Fill edges
-                    # Add extra positions on the hexagon edges
-                    side = (i - 6) // radius
-                    pos_on_side = (i - 6) % radius
-
-                    if side < 6:
-                        dq1, dr1 = hex_directions[side]
-                        dq2, dr2 = hex_directions[(side + 1) % 6]
-
-                        # Interpolate on the edges
-                        t = (pos_on_side + 1) / (radius + 1)
-                        col = center_col + int(dq1 * radius * (1 - t) + dq2 * radius * t)
-                        row = center_row + int(dr1 * radius * (1 - t) + dr2 * radius * t)
-                    else:
-                        break
-
-                positions.append((col, row))
-                remaining -= 1
-
-                if remaining <= 0:
-                    break
-
-            radius += 1
-
-        return positions[:count]
+    def _formation_positions(self, unit_counts: Dict) -> Dict:
+        """Wei/Wu blobs from config; Shu is pixel-space 180° of the Wei blob."""
+        conv = HexConverter()
+        positions = {}
+        if Faction.WEI in unit_counts:
+            n = sum(unit_counts[Faction.WEI])
+            positions[Faction.WEI] = list(GameConfig.WEI_FORMATION[:n])
+        if Faction.SHU in unit_counts:
+            n = sum(unit_counts[Faction.SHU])
+            wei_src = list(GameConfig.WEI_FORMATION[:n])
+            positions[Faction.SHU] = [conv.rotate_180(*cell) for cell in wei_src]
+        if Faction.WU in unit_counts:
+            n = sum(unit_counts[Faction.WU])
+            positions[Faction.WU] = list(GameConfig.WU_FORMATION[:n])
+        return positions
 
     def _generate_unit_types(self, count: int | list) -> list:
         """Generate diverse unit type combinations"""

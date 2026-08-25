@@ -5,7 +5,7 @@
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, Tuple, Any
+from typing import Dict, List, Tuple, Any
 
 
 # 六边形方向枚举
@@ -59,6 +59,25 @@ class Faction(Enum):
     WEI = "wei"  # 魏
     SHU = "shu"  # 蜀
     WU = "wu"  # 吴
+
+
+# Headless / CLI player presets. The start-scene UI already uses AI/AI/AI
+# for Three Kingdoms; keep that meaning here so eval can pass
+# --players three_kingdoms without Wei leaking to HUMAN.
+PLAYER_PRESETS: Dict[str, Dict[Faction, PlayerType]] = {
+    "human_vs_ai": {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
+    "ai_vs_ai": {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
+    "three_kingdoms": {
+        Faction.WEI: PlayerType.AI,
+        Faction.SHU: PlayerType.AI,
+        Faction.WU: PlayerType.AI,
+    },
+    "human_vs_two_ai": {
+        Faction.WEI: PlayerType.HUMAN,
+        Faction.SHU: PlayerType.AI,
+        Faction.WU: PlayerType.AI,
+    },
+}
 
 
 # 单位状态枚举
@@ -142,6 +161,26 @@ class GameConfig:
     # 游戏配置
     MAX_TURNS = 100  # 回合制超时回合数（超过后平局）
     MAX_REALTIME_SECONDS = 3600  # 实时制超时秒数（到达后平局）
+    # Per-faction mix: [infantry, archer, cavalry].
+    UNIT_MIX = [1, 3, 1]
+    # Wei blob is the visually tuned 2x2+1. Shu is derived at runtime by
+    # 180° rotation in *pixel* space (odd-q stagger makes offset (-x,-y)
+    # and anti-diagonal (-y,-x) both look wrong on screen). Wu is the
+    # same blob reflected to the third bank.
+    WEI_FORMATION: List[Tuple[int, int]] = [
+        (1, 3),
+        (2, 3),
+        (1, 4),
+        (2, 4),
+        (3, 3),
+    ]
+    WU_FORMATION: List[Tuple[int, int]] = [
+        (1, -3),
+        (2, -3),
+        (1, -4),
+        (2, -4),
+        (3, -3),
+    ]
     VISION_FADE_ALPHA = 128  # 战争迷雾透明度
 
     # 战争迷雾颜色配置

@@ -4,6 +4,7 @@ Provides hex coordinate system and map-related helper functions.
 """
 
 import math
+from collections import deque
 from typing import List, Tuple, Set
 from ..prefabs.config import GameConfig, HexOrientation
 
@@ -34,6 +35,35 @@ class HexMath:
         col = q
         row = r + (q - (q & 1)) // 2
         return col, row
+
+    @staticmethod
+    def anti_diagonal_mirror(col: int, row: int) -> Tuple[int, int]:
+        """River-split map symmetry: (x, y) ↔ (-y, -x) across x + y = 0."""
+        return (-row, -col)
+
+    @staticmethod
+    def formation_cells(
+        center_col: int, center_row: int, count: int
+    ) -> List[Tuple[int, int]]:
+        """Place `count` units by BFS from center using offset hex neighbors.
+
+        Spiral-in-axial-space is not a valid walk on this odd-column offset
+        grid (rings can repeat the center). BFS matches movement adjacency.
+        """
+        if count <= 0:
+            return []
+        start = (center_col, center_row)
+        cells: List[Tuple[int, int]] = []
+        seen = {start}
+        queue: deque[Tuple[int, int]] = deque([start])
+        while queue and len(cells) < count:
+            cur = queue.popleft()
+            cells.append(cur)
+            for nb in HexMath.hex_neighbors(*cur):
+                if nb not in seen:
+                    seen.add(nb)
+                    queue.append(nb)
+        return cells[:count]
 
     @staticmethod
     def hex_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
@@ -179,6 +209,15 @@ class HexConverter:
             )  # row up -> y decreases (screen up)
 
         return x, y
+
+    def rotate_180(self, col: int, row: int) -> Tuple[int, int]:
+        """Point-symmetric partner through the origin, in pixel space.
+
+        Odd-column offset stagger means neither (-col, -row) nor (-row, -col)
+        matches what the player sees. Convert to pixels, rotate, snap back.
+        """
+        x, y = self.hex_to_pixel(col, row)
+        return self.pixel_to_hex(-x, -y)
 
     def pixel_to_hex(self, x: float, y: float) -> Tuple[int, int]:
         """Convert screen pixel to hex (returns offset coordinates)."""

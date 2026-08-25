@@ -125,21 +125,36 @@ uv run rotk/main.py
 # 指定游戏模式
 uv run rotk/main.py --mode turn_based
 
-# AI对战模式
-uv run rotk/main.py --players ai_vs_ai
+# AI对战模式（跳过开始界面，直接开局）
+uv run rotk_env/main.py --skip-start --players ai_vs_ai
 
-# 三国鼎立模式
-uv run rotk/main.py --players three_kingdoms --scenario three_kingdoms
+# 三国鼎立全 AI（评测；headless 走 dummy 显示）
+uv run rotk_env/main.py --headless --players three_kingdoms
 
-# 赤壁之战场景（注：--scenario 当前未实现差异化，仅与 default 相同）
-uv run rotk/main.py --scenario chibi
+# 人打两 BOT
+uv run rotk_env/main.py --skip-start --players human_vs_two_ai
+
+# 赤壁之战（长江 + 北岸乌林/曹营 + 南岸赤壁）
+uv run rotk_env/main.py --skip-start --scenario chibi
 ```
+
+从真三国无双赤壁图生成格子：把截图放到任意路径，用六边形网罩住并按格内像素分类地形：
+
+```bash
+uv run python -m rotk_env.maps.hex_sample path/to/chibi_source.png \
+  --out rotk_env/maps/chibi.map \
+  --overlay /tmp/chibi_hex_overlay.png
+```
+
+分类不准的格子直接改 `rotk_env/maps/chibi.map`（`.` 平原 `~` 水 `F` 林 `H` 丘 `M` 山 `C` 城）。
 
 ### 命令行选项
 
 - `--mode [turn_based|real_time]`: 游戏模式
-- `--players [human_vs_ai|ai_vs_ai|three_kingdoms]`: 玩家配置
-- `--scenario [default|chibi|three_kingdoms]`: 游戏场景（当前仅接受参数并传入场景，尚未根据场景切换地图/单位配置，实际效果与 default 相同）
+- `--players [human_vs_ai|ai_vs_ai|three_kingdoms|human_vs_two_ai]`: 玩家配置。需配合 `--skip-start` 或 `--headless` 才会生效；否则仍进开始界面手动选。`three_kingdoms` 为魏/蜀/吴全 AI（评测）；人打两 BOT 用 `human_vs_two_ai`。
+- `--skip-start`: 跳过开始界面，用命令行的 `--players` / `--mode` / `--scenario` 直接进对局（保留窗口）
+- `--headless`: 同 `--skip-start`，但 dummy 显示、对局结束自动退出（评测 / CI）
+- `--scenario [default|chibi|three_kingdoms]`: `chibi` 加载 `rotk_env/maps/chibi.map`；`three_kingdoms` 目前仍用默认河界图，只改变玩家阵营数
 - `--help`: 显示帮助信息
 
 ## 获胜条件

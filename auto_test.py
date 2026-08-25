@@ -330,7 +330,7 @@ def main():
         "Providers must exist as sections in .configs.toml."
     )
     parser.add_argument("--mode", default="turn_based", choices=["turn_based", "real_time"], help="Game mode")
-    parser.add_argument("--players", default="ai_vs_ai", choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms"], help="Player configuration")
+    parser.add_argument("--players", default="ai_vs_ai", choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms", "human_vs_two_ai"], help="Player configuration (three_kingdoms = AI/AI/AI)")
     parser.add_argument("--timeout", type=int, default=0, help="Environment timeout in seconds (0 = no timeout)")
     parser.add_argument("--report-wait", type=int, default=60, help="Seconds to wait for settlement report after env exit")
     args = parser.parse_args()
