@@ -65,7 +65,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 
 ## 可复现性与实时
 
-`--seed` 锁的是地图和掷骰。回合制下 LLM 思考不推演棋盘。实时下思考时世界仍在跑（60 FPS，每帧 `dt = 1/60`），AP/MP 按模拟时间回复。观测缓存跟 `World.revision`。细节见根 README。
+`--seed` 锁的是地图和掷骰，不锁 Hub 延迟或模型思考时间。回合制下 LLM 思考不推演棋盘。实时下思考时世界仍按帧跑：`GameTime.game_elapsed_time` 每帧加上 `dt * time_scale`（暂停不加）。AP / MP / 攻击次数 / 技能 CD 都读这本棋盘秒，不另累一份引擎 `delta_time`。人和 Agent 走墙钟，想得久就会在实时局里吃亏。观测缓存跟 `World.revision`。细节见根 README。
 
 ## 赤壁图采样
 

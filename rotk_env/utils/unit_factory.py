@@ -9,7 +9,6 @@ from ..components import (
     UnitStatus,
     MovementPoints,
     ActionPoints,
-    AttackPoints,
     ConstructionPoints,
     SkillPoints,
     Combat,
@@ -84,9 +83,6 @@ class UnitFactory:
 
         # Add resource point components
         world.add_component(entity, ActionPoints())
-        world.add_component(
-            entity, AttackPoints(normal_attacks=1, max_normal_attacks=1)
-        )
         world.add_component(entity, ConstructionPoints(current_cp=1, max_cp=1))
         world.add_component(entity, SkillPoints(current_sp=1, max_sp=1))
 
@@ -97,7 +93,6 @@ class UnitFactory:
                 base_attack=base_stats.base_attack,
                 base_defense=base_stats.base_defense,
                 attack_range=base_stats.attack_range,
-                has_attacked=False,
             ),
         )
 

@@ -31,7 +31,7 @@ def _world_with_combat():
     return world, combat_system
 
 
-def _spawn_unit(world: World, *, faction=Faction.WEI, col=0, row=0, ap=2, cooldown=0.0):
+def _spawn_unit(world: World, *, faction=Faction.WEI, col=0, row=0, ap=2):
     entity = world.create_entity()
     world.add_component(
         entity, Unit(unit_type=UnitType.INFANTRY, faction=faction, name="test")
@@ -41,16 +41,9 @@ def _spawn_unit(world: World, *, faction=Faction.WEI, col=0, row=0, ap=2, cooldo
     world.add_component(entity, ActionPoints(current_ap=ap, max_ap=2))
     world.add_component(
         entity,
-        Combat(base_attack=10, base_defense=10, attack_range=1, attack_cooldown=cooldown),
+        Combat(base_attack=10, base_defense=10, attack_range=1),
     )
     return entity
-
-
-def test_combat_component_can_attack_respects_cooldown():
-    ready = Combat(base_attack=10, base_defense=8)
-    locked = Combat(base_attack=10, base_defense=8, attack_cooldown=0.4)
-    assert ready.can_attack() is True
-    assert locked.can_attack() is False
 
 
 def test_combat_in_attack_range():
@@ -258,16 +251,6 @@ def test_action_points_attack_cost():
     assert ap.can_perform_action(ActionType.ATTACK) is True
     ap.current_ap = 0
     assert ap.can_perform_action(ActionType.ATTACK) is False
-
-
-def test_execute_attack_rejects_cooldown():
-    world, combat_system = _world_with_combat()
-    attacker = _spawn_unit(world, ap=1, cooldown=0.5)
-    target = _spawn_unit(world, faction=Faction.SHU, col=1, row=0)
-    result = combat_system.execute_attack(attacker, target)
-    assert result["success"] is False
-    assert result["error"] == "attack_on_cooldown"
-    assert combat_system.can_attack(attacker, target) is False
 
 
 def test_execute_attack_rejects_insufficient_ap():

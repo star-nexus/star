@@ -9,6 +9,7 @@ from framework import System, RMS
 from ..components import (
     GameState,
     GameStats,
+    GameTime,
     UIState,
     TurnManager,
     Player,
@@ -124,11 +125,10 @@ class UIRenderSystem(System):
 
     def _render_real_time_info(self, game_state):
         """Render real-time mode specific information"""
-        # Show game time - try to get from GameStats if game_time not available
-        if hasattr(game_state, "game_time"):
-            time_text = f"Game Time: {game_state.game_time:.1f}s"
+        game_time = self.world.get_singleton_component(GameTime)
+        if game_time:
+            time_text = f"Game Time: {game_time.get_current_time_display()}"
         else:
-            # Fallback to GameStats total_game_time
             game_stats = self.world.get_singleton_component(GameStats)
             if game_stats:
                 minutes = int(game_stats.total_game_time // 60)

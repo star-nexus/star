@@ -11,7 +11,6 @@ from ..components import (
     UnitCount,
     HexPosition,
     MovementPoints,
-    Combat,
     Vision,
     GameStats,
     BattleLog,
@@ -81,9 +80,18 @@ class StatisticsSystem(System):
             self.last_update_time = current_time
 
     def _update_game_time(self, dt: float) -> None:
-        """Update game time"""
+        """Mirror GameTime in realtime; otherwise integrate frame dt."""
         stats = self.world.get_singleton_component(GameStats)
         mode_stats = self.world.get_singleton_component(GameModeStatistics)
+        game_time = self.world.get_singleton_component(GameTime)
+
+        if game_time and game_time.is_real_time():
+            elapsed = game_time.game_elapsed_time
+            if stats:
+                stats.total_game_time = elapsed
+            if mode_stats:
+                mode_stats.realtime_stats["total_game_time"] = elapsed
+            return
 
         if stats:
             stats.total_game_time += dt
@@ -107,7 +115,6 @@ class StatisticsSystem(System):
             unit_count = self.world.get_component(entity, UnitCount)
             position = self.world.get_component(entity, HexPosition)
             movement = self.world.get_component(entity, MovementPoints)
-            combat = self.world.get_component(entity, Combat)
 
             if not all([unit, unit_count, position]):
                 continue
@@ -138,11 +145,6 @@ class StatisticsSystem(System):
                     if len(observation.movement_path) > 50:
                         observation.movement_path = observation.movement_path[-50:]
 
-            if combat:
-                observation.in_combat = combat.has_attacked
-                if combat.has_attacked:
-                    observation.last_combat_time = current_time
-
             # Get terrain information
             terrain_type = self._get_terrain_at_position(position.col, position.row)
             observation.current_terrain_type = terrain_type
@@ -155,7 +157,6 @@ class StatisticsSystem(System):
                 "position": observation.current_position,
                 "health_percentage": observation.health_percentage,
                 "movement_remaining": observation.movement_remaining,
-                "in_combat": observation.in_combat,
                 "terrain_type": observation.current_terrain_type,
                 "timestamp": stats.total_game_time,
             }

@@ -32,10 +32,6 @@ class UnitObservation(Component):
     current_terrain_type: str = "plains"
     terrain_bonus_active: bool = False
 
-    # Combat state
-    in_combat: bool = False
-    last_combat_time: float = 0.0
-
     # Movement trail
     movement_path: List[Tuple[int, int]] = field(default_factory=list)
     total_distance_moved: int = 0

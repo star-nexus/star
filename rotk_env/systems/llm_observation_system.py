@@ -691,7 +691,7 @@ class LLMObservationSystem:
         if combat_system:
             return combat_system.can_attack(unit_id)
         combat = self.world.get_component(unit_id, Combat)
-        return bool(combat and combat.can_attack())
+        return bool(combat)
 
     def _get_strategic_info(self, faction: Faction) -> Dict[str, Any]:
         """Get faction-level strategic info."""

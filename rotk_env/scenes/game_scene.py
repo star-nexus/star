@@ -49,7 +49,6 @@ from ..components import (
     UnitCount,
     MovementPoints,
     ActionPoints,
-    AttackPoints,
     ConstructionPoints,
     SkillPoints,
     Combat,
@@ -456,13 +455,6 @@ class GameScene(Scene):
             ActionPoints(
                 current_ap=ap,
                 max_ap=ap,
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            AttackPoints(
-                normal_attacks=1,  # Default attack times
-                max_normal_attacks=1,
             ),
         )
         self.world.add_component(
