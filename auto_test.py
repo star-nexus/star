@@ -21,9 +21,11 @@ try:
 except ImportError:
     toml = None
 
+from rotk_agent.core.config import resolve_section
+
 
 def _validate_providers(wei: str, shu: str, config_path: str = ".configs.toml") -> Tuple[bool, str]:
-    """校验 provider 是否存在于 .configs.toml 且含有 model_id。返回 (True, '') 或 (False, '错误信息')。"""
+    """校验 provider 能从 .configs.toml 解析出 model_id（含 inherits）。"""
     if not os.path.exists(config_path):
         return False, f"Config file not found: {config_path}"
     if toml is None:
@@ -33,11 +35,17 @@ def _validate_providers(wei: str, shu: str, config_path: str = ".configs.toml") 
     except Exception as e:
         return False, f"Cannot load config {config_path}: {e}"
     for label, prov in [("Wei", wei), ("Shu", shu)]:
-        if prov not in config:
-            return False, f"Provider '{prov}' ({label}) not found in {config_path}. Check model name in match list (e.g. typo: siliconflow_kimi_instruc -> siliconflow_kimi_instruct)."
-        entry = config[prov]
-        if not isinstance(entry, dict):
-            return False, f"Provider '{prov}' ({label}) is not a valid section in {config_path}."
+        try:
+            entry = resolve_section(config, prov)
+        except ValueError as e:
+            msg = str(e)
+            if msg.startswith("Invalid provider:") and "inherited by" not in msg:
+                return False, (
+                    f"Provider '{prov}' ({label}) not found in {config_path}. "
+                    "Check model name in match list "
+                    "(e.g. typo: siliconflow_kimi_instruc -> siliconflow_kimi_instruct)."
+                )
+            return False, f"Provider '{prov}' ({label}): {e}"
         if "model_id" not in entry:
             return False, f"Provider '{prov}' ({label}) has no 'model_id' in {config_path}."
     return True, ""
@@ -205,7 +213,9 @@ def run_match(
     try:
         print("  Match in progress... waiting for environment to exit.")
         timed_out = False
-        agent_failed = False
+        agent_crashed = False
+        wei_exited = False
+        shu_exited = False
         startup_failure = False
         start_wait = time.time()
         startup_grace_s = 60  # Agent 在 60s 内非零退出视为启动失败（如 LLM 配置错误）
@@ -214,36 +224,42 @@ def run_match(
             if env_process.poll() is not None:
                 break
 
+            wei_code = wei_process.poll()
+            shu_code = shu_process.poll()
+
             # Agent 启动失败：配置错误等会导致进程快速非零退出，直接终止本局
-            if wei_process.poll() is not None and wei_process.returncode != 0 and (time.time() - wei_start_time) < startup_grace_s:
-                print(f"  Wei Agent failed to start (exit code {wei_process.returncode}). Likely invalid LLM provider/config. Aborting match.")
+            if wei_code is not None and wei_code != 0 and (time.time() - wei_start_time) < startup_grace_s:
+                print(f"  Wei Agent failed to start (exit code {wei_code}). Likely invalid LLM provider/config. Aborting match.")
                 startup_failure = True
                 env_process.terminate()
                 break
-            if shu_process.poll() is not None and shu_process.returncode != 0 and (time.time() - shu_start_time) < startup_grace_s:
-                print(f"  Shu Agent failed to start (exit code {shu_process.returncode}). Likely invalid LLM provider/config. Aborting match.")
+            if shu_code is not None and shu_code != 0 and (time.time() - shu_start_time) < startup_grace_s:
+                print(f"  Shu Agent failed to start (exit code {shu_code}). Likely invalid LLM provider/config. Aborting match.")
                 startup_failure = True
                 env_process.terminate()
                 break
 
-            # 检查是否所有Agent都退出了
-            if wei_process.poll() is not None and shu_process.poll() is not None:
+            # Agents report stats and exit 0 as soon as the game ends; ENV
+            # still sits on the 60s settlement countdown. That is success.
+            if wei_code is not None and not wei_exited:
+                wei_exited = True
+                print(f"  Wei Agent exited (code {wei_code}).")
+                if wei_code != 0:
+                    agent_crashed = True
+            if shu_code is not None and not shu_exited:
+                shu_exited = True
+                print(f"  Shu Agent exited (code {shu_code}).")
+                if shu_code != 0:
+                    agent_crashed = True
+
+            if wei_exited and shu_exited:
                 print("  Both agents exited. Waiting for environment to finish...")
-                # 给ENV一些时间来完成结算和退出
                 try:
                     env_process.wait(timeout=65)
                 except subprocess.TimeoutExpired:
                     print("  Environment running too long after agents exited. Terminating...")
                     env_process.terminate()
                 break
-            
-            # 如果只是单个Agent退出，先记录，但不立即杀死ENV，也许另一个Agent还在收尾
-            if wei_process.poll() is not None and not agent_failed:
-                print("  Wei Agent exited.")
-                agent_failed = True
-            if shu_process.poll() is not None and not agent_failed:
-                print("  Shu Agent exited.")
-                agent_failed = True
 
             if timeout is not None and timeout > 0:
                 if time.time() - start_wait >= timeout:
@@ -266,7 +282,7 @@ def run_match(
             print("  Match aborted: agent failed to start (invalid LLM config).")
         elif timed_out:
             print("  Environment exited due to timeout.")
-        elif agent_failed:
+        elif agent_crashed:
             print("  Environment exited due to agent failure.")
         else:
             print("  Environment exited normally.")
