@@ -3,7 +3,7 @@ Game-state related singleton components.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Set, Tuple, Optional, List
+from typing import Any, Dict, Set, Tuple, Optional, List
 from framework import SingletonComponent
 from ..prefabs.config import Faction, GameMode
 
@@ -32,6 +32,51 @@ class MapData(SingletonComponent):
     tiles: Dict[Tuple[int, int], int] = field(
         default_factory=dict
     )  # (col,row) -> tile entity id
+    # One hex per faction: that side's home base (opening formation center).
+    home_bases: Dict[Faction, Tuple[int, int]] = field(default_factory=dict)
+
+
+HOME_BASES_MEANING = (
+    "各阵营基地坐标（开局布阵中心），不是部队现在站的格子。"
+    " Home-base hex of each faction: center of that side's opening formation, "
+    "not live unit positions. Until enemies appear in visible_enemy_units, "
+    "march toward the opponent's home_base."
+)
+
+
+def formation_center(cells: List[Tuple[int, int]]) -> Tuple[int, int]:
+    """Integer centroid of a blob of offset hexes."""
+    if not cells:
+        return (0, 0)
+    n = len(cells)
+    col = int(round(sum(c for c, _ in cells) / n))
+    row = int(round(sum(r for _, r in cells) / n))
+    return (col, row)
+
+
+def map_briefing(map_data: Optional["MapData"]) -> Dict[str, Any]:
+    """Public map sheet at join: size plus each faction's home-base hex."""
+    if map_data is None:
+        return {
+            "width": None,
+            "height": None,
+            "home_bases": {},
+            "home_bases_meaning": HOME_BASES_MEANING,
+        }
+    home_bases: Dict[str, Dict[str, Any]] = {}
+    for faction, cell in (map_data.home_bases or {}).items():
+        key = faction.value if hasattr(faction, "value") else str(faction)
+        home_bases[key] = {
+            "col": int(cell[0]),
+            "row": int(cell[1]),
+            "kind": "home_base",
+        }
+    return {
+        "width": int(map_data.width),
+        "height": int(map_data.height),
+        "home_bases": home_bases,
+        "home_bases_meaning": HOME_BASES_MEANING,
+    }
 
 
 @dataclass
@@ -77,6 +122,26 @@ class FogOfWar(SingletonComponent):
 
     def visible_for(self, faction: Faction) -> Set[Tuple[int, int]]:
         return set(self.faction_vision.get(faction, set()))
+
+
+def set_screen_fog(
+    ui_state: Optional["UIState"],
+    fog: Optional[FogOfWar],
+    *,
+    lifted: bool,
+) -> None:
+    """One switch for what the screen (and therefore the agent) can see.
+
+    ``lifted=True`` is key-1 god view: the whole map is visible, fog is off.
+    ``lifted=False`` restores faction fog. Spectator faction (keys 2/3/4) is
+    cleared when lifting so the camera is not left on a stale bank.
+    """
+    if ui_state is not None:
+        ui_state.god_mode = lifted
+        if lifted:
+            ui_state.view_faction = None
+    if fog is not None:
+        fog.enabled = not lifted
 
 
 @dataclass

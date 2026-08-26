@@ -61,6 +61,28 @@ class TestUnitStateKeys:
         assert unit["commandable"] is False
         assert "success" not in result
 
+    def test_faction_state_keeps_visible_enemies(self):
+        result = filters.filter_faction_state_result(
+            {
+                "success": True,
+                "units": [],
+                "visible_enemy_units": [
+                    {
+                        "unit_id": 9,
+                        "unit_type": "cavalry",
+                        "faction": "shu",
+                        "position": {"col": 1, "row": 0},
+                        "unit_status": {"morale": "high", "current_count": 80},
+                    }
+                ],
+            }
+        )
+        enemy = result["visible_enemy_units"][0]
+        assert enemy["unit_id"] == 9
+        assert enemy["unit_status"]["current_count"] == 80
+        assert "morale" not in enemy["unit_status"]
+        assert "success" not in result
+
 
 class TestObservationTrimming:
     def test_keeps_position_terrain_units_and_flags(self):

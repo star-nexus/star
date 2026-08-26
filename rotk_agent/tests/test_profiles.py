@@ -85,7 +85,7 @@ class TestPromptRendering:
         )
         assert rendered == "蜀 (shu) vs 魏 (wei)"
 
-    def test_every_prompt_renders_without_leftover_placeholders(self):
+    def test_every_prompt_renders_without_leftover_faction_placeholders(self):
         for kind in ("realtime", "turn"):
             for language in ("cn", "en"):
                 rendered = profiles.render_prompt(
@@ -93,6 +93,25 @@ class TestPromptRendering:
                 )
                 assert "$faction" not in rendered
                 assert "$opponent" not in rendered
+                assert "$home_bases_block" in rendered
+
+    def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
+        template = profiles.load_prompt("turn", "cn")
+        rendered = profiles.render_prompt(template, "wei")
+        filled = profiles.apply_map_briefing_to_prompt(
+            rendered,
+            {
+                "home_bases": {
+                    "wei": {"col": 2, "row": 3, "kind": "home_base"},
+                    "shu": {"col": -2, "row": -4, "kind": "home_base"},
+                },
+                "home_bases_meaning": "各阵营基地坐标",
+            },
+        )
+        assert "$home_bases_block" not in filled
+        assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
+        assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in filled
+        assert "各阵营基地坐标" in filled
 
     def test_unknown_faction_falls_back_to_wei(self):
         assert profiles.faction_info("qi") == profiles.faction_info("wei")

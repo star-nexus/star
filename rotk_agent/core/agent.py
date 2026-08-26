@@ -30,6 +30,8 @@ from .stats import ErrorStatsCollector
 from .tools import ToolManager, perform_action_tool
 from .types import Message, NormalizedReply, ToolCall, ToolDefinition
 
+from ..profiles import apply_map_briefing_to_prompt
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..adapters.base import ModelAdapter
     from ..modes.base import ModeStrategy
@@ -105,6 +107,8 @@ class RoTKChatAgent:
         self._agent_registered = False
         self._stats_reported = False
         self._strategy_last_ping = 0.0
+        self._map_briefing: Optional[Dict[str, Any]] = None
+        self._map_briefing_applied = False
 
         self._register_default_tools()
 
@@ -363,6 +367,8 @@ class RoTKChatAgent:
                 },
             )
             if isinstance(result, dict) and result.get("success"):
+                if isinstance(result.get("map"), dict):
+                    self._map_briefing = result["map"]
                 console.print(
                     f"✅ Agent registered: {self.faction} - "
                     f"{config.provider}:{config.model_id} "
@@ -463,6 +469,12 @@ class RoTKChatAgent:
         if not self._agent_registered:
             await self._register_agent_info()
             self._agent_registered = True
+
+        if not self._map_briefing_applied:
+            self.system_prompt = apply_map_briefing_to_prompt(
+                self.system_prompt, self._map_briefing
+            )
+            self._map_briefing_applied = True
 
         self.conversation_history = [
             Message(role="system", content=self.system_prompt),

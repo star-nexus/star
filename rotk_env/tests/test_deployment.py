@@ -47,3 +47,11 @@ def test_default_unit_mix_is_five():
     assert sum(GameConfig.UNIT_MIX) == 5
     assert GameConfig.UNIT_MIX == [1, 3, 1]
     assert len(GameConfig.WEI_FORMATION) == 5
+
+
+def test_wei_formation_center_is_inside_the_blob():
+    from rotk_env.components import formation_center
+
+    center = formation_center(GameConfig.WEI_FORMATION)
+    assert center == (2, 3)
+    assert center in GameConfig.WEI_FORMATION

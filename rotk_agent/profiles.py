@@ -138,7 +138,11 @@ def faction_info(faction: str) -> dict:
 
 
 def render_prompt(template_text: str, faction: str) -> str:
-    """Fill in the faction placeholders every prompt shares."""
+    """Fill in the faction placeholders every prompt shares.
+
+    ``$home_bases_block`` is left in place until the agent joins the ENV and
+    ``apply_map_briefing_to_prompt`` writes the actual coordinates.
+    """
     own = faction_info(faction)
     enemy = faction_info(own["enemy"])
     return Template(template_text).safe_substitute(
@@ -146,6 +150,43 @@ def render_prompt(template_text: str, faction: str) -> str:
         faction_name=own["name"],
         opponent=own["enemy"],
         opponent_name=enemy["name"],
+    )
+
+
+def format_home_bases_block(briefing: Optional[dict]) -> str:
+    """Markdown list of home-base hexes for the system prompt."""
+    home_bases = (briefing or {}).get("home_bases") or {}
+    lines = []
+    for key, cell in home_bases.items():
+        if not isinstance(cell, dict):
+            continue
+        info = faction_info(str(key))
+        lines.append(
+            f"- **{info['name']} ({key}) 基地 / home base**: "
+            f"`({cell.get('col')}, {cell.get('row')})`"
+        )
+    if not lines:
+        return "本局尚未提供基地坐标。 / No home-base coordinates for this match."
+    meaning = (briefing or {}).get("home_bases_meaning") or ""
+    text = "\n".join(lines)
+    if meaning:
+        text += f"\n\n{meaning}"
+    return text
+
+
+def apply_map_briefing_to_prompt(
+    system_prompt: str, briefing: Optional[dict]
+) -> str:
+    """Write ENV home bases into the system prompt after register."""
+    block = format_home_bases_block(briefing)
+    if "$home_bases_block" in system_prompt:
+        return system_prompt.replace("$home_bases_block", block)
+    if not briefing:
+        return system_prompt
+    return (
+        system_prompt.rstrip()
+        + "\n\n## 本局各阵营基地坐标 / Home bases this match\n"
+        + block
     )
 
 
@@ -157,6 +198,8 @@ __all__ = [
     "resolve_profile",
     "load_prompt",
     "render_prompt",
+    "format_home_bases_block",
+    "apply_map_briefing_to_prompt",
     "faction_info",
     "FACTIONS",
 ]

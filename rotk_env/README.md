@@ -54,7 +54,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 
 未知动作失败关闭（2010）。回合制结束回合走独立 tool `end_turn`，不进 `perform_action`。`move` 只经过 `MovementSystem.move_unit`。
 
-`get_faction_state` 返回该阵营全量单位，每条带 `owner` / `commandable`。跨阵营不能下令（2005）；同阵营已认领单位只有主人能下令。
+`get_faction_state` 的 `faction` 必须是调用方自己的阵营（否则 2005）。返回己方全量单位（每条带 `owner` / `commandable`），以及当前屏幕可见的敌军（`visible_enemy_units`：编号、兵种、位置、人数）。迷雾打开时，可见区域是己方所有单位视野的并集；按 `1` 关闭迷雾后，可见区域是整张地图。各阵营基地坐标在入局 `register_agent_info` 的 `map.home_bases` 里（开局布阵中心，带 `home_bases_meaning`）。Agent 把它们写进 system prompt 的地图章节，不进 `get_faction_state`。同阵营已认领单位只有主人能下令。
 
 ## BOT
 

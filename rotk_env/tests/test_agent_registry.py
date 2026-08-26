@@ -1,7 +1,7 @@
 """Cross-faction unit control and multi-agent registry."""
 
 from framework.ecs.world import World
-from rotk_env.components import HexPosition, TeamCoordination, Unit, UnitCount
+from rotk_env.components import HexPosition, TeamCoordination, Unit, UnitCount, MapData, GameStats
 from rotk_env.components.agent_info import AgentInfo, AgentInfoRegistry
 from rotk_env.prefabs.config import Faction, UnitType
 from rotk_env.systems.llm_action_handler import LLMActionHandler
@@ -170,30 +170,39 @@ def test_faction_state_lists_full_army_with_commandable():
         assert "error" not in row
 
 
-def test_enemy_intel_is_full_army_and_not_commandable():
-    """Shu scouting Wei sees claimed Wei units, none of them commandable."""
-    from rotk_env.components import GameStats
+def test_registered_agent_cannot_census_another_faction():
+    """Shu asking for Wei's army is rejected; visible enemies come from own query."""
+    from rotk_env.components import FogOfWar, GameStats, UIState
 
     world = World()
     claimed = _spawn(world, Faction.WEI, 0)
     free = _spawn(world, Faction.WEI, 1)
+    _spawn(world, Faction.SHU, 2)
     coord = TeamCoordination()
     world.add_singleton_component(coord)
     coord.claim_units("wei_vanguard", [claimed], exclusive=True)
     stats = GameStats()
     stats.agent_id_to_faction["shu_1"] = Faction.SHU
     world.add_singleton_component(stats)
+    world.add_singleton_component(UIState(god_mode=True))
+    world.add_singleton_component(FogOfWar(enabled=False))
 
     handler = LLMActionHandler(world)
-    intel = handler.handle_faction_state(
+    denied = handler.handle_faction_state(
         {"faction": "wei", "agent_id": "shu_1"}
     )
-    by_id = {row["unit_id"]: row for row in intel["units"]}
-    assert set(by_id) == {claimed, free}
-    assert by_id[claimed]["owner"] == "wei_vanguard"
-    assert by_id[claimed]["commandable"] is False
-    assert by_id[free]["owner"] is None
-    assert by_id[free]["commandable"] is False
+    assert denied["success"] is False
+    assert denied["error_code"] == 2005
+
+    own = handler.handle_faction_state(
+        {"faction": "shu", "agent_id": "shu_1"}
+    )
+    visible_ids = {row["unit_id"] for row in own["visible_enemy_units"]}
+    assert visible_ids == {claimed, free}
+    for row in own["visible_enemy_units"]:
+        assert "commandable" not in row
+        assert "owner" not in row
+        assert "capabilities" not in row
 
 
 def test_faction_state_vlm_reuses_the_same_json():
@@ -212,3 +221,36 @@ def test_faction_state_vlm_reuses_the_same_json():
     assert payload["total_units"] == 2
     assert {row["unit_id"] for row in payload["units"]} == {claimed, free}
     assert "frame_base64" in payload
+
+
+def test_register_returns_home_bases():
+    world = World()
+    world.add_singleton_component(
+        MapData(
+            width=15,
+            height=15,
+            home_bases={
+                Faction.WEI: (2, 3),
+                Faction.SHU: (-2, -4),
+            },
+        )
+    )
+    world.add_singleton_component(GameStats())
+    result = _gate(world).handle_register_agent_info(
+        {
+            "faction": "wei",
+            "provider": "probe",
+            "model_id": "m",
+            "base_url": "http://localhost",
+            "agent_id": "agent_wei",
+        }
+    )
+    assert result["success"] is True
+    assert result["map"]["home_bases"]["wei"] == {
+        "col": 2,
+        "row": 3,
+        "kind": "home_base",
+    }
+    assert result["map"]["home_bases"]["shu"]["col"] == -2
+    assert "基地" in result["map"]["home_bases_meaning"]
+    assert "bases" not in result["map"]

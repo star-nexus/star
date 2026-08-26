@@ -40,6 +40,7 @@ from ..components import (
     GameModeComponent,
     GameStats,
     TeamCoordination,
+    UIState,
 )
 from ..prefabs.config import (
     Faction,
@@ -1310,12 +1311,15 @@ class LLMActionHandler:
     # ==================== Faction control ====================
 
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get high-level faction state.
+        """What the observer would see on screen for their own faction.
 
-        Always the full army for ``faction``. Each unit is stamped with
-        ``owner`` (claiming ``agent_id``, or ``None``) and ``commandable``
-        (whether the requesting agent may issue mutating actions). No
-        ``agent_id`` (BOT / single-agent) → every unit is commandable.
+        ``units`` is the observer's full army (command panel). 
+        ``visible_enemy_units`` is every living enemy currently on a tile
+        the observer can see: the whole map when fog is lifted (key 1 /
+        god view), otherwise the union of that faction's unit vision.
+        ``params.faction`` must be the observer. Cross-faction queries
+        are rejected (2005); they are not an intelligence channel.
+        Formation centers live on the join-time map briefing, not here.
         """
         faction_str = params.get("faction")
 
@@ -1323,38 +1327,135 @@ class LLMActionHandler:
             return self._create_error_response("faction parameter required")
 
         try:
-            faction = Faction(faction_str)
-            print(f"Handling faction state for {faction.value}")
+            requested = Faction(faction_str)
         except ValueError:
             return self._create_error_response(f"Invalid faction: {faction_str}")
 
-        faction_units = self._get_faction_units(faction)
         agent_id = params.get("agent_id")
+        observer = self._observer_faction(agent_id, requested)
+        if observer != requested:
+            return self._create_error_response(
+                (
+                    f"Agent is registered to {observer.value}; "
+                    f"get_faction_state only reports that faction's screen. "
+                    f"Visible enemies are in visible_enemy_units."
+                ),
+                {
+                    "error_code": 2005,
+                    "registered_faction": observer.value,
+                    "requested_faction": requested.value,
+                },
+            )
 
+        print(f"Handling faction state for {observer.value}")
+
+        faction_units = self._get_faction_units(observer)
         total_units_count = len(faction_units)
         alive_units = [u for u in faction_units if self._is_unit_alive(u)]
         alive_units_count = len(alive_units)
-
         actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
         actionable_units_count = len(actionable_units)
 
-        faction_status = self._get_faction_status(faction)
+        faction_status = self._get_faction_status(observer)
         units = []
-        for unit_id in alive_units[:10]:
+        for unit_id in alive_units:
             info = self._get_detailed_unit_info(unit_id)
-            info.update(self._unit_command_fields(unit_id, agent_id, faction))
+            info.update(self._unit_command_fields(unit_id, agent_id, observer))
             units.append(info)
 
-        print(f"[FACTION_STATE] Completed for {faction.value}")
+        fog_lifted = self._is_fog_lifted()
+        visible_enemies = self._visible_enemy_units(observer, fog_lifted)
+
+        print(
+            f"[FACTION_STATE] Completed for {observer.value} "
+            f"fog={'disabled' if fog_lifted else 'active'} "
+            f"own={alive_units_count} visible_enemies={len(visible_enemies)}"
+        )
         return {
             "success": True,
             "result": True,
             "state": faction_status,
-            "faction": faction.value,
+            "faction": observer.value,
+            "fog": "disabled" if fog_lifted else "active",
             "total_units": total_units_count,
             "alive_units": alive_units_count,
             "actionable_units": actionable_units_count,
             "units": units,
+            "visible_enemy_units": visible_enemies,
+        }
+
+    def _observer_faction(
+        self, agent_id: Optional[str], requested: Faction
+    ) -> Faction:
+        """Registered agent identity wins; BOT / no agent_id uses the request."""
+        if not agent_id:
+            return requested
+        stats = self.world.get_singleton_component(GameStats)
+        if stats and getattr(stats, "agent_id_to_faction", None):
+            mapped = stats.agent_id_to_faction.get(agent_id)
+            if mapped is not None:
+                return mapped
+        return requested
+
+    def _is_fog_lifted(self) -> bool:
+        """True when the screen shows the whole map (key 1 / FogOfWar off)."""
+        ui_state = self.world.get_singleton_component(UIState)
+        if ui_state is not None and ui_state.god_mode:
+            return True
+        fog = self.world.get_singleton_component(FogOfWar)
+        if fog is None or not fog.enabled:
+            return True
+        return False
+
+    def _visible_enemy_units(
+        self, observer: Faction, fog_lifted: bool
+    ) -> List[Dict[str, Any]]:
+        visible_tiles: Optional[Set[Tuple[int, int]]] = None
+        if not fog_lifted:
+            fog = self.world.get_singleton_component(FogOfWar)
+            visible_tiles = set(fog.faction_vision.get(observer, set())) if fog else set()
+
+        enemies: List[Dict[str, Any]] = []
+        for entity in self.world.query().with_all(Unit, HexPosition).entities():
+            unit = self.world.get_component(entity, Unit)
+            if not unit or unit.faction == observer:
+                continue
+            if not self._is_unit_alive(entity):
+                continue
+            position = self.world.get_component(entity, HexPosition)
+            if position is None:
+                continue
+            if visible_tiles is not None and (position.col, position.row) not in visible_tiles:
+                continue
+            enemies.append(self._visible_enemy_unit_info(entity, unit, position))
+        return enemies
+
+    def _visible_enemy_unit_info(
+        self, unit_id: int, unit: Unit, position: HexPosition
+    ) -> Dict[str, Any]:
+        """What a human would read off a visible enemy sprite: id, type, tile, count."""
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        unit_type = (
+            unit.unit_type.value
+            if unit.unit_type and hasattr(unit.unit_type, "value")
+            else str(unit.unit_type)
+        )
+        faction_value = (
+            unit.faction.value
+            if unit.faction and hasattr(unit.faction, "value")
+            else str(unit.faction)
+        )
+        current_count = (
+            int(unit_count.current_count)
+            if unit_count and hasattr(unit_count, "current_count")
+            else 0
+        )
+        return {
+            "unit_id": unit_id,
+            "unit_type": unit_type,
+            "faction": faction_value,
+            "position": {"col": int(position.col), "row": int(position.row)},
+            "unit_status": {"current_count": current_count},
         }
 
     def _unit_command_fields(
@@ -1365,8 +1466,8 @@ class LLMActionHandler:
     ) -> Dict[str, Any]:
         """``owner`` is who claimed; ``commandable`` is who may order.
 
-        Cross-faction queries still list every unit, but none are commandable.
-        Unclaimed units on the agent's own faction remain commandable.
+        Own-faction unclaimed units remain commandable. The query is always
+        the observer's faction; this helper does not serve enemy census.
         """
         coord = self.world.get_singleton_component(TeamCoordination)
         owner = coord.owner_of(unit_id) if coord is not None else None

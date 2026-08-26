@@ -30,7 +30,17 @@ from .multilayer_resources import (
 )
 from .terrain import Terrain, TerrainModifier, Tile, TerritoryControl, CaptureAction
 from .player import Player, TurnOrder, TurnManager
-from .state import GameState, MapData, UIState, InputState, FogOfWar, GameStats
+from .state import (
+    GameState,
+    MapData,
+    UIState,
+    InputState,
+    FogOfWar,
+    GameStats,
+    set_screen_fog,
+    map_briefing,
+    formation_center,
+)
 from .unit_action_panel import (
     UnitActionPanel as OldUnitActionPanel,
     UnitActionButton as OldUnitActionButton,
@@ -114,6 +124,9 @@ __all__ = [
     "UIState",
     "InputState",
     "FogOfWar",
+    "set_screen_fog",
+    "map_briefing",
+    "formation_center",
     "GameStats",
     "Camera",
     "MiniMap",

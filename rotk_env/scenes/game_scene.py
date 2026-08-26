@@ -71,6 +71,8 @@ from ..components import (
     TurnManager,
     RngService,
     resolve_seed,
+    MapData,
+    formation_center,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
 from performance_profiler import profiler
@@ -314,6 +316,12 @@ class GameScene(Scene):
             )
 
         positions_by_faction = self._formation_positions(unit_counts)
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data is not None:
+            map_data.home_bases = {
+                faction: formation_center(cells)
+                for faction, cells in positions_by_faction.items()
+            }
 
         for faction, count in unit_counts.items():
             if sum(count) == 0:

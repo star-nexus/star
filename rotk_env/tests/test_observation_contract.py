@@ -184,17 +184,22 @@ def test_key_1_toggles_god_view():
 
     world = World()
     ui_state = UIState()
+    fog = FogOfWar(enabled=True)
     world.add_singleton_component(ui_state)
+    world.add_singleton_component(fog)
     system = InputHandlingSystem()
     system.world = world
 
     event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1})
     system._handle_key_down(event)
     assert ui_state.god_mode is True
+    assert fog.enabled is False
     system._handle_key_down(event)
     assert ui_state.god_mode is False
+    assert fog.enabled is True
     system._handle_key_down(event)
     assert ui_state.god_mode is True
+    assert fog.enabled is False
 
 
 def test_observation_cache_hits_same_revision():

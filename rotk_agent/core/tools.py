@@ -106,15 +106,16 @@ ATTACK_PARAMS = {
 FACTION_STATE_PARAMS = {
     "type": "object",
     "description": (
-        "Retrieve the status of the specified faction, including unit positions, "
-        "HP, remaining AP and MP. Does not consume any points."
+        "Your army (positions, HP, remaining AP and MP) plus enemies currently "
+        "visible on screen (id, type, position, count). faction must be your "
+        "own. Does not consume any points."
     ),
     "additionalProperties": False,
     "properties": {
         "faction": {
             "type": "string",
             "enum": ["wei", "shu", "wu"],
-            "description": "Faction to query (one of: wei, shu, wu).",
+            "description": "Your faction (one of: wei, shu, wu).",
         },
     },
     "required": ["faction"],

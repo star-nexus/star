@@ -540,3 +540,34 @@ class TestRegistration:
         payload = bridge.params_for("register_agent_info")[0]
         assert payload["faction"] == "wei"
         assert payload["model_id"] == "fake-model"
+
+    @pytest.mark.asyncio
+    async def test_map_briefing_from_register_is_in_the_opening_prompt(self):
+        bridge = RecordingBridge(
+            responses={
+                "register_agent_info": {
+                    "success": True,
+                    "map": {
+                        "width": 15,
+                        "height": 15,
+                        "home_bases": {
+                            "wei": {"col": 2, "row": 3, "kind": "home_base"},
+                            "shu": {"col": -2, "row": -4, "kind": "home_base"},
+                        },
+                        "home_bases_meaning": "各阵营基地坐标",
+                    },
+                }
+            }
+        )
+        agent = build_agent(
+            [NormalizedReply(text="x", finish_reason="stop")],
+            bridge=bridge,
+            max_iterations=1,
+        )
+        await agent.chat("start")
+        assert agent.conversation_history[0].role == "system"
+        system = agent.conversation_history[0].content
+        assert system == agent.system_prompt
+        assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in system
+        assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in system
+        assert "start" == agent.conversation_history[1].content

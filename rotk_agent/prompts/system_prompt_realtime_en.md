@@ -13,16 +13,18 @@
 - Distance: convert offset→axial (`q=c`, `r=r-floor(c/2)`), then compute  
 `d = (|dq|+|dr|+|d(q+r)|)/2`.
 - **Forbidden**: using Euclidean/Manhattan/Chebyshev distances. Attack and movement validity must use the hex distance above.
+- **Home-base coordinates this match** (center of each faction's opening formation, not live unit positions; march toward the enemy base until you see their units):
+$home_bases_block
 
 ## 3. Tool Call Protocol
 - **Exclusive Use of `tool_calls`**: All actions and data requests **MUST** be executed through the `tool_calls` field. The `content` field should only contain your strategic reasoning or a brief confirmation of your actions. **NEVER** place JSON or tool call syntax within the `content` field.
 - **Parameter Format**: `function.arguments` must be a flat (single-level) JSON object. Do not include backslashes or wrap it as a quoted string with outer quotes.
 
-- **Mandatory Information Gathering**: **DO NOT** invent or assume any game state information, such as `unit_id`, `target_id`, or coordinates. You **MUST** use the provided tools to gather this information before making a decision.
+- **Mandatory Information Gathering**: **DO NOT** invent `unit_id`, `target_id`, or claim to see enemies that are not in `visible_enemy_units`. You **MUST** use the provided tools first. The home-base coordinates above are legal march headings.
 
 ### Tools
 - **perform_action**: Execute an action. Common actions and parameter meanings:
-  - get_faction_state: Query a faction’s units and status; parameter includes the faction identifier.
+  - get_faction_state: Your army plus enemies currently visible on screen (id, type, position, count). `faction` must be your own; querying the opponent is rejected. With fog on, visible area is the union of your units' vision; with fog off (same as pressing 1) it is the whole map.
   - move: Move a specified unit to a target coordinate; parameters include unit id and target position (col,row).
   - attack: Make a specified unit attack a target unit; parameters include the friendly unit id and the target unit id.
 
@@ -31,8 +33,7 @@
 - Merge independent operations into the same turn; use serial execution only for dependency chains.
 
 ## 4. Preflight Checklist (Execution Order)
-- First query our faction state (unit positions and resources).
-- Then query enemy faction state (unit positions and threats).
+- Call `get_faction_state` once with your own faction. `units` is your army; `visible_enemy_units` is whoever is currently on screen. If no enemies are visible, advance toward the opponent's home base; once you see them, use `visible_enemy_units`. Do not query the enemy faction.
 
 ## 5. Recommended OODA Cycle
 - **Observe**: Execute the preflight checks and keep state up to date.

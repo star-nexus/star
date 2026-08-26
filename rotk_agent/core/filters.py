@@ -74,23 +74,32 @@ def filter_observation_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return filtered
 
 
+def _trim_faction_units(units: Any) -> Any:
+    if not isinstance(units, list):
+        return units
+    trimmed = []
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        entry = copy.deepcopy(unit)
+        _strip_unit_state(entry)
+        _strip_capabilities(entry, "long_rest_resources")
+        entry.pop("available_skills", None)
+        trimmed.append(entry)
+    return trimmed
+
+
 def filter_faction_state_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Keep every unit, minus fields with no ENV implementation behind them."""
+    """Keep own units and visible enemies, minus unimplemented fields."""
     filtered = copy.deepcopy(result)
     filtered.pop("success", None)
 
-    units = filtered.get("units")
-    if isinstance(units, list):
-        trimmed = []
-        for unit in units:
-            if not isinstance(unit, dict):
-                continue
-            entry = copy.deepcopy(unit)
-            _strip_unit_state(entry)
-            _strip_capabilities(entry, "long_rest_resources")
-            entry.pop("available_skills", None)
-            trimmed.append(entry)
-        filtered["units"] = trimmed
+    if "units" in filtered:
+        filtered["units"] = _trim_faction_units(filtered.get("units"))
+    if "visible_enemy_units" in filtered:
+        filtered["visible_enemy_units"] = _trim_faction_units(
+            filtered.get("visible_enemy_units")
+        )
 
     return filtered
 

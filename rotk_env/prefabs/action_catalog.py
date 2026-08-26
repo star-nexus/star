@@ -69,14 +69,15 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state",
-        "Get the full unit list for a faction (own or enemy). Each unit has "
-        "owner (claiming agent_id, or null) and commandable (whether this "
-        "agent may issue mutating actions). Action layer still rejects "
-        "orders on units you do not own.",
+        "Your army (full detail, owner/commandable) plus enemies currently "
+        "visible on screen: unit id, type, position, count. Fog on = union of "
+        "your units' vision; fog off (key 1) = the whole map. faction must be "
+        "your own; querying another faction is rejected. Orders on units you "
+        "do not own still fail.",
         "query",
         BENCH,
         {
-            "faction": _p("string", True, "Faction name (wei | shu | wu)"),
+            "faction": _p("string", True, "Your faction (wei | shu | wu)"),
         },
     ),
     ActionSpec(
@@ -127,12 +128,12 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state_vlm",
-        "Same JSON as get_faction_state (full army, owner/commandable on "
-        "each unit), plus a PNG of the current full-board render.",
+        "Same JSON as get_faction_state (own army + screen-visible enemies), "
+        "plus a PNG of the current board render.",
         "query",
         FULL,
         {
-            "faction": _p("string", True, "Faction name (wei | shu | wu)"),
+            "faction": _p("string", True, "Your faction (wei | shu | wu)"),
         },
     ),
     ActionSpec(

@@ -28,6 +28,8 @@ from rotk_env.components import (
     UIState,
     GameModeComponent,
     GameStats,
+    set_screen_fog,
+    map_briefing,
 )
 from rotk_env.prefabs.config import Faction, UnitType, GameMode
 from rotk_env.systems.llm_observation_system import ObservationLevel
@@ -1045,6 +1047,9 @@ class LLMSystem(System):
                         # include thinking flag in response
                         "enable_thinking": enable_thinking,
                     },
+                    "map": map_briefing(
+                        self.world.get_singleton_component(MapData)
+                    ),
                 }
             else:
                 return {
@@ -1279,44 +1284,30 @@ class LLMSystem(System):
                     return error_result
 
                 if isinstance(params, dict) and "faction" in params:
-                    if action in ("get_faction_state", "get_faction_state_vlm"):
-                        try:
-                            from ..prefabs.config import Faction as _Faction
+                    try:
+                        from ..prefabs.config import Faction as _Faction
 
-                            reported_faction = _Faction(params["faction"])
-                            if mapped_faction != reported_faction:
-                                print(
-                                    f"[LLMSystem] ℹ️ Intelligence gathering: agent_id={agent_id} (registered={mapped_faction.value}) queries {reported_faction.value} faction info"
-                                )
-                        except Exception as _e:
-                            print(
-                                f"[LLMSystem] ⚠️ Faction parsing failed in get_faction_state: {_e}"
+                        reported_faction = _Faction(params["faction"])
+                        if mapped_faction != reported_faction:
+                            error_result = self._create_system_error_response(
+                                action,
+                                (
+                                    f"Agent {agent_id} is registered to {mapped_faction.value} faction, "
+                                    f"but action specifies {reported_faction.value}. "
+                                    "Please use your registered faction or re-register."
+                                ),
+                                2005,
                             )
-                    else:
-                        try:
-                            from ..prefabs.config import Faction as _Faction
-
-                            reported_faction = _Faction(params["faction"])
-                            if mapped_faction != reported_faction:
-                                error_result = self._create_system_error_response(
-                                    action,
-                                    (
-                                        f"Agent {agent_id} is registered to {mapped_faction.value} faction, "
-                                        f"but action specifies {reported_faction.value}. "
-                                        "Please use your registered faction or re-register."
-                                    ),
-                                    2005,
+                            print(
+                                f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}"
+                            )
+                            if send_response and agent_id:
+                                self.client.response_to_agent(
+                                    agent_id, action_id, error_result, "str"
                                 )
-                                print(
-                                    f"[LLMSystem] ❌ Action rejected due to faction mismatch: action={action}, agent_id={agent_id}, registered={mapped_faction.value}, reported={reported_faction.value}"
-                                )
-                                if send_response and agent_id:
-                                    self.client.response_to_agent(
-                                        agent_id, action_id, error_result, "str"
-                                    )
-                                return error_result
-                        except Exception as _e:
-                            print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
+                            return error_result
+                    except Exception as _e:
+                        print(f"[LLMSystem] ⚠️ Faction consistency check failed: {_e}")
 
                 faction_error = self._check_agent_unit_faction(
                     action, mapped_faction, params if isinstance(params, dict) else {}
@@ -1898,39 +1889,44 @@ class LLMSystem(System):
         }
 
     def handle_toggle_god_mode(self, params: Dict) -> Dict:
-        """Toggle god mode (omniscient view)."""
+        """Toggle god mode. Same switch as key 1 and get_faction_state."""
         ui_state = self.world.get_singleton_component(UIState)
-        if ui_state:
-            ui_state.god_mode = not ui_state.god_mode
+        if not ui_state:
             return {
-                "success": True,
-                "message": f"God mode {'enabled' if ui_state.god_mode else 'disabled'}",
-                "god_mode": ui_state.god_mode,
+                "success": False,
+                "error_code": 2008,
+                "message": "UI state not available",
             }
-
+        fog = self.world.get_singleton_component(FogOfWar)
+        if fog is None:
+            fog = FogOfWar()
+            self.world.add_singleton_component(fog)
+        set_screen_fog(ui_state, fog, lifted=not ui_state.god_mode)
         return {
-            "success": False,
-            "error_code": 2008,
-            "message": "UI state not available",
+            "success": True,
+            "message": f"God mode {'enabled' if ui_state.god_mode else 'disabled'}",
+            "god_mode": ui_state.god_mode,
+            "fog_enabled": fog.enabled,
         }
 
     def handle_toggle_fog_of_war(self, params: Dict) -> Dict:
-        """Toggle the fog-of-war simulation switch (FogOfWar.enabled)."""
-        enabled = params.get("enabled")
+        """Toggle fog. Same switch as key 1 / god view."""
+        ui_state = self.world.get_singleton_component(UIState)
         fog_of_war = self.world.get_singleton_component(FogOfWar)
         if fog_of_war is None:
             fog_of_war = FogOfWar()
             self.world.add_singleton_component(fog_of_war)
 
-        if enabled is not None:
-            fog_of_war.enabled = bool(enabled)
+        if params.get("enabled") is not None:
+            lifted = not bool(params.get("enabled"))
         else:
-            fog_of_war.enabled = not fog_of_war.enabled
-
+            lifted = fog_of_war.enabled
+        set_screen_fog(ui_state, fog_of_war, lifted=lifted)
         return {
             "success": True,
             "message": f"Fog of war {'enabled' if fog_of_war.enabled else 'disabled'}",
             "fog_enabled": fog_of_war.enabled,
+            "god_mode": bool(ui_state.god_mode) if ui_state else lifted,
         }
 
     def handle_show_ui_panel(self, params: Dict) -> Dict:

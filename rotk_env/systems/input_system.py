@@ -25,6 +25,8 @@ from ..components import (
     Camera,
     BattleLog,
     Player,
+    FogOfWar,
+    set_screen_fog,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction
 from ..utils.hex_utils import HexConverter
@@ -366,25 +368,31 @@ class InputHandlingSystem(System):
                 return system
         return None
 
+    def _ensure_fog(self) -> FogOfWar:
+        fog = self.world.get_singleton_component(FogOfWar)
+        if fog is None:
+            fog = FogOfWar()
+            self.world.add_singleton_component(fog)
+        return fog
+
     def _set_god_mode(self, ui_state: UIState, enable: bool):
-        """Enable/disable God view mode."""
-        ui_state.god_mode = enable
-        ui_state.view_faction = None
+        """Enable/disable God view (fog off). Same switch the agent query reads."""
+        set_screen_fog(ui_state, self._ensure_fog(), lifted=enable)
         if enable:
-            print("🔥 GOD VIEW enabled - all units visible")
+            print("GOD VIEW enabled - all units visible")
         else:
-            print("👁️ GOD VIEW disabled")
+            print("GOD VIEW disabled")
 
     def _set_faction_view(self, ui_state: UIState, faction: Faction):
         """Set view to a specific faction."""
         # Ensure faction exists in current game
         if not self._faction_exists(faction):
-            print(f"❌ Faction {faction.value} does not exist in current game")
+            print(f"Faction {faction.value} does not exist in current game")
             return
 
-        ui_state.god_mode = False
+        set_screen_fog(ui_state, self._ensure_fog(), lifted=False)
         ui_state.view_faction = faction
-        print(f"👁️ Switch to {faction.value} view - only that faction's vision is visible")
+        print(f"Switch to {faction.value} view - only that faction's vision is visible")
 
     def _faction_exists(self, faction: Faction) -> bool:
         """Check whether a faction exists in the current game."""
