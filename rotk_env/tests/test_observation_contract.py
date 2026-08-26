@@ -4,11 +4,15 @@ from framework.ecs.world import World
 from rotk_env.components import (
     ActionPoints,
     Combat,
+    ConstructionPoints,
     FogOfWar,
     HexPosition,
     MapData,
+    TerritoryControl,
     Unit,
     UnitCount,
+    UnitSkills,
+    UnitStatus,
     UIState,
     Vision,
 )
@@ -160,6 +164,56 @@ def test_handler_named_observation_reuses_shared_cache():
     assert second.get("from_cache") is True
 
 
+def test_faction_observation_territory_reads_tile_control():
+    world = World()
+    wei_capturer = _spawn_unit(world, faction=Faction.WEI, col=5, row=5)
+
+    def _tile(
+        col,
+        row,
+        *,
+        faction=None,
+        fortified=False,
+        being_captured=False,
+        is_city=False,
+        capturing_unit=None,
+    ):
+        entity = world.create_entity()
+        world.add_component(entity, HexPosition(col, row))
+        world.add_component(
+            entity,
+            TerritoryControl(
+                controlling_faction=faction,
+                fortified=fortified,
+                being_captured=being_captured,
+                is_city=is_city,
+                capturing_unit=capturing_unit,
+            ),
+        )
+
+    _tile(0, 0, faction=Faction.WEI, is_city=True)
+    _tile(1, 0, faction=Faction.WEI, fortified=True)
+    _tile(2, 0, faction=Faction.SHU)
+    _tile(3, 0, faction=Faction.WEI, being_captured=True)
+    _tile(
+        4,
+        0,
+        faction=Faction.SHU,
+        being_captured=True,
+        capturing_unit=wei_capturer,
+    )
+
+    obs = LLMObservationSystem(world)
+    wei = obs._get_territory_control(Faction.WEI)
+    assert wei["controlled_tiles"] == 3
+    assert wei["fortified_tiles"] == 1
+    assert wei["contested_tiles"] == 2
+    assert wei["strategic_points"] == [{"col": 0, "row": 0, "kind": "city"}]
+    shu = obs._get_territory_control(Faction.SHU)
+    assert shu["controlled_tiles"] == 2
+    assert shu["contested_tiles"] == 1
+
+
 def test_unit_observation_can_attack_false_without_ap():
     world, _ = _world_with_combat()
     unit_id = _spawn_unit(world, ap=0)
@@ -167,6 +221,36 @@ def test_unit_observation_can_attack_false_without_ap():
     data = obs._get_unit_observation(unit_id)
     assert data["unit"]["combat"]["can_attack"] is False
     assert "attack" not in data["action_options"]
+    for fake in ("defend", "scout", "retreat", "fortify"):
+        assert fake not in data["action_options"]
+
+
+def test_unit_action_options_follow_the_match_subset():
+    world, _ = _world_with_combat()
+    unit_id = _spawn_unit(world, ap=1)
+    obs = LLMObservationSystem(world)
+    default = obs._get_unit_action_options(unit_id)
+    assert "fortify" not in default
+    assert "defend" not in default
+
+    world.add_singleton_component(
+        MatchRules(game_actions=("move", "attack", "fortify", "rest"))
+    )
+    still_blocked = obs._get_unit_action_options(unit_id)
+    assert "fortify" not in still_blocked
+    assert "rest" not in still_blocked
+
+    world.add_component(unit_id, UnitStatus())
+    world.add_component(unit_id, ConstructionPoints(current_cp=1, max_cp=1))
+    tile = world.create_entity()
+    world.add_component(tile, HexPosition(0, 0))
+    world.add_component(
+        tile, TerritoryControl(controlling_faction=Faction.WEI, fortified=False)
+    )
+    ready = obs._get_unit_action_options(unit_id)
+    assert "fortify" in ready
+    assert "rest" in ready
+    assert "defend" not in ready
 
 
 def test_action_points_attack_cost():

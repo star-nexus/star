@@ -18,11 +18,17 @@ from ..components import (
     Terrain,
     Tile,
     UnitStatus,
+    UnitSkills,
     GameStats,
     BattleLog,
     MapData,
+    TerritoryControl,
+    ActionPoints,
+    ConstructionPoints,
+    SkillPoints,
 )
-from ..prefabs.config import Faction, TerrainType
+from ..prefabs.config import Faction, TerrainType, ActionType
+from ..prefabs.action_catalog import GAME_ACTIONS, allowed_game_actions
 from ..utils.hex_utils import HexMath
 
 
@@ -573,21 +579,106 @@ class LLMObservationSystem:
         return unit_info
 
     def _get_unit_action_options(self, unit_id: int) -> List[str]:
-        """Get action options the unit can execute."""
-        movement = self.world.get_component(unit_id, MovementPoints)
+        """Unit verbs this match allows and this unit can spend now.
 
-        actions = []
-
-        if movement and movement.current_mp > 0:
-            actions.append("move")
-
-        if self._unit_can_attack(unit_id):
-            actions.append("attack")
-
-        # Reserved verbs: registered handlers exist, current ruleset does not spend them.
-        actions.extend(["defend", "scout", "retreat", "fortify"])
-
+        Same subset as ``execute_action``. A name is listed only if a
+        capability check matching the handler's early rejects would pass.
+        """
+        allowed = set(allowed_game_actions(self.world))
+        ready = {
+            "move": self._can_move_now,
+            "attack": self._unit_can_attack,
+            "rest": self._can_rest_now,
+            "occupy": self._can_occupy_now,
+            "fortify": self._can_fortify_now,
+            "skill": self._can_skill_now,
+        }
+        actions: List[str] = []
+        for spec in GAME_ACTIONS:
+            if spec.kind != "unit" or spec.name not in allowed:
+                continue
+            check = ready.get(spec.name)
+            if check is not None and check(unit_id):
+                actions.append(spec.name)
         return actions
+
+    def _can_move_now(self, unit_id: int) -> bool:
+        movement = self.world.get_component(unit_id, MovementPoints)
+        return bool(movement and movement.current_mp > 0)
+
+    def _can_rest_now(self, unit_id: int) -> bool:
+        return self.world.get_component(unit_id, UnitStatus) is not None
+
+    def _can_occupy_now(self, unit_id: int) -> bool:
+        unit = self.world.get_component(unit_id, Unit)
+        position = self.world.get_component(unit_id, HexPosition)
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        if (
+            unit is None
+            or position is None
+            or action_points is None
+            or not action_points.can_perform_action(ActionType.OCCUPY)
+        ):
+            return False
+        cells = [(position.col, position.row)] + HexMath.hex_neighbors(
+            position.col, position.row
+        )
+        for col, row in cells:
+            control = self._territory_at(col, row)
+            if control is not None and control.controlling_faction != unit.faction:
+                return True
+        return False
+
+    def _can_fortify_now(self, unit_id: int) -> bool:
+        unit = self.world.get_component(unit_id, Unit)
+        position = self.world.get_component(unit_id, HexPosition)
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        construction = self.world.get_component(unit_id, ConstructionPoints)
+        if (
+            unit is None
+            or position is None
+            or action_points is None
+            or construction is None
+            or not action_points.can_perform_action(ActionType.FORTIFY)
+            or not construction.can_build(1)
+        ):
+            return False
+        control = self._territory_at(position.col, position.row)
+        return bool(
+            control
+            and control.controlling_faction == unit.faction
+            and not control.fortified
+        )
+
+    def _can_skill_now(self, unit_id: int) -> bool:
+        skills = self.world.get_component(unit_id, UnitSkills)
+        skill_points = self.world.get_component(unit_id, SkillPoints)
+        action_points = self.world.get_component(unit_id, ActionPoints)
+        if (
+            skills is None
+            or skill_points is None
+            or action_points is None
+            or not action_points.can_perform_action(ActionType.SKILL)
+        ):
+            return False
+        return any(
+            skills.can_use_skill(name) and skill_points.can_use_skill(name, 1)
+            for name in skills.available_skills
+        )
+
+    def _territory_at(self, col: int, row: int) -> Optional[TerritoryControl]:
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data is not None:
+            tile = map_data.tiles.get((col, row))
+            if tile is not None:
+                return self.world.get_component(tile, TerritoryControl)
+        for entity in (
+            self.world.query().with_all(TerritoryControl, HexPosition).entities()
+        ):
+            position = self.world.get_component(entity, HexPosition)
+            if position is not None and position.col == col and position.row == row:
+                return self.world.get_component(entity, TerritoryControl)
+        return None
 
     def _get_combat_system(self):
         for system in self.world.systems:
@@ -638,8 +729,46 @@ class LLMObservationSystem:
         }
 
     def _get_territory_control(self, faction: Faction) -> Dict[str, Any]:
-        """Territory control placeholder. Not used by the current eval ruleset."""
-        return {"controlled_tiles": 0, "contested_tiles": 0, "strategic_points": []}
+        """Count this faction's tiles from live ``TerritoryControl`` components."""
+        controlled = 0
+        fortified = 0
+        contested: Set[Tuple[int, int]] = set()
+        strategic_points: List[Dict[str, Any]] = []
+
+        for entity in (
+            self.world.query().with_all(TerritoryControl, HexPosition).entities()
+        ):
+            control = self.world.get_component(entity, TerritoryControl)
+            position = self.world.get_component(entity, HexPosition)
+            if control is None or position is None:
+                continue
+            cell = (position.col, position.row)
+            owns = control.controlling_faction == faction
+            if owns:
+                controlled += 1
+                if control.fortified:
+                    fortified += 1
+                if control.is_city:
+                    strategic_points.append(
+                        {"col": position.col, "row": position.row, "kind": "city"}
+                    )
+            if control.being_captured and (
+                owns or self._capturer_faction(control.capturing_unit) == faction
+            ):
+                contested.add(cell)
+
+        return {
+            "controlled_tiles": controlled,
+            "fortified_tiles": fortified,
+            "contested_tiles": len(contested),
+            "strategic_points": strategic_points,
+        }
+
+    def _capturer_faction(self, unit_id: Optional[int]) -> Optional[Faction]:
+        if not isinstance(unit_id, int):
+            return None
+        unit = self.world.get_component(unit_id, Unit)
+        return unit.faction if unit is not None else None
 
     def _get_faction_resources(self, faction: Faction) -> Dict[str, Any]:
         """Economy placeholder. manpower / supplies / morale are not simulated."""
