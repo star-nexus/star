@@ -10,6 +10,8 @@ Options:
     --players [human_vs_ai|ai_vs_ai|three_kingdoms|human_vs_two_ai]  Player configuration (default: human_vs_ai)
     --skip-start  Skip the start UI and apply --players/--mode/--scenario
     --headless  Skip start UI, dummy display, auto end (eval / CI)
+    --hub-url URL  Hub websocket (default: ws://localhost:8000/ws/metaverse)
+    --no-hub  Do not connect to a Hub (offline BOT / rules tests)
     --help  Show help information   
 """
 
@@ -28,6 +30,7 @@ from framework.engine.game_engine import GameEngine
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
 from rotk_env.prefabs.config import PLAYER_PRESETS, GameConfig
+from rotk_env.prefabs.world_builder import DEFAULT_HUB_URL
 
 
 def parse_arguments():
@@ -60,7 +63,23 @@ Victory Conditions:
         "--headless",
         action="store_true",
         default=False,
-        help="Skip start scene, dummy display, auto end (eval / CI)",
+        help="Skip start scene, dummy display, auto end (eval / CI). Still connects to Hub unless --no-hub.",
+    )
+    parser.add_argument(
+        "--hub-url",
+        type=str,
+        default=None,
+        help=(
+            "Hub websocket URL. Default is "
+            f"{DEFAULT_HUB_URL}. Overridden by --no-hub. "
+            "Also reads $STAR_HUB_URL when this flag is omitted."
+        ),
+    )
+    parser.add_argument(
+        "--no-hub",
+        action="store_true",
+        default=False,
+        help="Do not open a Hub websocket. Rule BOT still plays; LLM agents cannot join.",
     )
     parser.add_argument(
         "--skip-start",
@@ -109,6 +128,18 @@ Victory Conditions:
     )
 
     return parser.parse_args()
+
+
+def resolve_hub_url(args) -> str | None:
+    """Pick the Hub URL. --no-hub wins; otherwise --hub-url, $STAR_HUB_URL, default."""
+    if args.no_hub:
+        return None
+    if args.hub_url:
+        return args.hub_url
+    env_url = os.environ.get("STAR_HUB_URL")
+    if env_url:
+        return env_url
+    return DEFAULT_HUB_URL
 
 
 def create_game_from_args(args):
@@ -167,6 +198,7 @@ def main():
         # Determine initial scene based on command line arguments
         if args.headless or args.skip_start:
             players_config = create_game_from_args(args)
+            hub_url = resolve_hub_url(args)
             engine.scene_manager.switch_to(
                 "game",
                 players=players_config,
@@ -175,11 +207,17 @@ def main():
                 scenario=args.scenario,
                 seed=args.seed,
                 seed_source="cli" if args.seed is not None else "default",
+                hub_url=hub_url,
+                env_id=args.env_id,
             )
 
             print(f"Game mode: {args.mode}")
             print(f"Player configuration: {args.players}")
             print(f"Game scenario: {args.scenario}")
+            if hub_url is None:
+                print("Hub: offline (--no-hub)")
+            else:
+                print(f"Hub URL: {hub_url}")
             if args.env_id is not None:
                 print(f"Environment ID: {args.env_id}")
             if args.seed is not None:

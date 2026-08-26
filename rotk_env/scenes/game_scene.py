@@ -2,81 +2,13 @@
 Main game scene
 """
 
-import time
 from typing import Dict, Any
 from framework.engine.scenes import Scene, SMS
 from framework import World
-from ..prefabs.config import Faction
-from ..systems import (
-    AnimationSystem,
-    MapSystem,
-    TurnSystem,
-    RealtimeSystem,
-    MovementSystem,
-    CombatSystem,
-    VisionSystem,
-    InputHandlingSystem,
-    MiniMapSystem,
-    TerritorySystem,
-    UnitActionButtonSystem,
-    UIButtonSystem,
-    UIRenderSystem,
-    MockLLMAISystem,
-)
-from ..systems.map_render_system import MapRenderSystem
-from ..systems.unit_render_system import UnitRenderSystem
-
-# from ..systems.improved_ui_render_system import ImprovedUIRenderSystem
-# from ..systems.improved_ui_button_system import ImprovedUIButtonSystem
-from ..systems.effect_render_system import EffectRenderSystem
-from ..systems.panel_render_system import PanelRenderSystem
-from ..systems.statistics_system import StatisticsSystem
-from ..systems.game_time_system import GameTimeSystem
-from ..systems.llm_system import LLMSystem
-from ..systems.resource_recovery_system import ResourceRecoverySystem
-from ..systems.settlement_report_system import SettlementReportSystem
-from ..utils.hex_utils import HexConverter
 from ..components.settlement_report import SettlementReport
-from ..components import (
-    GameState,
-    UIState,
-    InputState,
-    FogOfWar,
-    GameStats,
-    Player,
-    AIControlled,
-    Unit,
-    UnitCount,
-    MovementPoints,
-    ActionPoints,
-    AttackPoints,
-    ConstructionPoints,
-    SkillPoints,
-    Combat,
-    Vision,
-    HexPosition,
-    MiniMap,
-    GameModeComponent,
-    MatchRules,
-    UnitStatus,
-    UnitSkills,
-    MovementAnimation,
-    BattleLog,
-    UnitObservation,
-    UnitStatistics,
-    VisibilityTracker,
-    GameModeStatistics,
-    UIButton,
-    UIButtonCollection,
-    UIPanel,
-    TurnManager,
-    RngService,
-    resolve_seed,
-    MapData,
-    formation_center,
-)
-from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
-from ..prefabs.action_catalog import match_game_actions
+from ..components import GameState, Unit, UnitCount
+from ..prefabs.config import Faction, PlayerType, GameMode
+from ..prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from performance_profiler import profiler
 
 
@@ -95,7 +27,7 @@ class GameScene(Scene):
         # Initialization flag
         self.initialized = False
 
-        # 🆕 Game end waiting state
+        # Game end waiting state
         self.game_end_wait_start = None
         self.game_end_wait_timeout = 60.0
         self._headless_exit_triggered = False
@@ -104,7 +36,6 @@ class GameScene(Scene):
         """Called when entering the scene"""
         super().enter(**kwargs)
 
-        # Get configuration from kwargs
         self.players = kwargs.get(
             "players", {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         )
@@ -119,454 +50,32 @@ class GameScene(Scene):
 
         headless = kwargs.get("headless", False)
         self.headless = headless
-
-        # Get scene parameters (optional)
         self.scenario = kwargs.get("scenario", "default")
-
-        # Root seed for reproducibility (None means resolve from env/config).
         self.seed = kwargs.get("seed", None)
         self.seed_source = kwargs.get("seed_source", "default")
+        # Explicit None (from --no-hub) stays offline. Missing key (start UI)
+        # still attaches to the default local Hub.
+        self.hub_url = kwargs["hub_url"] if "hub_url" in kwargs else DEFAULT_HUB_URL
+        self.env_id = kwargs.get("env_id")
 
         if not self.initialized:
             self._initialize_game()
             self.initialized = True
 
     def _initialize_game(self):
-        """Initialize game"""
-        # First initialize game mode component
-        self._initialize_game_mode()
-
-        # 🆕 Initialize the RNG service before any system reads it.
-        self._initialize_rng()
-
-        # 🆕 Initialize Agent info registry
-        self._initialize_agent_registry()
-
-        # Initialize systems
-        self._initialize_systems()
-
-        # Initialize players
-        self._initialize_players()
-
-        # Initialize units
-        # for wei, shu, wu: infantry, archer, cavalry
-        self._initialize_units(
-            [GameConfig.UNIT_MIX, GameConfig.UNIT_MIX, GameConfig.UNIT_MIX]
+        """Fill this scene's World through the shared skirmish builder."""
+        display = "dummy" if self.headless else "window"
+        build_skirmish_world(
+            players=self.players,
+            mode=self.game_mode,
+            scenario=self.scenario,
+            seed=self.seed,
+            seed_source=self.seed_source,
+            hub_url=self.hub_url,
+            env_id=self.env_id,
+            display=display,
+            world=self.world,
         )
-
-        # Initialize game statistics
-        self._initialize_stats()
-
-        # Initialize minimap
-        self._initialize_minimap()
-
-    def _initialize_systems(self):
-        """Initialize all game systems"""
-        # Add systems in order of priority
-
-        systems = [
-            GameTimeSystem(),  # Game time system (priority 10) - earliest execution
-            MapSystem(scenario=self.scenario),  # Map system (priority 100)
-            VisionSystem(),  # Vision system
-            MovementSystem(),  # Movement system
-            CombatSystem(),  # Combat system
-            TerritorySystem(),  # Territory system
-            ResourceRecoverySystem(),  # Resource recovery system
-            MockLLMAISystem(),  # Rule BOT baseline; skips factions with a registered LLM agent
-            LLMSystem(),  # LLM system (priority 5)
-            StatisticsSystem(),  # Statistics system
-            AnimationSystem(),  # Animation system (priority 15)
-            InputHandlingSystem(),  # Input system (priority 10)
-            # UnitActionButtonSystem(),  # Unit action button system (priority 4) - Moved to conditional
-            # Render systems are split into multiple independent systems (from lowest to highest layer)
-            # MapRenderSystem(),  # Map render system (lowest layer) - Moved to conditional
-            # UnitRenderSystem(),  # Unit render system (above map) - Moved to conditional
-            # EffectRenderSystem(),  # Effect render system (above unit) - Moved to conditional
-            # PanelRenderSystem(),  # Panel render system (above effect) - Moved to conditional
-            # UIButtonSystem(),  # Improved UI button system (priority 2) - Moved to conditional
-            # UIRenderSystem(),  # Improved UI render system (top layer) - Moved to conditional
-            # MiniMapSystem(),  # MiniMap system (priority 5) - Moved to conditional
-            SettlementReportSystem(),  # Settlement report system (priority 200, executed after game ends)
-        ]
-
-        # Add UI and Render systems only if NOT in headless mode
-        if not self.headless:
-            # Add UI logic systems
-            systems.insert(-1, UnitActionButtonSystem())
-            systems.insert(-1, UIButtonSystem())
-            
-            # Add render systems
-            systems.insert(-1, MapRenderSystem())
-            systems.insert(-1, UnitRenderSystem())
-            systems.insert(-1, EffectRenderSystem())
-            systems.insert(-1, PanelRenderSystem())
-            systems.insert(-1, UIRenderSystem())
-            systems.insert(-1, MiniMapSystem())
-        
-        if self.game_mode == GameMode.REAL_TIME:
-            systems.append(RealtimeSystem())
-        else:
-            systems.append(TurnSystem())
-
-        for system in systems:
-            self.world.add_system(system)
-
-    def _initialize_game_mode(self):
-        """Initialize game mode and this match's allowed game verbs."""
-        self.world.add_singleton_component(GameModeComponent(mode=self.game_mode))
-        # Current maps (default / chibi / three_kingdoms) share skirmish verbs.
-        # Bind the subset to match rules, not the ASCII map file.
-        self.world.add_singleton_component(
-            MatchRules(
-                game_actions=match_game_actions(
-                    turn_based=self.game_mode == GameMode.TURN_BASED
-                )
-            )
-        )
-
-    def _initialize_rng(self):
-        """Register the RNG service so reproducibility works downstream.
-
-        Resolves the root seed in this order:
-          1. CLI/env (passed via kwargs as `seed`).
-          2. `STAR_SEED` env variable.
-          3. `.configs.toml [default].seed`.
-          4. Wall-clock fallback (kept non-deterministic by default).
-
-        The resolved seed is stored on the RngService singleton and is
-        copied into GameStats.map_info by MapSystem so settlement reports
-        capture it for replay.
-        """
-        import os
-        import tomllib
-
-        # Read optional config seed from .configs.toml [default].seed.
-        config_seed = None
-        try:
-            config_path = ".configs.toml"
-            if os.path.exists(config_path):
-                with open(config_path, "rb") as f:
-                    cfg = tomllib.load(f)
-                config_seed = cfg.get("default", {}).get("seed")
-        except Exception as e:
-            print(f"[GameScene] ⚠️ Failed to read seed from .configs.toml: {e}")
-
-        seed = resolve_seed(cli_seed=self.seed, config_seed=config_seed)
-        source = self.seed_source
-        if source == "default":
-            if self.seed is not None:
-                source = "kwargs"
-            elif "STAR_SEED" in os.environ:
-                source = "env"
-            elif config_seed is not None:
-                source = "config"
-            else:
-                source = "wallclock"
-
-        rng_service = RngService(seed=seed, source=source)
-        self.world.add_singleton_component(rng_service)
-        print(f"[GameScene] 🎲 RngService initialized: seed={seed} source={source}")
-
-    def _initialize_players(self):
-        """Initialize players"""
-
-        # Initialize turn manager
-        turn_manager = TurnManager()
-        self.world.add_singleton_component(turn_manager)
-
-        for faction, player_type in self.players.items():
-            # Create player entity
-            player_entity = self.world.create_entity()
-
-            # Add player component
-            player_comp = Player(
-                faction=faction,
-                player_type=player_type,
-                color=GameConfig.FACTION_COLORS[faction],
-                units=set(),
-            )
-            self.world.add_component(player_entity, player_comp)
-
-            # If AI player, add AI control component
-            if player_type == PlayerType.AI:
-                self.world.add_component(player_entity, AIControlled())
-
-            # Add player to turn manager
-            turn_manager.add_player(player_entity)
-
-    def _initialize_units(self, unit_assignments: list[list[int]]):
-        """Initialize units - automatically generate units and positions based on quantity"""
-
-        # Define unit quantity (only process factions participating in the game)
-        unit_counts = {}
-        for faction in self.players.keys():
-            if faction == Faction.WEI:
-                unit_counts[faction] = unit_assignments[0]
-            elif faction == Faction.SHU:
-                unit_counts[faction] = unit_assignments[1]
-            elif faction == Faction.WU:
-                unit_counts[faction] = unit_assignments[2]
-
-        # 🆕 Record initial unit count to GameStats (ensure GameStats exists)
-        game_stats = self.world.get_singleton_component(GameStats)
-        if not game_stats:
-            # If GameStats does not exist, create a temporary one, it will be correctly initialized when _initialize_stats is called
-            print(
-                "[GameScene] ⚠️ GameStats component does not exist, waiting for subsequent initialization..."
-            )
-            pass
-
-        # Temporarily store the initial unit count, write it to GameStats in _initialize_stats
-        self._temp_initial_unit_counts = {}
-        for faction, count in unit_counts.items():
-            total_units = sum(count)
-            self._temp_initial_unit_counts[faction] = total_units
-            print(
-                f"[GameScene] Preparing to record {faction.value} faction initial unit count: {total_units}"
-            )
-
-        positions_by_faction = self._formation_positions(unit_counts)
-        map_data = self.world.get_singleton_component(MapData)
-        if map_data is not None:
-            map_data.home_bases = {
-                faction: formation_center(cells)
-                for faction, cells in positions_by_faction.items()
-            }
-
-        for faction, count in unit_counts.items():
-            if sum(count) == 0:
-                continue
-
-            player_entity = self._get_player_entity(faction)
-            if not player_entity:
-                continue
-
-            player = self.world.get_component(player_entity, Player)
-            positions = positions_by_faction.get(faction, [])
-
-            # Same mix and slot order for every faction so 180-paired cells match.
-            unit_types = self._generate_unit_types(count)
-
-            for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
-                unit_entity = self._create_unit(
-                    faction=faction,
-                    unit_type=unit_type,
-                    position=(q, r),
-                    name=f"{faction.value}_{unit_type.value}_{i+1}",
-                )
-                player.units.add(unit_entity)
-
-    def _formation_positions(self, unit_counts: Dict) -> Dict:
-        """Wei/Wu blobs from config; Shu is pixel-space 180° of the Wei blob."""
-        conv = HexConverter()
-        positions = {}
-        if Faction.WEI in unit_counts:
-            n = sum(unit_counts[Faction.WEI])
-            positions[Faction.WEI] = list(GameConfig.WEI_FORMATION[:n])
-        if Faction.SHU in unit_counts:
-            n = sum(unit_counts[Faction.SHU])
-            wei_src = list(GameConfig.WEI_FORMATION[:n])
-            positions[Faction.SHU] = [conv.rotate_180(*cell) for cell in wei_src]
-        if Faction.WU in unit_counts:
-            n = sum(unit_counts[Faction.WU])
-            positions[Faction.WU] = list(GameConfig.WU_FORMATION[:n])
-        return positions
-
-    def _generate_unit_types(self, count: int | list) -> list:
-        """Generate diverse unit type combinations"""
-
-        unit_types = []
-
-        if isinstance(count, list) and len(count) == 3:
-            # count is a 3 element list [infantry count, archer count, cavalry count]
-            infantry_count, archer_count, cavalry_count = count
-            unit_types = []
-
-            # Add specified number of each type of unit
-            unit_types.extend([UnitType.INFANTRY] * infantry_count)
-            unit_types.extend([UnitType.ARCHER] * archer_count)
-            unit_types.extend([UnitType.CAVALRY] * cavalry_count)
-
-            return unit_types
-
-        base_ratios = {
-            UnitType.INFANTRY: 0.50,
-            UnitType.CAVALRY: 0.30,
-            UnitType.ARCHER: 0.20,
-        }
-
-        # Calculate the number of each type of unit based on the quantity
-        for unit_type, ratio in base_ratios.items():
-            type_count = max(1, int(count * ratio)) if count >= 4 else 1
-            unit_types.extend([unit_type] * type_count)
-
-        # If the total is not enough, use infantry to supplement
-        while len(unit_types) < count:
-            unit_types.append(UnitType.INFANTRY)
-
-        # If it exceeds, remove the extra (remove archers first)
-        while len(unit_types) > count:
-            for remove_type in [UnitType.ARCHER, UnitType.CAVALRY]:
-                if remove_type in unit_types:
-                    unit_types.remove(remove_type)
-                    break
-            else:
-                unit_types.pop()
-
-        # Shuffle the order
-        # random.shuffle(unit_types)
-        return unit_types
-
-    def _create_unit(
-        self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
-    ) -> int:
-        """Create unit"""
-
-        unit_entity = self.world.create_entity()
-
-        # Set attributes based on unit type
-        unit_stats = GameConfig.UNIT_STATS[unit_type]
-
-        self.world.add_component(
-            unit_entity, Unit(unit_type=unit_type, faction=faction, name=name)
-        )
-
-        self.world.add_component(unit_entity, HexPosition(position[0], position[1]))
-        self.world.add_component(
-            unit_entity,
-            UnitCount(
-                current_count=unit_stats.max_count, max_count=unit_stats.max_count
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            MovementPoints(
-                base_mp=unit_stats.movement,
-                current_mp=unit_stats.movement,
-                max_mp=unit_stats.movement,
-            ),
-        )
-
-        game_mode_comp = self.world.get_singleton_component(GameModeComponent)
-        is_turn_based = game_mode_comp and game_mode_comp.mode == GameMode.TURN_BASED
-        ap = 2 if is_turn_based else 1
-
-        self.world.add_component(
-            unit_entity,
-            ActionPoints(
-                current_ap=ap,
-                max_ap=ap,
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            AttackPoints(
-                normal_attacks=1,  # Default attack times
-                max_normal_attacks=1,
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            ConstructionPoints(
-                current_cp=1,  # Default construction points
-                max_cp=1,
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            SkillPoints(
-                current_sp=1,  # Default skill points
-                max_sp=1,
-            ),
-        )
-        self.world.add_component(
-            unit_entity,
-            Combat(
-                base_attack=unit_stats.base_attack,
-                base_defense=unit_stats.base_defense,
-                attack_range=unit_stats.attack_range,
-            ),
-        )
-        self.world.add_component(unit_entity, Vision(range=unit_stats.vision_range))
-        self.world.add_component(unit_entity, UnitStatus(current_status="normal"))
-
-        # Add skill component
-        self.world.add_component(unit_entity, UnitSkills())
-
-        return unit_entity
-
-    def _get_player_entity(self, faction: Faction) -> int:
-        """Get the player entity for the specified faction"""
-
-        for entity in self.world.query().with_component(Player).entities():
-            player = self.world.get_component(entity, Player)
-            if player and player.faction == faction:
-                return entity
-        return None
-
-    def _initialize_stats(self):
-        """Initialize game statistics component - pure data initialization"""
-
-        # Initialize game statistics component
-        stats = GameStats()
-        stats.game_start_time = time.time()
-
-        # 🆕 Write the previously recorded initial unit count to GameStats
-        if hasattr(self, "_temp_initial_unit_counts"):
-            stats.initial_unit_counts = self._temp_initial_unit_counts.copy()
-            print(
-                f"[GameScene] ✅ The initial unit count has been written to GameStats: {stats.initial_unit_counts}"
-            )
-        else:
-            print("[GameScene] ⚠️ The temporary initial unit count record was not found")
-
-        self.world.add_singleton_component(stats)
-
-        # Initialize battle log
-        battle_log = BattleLog()
-        battle_log.add_entry("Game Start", "turn", "", (0, 255, 0))
-        battle_log.add_entry("Wei Faction Turn Start", "turn", "wei", (255, 100, 100))
-        self.world.add_singleton_component(battle_log)
-
-        # Initialize visibility tracker
-        visibility_tracker = VisibilityTracker()
-        self.world.add_singleton_component(visibility_tracker)
-
-        # Initialize game mode statistics
-        game_mode_stats = GameModeStatistics(current_mode=self.game_mode.value)
-        self.world.add_singleton_component(game_mode_stats)
-
-        # Initialize game state
-        from ..prefabs.config import GameMode
-
-        first_faction = list(self.players.keys())[0] if self.players else Faction.WEI
-        game_state = GameState(
-            current_player=first_faction,
-            turn_number=1,
-            game_mode=self.game_mode,
-            game_over=False,
-            winner=None,
-            max_turns=GameConfig.MAX_TURNS,
-        )
-        self.world.add_singleton_component(game_state)
-
-        # Initialize other singleton components
-        self.world.add_singleton_component(UIState())
-        self.world.add_singleton_component(InputState())
-        self.world.add_singleton_component(FogOfWar())
-
-        # Re-save map info now that GameStats exists. MapSystem.initialize()
-        # runs before _initialize_stats, so its first attempt to populate
-        # map_info no-ops with the warning "GameStats component not found".
-        # Doing it again here ensures the root seed and map seed actually
-        # land in the settlement report. This used to be a silent data loss.
-        try:
-            for system in self.world.systems:
-                if hasattr(system, "_save_map_info_to_stats"):
-                    system._save_map_info_to_stats()
-                    break
-        except Exception as e:
-            print(f"[GameScene] ⚠️ Failed to backfill map_info into GameStats: {e}")
 
     def update(self, delta_time: float) -> None:
         """Update scene"""
@@ -576,53 +85,43 @@ class GameScene(Scene):
             with profiler.time_system("world_update"):
                 self.world.update(delta_time)
 
-            # 🆕 Check game end - wait for settlement report to complete before switching scene
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
-                # Record wait start time
                 if self.game_end_wait_start is None:
                     import time
 
                     self.game_end_wait_start = time.time()
-                    print("[GameScene] 🏁 Game End, waiting for settlement report...")
+                    print("[GameScene] Game end, waiting for settlement report...")
 
-                # Check if the settlement report has been completed
                 settlement_report = self.world.get_singleton_component(SettlementReport)
                 if settlement_report:
-                    # Settlement report generated, can switch scene
                     print(
-                        "[GameScene] ✅ Settlement report generated, switching to game over scene"
+                        "[GameScene] Settlement report generated, switching to game over scene"
                     )
                     self._switch_to_game_over(game_state)
                 else:
-                    # Check if it is timeout
                     import time
 
                     elapsed = time.time() - self.game_end_wait_start
                     if elapsed >= self.game_end_wait_timeout:
                         print(
-                            f"[GameScene] ⏰ Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene"
+                            f"[GameScene] Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene"
                         )
                         self._switch_to_game_over(game_state)
                     else:
-                        # Wait for settlement report generation (output progress once per second)
                         if int(elapsed) != getattr(self, "_last_wait_second", -1):
                             remaining = self.game_end_wait_timeout - elapsed
                             print(
-                                f"[GameScene] ⏳ Waiting for settlement report generation... {elapsed:.1f}s / {self.game_end_wait_timeout}s (remaining {remaining:.1f}s)"
+                                f"[GameScene] Waiting for settlement report generation... {elapsed:.1f}s / {self.game_end_wait_timeout}s (remaining {remaining:.1f}s)"
                             )
                             self._last_wait_second = int(elapsed)
 
     def _switch_to_game_over(self, game_state):
         """Switch to game over scene"""
-        # Collect statistics data
         statistics = self._collect_game_statistics()
 
-        # Switch to game over scene, pass statistics data
         if self.headless:
-            # Print statistics data in headless mode
             print(f"Game End, Winner: {game_state.winner}, \nStatistics: {statistics}")
-            # In headless mode, stop the main loop and let GameEngine cleanup
             if not self._headless_exit_triggered:
                 self._headless_exit_triggered = True
                 print("[GameScene] Headless mode: Stopping game loop...")
@@ -632,13 +131,12 @@ class GameScene(Scene):
 
     def _collect_game_statistics(self) -> Dict[str, Any]:
         """Collect game statistics data"""
-        from ..components import Unit, UnitCount, GameTime, GameState
+        from ..components import GameTime, GameState
 
         total_units = 0
         surviving_units = 0
         faction_stats = {}
 
-        # Count all units
         for faction in [Faction.WEI, Faction.SHU, Faction.WU]:
             faction_total = 0
             faction_surviving = 0
@@ -655,13 +153,12 @@ class GameScene(Scene):
                         faction_surviving += 1
                         surviving_units += 1
 
-            if faction_total > 0:  # Only record factions with units
+            if faction_total > 0:
                 faction_stats[faction] = {
                     "total_units": faction_total,
                     "surviving_units": faction_surviving,
                 }
 
-        # Get game state information
         total_turns = 0
         game_duration = 0.0
 
@@ -683,34 +180,7 @@ class GameScene(Scene):
             "faction_stats": faction_stats,
         }
 
-    def _initialize_minimap(self):
-        """Initialize minimap"""
-        minimap = MiniMap(
-            visible=True,
-            width=200,
-            height=150,
-            position=(10, 10),
-            scale=0.1,
-            center_on_camera=True,
-            show_units=True,
-            show_terrain=True,
-            show_fog_of_war=False,  # Minimap does not show fog, can see the global
-            show_camera_viewport=True,
-            clickable=True,
-        )
-        self.world.add_singleton_component(minimap)
-
     def exit(self):
         """Called when exiting scene"""
         super().exit()
-
-        # Clean up world
         self.world.reset()
-
-    def _initialize_agent_registry(self):
-        """Initialize Agent info registry"""
-        from ..components.agent_info import AgentInfoRegistry
-
-        registry = AgentInfoRegistry()
-        self.world.add_singleton_component(registry)
-        print("[GameScene] Agent info registry initialized")

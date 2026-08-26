@@ -161,13 +161,50 @@ class SyncEnvClient(SyncWebSocketClient):
         )
 
 
+class NullEnvClient:
+    """Stand-in for SyncEnvClient when this ENV is not attached to a Hub.
+
+    ``LLMSystem.update`` still retries turn_start and game-end notices.
+    Those calls no-op here instead of opening a websocket.
+    """
+
+    def __init__(self):
+        self.connected_agents: Dict[str, Any] = {}
+        self.connected = False
+        self.server_url = None
+
+    def add_hub_listener(self, event: str, callback) -> None:
+        return None
+
+    def connect(self) -> bool:
+        return True
+
+    def disconnect(self) -> bool:
+        return True
+
+    def send_message(self, *args, **kwargs):
+        return None
+
+    def response_to_agent(self, *args, **kwargs):
+        return None
+
+    def url(self) -> str:
+        return ""
+
+
 class LLMSystem(System):
     """LLM System - Global game control interface"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        server_url: Optional[str] = None,
+        env_id: Optional[str] = None,
+    ):
         super().__init__()
         self.name = "LLMSystem"
-        
+        self.server_url = server_url
+        self.env_id = env_id
+
         # Game-end notification state
         self.game_end_notified = False
         # Message-level cooldown (encourages batch sending)
@@ -206,19 +243,23 @@ class LLMSystem(System):
         # Initialize ActionExecutor
         self.action_executor = ActionExecutor(self)
 
-        # Use synchronous client
-        # env_id: read from ENV_ID environment variable for multi-process isolation in auto_test; default env_1
-        _env_id = os.environ.get("ENV_ID", "env_1")
-        self.client = SyncEnvClient(
-            server_url="ws://localhost:8000/ws/metaverse",
-            env_id=_env_id,
-        )
-        self.add_listener()
+        # Hub client: a live websocket when server_url is set, otherwise a
+        # no-op so tests and --no-hub eval never open a socket.
+        env_id = self.env_id or os.environ.get("ENV_ID", "env_1")
+        if self.server_url:
+            self.client = SyncEnvClient(
+                server_url=self.server_url,
+                env_id=env_id,
+            )
+            self.add_listener()
+        else:
+            self.client = NullEnvClient()
 
-        # Initialize system-level action mapping
+        # Initialize system-level action mapping before connect() so an
+        # immediate inbound message can dispatch.
         self.system_actions = self._init_system_actions()
-
-        self.connect()
+        if self.server_url:
+            self.connect()
         return
 
     def _init_system_actions(self) -> Dict[str, callable]:

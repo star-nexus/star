@@ -33,6 +33,9 @@ class SettlementReport(SingletonComponent):
     
     units_info: Dict[str, Any] = field(default_factory=dict)  # unit details by faction
     
+    # Joined model ids per faction (JSON / ELO / game-over UI). The per-agent
+    # rows live in registered_agents; both are filled from the same registry.
+    model_info: Dict[str, str] = field(default_factory=dict)
     registered_agents: List[Dict[str, Any]] = field(default_factory=list)
     
     agent_endpoints: Dict[str, str] = field(default_factory=dict)  # agent endpoint by faction

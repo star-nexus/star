@@ -61,9 +61,9 @@ def test_get_action_list_returns_this_match_only():
     world.add_singleton_component(
         MatchRules(game_actions=skirmish_actions(turn_based=True))
     )
-    gate = object.__new__(LLMSystem)
-    gate.world = world
-    result = LLMSystem.handle_action_list(gate, {})
+    gate = LLMSystem(server_url=None)
+    world.add_system(gate)
+    result = gate.handle_action_list({})
     assert result["success"] is True
     assert "profile" not in result
     assert result["names"] == list(skirmish_actions(turn_based=True))
@@ -76,9 +76,9 @@ def test_get_action_list_returns_this_match_only():
 def test_profile_upgrade_does_not_widen_the_subset():
     world = World()
     world.add_singleton_component(MatchRules(game_actions=SKIRMISH_ACTIONS))
-    gate = object.__new__(LLMSystem)
-    gate.world = world
-    result = LLMSystem.handle_action_list(gate, {"profile": "full"})
+    gate = LLMSystem(server_url=None)
+    world.add_system(gate)
+    result = gate.handle_action_list({"profile": "full"})
     assert "occupy" not in result["actions"]
     assert set(result["names"]) == set(SKIRMISH_ACTIONS)
 

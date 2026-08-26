@@ -6,6 +6,7 @@ from rotk_env.components.agent_info import AgentInfo, AgentInfoRegistry
 from rotk_env.prefabs.config import Faction, UnitType
 from rotk_env.systems.llm_action_handler import LLMActionHandler
 from rotk_env.systems.llm_system import LLMSystem
+from rotk_env.components.settlement_report import SettlementReport
 from rotk_env.systems.settlement_report_system import SettlementReportSystem
 
 
@@ -20,9 +21,8 @@ def _spawn(world: World, faction: Faction, col: int = 0) -> int:
 
 
 def _gate(world: World) -> LLMSystem:
-    gate = object.__new__(LLMSystem)
-    gate.world = world
-    gate.system_error_codes = {2005: "Insufficient permissions"}
+    gate = LLMSystem(server_url=None)
+    world.add_system(gate)
     return gate
 
 
@@ -119,6 +119,9 @@ def test_settlement_lists_every_registered_agent():
     assert ids == ["wei_1", "wei_2", "shu_1"]
     assert payload["model_info"]["wei"] == "m1 + m2"
     assert payload["model_info"]["shu"] == "m3"
+    report = SettlementReport(**payload)
+    assert report.model_info["wei"] == "m1 + m2"
+    assert [row["agent_id"] for row in report.registered_agents] == ids
 
 
 def test_faction_state_lists_full_army_with_commandable():

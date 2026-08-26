@@ -9,11 +9,14 @@ STAR 的 **ENV** 层：六边形 ECS 战场、动作网关、观测与结算。�
 需要先有本地 Hub（见根 README）。常见命令：
 
 ```bash
-# 跳过开始界面，窗口开一局 BOT 对 BOT
+# 跳过开始界面，窗口开一局 BOT 对 BOT（仍会连本地 Hub）
 uv run rotk_env/main.py --skip-start --players ai_vs_ai
 
-# 评测 / CI：dummy 显示，结束自动退
+# 评测 / CI：dummy 显示，结束自动退。仍然连 Hub，所以 auto_test 要先起 GameServer
 uv run rotk_env/main.py --headless --players three_kingdoms
+
+# 无窗口、也不连 Hub：规则 BOT 对打，不需要 GameServer
+uv run rotk_env/main.py --headless --no-hub --players ai_vs_ai
 
 # 人打两 BOT
 uv run rotk_env/main.py --skip-start --players human_vs_two_ai
@@ -22,6 +25,8 @@ uv run rotk_env/main.py --skip-start --players human_vs_two_ai
 uv run rotk_env/main.py --skip-start --scenario chibi
 ```
 
+`--headless` 只关窗口（dummy 显示）。连不连 Hub 是另一件事：默认连 `ws://localhost:8000/ws/metaverse`，`--hub-url` 可改地址，`--no-hub` 完全不打开 websocket。
+
 | 参数 | 作用 |
 | :--- | :--- |
 | `--mode turn_based\|real_time` | 回合制或实时 |
@@ -29,6 +34,8 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 | `--scenario` | `default` / `chibi`（`rotk_env/maps/chibi.map`）/ `three_kingdoms`（目前仍用默认河界图，只改阵营数） |
 | `--seed` | 锁地图生成和战斗掷骰，不是整局逐帧回放。优先级：`--seed` > `$STAR_SEED` > `.configs.toml` |
 | `--env-id` | Hub 上的环境 id |
+| `--hub-url` | Hub websocket。省略时用 `$STAR_HUB_URL`，再没有就用本地默认地址 |
+| `--no-hub` | 不连 Hub。规则测试和离线 BOT 用这个 |
 
 本地操作（人机窗口）：左键选/移动/攻击，右键取消，WASD 移镜头，空格结束回合，Tab 统计，F1 帮助，Esc 取消选择。
 
