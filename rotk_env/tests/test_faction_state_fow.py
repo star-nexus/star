@@ -8,9 +8,11 @@ from rotk_env.components import (
     Unit,
     UnitCount,
     UIState,
+    Vision,
 )
 from rotk_env.prefabs.config import Faction, UnitType
 from rotk_env.systems.llm_action_handler import LLMActionHandler
+from rotk_env.systems.vision_system import VisionSystem
 
 
 def _world():
@@ -120,3 +122,20 @@ def test_bot_query_without_agent_id_uses_requested_faction_as_observer():
     assert [u["unit_id"] for u in result["units"]] == [shu]
     assert result["visible_enemy_units"] == []
     assert "map" not in result
+
+
+def test_vision_system_feeds_faction_state_fog():
+    world = _world()
+    observer = _spawn(world, faction=Faction.WEI, col=0, row=0)
+    world.add_component(observer, Vision(range=2))
+    seen = _spawn(world, faction=Faction.SHU, col=1, row=0)
+    hidden = _spawn(world, faction=Faction.SHU, col=5, row=5)
+
+    world.add_system(VisionSystem())
+    world.update(0)
+
+    result = LLMActionHandler(world).handle_faction_state({"faction": "wei"})
+    assert result["fog"] == "active"
+    visible_ids = {e["unit_id"] for e in result["visible_enemy_units"]}
+    assert visible_ids == {seen}
+    assert hidden not in visible_ids
