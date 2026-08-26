@@ -94,6 +94,7 @@ class TestPromptRendering:
                 assert "$faction" not in rendered
                 assert "$opponent" not in rendered
                 assert "$home_bases_block" in rendered
+                assert "$game_actions_block" in rendered
 
     def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
@@ -112,6 +113,31 @@ class TestPromptRendering:
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
         assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in filled
         assert "各阵营基地坐标" in filled
+
+    def test_join_briefing_fills_game_actions_in_the_system_prompt(self):
+        template = profiles.load_prompt("turn", "cn")
+        rendered = profiles.render_prompt(template, "wei")
+        filled = profiles.apply_join_briefing_to_prompt(
+            rendered,
+            map_briefing={
+                "home_bases": {
+                    "wei": {"col": 2, "row": 3, "kind": "home_base"},
+                }
+            },
+            game_actions={
+                "names": ["move", "attack", "get_faction_state", "end_turn"],
+                "docs": {
+                    "move": {"description": "Move a unit"},
+                    "attack": {"description": "Attack an enemy"},
+                    "get_faction_state": {"description": "Screen census"},
+                    "end_turn": {"description": "End the turn"},
+                },
+            },
+        )
+        assert "$game_actions_block" not in filled
+        assert "`move`: Move a unit" in filled
+        assert "`end_turn`: End the turn" not in filled
+        assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
 
     def test_unknown_faction_falls_back_to_wei(self):
         assert profiles.faction_info("qi") == profiles.faction_info("wei")

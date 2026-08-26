@@ -10,10 +10,9 @@ description, docstring, and return value all disagreed with each other.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Dict, List
-import os
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from rotk_env.prefabs.action_catalog import BENCH, action_names, resolve_profile
+from rotk_env.prefabs.action_catalog import SKIRMISH_ACTIONS
 
 from .types import ToolDefinition
 
@@ -122,12 +121,24 @@ FACTION_STATE_PARAMS = {
     "title": "get_faction_state",
 }
 
+_KNOWN_PARAM_SCHEMAS = {
+    "move": MOVE_PARAMS,
+    "attack": ATTACK_PARAMS,
+    "get_faction_state": FACTION_STATE_PARAMS,
+}
+
 PERFORM_ACTION_DESCRIPTION = "Execute a specific action in the game environment."
 
 
-def perform_action_schema(profile: str = BENCH) -> Dict[str, Any]:
-    """JSON schema for ``perform_action``. Enum comes from the shared catalog."""
-    names = sorted(action_names(profile))
+def perform_action_names(names: Optional[Iterable[str]] = None) -> List[str]:
+    """Names advertised on ``perform_action``. ``end_turn`` is a dedicated tool."""
+    source = SKIRMISH_ACTIONS if names is None else names
+    return sorted(name for name in source if name != "end_turn")
+
+
+def perform_action_schema(names: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+    """JSON schema for ``perform_action``. Enum is this match's game verbs."""
+    advertised = perform_action_names(names)
     schema: Dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
@@ -135,18 +146,23 @@ def perform_action_schema(profile: str = BENCH) -> Dict[str, Any]:
             "action": {
                 "type": "string",
                 "description": "The name of the action to execute.",
-                "enum": names,
+                "enum": advertised,
             },
             "params": {
                 "description": "Parameters object for the specified action.",
-                "oneOf": [MOVE_PARAMS, ATTACK_PARAMS, FACTION_STATE_PARAMS],
+                "oneOf": [
+                    _KNOWN_PARAM_SCHEMAS[name]
+                    for name in advertised
+                    if name in _KNOWN_PARAM_SCHEMAS
+                ]
+                or [{"type": "object"}],
             },
         },
         "required": ["action", "params"],
     }
-    if profile != BENCH:
-        # Full/debug: advertise every catalog verb; params stay a free object
-        # so occupy/skill/etc. are not forced into the three bench shapes.
+    extra = [name for name in advertised if name not in _KNOWN_PARAM_SCHEMAS]
+    if extra:
+        # Match opened verbs the three-shape oneOf cannot describe.
         schema["properties"]["params"] = {
             "description": "Parameters object for the specified action.",
             "type": "object",
@@ -154,14 +170,7 @@ def perform_action_schema(profile: str = BENCH) -> Dict[str, Any]:
     return schema
 
 
-def _default_action_profile() -> str:
-    try:
-        return resolve_profile(os.environ.get("STAR_ACTION_PROFILE"), BENCH)
-    except ValueError:
-        return BENCH
-
-
-PERFORM_ACTION_SCHEMA = perform_action_schema(_default_action_profile())
+PERFORM_ACTION_SCHEMA = perform_action_schema()
 
 END_TURN_SCHEMA = {"type": "object", "properties": {}, "required": []}
 
@@ -171,12 +180,14 @@ END_TURN_DESCRIPTION = (
 )
 
 
-def perform_action_tool(function: Callable) -> ToolDefinition:
+def perform_action_tool(
+    function: Callable, names: Optional[Sequence[str]] = None
+) -> ToolDefinition:
     """The one tool every agent gets, in every mode."""
     return ToolDefinition(
         name="perform_action",
         description=PERFORM_ACTION_DESCRIPTION,
-        parameters=PERFORM_ACTION_SCHEMA,
+        parameters=perform_action_schema(names) if names is not None else PERFORM_ACTION_SCHEMA,
         function=function,
     )
 
@@ -197,6 +208,7 @@ __all__ = [
     "PERFORM_ACTION_DESCRIPTION",
     "END_TURN_SCHEMA",
     "END_TURN_DESCRIPTION",
+    "perform_action_names",
     "perform_action_schema",
     "perform_action_tool",
     "end_turn_tool",

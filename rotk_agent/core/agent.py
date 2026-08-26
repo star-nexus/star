@@ -28,9 +28,8 @@ from .filters import filter_tool_result
 from .scoring import detect_strategy
 from .stats import ErrorStatsCollector
 from .tools import ToolManager, perform_action_tool
+from ..profiles import apply_join_briefing_to_prompt
 from .types import Message, NormalizedReply, ToolCall, ToolDefinition
-
-from ..profiles import apply_map_briefing_to_prompt
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..adapters.base import ModelAdapter
@@ -108,6 +107,7 @@ class RoTKChatAgent:
         self._stats_reported = False
         self._strategy_last_ping = 0.0
         self._map_briefing: Optional[Dict[str, Any]] = None
+        self._game_actions: Optional[Dict[str, Any]] = None
         self._map_briefing_applied = False
 
         self._register_default_tools()
@@ -116,6 +116,15 @@ class RoTKChatAgent:
         self.tool_manager.register_tool(perform_action_tool(self.bridge.perform_action))
         for tool in self.mode.tools(self):
             self.tool_manager.register_tool(tool)
+
+    def _apply_game_action_tools(self, payload: Dict[str, Any]) -> None:
+        """Rebuild perform_action's enum from the match subset returned at join."""
+        names = payload.get("names")
+        if not isinstance(names, list) or not names:
+            return
+        self.tool_manager.register_tool(
+            perform_action_tool(self.bridge.perform_action, names=names)
+        )
 
     def register_tool(self, tool: ToolDefinition) -> None:
         self.tool_manager.register_tool(tool)
@@ -369,6 +378,9 @@ class RoTKChatAgent:
             if isinstance(result, dict) and result.get("success"):
                 if isinstance(result.get("map"), dict):
                     self._map_briefing = result["map"]
+                if isinstance(result.get("game_actions"), dict):
+                    self._game_actions = result["game_actions"]
+                    self._apply_game_action_tools(result["game_actions"])
                 console.print(
                     f"✅ Agent registered: {self.faction} - "
                     f"{config.provider}:{config.model_id} "
@@ -471,8 +483,10 @@ class RoTKChatAgent:
             self._agent_registered = True
 
         if not self._map_briefing_applied:
-            self.system_prompt = apply_map_briefing_to_prompt(
-                self.system_prompt, self._map_briefing
+            self.system_prompt = apply_join_briefing_to_prompt(
+                self.system_prompt,
+                map_briefing=self._map_briefing,
+                game_actions=self._game_actions,
             )
             self._map_briefing_applied = True
 

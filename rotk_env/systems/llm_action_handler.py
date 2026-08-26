@@ -50,36 +50,35 @@ from ..prefabs.config import (
     UnitState,
     GameConfig,
 )
+from ..prefabs.action_catalog import allowed_game_actions
 from ..utils.hex_utils import HexMath
-from ..prefabs.action_catalog import BENCH, docs_for, resolve_profile
+from .llm_observation_system import LLMObservationSystem, ObservationLevel
 
 
 class LLMActionHandler:
     """LLM Action Handler - clean and efficient interface design."""
 
-    def __init__(self, world: World):
+    def __init__(self, world: World, observation_system: Optional[LLMObservationSystem] = None):
         self.world = world
+        self.observation_system = observation_system or LLMObservationSystem(world)
 
-        # Supported action handlers
+        # Implemented game-level verbs. Match subset is also enforced here
+        # so execute_action is not a second door around ActionExecutor.
         self.action_handlers = {
-            # Unit control actions
             "move": self.handle_move_action,
             "attack": self.handle_attack_action,
             "rest": self.handle_rest_action,
             "occupy": self.handle_occupy_action,
             "fortify": self.handle_fortify_action,
-            "defend": self.handle_defend_action,
-            "scout": self.handle_scout_action,
-            "retreat": self.handle_retreat_action,
             "skill": self.handle_skill_action,
-            # Observation actions
             "observation": self.handle_observation_action,
-            # Faction info actions
+            "limited_observation": self.handle_limited_observation,
+            "unit_observation": self.handle_unit_observation,
+            "faction_observation": self.handle_faction_observation,
+            "godview_observation": self.handle_godview_observation,
             "get_faction_state": self.handle_faction_state,
             "get_faction_state_vlm": self.handle_faction_state_vlm,
-            # System
-            "get_action_list": self.handle_action_list,
-            "end_turn": self.handle_end_turn,  # added end_turn
+            "end_turn": self.handle_end_turn,
         }
 
     def execute_action(
@@ -97,7 +96,13 @@ class LLMActionHandler:
             if action_type not in self.action_handlers:
                 return self._create_error_response(
                     f"Unsupported action: {action_type}",
-                    {"supported_actions": list(self.action_handlers.keys())},
+                    {"error_code": 2010},
+                )
+
+            if action_type not in allowed_game_actions(self.world):
+                return self._create_error_response(
+                    "Operation not supported in current game mode",
+                    {"error_code": 2003},
                 )
 
             # dispatch
@@ -1152,36 +1157,6 @@ class LLMActionHandler:
         else:
             return self._create_error_response("Territory system not available")
 
-    def _handle_reserved_action(
-        self, action_name: str, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Placeholder handler for verbs reserved by the observation surface."""
-        unit_id = params.get("unit_id")
-        if isinstance(unit_id, int):
-            permission_error = self._validate_faction_turn_permission(
-                unit_id, action_name
-            )
-            if permission_error:
-                return permission_error
-        return {
-            "success": False,
-            "result": False,
-            "implemented": False,
-            "action": action_name,
-            "error": f"{action_name} is reserved and not active in the current ruleset",
-            "error_code": "NOT_IMPLEMENTED",
-            "unit_id": unit_id,
-        }
-
-    def handle_defend_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return self._handle_reserved_action("defend", params)
-
-    def handle_scout_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return self._handle_reserved_action("scout", params)
-
-    def handle_retreat_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return self._handle_reserved_action("retreat", params)
-
     def handle_skill_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle the skill action."""
         unit_id = params.get("unit_id")
@@ -1307,6 +1282,56 @@ class LLMActionHandler:
             result["tactical_info"] = self._get_tactical_info(unit_id)
 
         return result
+
+    def _named_observation(self, level, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Board query via the shared observation system (revision cache)."""
+        faction = params.get("faction")
+        unit_id = params.get("unit_id")
+        include_hidden = params.get("include_hidden", False)
+
+        if faction and isinstance(faction, str):
+            try:
+                faction = Faction(faction.lower())
+            except ValueError:
+                return self._create_error_response(f"Invalid faction: {faction}")
+
+        if level == ObservationLevel.UNIT:
+            if not isinstance(unit_id, int):
+                return self._create_error_response("unit_id must be integer")
+            return self.observation_system.get_observation(
+                ObservationLevel.UNIT, unit_id=unit_id
+            )
+
+        if level == ObservationLevel.FACTION:
+            if not faction:
+                return self._create_error_response("faction parameter required")
+            return self.observation_system.get_observation(
+                ObservationLevel.FACTION, faction=faction, include_hidden=include_hidden
+            )
+
+        if level == ObservationLevel.LIMITED:
+            if not faction:
+                return self._create_error_response("faction parameter required")
+            return self.observation_system.get_observation(
+                ObservationLevel.LIMITED, faction=faction
+            )
+
+        if level == ObservationLevel.GODVIEW:
+            return self.observation_system.get_observation(ObservationLevel.GODVIEW)
+
+        return self._create_error_response(f"Unknown observation level: {level}")
+
+    def handle_limited_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._named_observation(ObservationLevel.LIMITED, params)
+
+    def handle_unit_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._named_observation(ObservationLevel.UNIT, params)
+
+    def handle_faction_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._named_observation(ObservationLevel.FACTION, params)
+
+    def handle_godview_observation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._named_observation(ObservationLevel.GODVIEW, params)
 
     # ==================== Faction control ====================
 
@@ -1529,31 +1554,6 @@ class LLMActionHandler:
             f"frame={'ok' if frame_b64 else 'failed'}"
         )
         return payload
-
-    def handle_action_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return action docs generated from the shared catalog.
-
-        Default profile is ``bench`` (the same three verbs the eval agent
-        already has in its tool schema) so a realtime agent never needs this
-        call. Pass ``profile=full`` to see occupy/skill/observation/etc.
-        """
-        try:
-            profile = resolve_profile((params or {}).get("profile"), BENCH)
-        except ValueError as e:
-            return self._create_error_response(str(e))
-        docs = docs_for(profile)
-        return {
-            "result": True,
-            "success": True,
-            "profile": profile,
-            "actions": docs,
-        }
-
-    def handle_action_list_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Same as get_action_list with profile=full."""
-        merged = dict(params or {})
-        merged["profile"] = "full"
-        return self.handle_action_list(merged)
 
     def handle_end_turn(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle end-turn action for the current faction."""

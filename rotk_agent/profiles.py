@@ -140,8 +140,8 @@ def faction_info(faction: str) -> dict:
 def render_prompt(template_text: str, faction: str) -> str:
     """Fill in the faction placeholders every prompt shares.
 
-    ``$home_bases_block`` is left in place until the agent joins the ENV and
-    ``apply_map_briefing_to_prompt`` writes the actual coordinates.
+    ``$home_bases_block`` and ``$game_actions_block`` are left in place until
+    the agent joins the ENV and ``apply_join_briefing_to_prompt`` writes them.
     """
     own = faction_info(faction)
     enemy = faction_info(own["enemy"])
@@ -174,6 +174,60 @@ def format_home_bases_block(briefing: Optional[dict]) -> str:
     return text
 
 
+def format_game_actions_block(payload: Optional[dict]) -> str:
+    """Markdown list of this match's board verbs for the system prompt."""
+    from rotk_env.prefabs.action_catalog import (
+        SKIRMISH_ACTIONS,
+        docs_for_names,
+    )
+
+    names: list = []
+    docs: dict = {}
+    if isinstance(payload, dict):
+        raw_names = payload.get("names") or []
+        names = [n for n in raw_names if n != "end_turn"]
+        docs = payload.get("docs") or {}
+    if not names:
+        names = list(SKIRMISH_ACTIONS)
+        docs = docs_for_names(names)
+    lines = []
+    for name in names:
+        desc = ""
+        if isinstance(docs.get(name), dict):
+            desc = docs[name].get("description") or ""
+        if desc:
+            lines.append(f"- `{name}`: {desc}")
+        else:
+            lines.append(f"- `{name}`")
+    return "\n".join(lines) if lines else "- (none)"
+
+
+def apply_game_actions_to_prompt(
+    system_prompt: str, payload: Optional[dict]
+) -> str:
+    """Write this match's allowed board verbs into the system prompt after register."""
+    block = format_game_actions_block(payload)
+    if "$game_actions_block" in system_prompt:
+        return system_prompt.replace("$game_actions_block", block)
+    if not payload:
+        return system_prompt
+    return (
+        system_prompt.rstrip()
+        + "\n\n## 本局允许的棋盘动作 / Game actions this match\n"
+        + block
+    )
+
+
+def apply_join_briefing_to_prompt(
+    system_prompt: str,
+    map_briefing: Optional[dict] = None,
+    game_actions: Optional[dict] = None,
+) -> str:
+    """Fill home bases and the match action subset after ``register_agent_info``."""
+    filled = apply_map_briefing_to_prompt(system_prompt, map_briefing)
+    return apply_game_actions_to_prompt(filled, game_actions)
+
+
 def apply_map_briefing_to_prompt(
     system_prompt: str, briefing: Optional[dict]
 ) -> str:
@@ -199,7 +253,10 @@ __all__ = [
     "load_prompt",
     "render_prompt",
     "format_home_bases_block",
+    "format_game_actions_block",
     "apply_map_briefing_to_prompt",
+    "apply_game_actions_to_prompt",
+    "apply_join_briefing_to_prompt",
     "faction_info",
     "FACTIONS",
 ]

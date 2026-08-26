@@ -32,18 +32,21 @@ from rotk_env.components import (
     map_briefing,
 )
 from rotk_env.prefabs.config import Faction, UnitType, GameMode
-from rotk_env.systems.llm_observation_system import ObservationLevel
-
 from protocol.star_client_v2 import (
     SyncWebSocketClient,
     ClientInfo,
     ClientType,
     MessageType,
 )
-from ..prefabs.action_catalog import FULL, action_names, is_observation, is_world_mutating
+from ..prefabs.action_catalog import (
+    GAME_ACTION_NAMES,
+    allowed_game_actions,
+    game_actions_payload,
+    is_world_mutating,
+)
 
 from .llm_action_handler import LLMActionHandler
-from .llm_observation_system import LLMObservationSystem, ObservationLevel
+from .llm_observation_system import LLMObservationSystem
 
 
 # ==================== Action Request Data Structure ====================
@@ -88,21 +91,27 @@ class ActionExecutor:
         """
         action = request.action_name
         params = request.parameters
-        public = action_names(FULL)
-        
-        # 1. Check if this is a system-level action
+
+        # 1. System-level (identity / session / docs). Always on for this ENV.
         if action in self.llm_system.system_actions:
             result = self.llm_system.system_actions[action](params)
-            
-        # 2. Check if this is a unit action (delegate to ActionHandler)
-        elif action in self.llm_system.action_handler.action_handlers:
-            result = self.llm_system.action_handler.execute_action(action, params)
-            
-        # 3. Named observation only — no get_* / *_observation prefix match
-        elif is_observation(action) and action in public:
-            result = self.llm_system._handle_observation_action(action, params)
-            
-        # 4. Unknown action
+
+        # 2. Game-level firewall: master table, then this match's subset.
+        elif action in GAME_ACTION_NAMES:
+            if action not in allowed_game_actions(self.world):
+                result = self.llm_system._create_system_error_response(
+                    action,
+                    "Operation not supported in current game mode",
+                    2003,
+                )
+            elif action in self.llm_system.action_handler.action_handlers:
+                result = self.llm_system.action_handler.execute_action(action, params)
+            else:
+                result = self.llm_system._create_system_error_response(
+                    action, f"UNKNOWN ACTION: {action}", 2010
+                )
+
+        # 3. Unknown name
         else:
             result = self.llm_system._create_system_error_response(
                 action, f"UNKNOWN ACTION: {action}", 2010
@@ -110,8 +119,9 @@ class ActionExecutor:
 
         # In-place component writes do not bump World.revision. Mutating
         # actions must, or the next observation can reuse a stale cache.
+        # 2010 (unknown) and 2003 (not in this match) never change the board.
         if (
-            result.get("error_code") != 2010
+            result.get("error_code") not in (2010, 2003)
             and is_world_mutating(action)
             and self.world is not None
         ):
@@ -186,9 +196,12 @@ class LLMSystem(System):
     def initialize(self, world):
         self.world = world
 
-        # Initialize delegation objects
-        self.action_handler = LLMActionHandler(world)
+        # Initialize delegation objects. Handler shares this observation
+        # instance so named queries hit the revision cache.
         self.observation_system = LLMObservationSystem(world)
+        self.action_handler = LLMActionHandler(
+            world, observation_system=self.observation_system
+        )
 
         # Initialize ActionExecutor
         self.action_executor = ActionExecutor(self)
@@ -215,6 +228,7 @@ class LLMSystem(System):
             "report_llm_stats": self.handle_report_llm_stats,
             "retrieve_game_status": self.handle_retrieve_game_status,
             "register_agent_info": self.handle_register_agent_info,
+            "get_action_list": self.handle_action_list,
             # Multi-agent team coordination (item 10).
             "claim_units": self.handle_claim_units,
             "release_units": self.handle_release_units,
@@ -1050,6 +1064,7 @@ class LLMSystem(System):
                     "map": map_briefing(
                         self.world.get_singleton_component(MapData)
                     ),
+                    "game_actions": game_actions_payload(self.world),
                 }
             else:
                 return {
@@ -1268,7 +1283,7 @@ class LLMSystem(System):
                     )
                 params["agent_id"] = agent_id
 
-            if action != "register_agent_info":
+            if action not in ("register_agent_info", "get_action_list"):
                 mapped_faction = stats.agent_id_to_faction.get(agent_id) if agent_id else None
                 if mapped_faction is None:
                     error_result = self._create_system_error_response(
@@ -1478,28 +1493,6 @@ class LLMSystem(System):
             action=action,
             params=params,
             send_response=True,
-        )
-
-    def _is_observation_action(self, action: str) -> bool:
-        """True only for catalogued observation names (exact match)."""
-        return is_observation(action) and action in action_names(FULL)
-
-    def _handle_observation_action(self, action: str, params: Dict) -> Dict:
-        """Route observation actions to the appropriate handler."""
-        if action == "observation":
-            return self.handle_observation(params)
-        elif action == "unit_observation":
-            return self.handle_unit_observation(params)
-        elif action == "faction_observation":
-            return self.handle_faction_observation(params)
-        elif action == "godview_observation":
-            return self.handle_godview_observation(params)
-        elif action == "limited_observation":
-            return self.handle_limited_observation(params)
-        elif action == "tactical_observation":
-            return self.handle_tactical_observation(params)
-        return self._create_system_error_response(
-            action, f"UNKNOWN ACTION: {action}", 2010
         )
 
     def _standardize_response(
@@ -2093,19 +2086,9 @@ class LLMSystem(System):
             "data": {
                 "version": "2.0",
                 "system_actions": list(self.system_actions.keys()),
-                "unit_actions": (
-                    list(self.action_handler.action_handlers.keys())
-                    if hasattr(self, "action_handler")
-                    else []
-                ),
-                "observation_actions": ["observation", "get_observation_by_action"],
+                "game_actions": list(allowed_game_actions(self.world)),
                 "total_endpoints": len(self.system_actions)
-                + (
-                    len(self.action_handler.action_handlers)
-                    if hasattr(self, "action_handler")
-                    else 0
-                )
-                + 2,
+                + len(allowed_game_actions(self.world)),
             },
         }
 
@@ -2192,89 +2175,6 @@ class LLMSystem(System):
             },
         }
 
-    # === Observation handling methods ===
-
-    def handle_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a generic observation request."""
-        observation_level = params.get("observation_level", ObservationLevel.FACTION)
-        faction = params.get("faction")
-        unit_id = params.get("unit_id")
-        include_hidden = params.get("include_hidden", False)
-
-        # Convert string faction to Faction enum if necessary.
-        # Faction values are lowercase ("wei"/"shu"/"wu"), so normalize down.
-        if faction and isinstance(faction, str):
-            try:
-                from ..prefabs.config import Faction
-
-                faction = Faction(faction.lower())
-            except ValueError:
-                return {"error": f"Invalid faction: {faction}"}
-
-        return self.observation_system.get_observation(
-            observation_level, faction, unit_id, include_hidden
-        )
-
-    def handle_unit_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a unit observation request."""
-        unit_id = params.get("unit_id")
-        if not unit_id:
-            return {"error": "Missing unit_id parameter"}
-
-        return self.observation_system.get_observation(
-            ObservationLevel.UNIT, unit_id=unit_id
-        )
-
-    def handle_faction_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a faction observation request."""
-        faction = params.get("faction")
-        include_hidden = params.get("include_hidden", False)
-
-        if not faction:
-            return {"error": "Missing faction parameter"}
-
-        # Convert string to the Faction enum
-        # Faction values are lowercase ("wei"/"shu"/"wu"), so normalize down.
-        if isinstance(faction, str):
-            try:
-                from ..prefabs.config import Faction
-
-                faction = Faction(faction.lower())
-            except ValueError:
-                return {"error": f"Invalid faction: {faction}"}
-
-        return self.observation_system.get_observation(
-            ObservationLevel.FACTION, faction=faction, include_hidden=include_hidden
-        )
-
-    def handle_godview_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a god-view observation request."""
-        return self.observation_system.get_observation(ObservationLevel.GODVIEW)
-
-    def handle_limited_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a restricted-view observation request."""
-        faction = params.get("faction")
-
-        if not faction:
-            return {"success": False, "error": "Missing faction parameter"}
-
-        # Convert string to the Faction enum
-        if isinstance(faction, str):
-            try:
-                from ..prefabs.config import Faction
-
-                faction = Faction(faction.lower())
-            except ValueError:
-                return {"success": False, "error": f"Invalid faction: {faction}"}
-
-        return self.observation_system.get_observation(
-            ObservationLevel.LIMITED, faction=faction
-        )
-
-    def handle_tactical_observation(self, params: Dict) -> Dict[str, Any]:
-        """Handle a tactical observation request."""
-        return self.action_handler.execute_action("tactical_observation", params)
-
     # =============================================
     # State/query command handlers
     # =============================================
@@ -2308,8 +2208,14 @@ class LLMSystem(System):
         return self.action_handler.execute_action("get_available_actions", params)
 
     def handle_action_list(self, params: Dict) -> Dict[str, Any]:
-        """Get the action list."""
-        return self.action_handler.execute_action("action_list", params)
+        """Return this match's game-level verbs. Never the master table."""
+        payload = game_actions_payload(self.world)
+        return {
+            "result": True,
+            "success": True,
+            "actions": payload["docs"],
+            "names": payload["names"],
+        }
 
     def handle_get_unit_capabilities(self, params: Dict) -> Dict[str, Any]:
         """Get unit capability information."""

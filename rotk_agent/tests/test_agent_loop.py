@@ -556,6 +556,14 @@ class TestRegistration:
                         },
                         "home_bases_meaning": "各阵营基地坐标",
                     },
+                    "game_actions": {
+                        "names": ["move", "attack", "get_faction_state"],
+                        "docs": {
+                            "move": {"description": "Move a unit"},
+                            "attack": {"description": "Attack an enemy"},
+                            "get_faction_state": {"description": "Screen census"},
+                        },
+                    },
                 }
             }
         )
@@ -570,4 +578,5 @@ class TestRegistration:
         assert system == agent.system_prompt
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in system
         assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in system
+        assert "`move`: Move a unit" in system
         assert "start" == agent.conversation_history[1].content

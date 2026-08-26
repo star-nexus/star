@@ -57,6 +57,7 @@ from ..components import (
     HexPosition,
     MiniMap,
     GameModeComponent,
+    MatchRules,
     UnitStatus,
     UnitSkills,
     MovementAnimation,
@@ -75,6 +76,7 @@ from ..components import (
     formation_center,
 )
 from ..prefabs.config import Faction, PlayerType, GameConfig, UnitType, GameMode
+from ..prefabs.action_catalog import match_game_actions
 from performance_profiler import profiler
 
 
@@ -210,9 +212,17 @@ class GameScene(Scene):
             self.world.add_system(system)
 
     def _initialize_game_mode(self):
-        """Initialize game mode component"""
-        game_mode = GameModeComponent(mode=self.game_mode)
-        self.world.add_singleton_component(game_mode)
+        """Initialize game mode and this match's allowed game verbs."""
+        self.world.add_singleton_component(GameModeComponent(mode=self.game_mode))
+        # Current maps (default / chibi / three_kingdoms) share skirmish verbs.
+        # Bind the subset to match rules, not the ASCII map file.
+        self.world.add_singleton_component(
+            MatchRules(
+                game_actions=match_game_actions(
+                    turn_based=self.game_mode == GameMode.TURN_BASED
+                )
+            )
+        )
 
     def _initialize_rng(self):
         """Register the RNG service so reproducibility works downstream.

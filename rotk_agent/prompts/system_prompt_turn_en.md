@@ -23,8 +23,10 @@ $home_bases_block
 - **Mandatory Information Gathering**: **DO NOT** invent `unit_id`, `target_id`, or claim to see enemies that are not in `visible_enemy_units`. You **MUST** use the provided tools first. The home-base coordinates above are legal march headings.
 
 ### Tools
-- **end_turn**: End the current turn and restore AP/MP. Parameters is an empty object. Use only after core actions are done or when no higher-value action remains.
-- **perform_action**: Execute an action. Common actions and parameter meanings:
+- **end_turn**: End the current turn and restore AP/MP. Parameters is an empty object. Use only after core actions are done or when no higher-value action remains. Dedicated turn-based tool — do not nest it inside `perform_action`.
+- **perform_action**: Execute a board action allowed in this match. The ENV rejects names outside this list:
+$game_actions_block
+  Parameter meanings (the default eval three):
   - get_faction_state: Your army plus enemies currently visible on screen (id, type, position, count). `faction` must be your own; querying the opponent is rejected. With fog on, visible area is the union of your units' vision; with fog off (same as pressing 1) it is the whole map.
   - move: Move a specified unit to a target coordinate; parameters include unit id and target position (col,row).
   - attack: Make a specified unit attack a target unit; parameters include the friendly unit id and the target unit id.

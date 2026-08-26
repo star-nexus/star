@@ -47,12 +47,10 @@ The LLM only calls what is registered as a tool. There is one shared
 
 | Tool | When | What it does |
 | :--- | :--- | :--- |
-| `perform_action` | every mode | ENV verbs. The `action` enum is generated from `rotk_env/prefabs/action_catalog.py`. |
+| `perform_action` | every mode | ENV verbs allowed in this match. The `action` enum starts as the skirmish three (`move`, `attack`, `get_faction_state`) and is rebuilt from `register_agent_info.game_actions` after join. |
 | `end_turn` | turn-based only | Empty-arg tool. Ends the faction's turn and closes the turn gate. Real-time has no turn to end. |
 
-Default catalog profile is `bench` (`move`, `attack`, `get_faction_state`) so an
-eval agent can act without a `get_action_list` round-trip. Set
-`STAR_ACTION_PROFILE=full` (or `debug`) to widen the enum.
+The ENV is the allow-list: a guessed name is **2010**, a verb that exists but is not in this match is **2003**. There is no `STAR_ACTION_PROFILE` upgrade.
 
 `end_turn` is not a `perform_action` action. Nesting it there is intercepted
 and rejected: the dedicated tool owns gate handling, and routing through

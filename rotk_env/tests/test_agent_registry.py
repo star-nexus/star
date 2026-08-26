@@ -254,3 +254,6 @@ def test_register_returns_home_bases():
     assert result["map"]["home_bases"]["shu"]["col"] == -2
     assert "基地" in result["map"]["home_bases_meaning"]
     assert "bases" not in result["map"]
+    assert result["game_actions"]["names"] == ["move", "attack", "get_faction_state"]
+    assert "occupy" not in result["game_actions"]["docs"]
+    assert "move" in result["game_actions"]["docs"]

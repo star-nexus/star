@@ -12,6 +12,7 @@ from rotk_env.components import (
     UIState,
     Vision,
 )
+from rotk_env.components.gamemode import MatchRules
 from rotk_env.prefabs.config import ActionType, Faction, UnitType
 from rotk_env.systems.combat_system import CombatSystem
 from rotk_env.systems.input_system import InputHandlingSystem
@@ -134,14 +135,29 @@ def test_limited_observation_exposes_whole_map_when_fog_disabled():
     assert result["explored_areas"] == result["current_visible_areas"]
 
 
-def test_reserved_actions_are_registered_placeholders():
+def test_reserved_actions_are_not_executable():
     world, _ = _world_with_combat()
     handler = LLMActionHandler(world)
     for action in ("defend", "scout", "retreat"):
+        assert action not in handler.action_handlers
         result = handler.execute_action(action, {})
-        assert result["implemented"] is False
-        assert result["error_code"] == "NOT_IMPLEMENTED"
-        assert action in handler.action_handlers
+        assert result.get("success") is False
+        assert result.get("error_code") == 2010
+        assert "supported_actions" not in result
+
+
+def test_handler_named_observation_reuses_shared_cache():
+    world, _ = _world_with_combat()
+    unit_id = _spawn_unit(world)
+    world.add_singleton_component(MatchRules(game_actions=("unit_observation",)))
+    obs = LLMObservationSystem(world)
+    handler = LLMActionHandler(world, observation_system=obs)
+    first = handler.execute_action("unit_observation", {"unit_id": unit_id})
+    second = handler.execute_action("unit_observation", {"unit_id": unit_id})
+    assert handler.observation_system is obs
+    assert first.get("success") is True
+    assert first.get("from_cache") is not True
+    assert second.get("from_cache") is True
 
 
 def test_unit_observation_can_attack_false_without_ap():

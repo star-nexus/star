@@ -54,7 +54,7 @@ from .unit_action_buttons import (
     ActionType,
 )
 from .minimap import MiniMap
-from .gamemode import GameModeComponent
+from .gamemode import GameModeComponent, MatchRules
 from .camera import Camera
 from .game_time import GameTime
 from .animation import (
@@ -131,6 +131,7 @@ __all__ = [
     "Camera",
     "MiniMap",
     "GameModeComponent",
+    "MatchRules",
     # Game time components
     "GameTime",
     # Animation components
