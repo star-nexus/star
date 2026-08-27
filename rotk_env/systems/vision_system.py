@@ -17,7 +17,6 @@ Cache invalidation rules:
 from typing import Set, Tuple
 from framework import System, World
 from ..components import HexPosition, Vision, Unit, FogOfWar, MapData, Terrain
-from ..prefabs.config import GameConfig, TerrainType
 from ..utils.hex_utils import HexMath
 
 
@@ -144,12 +143,14 @@ class VisionSystem(System):
         if not map_data:
             return True
 
+        from ..components.terrain import effect_for
+
         for pos in line[1:-1]:  # exclude start and end
             tile_entity = map_data.tiles.get(pos)
             if tile_entity:
                 terrain = self.world.get_component(tile_entity, Terrain)
-                if terrain and terrain.terrain_type == TerrainType.MOUNTAIN:
-                    return False  # Mountains block line of sight.
+                if terrain and effect_for(terrain.terrain_type).blocks_line_of_sight:
+                    return False
 
         return True
 
@@ -163,11 +164,9 @@ class VisionSystem(System):
         if not tile_entity:
             return 0
 
+        from ..components.terrain import effect_for
+
         terrain = self.world.get_component(tile_entity, Terrain)
         if not terrain:
             return 0
-
-        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain.terrain_type)
-        if terrain_effect is None:
-            return 0
-        return int(terrain_effect.vision_bonus)
+        return int(effect_for(terrain.terrain_type).vision_bonus)

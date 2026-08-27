@@ -5,7 +5,9 @@ Provides hex coordinate system and map-related helper functions.
 
 import math
 from collections import deque
-from typing import List, Tuple, Set
+from heapq import heappop, heappush
+from typing import Callable, List, Optional, Set, Tuple
+
 from ..prefabs.config import GameConfig, HexOrientation
 
 
@@ -294,26 +296,34 @@ class PathFinding:
         goal: Tuple[int, int],
         obstacles: Set[Tuple[int, int]],
         max_distance: int = None,
+        walkable: Optional[Set[Tuple[int, int]]] = None,
+        step_cost: Optional[Callable[[Tuple[int, int]], int]] = None,
     ) -> List[Tuple[int, int]]:
-        """Find path with A* (offset coordinates)."""
+        """Find a path with A* (offset coordinates).
+
+        ``walkable`` is the board: neighbors not in it are off-map.
+        ``step_cost(hex)`` is the cost of *entering* that hex (default 1).
+        ``max_distance`` caps cumulative enter-cost, not hex count.
+        """
         if start == goal:
             return [start]
 
         if goal in obstacles:
             return []
+        if walkable is not None and goal not in walkable:
+            return []
 
-        # A* implementation
-        from heapq import heappush, heappop
+        def cost_of(pos: Tuple[int, int]) -> int:
+            return 1 if step_cost is None else int(step_cost(pos))
 
         frontier = [(0, start)]
         came_from = {start: None}
         cost_so_far = {start: 0}
 
         while frontier:
-            current_cost, current = heappop(frontier)
+            _, current = heappop(frontier)
 
             if current == goal:
-                # Reconstruct path
                 path = []
                 while current is not None:
                     path.append(current)
@@ -324,11 +334,11 @@ class PathFinding:
             for neighbor in HexMath.hex_neighbors(*current):
                 if neighbor in obstacles:
                     continue
+                if walkable is not None and neighbor not in walkable:
+                    continue
 
-                new_cost = cost_so_far[current] + 1
-
-                # Honor max distance if set
-                if max_distance and new_cost > max_distance:
+                new_cost = cost_so_far[current] + cost_of(neighbor)
+                if max_distance is not None and new_cost > max_distance:
                     continue
 
                 if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
@@ -337,31 +347,40 @@ class PathFinding:
                     heappush(frontier, (priority, neighbor))
                     came_from[neighbor] = current
 
-        return []  # No path found
+        return []
 
     @staticmethod
     def get_movement_range(
-        start: Tuple[int, int], movement_points: int, obstacles: Set[Tuple[int, int]]
+        start: Tuple[int, int],
+        movement_points: int,
+        obstacles: Set[Tuple[int, int]],
+        walkable: Optional[Set[Tuple[int, int]]] = None,
+        step_cost: Optional[Callable[[Tuple[int, int]], int]] = None,
     ) -> Set[Tuple[int, int]]:
         """Return all reachable hexes within movement range (offset coordinates)."""
-        reachable = set()
-        visited = set()
-        queue = [(start, 0)]  # (position, cost)
 
-        while queue:
-            current_pos, current_cost = queue.pop(0)
+        def cost_of(pos: Tuple[int, int]) -> int:
+            return 1 if step_cost is None else int(step_cost(pos))
 
-            if current_pos in visited:
+        reachable = {start}
+        cost_so_far = {start: 0}
+        frontier = [(0, start)]
+
+        while frontier:
+            current_cost, current = heappop(frontier)
+            if current_cost > cost_so_far.get(current, current_cost):
                 continue
-
-            visited.add(current_pos)
-
-            if current_cost <= movement_points:
-                reachable.add(current_pos)
-
-            if current_cost < movement_points:
-                for neighbor in HexMath.hex_neighbors(*current_pos):
-                    if neighbor not in obstacles and neighbor not in visited:
-                        queue.append((neighbor, current_cost + 1))
+            for neighbor in HexMath.hex_neighbors(*current):
+                if neighbor in obstacles:
+                    continue
+                if walkable is not None and neighbor not in walkable:
+                    continue
+                new_cost = current_cost + cost_of(neighbor)
+                if new_cost > movement_points:
+                    continue
+                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                    cost_so_far[neighbor] = new_cost
+                    reachable.add(neighbor)
+                    heappush(frontier, (new_cost, neighbor))
 
         return reachable

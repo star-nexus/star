@@ -27,7 +27,7 @@ from ..components import (
     ConstructionPoints,
     SkillPoints,
 )
-from ..prefabs.config import Faction, TerrainType, ActionType
+from ..prefabs.config import Faction, ActionType
 from ..prefabs.action_catalog import GAME_ACTIONS, allowed_game_actions
 from ..utils.hex_utils import HexMath
 
@@ -483,33 +483,26 @@ class LLMObservationSystem:
         self, visible_area: Set[Tuple[int, int]]
     ) -> List[Dict[str, Any]]:
         """Get terrain within the visible area."""
+        from ..components.terrain import effect_for, terrain_at
+
         terrain_info = []
-
         for col, row in visible_area:
-            # Find terrain at this position
-            for entity in self.world.query().with_all(Tile, HexPosition).entities():
-                position = self.world.get_component(entity, HexPosition)
-                tile = self.world.get_component(entity, Tile)
-                terrain = self.world.get_component(entity, Terrain)
-
-                if position and position.col == col and position.row == row:
-                    terrain_data = {
-                        "position": {"col": col, "row": row},
-                        "passable": tile.passable if tile else True,
-                    }
-
-                    if terrain:
-                        terrain_data["type"] = (
-                            terrain.terrain_type.value
-                            if hasattr(terrain.terrain_type, "value")
-                            else str(terrain.terrain_type)
-                        )
-                        terrain_data["movement_cost"] = terrain.movement_cost
-                        terrain_data["defense_bonus"] = terrain.defense_bonus
-
-                    terrain_info.append(terrain_data)
-                    break
-
+            terrain = terrain_at(self.world, (col, row))
+            terrain_data = {
+                "position": {"col": col, "row": row},
+                "passable": True,
+            }
+            if terrain:
+                terrain_data["type"] = (
+                    terrain.terrain_type.value
+                    if hasattr(terrain.terrain_type, "value")
+                    else str(terrain.terrain_type)
+                )
+                effect = effect_for(terrain.terrain_type)
+                terrain_data["movement_cost"] = effect.movement_cost
+                terrain_data["defense_bonus"] = effect.defense_bonus
+                terrain_data["passable"] = effect.movement_cost < 999
+            terrain_info.append(terrain_data)
         return terrain_info
 
     def _get_unit_summary(
@@ -776,6 +769,8 @@ class LLMObservationSystem:
 
     def _get_full_map_info(self) -> Dict[str, Any]:
         """Get full map information."""
+        from ..components.terrain import effect_for
+
         tiles = []
         for entity in self.world.query().with_all(Tile, HexPosition).entities():
             position = self.world.get_component(entity, HexPosition)
@@ -784,7 +779,7 @@ class LLMObservationSystem:
 
             tile_info = {
                 "position": {"col": position.col, "row": position.row},
-                "passable": tile.passable if tile else True,
+                "passable": True,
             }
 
             if terrain:
@@ -793,8 +788,10 @@ class LLMObservationSystem:
                     if hasattr(terrain.terrain_type, "value")
                     else str(terrain.terrain_type)
                 )
-                tile_info["movement_cost"] = terrain.movement_cost
-                tile_info["defense_bonus"] = terrain.defense_bonus
+                effect = effect_for(terrain.terrain_type)
+                tile_info["movement_cost"] = effect.movement_cost
+                tile_info["defense_bonus"] = effect.defense_bonus
+                tile_info["passable"] = effect.movement_cost < 999
 
             tiles.append(tile_info)
 

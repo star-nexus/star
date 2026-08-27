@@ -100,6 +100,7 @@ def test_own_army_is_complete_and_enemies_use_vision_when_fog_on():
     assert enemy["unit_status"] == {"current_count": 100}
     assert "capabilities" not in enemy
     assert "commandable" not in enemy
+    assert result["visible_terrain"] == []
 
 
 def test_fog_off_returns_every_living_enemy():
@@ -213,6 +214,55 @@ def test_vision_system_feeds_faction_state_fog():
     assert fog.enabled is True
     assert back["fog"] == "active"
     assert _enemy_ids(back) == {seen}
+
+
+def test_visible_terrain_follows_fog_and_reports_table_cost():
+    from rotk_env.components import MapData, Terrain
+    from rotk_env.prefabs.config import TerrainType
+
+    world, _own, _near, _far, fog = _fog_switch_setup()
+    map_data = MapData(width=3, height=3, tiles={})
+    world.add_singleton_component(map_data)
+    for pos, kind in [((0, 0), TerrainType.PLAIN), ((1, 0), TerrainType.FOREST)]:
+        tile = world.create_entity()
+        world.add_component(tile, HexPosition(*pos))
+        world.add_component(tile, Terrain(kind))
+        map_data.tiles[pos] = tile
+    fog.faction_vision[Faction.WEI] = {(0, 0)}
+
+    on = _query(world)
+    assert {(t["col"], t["row"]) for t in on["visible_terrain"]} == {(0, 0)}
+    assert on["visible_terrain"][0]["type"] == "plain"
+    assert on["visible_terrain"][0]["movement_cost"] == 1
+
+    set_fog_enabled(fog, False)
+    off = _query(world)
+    by_pos = {(t["col"], t["row"]): t for t in off["visible_terrain"]}
+    assert set(by_pos) == {(0, 0), (1, 0)}
+    assert by_pos[(1, 0)]["type"] == "forest"
+    assert by_pos[(1, 0)]["movement_cost"] == 2
+    assert by_pos[(1, 0)]["passable"] is True
+
+
+def test_opening_skirmish_faction_state_has_visible_terrain():
+    """Fog is on at assemble; vision must already be computed without a game tick."""
+    from rotk_env.prefabs.config import GameMode, PlayerType
+    from rotk_env.prefabs.world_builder import build_skirmish_world
+
+    world = build_skirmish_world(
+        players={Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
+        mode=GameMode.TURN_BASED,
+        seed=1,
+        hub_url=None,
+        display="none",
+    )
+    result = _query(world, "wei")
+    assert result["fog"] == "active"
+    terrain = result["visible_terrain"]
+    assert terrain, "opening vision should reveal tiles around own units"
+    own = {(u["position"]["col"], u["position"]["row"]) for u in result["units"]}
+    vis = {(t["col"], t["row"]) for t in terrain}
+    assert own <= vis
 
 
 def _print_step(label, fog, result):

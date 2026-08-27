@@ -52,9 +52,11 @@ def load_ascii_map(path: Path) -> Dict[Tuple[int, int], TerrainType]:
     return parse_ascii_map(path.read_text(encoding="utf-8"))
 
 
-def dump_ascii_map(terrain: Dict[Tuple[int, int], TerrainType]) -> str:
-    width = GameConfig.MAP_WIDTH
-    height = GameConfig.MAP_HEIGHT
+def dump_ascii_map(
+    terrain: Dict[Tuple[int, int], TerrainType],
+    width: int = GameConfig.MAP_WIDTH,
+    height: int = GameConfig.MAP_HEIGHT,
+) -> str:
     half_w = width // 2
     half_h = height // 2
     lines = []

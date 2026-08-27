@@ -87,12 +87,14 @@ Victory Conditions:
         default="turn_based",
         help="Game mode (default: turn_based)",
     )
-    # TODO: scenario three_kingdoms still uses the default river-split map.
     parser.add_argument(
         "--scenario",
-        choices=["default", "chibi", "three_kingdoms"],
         default="default",
-        help="Game scenario (default: default). chibi loads rotk_env/maps/chibi.map",
+        help=(
+            "Map to load from rotk_env/maps/. "
+            "default/three_kingdoms → river_split.json; chibi → chibi.json; "
+            "any other name loads <name>.json in that folder."
+        ),
     )
 
     parser.add_argument(

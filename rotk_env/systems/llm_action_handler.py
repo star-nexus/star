@@ -175,30 +175,15 @@ class LLMActionHandler:
         #     f"[MOVE_ACTION] Checking target within map bounds: ({target_col}, {target_row})"
         # )
         if not self._is_position_within_map_bounds(target_col, target_row):
-            from ..prefabs.config import GameConfig
-
-            center = GameConfig.MAP_WIDTH // 2
-            min_coord = -center
-            max_coord = center - 1
             error_msg = f"Target position ({target_col}, {target_row}) is outside map boundaries"
             print(f"[MOVE_ACTION] Map boundary check failed: {error_msg}")
+            map_data = self.world.get_singleton_component(MapData)
             return self._create_error_response(
                 error_msg,
                 {
                     "target_position": {"col": target_col, "row": target_row},
-                    "map_boundaries": {
-                        "min_col": min_coord,
-                        "max_col": max_coord,
-                        "min_row": min_coord,
-                        "max_row": max_coord,
-                    },
-                    "map_size": {
-                        "width": GameConfig.MAP_WIDTH,
-                        "height": GameConfig.MAP_HEIGHT,
-                    },
-                    "coordinate_system": "center-based",
-                    "explanation": f"Map uses center-based coordinates with (0,0) at center. For {GameConfig.MAP_WIDTH}x{GameConfig.MAP_HEIGHT} map, valid range is [{min_coord}, {max_coord}]",
-                    "suggestion": f"Choose a position within bounds: col ({min_coord} to {max_coord}), row ({min_coord} to {max_coord})",
+                    "on_board": False,
+                    "tile_count": len(map_data.tiles) if map_data else 0,
                 },
             )
 
@@ -1016,6 +1001,7 @@ class LLMActionHandler:
         ``visible_enemy_units`` is every living enemy in the current vision:
         union of that faction's unit vision while fog is on; the whole map
         when fog is off (key 1). Human, BOT, and agents share this switch.
+        ``visible_terrain`` is the same tile set: type and movement cost.
         ``params.faction`` must be the observer. Cross-faction queries
         are rejected (2005); they are not an intelligence channel.
         Formation centers live on the join-time map briefing, not here.
@@ -1064,6 +1050,7 @@ class LLMActionHandler:
 
         fog_lifted = self._is_fog_lifted()
         visible_enemies = self._visible_enemy_units(observer, fog_lifted)
+        visible_terrain = self._visible_terrain(observer, fog_lifted)
 
         print(
             f"[FACTION_STATE] Completed for {observer.value} "
@@ -1081,6 +1068,7 @@ class LLMActionHandler:
             "actionable_units": actionable_units_count,
             "units": units,
             "visible_enemy_units": visible_enemies,
+            "visible_terrain": visible_terrain,
         }
 
     def _observer_faction(
@@ -1123,6 +1111,48 @@ class LLMActionHandler:
                 continue
             enemies.append(self._visible_enemy_unit_info(entity, unit, position))
         return enemies
+
+    def _visible_terrain(
+        self, observer: Faction, fog_lifted: bool
+    ) -> List[Dict[str, Any]]:
+        """Terrain on currently visible hexes (all tiles when fog is off)."""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return []
+
+        if fog_lifted:
+            hexes = set(map_data.tiles)
+        else:
+            fog = self.world.get_singleton_component(FogOfWar)
+            vision = set(fog.faction_vision.get(observer, set())) if fog else set()
+            hexes = vision.intersection(map_data.tiles)
+
+        tiles: List[Dict[str, Any]] = []
+        for col, row in sorted(hexes):
+            tile_entity = map_data.tiles.get((col, row))
+            if not tile_entity:
+                continue
+            terrain = self.world.get_component(tile_entity, Terrain)
+            if not terrain:
+                continue
+            from ..components.terrain import effect_for
+
+            terrain_type = (
+                terrain.terrain_type.value
+                if hasattr(terrain.terrain_type, "value")
+                else str(terrain.terrain_type)
+            )
+            effect = effect_for(terrain.terrain_type)
+            tiles.append(
+                {
+                    "col": int(col),
+                    "row": int(row),
+                    "type": terrain_type,
+                    "movement_cost": int(effect.movement_cost),
+                    "passable": effect.movement_cost < 999,
+                }
+            )
+        return tiles
 
     def _visible_enemy_unit_info(
         self, unit_id: int, unit: Unit, position: HexPosition
@@ -1703,13 +1733,15 @@ class LLMActionHandler:
         effective_movement = movement_points.get_effective_movement(unit_count)
 
         # Get obstacles and compute a path
-        obstacles = self._get_obstacles()
-        from ..utils.hex_utils import PathFinding
+        from ..utils.map_query import plan_hex_path
 
         try:
-            # Attempt to find a path
-            path = PathFinding.find_path(
-                current_pos, target_pos, obstacles, effective_movement
+            path = plan_hex_path(
+                self.world,
+                current_pos,
+                target_pos,
+                exclude_entity=unit_id,
+                max_cost=effective_movement,
             )
 
             if path and len(path) > 1:
@@ -1868,41 +1900,13 @@ class LLMActionHandler:
 
     # ==================== Game logic helpers ====================
 
-    def _get_obstacles(self) -> Set[Tuple[int, int]]:
-        """Get movement obstacles - only units as blockers."""
-        obstacles = set()
-        # Collect all unit positions as obstacles
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
-            pos = self.world.get_component(entity, HexPosition)
-            if pos:
-                obstacles.add((pos.col, pos.row))
-        return obstacles
-
     def _get_obstacles_excluding_unit(
         self, exclude_unit_id: int
     ) -> Set[Tuple[int, int]]:
-        """Get obstacles excluding a unit - other units + impassable terrain."""
-        obstacles = set()
-        # Collect unit positions as obstacles but exclude the given unit
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
-            if entity == exclude_unit_id:
-                continue  # skip moving unit itself
-            pos = self.world.get_component(entity, HexPosition)
-            if pos:
-                obstacles.add((pos.col, pos.row))
+        """Other units + impassable terrain, matching MovementSystem."""
+        from ..utils.map_query import movement_obstacles
 
-        # Include impassable terrain (e.g., water) as obstacles, matching MovementSystem
-        map_data = self.world.get_singleton_component(MapData)
-        if map_data:
-            for (q, r), tile_entity in map_data.tiles.items():
-                terrain = self.world.get_component(tile_entity, Terrain)
-                if terrain and terrain.terrain_type == TerrainType.WATER:
-                    obstacles.add((q, r))
-
-        # print(
-        #     f"[DEBUG] Obstacles (including water): {len(obstacles)} (excluding unit {exclude_unit_id})"
-        # )
-        return obstacles
+        return movement_obstacles(self.world, exclude_unit_id)
 
     def _get_adjacent_free_positions(
         self, center_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]
@@ -1933,11 +1937,9 @@ class LLMActionHandler:
 
     def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
         """Get terrain movement cost (movement points)."""
-        from ..prefabs.config import GameConfig
+        from ..components.terrain import movement_cost_at
 
-        terrain_type = self._get_terrain_at_position(position)
-        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
-        return terrain_effect.movement_cost if terrain_effect else 1
+        return movement_cost_at(self.world, position)
 
     def _get_path_terrain_breakdown(
         self, path: List[Tuple[int, int]]
@@ -1977,16 +1979,11 @@ class LLMActionHandler:
         return terrain.terrain_type if terrain else TerrainType.PLAIN
 
     def _is_position_within_map_bounds(self, col: int, row: int) -> bool:
-        """Check whether a position is within map bounds."""
-        from ..prefabs.config import GameConfig
-
-        # Center-based coordinate system: for width/height W,H
-        # center = W // 2; valid col,row in [-center, center-1]
-        center = GameConfig.MAP_WIDTH // 2
-        min_coord = -center
-        max_coord = center - 1
-
-        return (min_coord <= col <= max_coord) and (min_coord <= row <= max_coord)
+        """True when the hex exists on the generated map."""
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data is None:
+            return True
+        return (col, row) in map_data.tiles
 
     def _get_terrain_attack_bonus(
         self, position: Tuple[int, int], faction: Faction
@@ -2272,10 +2269,14 @@ class LLMActionHandler:
 
         # Try to find a path
         try:
-            from ..utils.hex_utils import PathFinding
+            from ..utils.map_query import plan_hex_path
 
-            path = PathFinding.find_path(
-                current_pos, target_pos, obstacles, effective_movement
+            path = plan_hex_path(
+                self.world,
+                current_pos,
+                target_pos,
+                exclude_entity=unit_id,
+                max_cost=effective_movement,
             )
 
             if path and len(path) > 1:

@@ -73,9 +73,10 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ActionSpec(
         "get_faction_state",
         "Your army (full detail, owner/commandable) plus living enemies in "
-        "the current vision: unit id, type, position, count. Fog on = union "
-        "of your units' vision; fog off (key 1) = the whole map. Same rule "
-        "for human, BOT, and agents. faction must be your own; querying "
+        "the current vision: unit id, type, position, count. Also "
+        "visible_terrain (type and movement cost) on the same tiles. Fog on = "
+        "union of your units' vision; fog off (key 1) = the whole map. Same "
+        "rule for human, BOT, and agents. faction must be your own; querying "
         "another faction is rejected. Orders on units you do not own still fail.",
         "query",
         {

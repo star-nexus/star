@@ -107,16 +107,17 @@ class ActionType(Enum):
 class TerrainEffect:
     """Numeric terrain modifiers the sim actually applies.
 
-    ``movement_cost``: MovementSystem (999 is impassable; water is also an
-    obstacle). ``defense_bonus`` / ``attack_bonus``: CombatSystem, then
-    multiplied by ``TERRAIN_COEFFICIENTS``. ``vision_bonus``: added to unit
-    vision range by VisionSystem. Mountains also block line of sight.
+    ``movement_cost``: MovementSystem (999 is impassable). ``defense_bonus`` /
+    ``attack_bonus``: CombatSystem, then multiplied by ``TERRAIN_COEFFICIENTS``.
+    ``vision_bonus``: added to unit vision range by VisionSystem.
+    ``blocks_line_of_sight``: VisionSystem raycast (mountains).
     """
 
     movement_cost: int = 1
     defense_bonus: int = 0
     attack_bonus: int = 0
     vision_bonus: int = 0
+    blocks_line_of_sight: bool = False
 
 
 @dataclass
@@ -169,24 +170,6 @@ class GameConfig:
     MAX_REALTIME_SECONDS = 3600  # 实时制超时秒数（到达后平局）
     # Per-faction mix: [infantry, archer, cavalry].
     UNIT_MIX = [1, 3, 1]
-    # Wei blob is the visually tuned 2x2+1. Shu is derived at runtime by
-    # 180° rotation in *pixel* space (odd-q stagger makes offset (-x,-y)
-    # and anti-diagonal (-y,-x) both look wrong on screen). Wu is the
-    # same blob reflected to the third bank.
-    WEI_FORMATION: List[Tuple[int, int]] = [
-        (1, 3),
-        (2, 3),
-        (1, 4),
-        (2, 4),
-        (3, 3),
-    ]
-    WU_FORMATION: List[Tuple[int, int]] = [
-        (1, -3),
-        (2, -3),
-        (1, -4),
-        (2, -4),
-        (3, -3),
-    ]
     VISION_FADE_ALPHA = 128  # 战争迷雾透明度
 
     # 战争迷雾颜色配置
@@ -200,7 +183,11 @@ class GameConfig:
     TERRAIN_EFFECTS: Dict[TerrainType, TerrainEffect] = {
         TerrainType.PLAIN: TerrainEffect(movement_cost=1),
         TerrainType.MOUNTAIN: TerrainEffect(
-            movement_cost=3, defense_bonus=2, attack_bonus=1, vision_bonus=2
+            movement_cost=3,
+            defense_bonus=2,
+            attack_bonus=1,
+            vision_bonus=2,
+            blocks_line_of_sight=True,
         ),
         TerrainType.URBAN: TerrainEffect(movement_cost=2, defense_bonus=4),
         TerrainType.WATER: TerrainEffect(movement_cost=999),

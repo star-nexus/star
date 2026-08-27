@@ -32,15 +32,16 @@ def _disc(world: World, radius: int, extras=None) -> MapData:
     return map_data
 
 
-def _spawn(world, *, col, row, mp=4, faction=Faction.WEI):
+def _spawn(world, *, col, row, mp=4, faction=Faction.WEI, base_mp=None):
     entity = world.create_entity()
     world.add_component(
         entity, Unit(unit_type=UnitType.INFANTRY, faction=faction, name="test")
     )
     world.add_component(entity, HexPosition(col, row))
     world.add_component(entity, UnitCount(current_count=100, max_count=100))
+    cap = mp if base_mp is None else base_mp
     world.add_component(
-        entity, MovementPoints(current_mp=mp, max_mp=mp, base_mp=mp)
+        entity, MovementPoints(current_mp=mp, max_mp=cap, base_mp=cap)
     )
     return entity
 
@@ -74,7 +75,7 @@ def test_astar_routes_around_occupied_hexes():
 
 
 def test_astar_treats_each_step_as_cost_one():
-    """Reachability ignores terrain; MovementSystem applies hex cost later."""
+    """Without step_cost, reachability is hex count."""
     forest_step = PathFinding.find_path(
         (0, 0), (1, 0), obstacles=set(), max_distance=1
     )
@@ -85,6 +86,16 @@ def test_astar_treats_each_step_as_cost_one():
 
 def test_astar_rejects_a_blocked_goal():
     assert PathFinding.find_path((0, 0), (1, 0), obstacles={(1, 0)}) == []
+
+
+def test_astar_does_not_leave_walkable_set():
+    walkable = {(0, 0), (1, 0)}
+    assert PathFinding.find_path(
+        (0, 0), (2, 0), obstacles=set(), max_distance=8, walkable=walkable
+    ) == []
+    assert PathFinding.find_path(
+        (0, 0), (1, 0), obstacles=set(), max_distance=2, walkable=walkable
+    ) == [(0, 0), (1, 0)]
 
 
 def test_move_unit_spends_plain_cost_and_lands():
@@ -124,6 +135,39 @@ def test_mountain_hex_costs_three_and_can_block_a_short_move():
     assert mp == 0
 
 
+def test_move_cannot_leave_the_map_disc():
+    world = World()
+    _disc(world, radius=2)
+    world.add_system(MovementSystem())
+    unit = _spawn(world, col=0, row=0, mp=8)
+    # (4, 0) is hex-distance 4, outside a radius-2 disc.
+    result = world.systems[0].move_unit(unit, (4, 0))
+    assert result["success"] is False
+    assert result["reason"] == "no_path"
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (0, 0)
+
+
+def test_astar_prefers_cheap_plains_over_a_mountain_step():
+    extras = {(1, 0): TerrainType.MOUNTAIN}
+    world = World()
+    _disc(world, radius=3, extras=extras)
+    map_data = world.get_singleton_component(MapData)
+    from rotk_env.components.terrain import movement_cost_at
+
+    path = PathFinding.find_path(
+        (0, 0),
+        (2, 0),
+        obstacles=set(),
+        max_distance=8,
+        walkable=set(map_data.tiles),
+        step_cost=lambda p: movement_cost_at(world, p),
+    )
+    assert path
+    assert (1, 0) not in path
+    assert path[-1] == (2, 0)
+
+
 def test_water_is_an_obstacle_not_a_walkable_999_tile():
     world = World()
     _disc(world, radius=3, extras={(1, 0): TerrainType.WATER})
@@ -161,7 +205,7 @@ def test_handle_move_translates_insufficient_mp_from_the_system():
     world.add_singleton_component(GameModeComponent(mode=GameMode.REAL_TIME))
     _disc(world, radius=3, extras={(1, 0): TerrainType.MOUNTAIN})
     world.add_system(MovementSystem())
-    unit = _spawn(world, col=0, row=0, mp=2)
+    unit = _spawn(world, col=0, row=0, mp=2, base_mp=4)
 
     result = LLMActionHandler(world).handle_move_action(
         {"unit_id": unit, "target_position": {"col": 1, "row": 0}}

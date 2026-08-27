@@ -31,7 +31,10 @@ class MapData(SingletonComponent):
     height: int
     tiles: Dict[Tuple[int, int], int] = field(
         default_factory=dict
-    )  # (col,row) -> tile entity id
+    )  # (col,row) → tile entity id
+    map_id: str = ""
+    # Opening deployment cells from the map file, keyed by faction.
+    formations: Dict[Faction, List[Tuple[int, int]]] = field(default_factory=dict)
     # One hex per faction: that side's home base (opening formation center).
     home_bases: Dict[Faction, Tuple[int, int]] = field(default_factory=dict)
 
@@ -60,6 +63,7 @@ def map_briefing(map_data: Optional["MapData"]) -> Dict[str, Any]:
         return {
             "width": None,
             "height": None,
+            "map_id": None,
             "home_bases": {},
             "home_bases_meaning": HOME_BASES_MEANING,
         }
@@ -74,6 +78,7 @@ def map_briefing(map_data: Optional["MapData"]) -> Dict[str, Any]:
     return {
         "width": int(map_data.width),
         "height": int(map_data.height),
+        "map_id": map_data.map_id or None,
         "home_bases": home_bases,
         "home_bases_meaning": HOME_BASES_MEANING,
     }

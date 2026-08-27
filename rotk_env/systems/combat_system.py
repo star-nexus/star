@@ -711,10 +711,13 @@ class CombatSystem(System):
         self, position: Tuple[int, int], faction: Faction
     ) -> float:
         """Get terrain attack bonus (base terrain + territory control)"""
-        # 1) Base terrain attack bonus (from terrain type)
-        terrain_type = self._get_terrain_at_position(position)
-        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
-        base_attack_bonus = terrain_effect.attack_bonus if terrain_effect else 0.0
+        # 1) Base terrain attack bonus (from GameConfig.TERRAIN_EFFECTS)
+        from ..components.terrain import effect_for, terrain_at
+
+        terrain = terrain_at(self.world, position)
+        base_attack_bonus = (
+            float(effect_for(terrain.terrain_type).attack_bonus) if terrain else 0.0
+        )
 
         # 2) Territory control bonus (if territory system exists)
         territory_bonus = 0.0
@@ -730,10 +733,13 @@ class CombatSystem(System):
         self, position: Tuple[int, int], faction: Faction = None
     ) -> float:
         """Get terrain defense bonus (base terrain + territory control)"""
-        # 1) Base terrain defense bonus (from terrain type)
-        terrain_type = self._get_terrain_at_position(position)
-        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
-        base_defense_bonus = terrain_effect.defense_bonus if terrain_effect else 0.0
+        # 1) Base terrain defense bonus (from GameConfig.TERRAIN_EFFECTS)
+        from ..components.terrain import effect_for, terrain_at
+
+        terrain = terrain_at(self.world, position)
+        base_defense_bonus = (
+            float(effect_for(terrain.terrain_type).defense_bonus) if terrain else 0.0
+        )
 
         # 2) Territory control bonus (if system exists and faction provided)
         territory_bonus = 0.0

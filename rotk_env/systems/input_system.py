@@ -26,6 +26,7 @@ from ..components import (
     BattleLog,
     Player,
     FogOfWar,
+    MapData,
     set_fog_enabled,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction
@@ -114,18 +115,19 @@ class InputHandlingSystem(System):
         if event.button == 1:  # left
             hex_pos = self._screen_to_hex(event.pos)
 
-            if hex_pos:
-                # Ensure inside map bounds (center-offset coordinate system)
-                q, r = hex_pos
-                half_width = GameConfig.MAP_WIDTH // 2
-                half_height = GameConfig.MAP_HEIGHT // 2
-
-                if -half_width <= q < half_width and -half_height <= r < half_height:
-                    self._handle_tile_click(hex_pos, ui_state)
+            if hex_pos and self._hex_on_board(hex_pos):
+                self._handle_tile_click(hex_pos, ui_state)
 
         elif event.button == 3:  # right
             # Clear selection
             ui_state.selected_unit = None
+
+    def _hex_on_board(self, hex_pos: Tuple[int, int]) -> bool:
+        """True when the hex exists in MapData.tiles. No map → allow."""
+        map_data = self.world.get_singleton_component(MapData)
+        if map_data is None:
+            return True
+        return hex_pos in map_data.tiles
 
     def _handle_tile_click(self, hex_pos: Tuple[int, int], ui_state: UIState):
         """Handle tile click: select/move/attack depending on context."""

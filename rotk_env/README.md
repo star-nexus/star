@@ -31,7 +31,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 | :--- | :--- |
 | `--mode turn_based\|real_time` | 回合制或实时 |
 | `--players` | `human_vs_ai` / `ai_vs_ai` / `three_kingdoms` / `human_vs_two_ai`。不带 `--skip-start` / `--headless` 时仍进开始界面 |
-| `--scenario` | `default` / `chibi`（`rotk_env/maps/chibi.map`）/ `three_kingdoms`（目前仍用默认河界图，只改阵营数） |
+| `--scenario` | `default` / `chibi`（`rotk_env/maps/*.json`）/ `three_kingdoms`（仍用 `river_split.json`，只改阵营数） |
 | `--seed` | 锁地图生成和战斗掷骰，不是整局逐帧回放。优先级：`--seed` > `$STAR_SEED` > `.configs.toml` |
 | `--env-id` | Hub 上的环境 id |
 | `--hub-url` | Hub websocket。省略时用 `$STAR_HUB_URL`，再没有就用本地默认地址 |
@@ -78,7 +78,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 
 ```bash
 uv run python -m rotk_env.maps.hex_sample path/to/chibi_source.png \
-  --out rotk_env/maps/chibi.map \
+  --out rotk_env/maps/chibi.json \
   --overlay /tmp/chibi_hex_overlay.png
 ```
 

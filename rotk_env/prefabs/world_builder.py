@@ -77,7 +77,6 @@ from ..systems.ui_render_system import UIRenderSystem
 from ..systems.unit_action_button_system import UnitActionButtonSystem
 from ..systems.unit_render_system import UnitRenderSystem
 from ..systems.vision_system import VisionSystem
-from ..utils.hex_utils import HexConverter
 
 DEFAULT_HUB_URL = "ws://localhost:8000/ws/metaverse"
 
@@ -164,6 +163,7 @@ class _SkirmishAssembler:
             [GameConfig.UNIT_MIX, GameConfig.UNIT_MIX, GameConfig.UNIT_MIX]
         )
         self._initialize_stats()
+        self._refresh_opening_vision()
 
     def _initialize_game_mode(self) -> None:
         self.world.add_singleton_component(GameModeComponent(mode=self.game_mode))
@@ -300,18 +300,19 @@ class _SkirmishAssembler:
                 player.units.add(unit_entity)
 
     def _formation_positions(self, unit_counts: Dict) -> Dict:
-        conv = HexConverter()
+        map_data = self.world.get_singleton_component(MapData)
+        formations = map_data.formations if map_data else {}
+        map_id = map_data.map_id if map_data else ""
         positions = {}
-        if Faction.WEI in unit_counts:
-            n = sum(unit_counts[Faction.WEI])
-            positions[Faction.WEI] = list(GameConfig.WEI_FORMATION[:n])
-        if Faction.SHU in unit_counts:
-            n = sum(unit_counts[Faction.SHU])
-            wei_src = list(GameConfig.WEI_FORMATION[:n])
-            positions[Faction.SHU] = [conv.rotate_180(*cell) for cell in wei_src]
-        if Faction.WU in unit_counts:
-            n = sum(unit_counts[Faction.WU])
-            positions[Faction.WU] = list(GameConfig.WU_FORMATION[:n])
+        for faction, count in unit_counts.items():
+            n = sum(count) if isinstance(count, list) else int(count)
+            cells = list(formations.get(faction) or [])
+            if n and len(cells) < n:
+                raise ValueError(
+                    f"map {map_id!r} has {len(cells)} {faction.value} "
+                    f"formation slots, need {n}"
+                )
+            positions[faction] = cells[:n]
         return positions
 
     def _generate_unit_types(self, count: int | list) -> list:
@@ -431,3 +432,10 @@ class _SkirmishAssembler:
                     break
         except Exception as e:
             print(f"[WorldBuilder] Failed to backfill map_info into GameStats: {e}")
+
+    def _refresh_opening_vision(self) -> None:
+        """Compute FogOfWar before the first tick so get_faction_state is not empty."""
+        for system in self.world.systems:
+            if isinstance(system, VisionSystem):
+                system.update(0.0)
+                break

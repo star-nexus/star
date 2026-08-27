@@ -1,7 +1,7 @@
 """Standing-tile vision_bonus is applied by VisionSystem."""
 
 from framework.ecs.world import World
-from rotk_env.components import HexPosition, MapData, Terrain, Unit, Vision
+from rotk_env.components import HexPosition, MapData, Unit, Vision, Terrain
 from rotk_env.prefabs.config import Faction, GameConfig, TerrainType, UnitType
 from rotk_env.systems.vision_system import VisionSystem
 from rotk_env.utils.hex_utils import HexMath

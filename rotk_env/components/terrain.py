@@ -1,23 +1,49 @@
 """
 Terrain-related components.
+
+Numeric rules live on GameConfig.TERRAIN_EFFECTS. Terrain is a type tag on
+the tile entity; look up effects with ``effect_for``.
 """
 
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Optional, Tuple
+
 from framework import Component
-from ..prefabs.config import TerrainType, Faction
+
+from ..prefabs.config import Faction, GameConfig, TerrainEffect, TerrainType
 
 
 @dataclass
 class Terrain(Component):
-    """Terrain component."""
+    """Terrain type on a map tile. Stats come from GameConfig.TERRAIN_EFFECTS."""
 
     terrain_type: TerrainType
-    movement_cost: int = 1
-    defense_bonus: int = 0
-    attack_bonus: int = 0
-    vision_bonus: int = 0
-    blocks_line_of_sight: bool = False
+
+
+def effect_for(terrain_type: TerrainType) -> TerrainEffect:
+    """Rules-table row for a terrain type. Missing types use TerrainEffect defaults."""
+    return GameConfig.TERRAIN_EFFECTS.get(terrain_type) or TerrainEffect()
+
+
+def terrain_at(world, position: Tuple[int, int]) -> Optional[Terrain]:
+    """Terrain component on the map tile at ``position``, if any."""
+    from .state import MapData
+
+    map_data = world.get_singleton_component(MapData)
+    if not map_data:
+        return None
+    tile_entity = map_data.tiles.get(position)
+    if not tile_entity:
+        return None
+    return world.get_component(tile_entity, Terrain)
+
+
+def movement_cost_at(world, position: Tuple[int, int]) -> int:
+    """Enter-cost of a map hex. Off-board tiles are impassable (999)."""
+    terrain = terrain_at(world, position)
+    if terrain is None:
+        return 999
+    return int(effect_for(terrain.terrain_type).movement_cost)
 
 
 @dataclass

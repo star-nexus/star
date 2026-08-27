@@ -1,6 +1,6 @@
 """
 Movement System - Handles unit movement end-to-end:
-- pathfinding and terrain-aware cost calculation (the only planner)
+- pathfinding via map_query (board clip, terrain cost, obstacles)
 - resource spending (movement points)
 - animation kickoff and fallback instant move
 - tile occupancy committed with HexPosition
@@ -15,13 +15,12 @@ from ..components import (
     Unit,
     UnitCount,
     MapData,
-    Terrain,
     Tile,
     MovementAnimation,
     UnitStatus,
 )
 from ..prefabs.config import TerrainType, UnitState
-from ..utils.hex_utils import HexMath, PathFinding
+from ..utils.hex_utils import HexMath
 
 
 class MovementSystem(System):
@@ -101,9 +100,15 @@ class MovementSystem(System):
             }
 
         effective_movement = movement_points.get_effective_movement(unit_count)
-        obstacles = self._get_obstacles(exclude_entity=entity)
-        path = PathFinding.find_path(
-            current_pos, target_pos, obstacles, effective_movement
+        from ..utils.map_query import movement_obstacles, plan_hex_path
+
+        obstacles = movement_obstacles(self.world, exclude_entity=entity)
+        path = plan_hex_path(
+            self.world,
+            current_pos,
+            target_pos,
+            exclude_entity=entity,
+            max_cost=effective_movement,
         )
 
         if not path or len(path) < 2:
@@ -282,7 +287,14 @@ class MovementSystem(System):
     def _adjacent_free(
         self, center: Tuple[int, int], obstacles: Set[Tuple[int, int]]
     ) -> List[Tuple[int, int]]:
-        return [n for n in HexMath.hex_neighbors(*center) if n not in obstacles]
+        from ..utils.map_query import board_hexes
+
+        walkable = board_hexes(self.world)
+        return [
+            n
+            for n in HexMath.hex_neighbors(*center)
+            if n not in obstacles and (walkable is None or n in walkable)
+        ]
 
     def _path_terrain_breakdown(
         self, path: List[Tuple[int, int]]
@@ -310,47 +322,25 @@ class MovementSystem(System):
         return total_cost
 
     def _get_terrain_movement_cost(self, position: Tuple[int, int]) -> int:
-        """Get movement cost for the terrain at position (q, r)."""
-        from ..prefabs.config import GameConfig
+        """Enter-cost of the tile. Missing hexes are impassable."""
+        from ..components.terrain import movement_cost_at
 
-        terrain_type = self._get_terrain_at_position(position)
-        terrain_effect = GameConfig.TERRAIN_EFFECTS.get(terrain_type)
-        return terrain_effect.movement_cost if terrain_effect else 1
+        return movement_cost_at(self.world, position)
 
     def _get_terrain_at_position(self, position: Tuple[int, int]) -> TerrainType:
         """Get terrain type at position (q, r)."""
-        map_data = self.world.get_singleton_component(MapData)
-        if not map_data:
-            return TerrainType.PLAIN
+        from ..components.terrain import terrain_at
 
-        tile_entity = map_data.tiles.get(position)
-        if not tile_entity:
-            return TerrainType.PLAIN
-
-        terrain = self.world.get_component(tile_entity, Terrain)
+        terrain = terrain_at(self.world, position)
         return terrain.terrain_type if terrain else TerrainType.PLAIN
 
     def _get_obstacles(
         self, exclude_entity: Optional[int] = None
     ) -> Set[Tuple[int, int]]:
         """Blocked hexes: other units and impassable terrain. Exclude the mover."""
-        obstacles = set()
+        from ..utils.map_query import movement_obstacles
 
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
-            if exclude_entity is not None and entity == exclude_entity:
-                continue
-            pos = self.world.get_component(entity, HexPosition)
-            if pos:
-                obstacles.add((pos.col, pos.row))
-
-        map_data = self.world.get_singleton_component(MapData)
-        if map_data:
-            for (q, r), tile_entity in map_data.tiles.items():
-                terrain = self.world.get_component(tile_entity, Terrain)
-                if terrain and terrain.terrain_type == TerrainType.WATER:
-                    obstacles.add((q, r))
-
-        return obstacles
+        return movement_obstacles(self.world, exclude_entity)
 
     def _trigger_terrain_events(self, entity: int, action: str):
         """Trigger terrain events in RandomEventSystem for a given action."""

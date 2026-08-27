@@ -27,7 +27,16 @@ from .multilayer_resources import (
     SkillPoints,
     # Movement,  # New Movement alias points to MovementPoints
 )
-from .terrain import Terrain, TerrainModifier, Tile, TerritoryControl, CaptureAction
+from .terrain import (
+    Terrain,
+    TerrainModifier,
+    Tile,
+    TerritoryControl,
+    CaptureAction,
+    effect_for,
+    terrain_at,
+    movement_cost_at,
+)
 from .player import Player, TurnOrder, TurnManager
 from .state import (
     GameState,
@@ -108,6 +117,9 @@ __all__ = [
     "LegacyMovement",
     # Terrain components
     "Terrain",
+    "effect_for",
+    "terrain_at",
+    "movement_cost_at",
     "TerrainModifier",
     "Tile",
     "TerritoryControl",

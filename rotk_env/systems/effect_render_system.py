@@ -5,7 +5,7 @@ attack range, tile hover effects, and visual effect animations
 
 import random
 import pygame
-from typing import List, Set, Tuple
+from typing import List, Tuple
 from framework import System, RMS
 from ..components import (
     UIState,
@@ -23,7 +23,7 @@ from ..components import (
     RngService,
 )
 from ..prefabs.config import GameConfig, HexOrientation
-from ..utils.hex_utils import HexConverter, HexMath, PathFinding
+from ..utils.hex_utils import HexConverter, HexMath
 
 
 class EffectRenderSystem(System):
@@ -136,11 +136,13 @@ class EffectRenderSystem(System):
         if not position or not movement or not unit:
             return
 
-        # Gather obstacle positions
-        obstacles = self._get_obstacles()
-        # Compute reachable tiles
-        movement_range = PathFinding().get_movement_range(
-            (position.col, position.row), movement.current_mp, obstacles
+        from ..utils.map_query import reachable_hexes
+
+        movement_range = reachable_hexes(
+            self.world,
+            (position.col, position.row),
+            movement.current_mp,
+            exclude_entity=unit_entity,
         )
 
         # # Get all tiles within movement range
@@ -376,18 +378,6 @@ class EffectRenderSystem(System):
         ]
         # pygame.draw.polygon(self.screen, (255, 255, 255), screen_corners, 2)
         RMS.polygon((255, 255, 255), screen_corners, 2)
-
-    def _get_obstacles(self) -> Set[Tuple[int, int]]:
-        """Collect obstacle positions (all unit locations)"""
-        obstacles = set()
-
-        # Mark all unit positions as obstacles
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
-            position = self.world.get_component(entity, HexPosition)
-            if position:
-                obstacles.add((position.col, position.row))
-
-        return obstacles
 
     def _get_enemy_unit_at_position(self, position: Tuple[int, int], friendly_faction):
         """Get the enemy unit entity at the specified tile position, if any"""

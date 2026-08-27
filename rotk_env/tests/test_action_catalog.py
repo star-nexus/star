@@ -242,4 +242,5 @@ def test_move_docs_spend_mp_not_ap():
     assert "until AP is exhausted" in docs["attack"]["description"]
     faction_state = docs["get_faction_state"]["description"]
     assert "fog off (key 1)" in faction_state
+    assert "visible_terrain" in faction_state
     assert "overlay" not in faction_state
