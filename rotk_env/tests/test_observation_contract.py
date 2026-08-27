@@ -262,7 +262,7 @@ def test_execute_attack_rejects_insufficient_ap():
     assert result["error"] == "insufficient_action_points"
 
 
-def test_key_1_toggles_god_view():
+def test_key_1_toggles_fog():
     import pygame
 
     world = World()
@@ -274,15 +274,14 @@ def test_key_1_toggles_god_view():
     system.world = world
 
     event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1})
+    ui_state.view_faction = Faction.WEI
     system._handle_key_down(event)
-    assert ui_state.god_mode is True
+    assert fog.enabled is False
+    assert ui_state.view_faction is None
+    system._handle_key_down(event)
     assert fog.enabled is True
     system._handle_key_down(event)
-    assert ui_state.god_mode is False
-    assert fog.enabled is True
-    system._handle_key_down(event)
-    assert ui_state.god_mode is True
-    assert fog.enabled is True
+    assert fog.enabled is False
 
 
 def test_observation_cache_hits_same_revision():

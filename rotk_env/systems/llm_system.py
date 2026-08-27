@@ -28,7 +28,7 @@ from rotk_env.components import (
     UIState,
     GameModeComponent,
     GameStats,
-    set_screen_fog,
+    set_fog_enabled,
     map_briefing,
 )
 from rotk_env.prefabs.config import Faction, UnitType, GameMode
@@ -1929,40 +1929,40 @@ class LLMSystem(System):
         }
 
     def handle_toggle_god_mode(self, params: Dict) -> Dict:
-        """Toggle the human screen overlay. Same as key 1. Does not lift agent fog."""
-        ui_state = self.world.get_singleton_component(UIState)
-        if not ui_state:
-            return {
-                "success": False,
-                "error_code": 2008,
-                "message": "UI state not available",
-            }
+        """Toggle FogOfWar.enabled. Same switch as key 1 and get_faction_state."""
         fog = self.world.get_singleton_component(FogOfWar)
-        set_screen_fog(ui_state, lifted=not ui_state.god_mode)
+        if fog is None:
+            fog = FogOfWar()
+            self.world.add_singleton_component(fog)
+        set_fog_enabled(fog, enabled=not fog.enabled)
+        ui_state = self.world.get_singleton_component(UIState)
+        if ui_state is not None and not fog.enabled:
+            ui_state.view_faction = None
         return {
             "success": True,
-            "message": f"God mode {'enabled' if ui_state.god_mode else 'disabled'}",
-            "god_mode": ui_state.god_mode,
-            "fog_enabled": fog.enabled if fog else True,
+            "message": f"Fog of war {'enabled' if fog.enabled else 'disabled'}",
+            "fog_enabled": fog.enabled,
         }
 
     def handle_toggle_fog_of_war(self, params: Dict) -> Dict:
-        """Toggle rules fog (agent queries). Independent of the key-1 overlay."""
+        """Toggle fog. Same switch as key 1: human, BOT, and agents."""
         fog_of_war = self.world.get_singleton_component(FogOfWar)
         if fog_of_war is None:
             fog_of_war = FogOfWar()
             self.world.add_singleton_component(fog_of_war)
 
         if params.get("enabled") is not None:
-            fog_of_war.enabled = bool(params.get("enabled"))
+            enabled = bool(params.get("enabled"))
         else:
-            fog_of_war.enabled = not fog_of_war.enabled
+            enabled = not fog_of_war.enabled
+        set_fog_enabled(fog_of_war, enabled=enabled)
         ui_state = self.world.get_singleton_component(UIState)
+        if ui_state is not None and not fog_of_war.enabled:
+            ui_state.view_faction = None
         return {
             "success": True,
             "message": f"Fog of war {'enabled' if fog_of_war.enabled else 'disabled'}",
             "fog_enabled": fog_of_war.enabled,
-            "god_mode": bool(ui_state.god_mode) if ui_state else False,
         }
 
     def handle_show_ui_panel(self, params: Dict) -> Dict:

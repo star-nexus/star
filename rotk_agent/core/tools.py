@@ -105,9 +105,10 @@ ATTACK_PARAMS = {
 FACTION_STATE_PARAMS = {
     "type": "object",
     "description": (
-        "Your army (positions, HP, remaining AP and MP) plus living enemies "
-        "in your units' current vision (id, type, position, count). faction "
-        "must be your own. Does not consume any points."
+        "Your army (positions, HP, remaining AP and MP) plus enemies currently "
+        "visible (id, type, position, count). Fog on = your units' vision; fog "
+        "off (key 1) = the whole map. faction must be your own. Does not "
+        "consume any points."
     ),
     "additionalProperties": False,
     "properties": {

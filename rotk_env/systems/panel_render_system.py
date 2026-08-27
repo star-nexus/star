@@ -307,6 +307,9 @@ class PanelRenderSystem(System):
         if not game_state or not fog_of_war or not position or not unit:
             return True
 
+        if not fog_of_war.enabled:
+            return True
+
         # Own faction units are always visible
         if unit.faction == game_state.current_player:
             return True
@@ -321,8 +324,8 @@ class PanelRenderSystem(System):
         if not ui_state:
             return
 
-        # Determine current view mode
-        if ui_state.god_mode:
+        fog = self.world.get_singleton_component(FogOfWar)
+        if fog is None or not fog.enabled:
             mode_text = "🔥 God View"
             mode_color = (255, 215, 0)  # Gold
         elif ui_state.view_faction:

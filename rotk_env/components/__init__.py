@@ -36,7 +36,7 @@ from .state import (
     InputState,
     FogOfWar,
     GameStats,
-    set_screen_fog,
+    set_fog_enabled,
     map_briefing,
     formation_center,
 )
@@ -122,7 +122,7 @@ __all__ = [
     "UIState",
     "InputState",
     "FogOfWar",
-    "set_screen_fog",
+    "set_fog_enabled",
     "map_briefing",
     "formation_center",
     "GameStats",

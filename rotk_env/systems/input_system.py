@@ -25,7 +25,8 @@ from ..components import (
     Camera,
     BattleLog,
     Player,
-    set_screen_fog,
+    FogOfWar,
+    set_fog_enabled,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction
 from ..utils.hex_utils import HexConverter
@@ -196,8 +197,14 @@ class InputHandlingSystem(System):
 
         # View mode hotkeys
         elif event.key == pygame.K_1:
-            # 1: human screen overlay; agent queries still use faction vision
-            self._set_god_mode(ui_state, not ui_state.god_mode)
+            # 1: toggle FogOfWar.enabled for everyone (human, BOT, agents)
+            fog = self._ensure_fog()
+            enabled = not fog.enabled
+            self._set_fog_enabled(ui_state, enabled=enabled)
+            if enabled:
+                print("Fog on - faction vision")
+            else:
+                print("Fog off - whole map visible to human, BOT, and agents")
 
         elif event.key == pygame.K_2:
             # 2: Wei view
@@ -367,22 +374,26 @@ class InputHandlingSystem(System):
                 return system
         return None
 
-    def _set_god_mode(self, ui_state: UIState, enable: bool):
-        """Human screen overlay. Does not change FogOfWar.enabled or agent queries."""
-        set_screen_fog(ui_state, lifted=enable)
-        if enable:
-            print("GOD VIEW enabled - screen overlay; agent fog unchanged")
-        else:
-            print("GOD VIEW disabled")
+    def _ensure_fog(self) -> FogOfWar:
+        fog = self.world.get_singleton_component(FogOfWar)
+        if fog is None:
+            fog = FogOfWar()
+            self.world.add_singleton_component(fog)
+        return fog
+
+    def _set_fog_enabled(self, ui_state: Optional[UIState], enabled: bool):
+        """Write FogOfWar.enabled. Spectator camera is UI-only, not a fog flag."""
+        set_fog_enabled(self._ensure_fog(), enabled)
+        if ui_state is not None and not enabled:
+            ui_state.view_faction = None
 
     def _set_faction_view(self, ui_state: UIState, faction: Faction):
-        """Set view to a specific faction."""
-        # Ensure faction exists in current game
+        """Set spectator camera to a faction and restore fog."""
         if not self._faction_exists(faction):
             print(f"Faction {faction.value} does not exist in current game")
             return
 
-        set_screen_fog(ui_state, lifted=False)
+        self._set_fog_enabled(ui_state, enabled=True)
         ui_state.view_faction = faction
         print(f"Switch to {faction.value} view - only that faction's vision is visible")
 

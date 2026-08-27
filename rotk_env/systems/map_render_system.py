@@ -396,11 +396,9 @@ class MapRenderSystem(System):
         fog_of_war = self.world.get_singleton_component(FogOfWar)
         ui_state = self.world.get_singleton_component(UIState)
 
-        if not game_state or not fog_of_war or not ui_state:
+        if not fog_of_war or not fog_of_war.enabled:
             return
-
-        # God mode: skip fog rendering
-        if ui_state.god_mode:
+        if not game_state or not ui_state:
             return
 
         # Determine current view faction

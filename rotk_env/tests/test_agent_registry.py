@@ -187,7 +187,7 @@ def test_registered_agent_cannot_census_another_faction():
     stats = GameStats()
     stats.agent_id_to_faction["shu_1"] = Faction.SHU
     world.add_singleton_component(stats)
-    world.add_singleton_component(UIState(god_mode=True))
+    world.add_singleton_component(UIState())
     world.add_singleton_component(FogOfWar(enabled=False))
 
     handler = LLMActionHandler(world)

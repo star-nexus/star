@@ -93,7 +93,8 @@ def test_move_unit_spends_plain_cost_and_lands():
     world.add_system(MovementSystem())
     unit = _spawn(world, col=0, row=0, mp=4)
 
-    assert world.systems[0].move_unit(unit, (1, 0)) is True
+    result = world.systems[0].move_unit(unit, (1, 0))
+    assert result["success"] is True
     pos = world.get_component(unit, HexPosition)
     mp = world.get_component(unit, MovementPoints)
     assert (pos.col, pos.row) == (1, 0)
@@ -107,10 +108,10 @@ def test_mountain_hex_costs_three_and_can_block_a_short_move():
         movement = MovementSystem()
         world.add_system(movement)
         unit = _spawn(world, col=0, row=0, mp=mp)
-        ok = movement.move_unit(unit, (1, 0))
+        result = movement.move_unit(unit, (1, 0))
         pos = world.get_component(unit, HexPosition)
         left = world.get_component(unit, MovementPoints).current_mp
-        return ok, (pos.col, pos.row), left
+        return result["success"], (pos.col, pos.row), left
 
     blocked, pos, mp = _try(2)
     assert blocked is False
@@ -130,8 +131,12 @@ def test_water_is_an_obstacle_not_a_walkable_999_tile():
     world.add_system(movement)
     unit = _spawn(world, col=0, row=0, mp=8)
 
-    assert movement.move_unit(unit, (1, 0)) is False
-    path = PathFinding.find_path((0, 0), (1, 0), movement._get_obstacles(), max_distance=8)
+    result = movement.move_unit(unit, (1, 0))
+    assert result["success"] is False
+    assert result["reason"] == "no_path"
+    path = PathFinding.find_path(
+        (0, 0), (1, 0), movement._get_obstacles(exclude_entity=unit), max_distance=8
+    )
     assert path == []
 
 
@@ -149,3 +154,92 @@ def test_handle_move_walks_the_same_cost_table():
     assert world.get_component(unit, MovementPoints).current_mp == 0
     pos = world.get_component(unit, HexPosition)
     assert (pos.col, pos.row) == (1, 0)
+
+
+def test_handle_move_translates_insufficient_mp_from_the_system():
+    world = World()
+    world.add_singleton_component(GameModeComponent(mode=GameMode.REAL_TIME))
+    _disc(world, radius=3, extras={(1, 0): TerrainType.MOUNTAIN})
+    world.add_system(MovementSystem())
+    unit = _spawn(world, col=0, row=0, mp=2)
+
+    result = LLMActionHandler(world).handle_move_action(
+        {"unit_id": unit, "target_position": {"col": 1, "row": 0}}
+    )
+    assert result["success"] is False
+    assert result["failure_reason"] == "insufficient_movement_points"
+    assert result["required_movement_points"] == 3
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (0, 0)
+
+
+def _tile_at(world, pos):
+    from rotk_env.components import Tile
+
+    map_data = world.get_singleton_component(MapData)
+    return world.get_component(map_data.tiles[pos], Tile)
+
+
+def test_occupancy_commits_with_hex_position_on_instant_move():
+    from rotk_env.components import Tile
+
+    world = World()
+    _disc(world, radius=3)
+    map_data = world.get_singleton_component(MapData)
+    for pos, tile_entity in map_data.tiles.items():
+        world.add_component(tile_entity, Tile(pos))
+    world.add_system(MovementSystem())
+    unit = _spawn(world, col=0, row=0, mp=4)
+    world.get_component(map_data.tiles[(0, 0)], Tile).occupied_by = unit
+
+    result = world.systems[0].move_unit(unit, (1, 0))
+    assert result["success"] is True
+    assert result["animated"] is False
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (1, 0)
+    assert _tile_at(world, (0, 0)).occupied_by is None
+    assert _tile_at(world, (1, 0)).occupied_by == unit
+
+
+def test_animation_defers_occupancy_until_hex_commits():
+    from framework import System
+    from rotk_env.components import Tile
+
+    class AnimationSystem(System):
+        def initialize(self, world):
+            self.world = world
+
+        def subscribe_events(self):
+            pass
+
+        def update(self, delta_time: float):
+            pass
+
+        def start_unit_movement(self, entity, path):
+            self.path = path
+            self.entity = entity
+
+    world = World()
+    _disc(world, radius=3)
+    map_data = world.get_singleton_component(MapData)
+    for pos, tile_entity in map_data.tiles.items():
+        world.add_component(tile_entity, Tile(pos))
+    movement = MovementSystem()
+    world.add_system(movement)
+    world.add_system(AnimationSystem())
+    unit = _spawn(world, col=0, row=0, mp=4)
+    world.get_component(map_data.tiles[(0, 0)], Tile).occupied_by = unit
+
+    result = movement.move_unit(unit, (1, 0))
+    assert result["success"] is True
+    assert result["animated"] is True
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (0, 0)
+    assert _tile_at(world, (0, 0)).occupied_by == unit
+    assert _tile_at(world, (1, 0)).occupied_by is None
+
+    movement.commit_hex_position(unit, 1, 0, arrived=True)
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (1, 0)
+    assert _tile_at(world, (0, 0)).occupied_by is None
+    assert _tile_at(world, (1, 0)).occupied_by == unit

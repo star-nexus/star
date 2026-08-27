@@ -240,5 +240,6 @@ def test_move_docs_spend_mp_not_ap():
     assert "does not spend action points" in move
     assert "until AP is exhausted" not in move
     assert "until AP is exhausted" in docs["attack"]["description"]
-    assert "key 1" not in docs["get_faction_state"]["description"]
-    assert "key-1 overlay" in docs["get_faction_state"]["description"]
+    faction_state = docs["get_faction_state"]["description"]
+    assert "fog off (key 1)" in faction_state
+    assert "overlay" not in faction_state

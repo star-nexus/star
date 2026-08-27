@@ -72,11 +72,11 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state",
-        "Your army (full detail, owner/commandable) plus living enemies on "
-        "tiles your units can currently see: unit id, type, position, count. "
-        "Visible area is the union of your units' vision. A human key-1 overlay "
-        "does not change this query. faction must be your own; querying another "
-        "faction is rejected. Orders on units you do not own still fail.",
+        "Your army (full detail, owner/commandable) plus living enemies in "
+        "the current vision: unit id, type, position, count. Fog on = union "
+        "of your units' vision; fog off (key 1) = the whole map. Same rule "
+        "for human, BOT, and agents. faction must be your own; querying "
+        "another faction is rejected. Orders on units you do not own still fail.",
         "query",
         {
             "faction": _p("string", True, "Your faction (wei | shu | wu)"),
@@ -126,7 +126,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state_vlm",
-        "Same JSON as get_faction_state (own army + enemies in unit vision), "
+        "Same JSON as get_faction_state (own army + currently visible enemies), "
         "plus a PNG of the current board render.",
         "query",
         {

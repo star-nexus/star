@@ -913,11 +913,13 @@ class UnitRenderSystem(System):
         position = self.world.get_component(unit_entity, HexPosition)
         unit = self.world.get_component(unit_entity, Unit)
 
-        if not game_state or not fog_of_war or not position or not unit or not ui_state:
+        if not game_state or not fog_of_war or not position or not unit:
             return True
 
-        # God view: show all
-        if ui_state.god_mode:
+        if not fog_of_war.enabled:
+            return True
+
+        if not ui_state:
             return True
 
         # Determine current viewing faction

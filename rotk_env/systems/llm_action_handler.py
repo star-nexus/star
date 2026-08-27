@@ -232,59 +232,23 @@ class LLMActionHandler:
             return permission_error
         # print(f"[MOVE_ACTION] Faction permission granted for {unit.faction.value}")
 
-        # Required components
-        # print(f"[MOVE_ACTION] Checking required components for unit {unit_id}...")
-        position = self.world.get_component(unit_id, HexPosition)
-        movement_points = self.world.get_component(unit_id, MovementPoints)
-        unit_count = self.world.get_component(unit_id, UnitCount)
-        unit_status = self.world.get_component(unit_id, UnitStatus)
-
-        # Note: ActionPoints no longer required for movement
-        # Detailed missing-components report
-        missing_components = []
-        component_info = {}
-
-        if not position:
-            missing_components.append("HexPosition")
-        else:
-            component_info["position"] = {"col": position.col, "row": position.row}
-            # print(f"[MOVE_ACTION] Current position: ({position.col}, {position.row})")
-
-        if not movement_points:
-            missing_components.append("MovementPoints")
-        else:
-            component_info["movement_points"] = {
-                "current_mp": movement_points.current_mp,
-                "max_mp": movement_points.max_mp,
-                "recovery_rate": getattr(movement_points, "recovery_rate", "unknown"),
-            }
-            # print(
-            #     f"[MOVE_ACTION] Movement points: {movement_points.current_mp}/{movement_points.max_mp}"
-            # )
-
-        if not unit_count:
-            missing_components.append("UnitCount")
-        else:
-            component_info["unit_count"] = {
-                "current_count": unit_count.current_count,
-                "max_count": unit_count.max_count,
-                "health_percentage": unit_count.current_count
-                / unit_count.max_count
-                * 100,
-            }
-            # print(
-            #     f"[MOVE_ACTION] Unit strength: {unit_count.current_count}/{unit_count.max_count}"
-            # )
-
-        if missing_components:
-            error_msg = f"Unit {unit_id} missing required components: {', '.join(missing_components)}"
+        missing = []
+        if not self.world.get_component(unit_id, HexPosition):
+            missing.append("HexPosition")
+        if not self.world.get_component(unit_id, MovementPoints):
+            missing.append("MovementPoints")
+        if not self.world.get_component(unit_id, UnitCount):
+            missing.append("UnitCount")
+        if missing:
+            error_msg = (
+                f"Unit {unit_id} missing required components: {', '.join(missing)}"
+            )
             print(f"[MOVE_ACTION] Missing components: {error_msg}")
             return self._create_error_response(
                 error_msg,
                 {
                     "unit_id": unit_id,
-                    "missing_components": missing_components,
-                    "existing_components": component_info,
+                    "missing_components": missing,
                     "required_components": [
                         "HexPosition",
                         "MovementPoints",
@@ -294,293 +258,10 @@ class LLMActionHandler:
                 },
             )
 
-        # Unit status check
-        if unit_status:
-            # print(f"[MOVE_ACTION] Unit status: {unit_status.current_status}")
-            if unit_status.current_status == UnitState.CONFUSION:
-                error_msg = f"Unit {unit_id} is confused and cannot move"
-                print(f"[MOVE_ACTION] Status blocks movement: {error_msg}")
-                return self._create_error_response(
-                    error_msg,
-                    {
-                        "unit_id": unit_id,
-                        "current_status": unit_status.current_status.value,
-                        "blocking_statuses": [UnitState.CONFUSION.value],
-                        "suggestion": "Wait for confusion to clear or use skill to remove it",
-                        "unit_info": component_info,
-                    },
-                )
-        else:
-            print(f"[MOVE_ACTION] Unit status component missing; assume normal")
-
-        # === Movement points check (execution layer) ===
-        # Note: Movement no longer requires action points, only movement points
-        # print(f"[MOVE_ACTION] Checking movement points...")
-        current_mp = movement_points.current_mp
-
-        if current_mp <= 0:
-            error_msg = f"Unit has no movement points left: {current_mp}"
-            print(f"[MOVE_ACTION] Insufficient MP: {error_msg}")
-            return self._create_error_response(
-                error_msg,
-                {
-                    "unit_id": unit_id,
-                    "current_movement_points": current_mp,
-                    "movement_point_info": component_info.get("movement_points", {}),
-                    "suggestion": "Use end_turn tool or wait for movement points to recover",
-                },
-            )
-        # print(f"[MOVE_ACTION] MP check passed: {current_mp}/{movement_points.max_mp}")
-
-        # Compute effective movement (consider strength)
-        effective_movement = movement_points.get_effective_movement(unit_count)
-        current_pos = (position.col, position.row)
-        target_pos = (target_col, target_row)
-
-        # print(
-        #     f"[MOVE_ACTION] Effective movement: {effective_movement} (base: {current_mp}, strength: {unit_count.current_count}/{unit_count.max_count})"
-        # )
-        # print(f"[MOVE_ACTION] Path planning: {current_pos} -> {target_pos}")
-
-        # Path and reachability
-        # print(f"[MOVE_ACTION] Gathering map obstacles...")
-        obstacles = self._get_obstacles_excluding_unit(unit_id)  # exclude moving unit
-        # print(f"[MOVE_ACTION] Obstacles count: {len(obstacles) if obstacles else 0}")
-
-        # Check whether the target position is occupied
-        # if target_pos in obstacles:
-        #     # Find the unit occupying the target tile
-        #     occupying_unit_id = None
-        #     occupying_unit_info = None
-        #     for entity in self.world.query().with_all(HexPosition, Unit).entities():
-        #         if entity == unit_id:
-        #             continue  # skip the moving unit itself
-        #         pos = self.world.get_component(entity, HexPosition)
-        #         if pos and (pos.col, pos.row) == target_pos:
-        #             occupying_unit_id = entity
-        #             unit_comp = self.world.get_component(entity, Unit)
-        #             if unit_comp:
-        #                 occupying_unit_info = {
-        #                     "unit_id": entity,
-        #                     "unit_type": unit_comp.unit_type.value,
-        #                     "faction": unit_comp.faction.value,
-        #                 }
-        #             break
-
-        #     error_msg = (
-        #         f"Target position {target_pos} is occupied by unit {occupying_unit_id}"
-        #     )
-        #     print(f"[MOVE_ACTION] Target position occupied: {error_msg}")
-        #     return self._create_error_response(
-        #         error_msg,
-        #         {
-        #             "unit_id": unit_id,
-        #             "target_position": target_pos,
-        #             "occupying_unit_id": occupying_unit_id,
-        #             "occupying_unit_info": occupying_unit_info,
-        #             "current_position": current_pos,
-        #             "suggestion": "Choose an unoccupied adjacent position",
-        #             "adjacent_positions": self._get_adjacent_free_positions(
-        #                 current_pos, obstacles
-        #             ),
-        #         },
-        #     )
-
-        from ..utils.hex_utils import PathFinding
-
-        # print(f"[MOVE_ACTION] Running pathfinding...")
-        # print(f"[MOVE_ACTION] Start: {current_pos}")
-        # print(f"[MOVE_ACTION] Target: {target_pos}")
-        # print(f"[MOVE_ACTION] Effective movement range: {effective_movement}")
-        # print(
-        #     f"[MOVE_ACTION] Obstacles (sample): {list(obstacles)[:10]}..."
-        # )  # sample first 10
-
-        path = PathFinding.find_path(
-            current_pos, target_pos, obstacles, effective_movement
-        )
-
-        # print(f"[MOVE_ACTION] Path result: {path}")
-
-        if not path or len(path) < 2:
-            # Provide details for pathfinding failure
-            from ..utils.hex_utils import HexMath
-
-            hex_distance = HexMath.hex_distance(current_pos, target_pos)
-
-            # Range issue?
-            distance_issue = hex_distance > effective_movement
-
-            # Target blocked?
-            target_blocked = target_pos in obstacles
-
-            # Nearby reachable positions
-            adjacent_free_positions = self._get_adjacent_free_positions(
-                current_pos, obstacles
-            )
-
-            error_msg = f"No valid path to target position {target_pos}"
-            print(f"[MOVE_ACTION] Pathfinding failed: {error_msg}")
-            print(f"[MOVE_ACTION] Hex distance: {hex_distance}")
-            print(f"[MOVE_ACTION] Effective movement: {effective_movement}")
-            print(f"[MOVE_ACTION] Distance exceeds: {distance_issue}")
-            print(f"[MOVE_ACTION] Target blocked: {target_blocked}")
-            print(f"[MOVE_ACTION] Adjacent free: {adjacent_free_positions}")
-
-            return self._create_error_response(
-                error_msg,
-                {
-                    "unit_id": unit_id,
-                    "start_position": current_pos,
-                    "target_position": target_pos,
-                    "effective_movement": effective_movement,
-                    "hex_distance": hex_distance,
-                    "distance_exceeds_range": distance_issue,
-                    "target_blocked": target_blocked,
-                    "path_found": path is not None,
-                    "path_length": len(path) if path else 0,
-                    "obstacle_count": len(obstacles),
-                    "obstacles_sample": list(obstacles)[:10],  # first 10 samples
-                    "adjacent_free_positions": adjacent_free_positions,
-                    "possible_causes": [
-                        (
-                            "Target position out of movement range"
-                            if distance_issue
-                            else None
-                        ),
-                        (
-                            "Target position blocked by obstacles"
-                            if target_blocked
-                            else None
-                        ),
-                        "No valid route exists",
-                        "PathFinding algorithm limitation",
-                    ],
-                    "suggestion": (
-                        f"Try one of these nearby positions: {adjacent_free_positions[:3]}"
-                        if adjacent_free_positions
-                        else "No adjacent free positions available"
-                    ),
-                },
-            )
-
-        # print(f"[MOVE_ACTION] Path found, length: {len(path)}, path: {path}")
-
-        # Total movement cost (terrain-aware)
-        # print(f"[MOVE_ACTION] Calculating path movement cost...")
-        total_movement_cost = self._calculate_total_movement_cost(path)
-        # print(f"[MOVE_ACTION] Total cost: {total_movement_cost} MP")
-
-        # Ensure current movement points suffice (using remaining MP)
-        if total_movement_cost > current_mp:
-            error_msg = f"Insufficient movement points this turn: need {total_movement_cost}, have {current_mp}."
-            print(f"[MOVE_ACTION] Insufficient MP for target: {error_msg}")
-
-            # Compute furthest reachable step along path with current MP
-            cumulative_cost = 0
-            reachable_positions_along_path = []
-            for step_index, pos in enumerate(path[1:]):  # skip origin
-                step_cost = self._get_terrain_movement_cost(pos)
-                if cumulative_cost + step_cost <= current_mp:
-                    cumulative_cost += step_cost
-                    reachable_positions_along_path.append(pos)
-                else:
-                    break
-
-            closest_reachable_position = (
-                reachable_positions_along_path[-1]
-                if reachable_positions_along_path
-                else current_pos
-            )
-
-            # Offer nearby reachable suggestions (prefer closer to target)
-            nearby_reachable_suggestions = []
-            try:
-                neighbor_candidates = self._get_adjacent_free_positions(
-                    current_pos, obstacles
-                )
-                scored = []
-                for cand in neighbor_candidates:
-                    cand_cost = self._get_terrain_movement_cost(cand)
-                    if cand_cost <= current_mp:
-                        dist = HexMath.hex_distance(cand, target_pos)
-                        scored.append((dist, cand))
-                scored.sort(key=lambda x: x[0])
-                nearby_reachable_suggestions = [c for _, c in scored[:3]]
-            except Exception:
-                pass
-
-            suggestion_text = (
-                f"Try moving to the closest reachable position this turn: {closest_reachable_position}"
-                if closest_reachable_position != current_pos
-                else (
-                    f"No step along the path is reachable this turn. Try one of these nearby positions: {nearby_reachable_suggestions}"
-                    if nearby_reachable_suggestions
-                    else "No nearby reachable positions this turn. Wait to recover movement points."
-                )
-            )
-
-            return self._create_error_response(
-                error_msg,
-                {
-                    "failure_reason": "insufficient_movement_points",
-                    "unit_id": unit_id,
-                    "required_movement_points": total_movement_cost,
-                    "current_movement_points": current_mp,
-                    "deficit": total_movement_cost - current_mp,
-                    "path": path,
-                    "path_length": len(path) - 1,
-                    "effective_movement": effective_movement,
-                    "terrain_costs": self._get_path_terrain_breakdown(path),
-                    "closest_reachable_position": (
-                        {
-                            "col": closest_reachable_position[0],
-                            "row": closest_reachable_position[1],
-                        }
-                        if isinstance(closest_reachable_position, tuple)
-                        else {
-                            "col": current_pos[0],
-                            "row": current_pos[1],
-                        }
-                    ),
-                    "reachable_steps": len(reachable_positions_along_path),
-                    "suggested_action": {
-                        "action": "move",
-                        "params": {
-                            "unit_id": unit_id,
-                            "target_position": {
-                                "col": (
-                                    closest_reachable_position[0]
-                                    if isinstance(closest_reachable_position, tuple)
-                                    else current_pos[0]
-                                ),
-                                "row": (
-                                    closest_reachable_position[1]
-                                    if isinstance(closest_reachable_position, tuple)
-                                    else current_pos[1]
-                                ),
-                            },
-                        },
-                    },
-                    "nearby_reachable_positions": [
-                        {"col": p[0], "row": p[1]} for p in nearby_reachable_suggestions
-                    ],
-                    "suggestion": suggestion_text,
-                },
-            )
-
-        # print(
-        #     f"[MOVE_ACTION] Movement sufficient, remaining: {current_mp - total_movement_cost}"
-        # )
-
-        # Execute movement
-        # print(f"[MOVE_ACTION] Fetching MovementSystem...")
         movement_system = self._get_movement_system()
         if not movement_system:
-            error_msg = "Movement system not available"
-            print(f"[MOVE_ACTION] System error: {error_msg}")
             return self._create_error_response(
-                error_msg,
+                "Movement system not available",
                 {
                     "unit_id": unit_id,
                     "system_error": "MovementSystem not found",
@@ -588,57 +269,54 @@ class LLMActionHandler:
                 },
             )
 
-        # print(f"[MOVE_ACTION] Executing move...")
-        success = movement_system.move_unit(unit_id, target_pos)
+        target_pos = (target_col, target_row)
+        planned = movement_system.move_unit(unit_id, target_pos)
+        return self._translate_move_result(unit_id, planned)
 
-        if success:
-            # print(f"[MOVE_ACTION] Move succeeded")
-
-            # Use default speed from MovementAnimation, or fall back to a known constant.
-            # Here we use the default value 2.0 defined in rotk_env/components/animation.py.
-            animation_speed = 2.0
-            path_length = len(path) - 1 if path else 0
-            estimated_duration = (
-                path_length / animation_speed if animation_speed > 0 else 0
-            )
-
-            # After move_unit, movement_points.current_mp has been updated
-            result = {
-                "success": True,
-                "result": True,
-                "message": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
-                "details": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
-                "action_status": "in_progress",
-                "movement_descriptions": {
-                    "start_position": {"col": current_pos[0], "row": current_pos[1]},
-                    "target_position": {"col": target_pos[0], "row": target_pos[1]},
-                    "path": path,
-                    "path_length": path_length,
-                },
-                "estimated_duration_seconds": round(estimated_duration, 2),
-                "remaining_movement_points": f"{movement_points.current_mp}/{movement_points.max_mp}",
+    def _translate_move_result(
+        self, unit_id: int, planned: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Turn MovementSystem's one plan into the LLM error/success payload."""
+        if not planned.get("success"):
+            extra = {
+                k: v
+                for k, v in planned.items()
+                if k not in ("success", "message")
             }
-            # print(f"[MOVE_ACTION] Move done, result: {result}")
-            return result
-        else:
-            error_msg = "Movement system failed to execute move"
-            print(f"[MOVE_ACTION] Move execution failed: {error_msg}")
+            print(f"[MOVE_ACTION] Move failed: {planned.get('message')}")
             return self._create_error_response(
-                error_msg,
-                {
-                    "unit_id": unit_id,
-                    "start_position": current_pos,
-                    "target_position": target_pos,
-                    "path": path,
-                    "system_error": "MovementSystem.move_unit returned false",
-                    "possible_causes": [
-                        "Target position became occupied during execution",
-                        "Unit state changed during execution",
-                        "Internal movement system error",
-                    ],
-                    "suggestion": "Try the move again or check target position",
-                },
+                planned.get("message", "Move failed"), extra
             )
+
+        path = planned.get("path") or []
+        current_pos = planned["from"]
+        target_pos = planned["to"]
+        movement_points = self.world.get_component(unit_id, MovementPoints)
+        animation_speed = 2.0
+        path_length = max(0, len(path) - 1)
+        estimated_duration = (
+            path_length / animation_speed if animation_speed > 0 else 0
+        )
+        remaining = (
+            f"{movement_points.current_mp}/{movement_points.max_mp}"
+            if movement_points
+            else None
+        )
+        return {
+            "success": True,
+            "result": True,
+            "message": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
+            "details": f"Unit {unit_id} has moved from {current_pos} to {target_pos}.",
+            "action_status": "in_progress",
+            "movement_descriptions": {
+                "start_position": {"col": current_pos[0], "row": current_pos[1]},
+                "target_position": {"col": target_pos[0], "row": target_pos[1]},
+                "path": path,
+                "path_length": path_length,
+            },
+            "estimated_duration_seconds": round(estimated_duration, 2),
+            "remaining_movement_points": remaining,
+        }
 
     def handle_attack_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle attack action - validation plus structured feedback."""
@@ -1332,13 +1010,12 @@ class LLMActionHandler:
     # ==================== Faction control ====================
 
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """What the observer's army can see for their own faction.
+        """Intelligence in the current shared vision for the observer faction.
 
         ``units`` is the observer's full army (command panel).
-        ``visible_enemy_units`` is every living enemy on a tile in the
-        observer's unit vision. A human key-1 overlay does not lift this.
-        When ``FogOfWar.enabled`` is False (rules, not the overlay), the
-        whole map is visible.
+        ``visible_enemy_units`` is every living enemy in the current vision:
+        union of that faction's unit vision while fog is on; the whole map
+        when fog is off (key 1). Human, BOT, and agents share this switch.
         ``params.faction`` must be the observer. Cross-faction queries
         are rejected (2005); they are not an intelligence channel.
         Formation centers live on the join-time map briefing, not here.
@@ -1420,11 +1097,9 @@ class LLMActionHandler:
         return requested
 
     def _is_fog_lifted(self) -> bool:
-        """True when rules fog is off. UI god-view (key 1) does not count."""
+        """True when FogOfWar.enabled is False (or the component is missing)."""
         fog = self.world.get_singleton_component(FogOfWar)
-        if fog is None or not fog.enabled:
-            return True
-        return False
+        return fog is None or not fog.enabled
 
     def _visible_enemy_units(
         self, observer: Faction, fog_lifted: bool

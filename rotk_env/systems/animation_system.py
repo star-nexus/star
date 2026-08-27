@@ -76,7 +76,14 @@ class AnimationSystem(System):
             if anim.progress >= 1.0:
                 # Reached current target point
                 target_hex = anim.path[anim.current_target_index]
-                pos.col, pos.row = target_hex
+                arrived = anim.current_target_index + 1 >= len(anim.path)
+                movement_system = self._get_movement_system()
+                if movement_system:
+                    movement_system.commit_hex_position(
+                        entity, target_hex[0], target_hex[1], arrived=arrived
+                    )
+                else:
+                    pos.col, pos.row = target_hex
                 anim.current_target_index += 1
                 anim.progress = 0.0
 
@@ -664,3 +671,9 @@ class AnimationSystem(System):
         )
 
         self.world.add_component(entity, text_indicator)
+
+    def _get_movement_system(self):
+        for system in self.world.systems:
+            if system.__class__.__name__ == "MovementSystem":
+                return system
+        return None
