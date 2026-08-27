@@ -29,6 +29,7 @@ from ..components import (
     set_fog_enabled,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction
+from ..prefabs.controls import binding_for_key
 from ..utils.hex_utils import HexConverter
 from ..utils.env_events import TileClickedEvent, UnitSelectedEvent
 
@@ -151,80 +152,95 @@ class InputHandlingSystem(System):
         EBS.publish(TileClickedEvent(hex_pos, 1))
 
     def _handle_key_down(self, event: KeyDownEvent):
-        """Handle key down (edge-triggered actions)."""
+        """Handle key down (edge-triggered actions from the shared keymap)."""
+        binding = binding_for_key(event.key)
+        if binding is None:
+            return
+        handler = getattr(self, f"_action_{binding.action}", None)
+        if handler is not None:
+            handler()
+
+    def _action_end_turn(self):
+        print("End current turn")
+        self._end_current_turn()
+
+    def _action_toggle_stats(self):
         ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Toggle statistics panel")
+        ui_state.show_stats = not ui_state.show_stats
+
+    def _action_toggle_help(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Toggle help panel")
+        ui_state.show_help = not ui_state.show_help
+
+    def _action_clear_selection(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Clear selection")
+        ui_state.selected_unit = None
+
+    def _action_battle_log_up(self):
         battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            battle_log.scroll_up()
 
-        if event.key == pygame.K_SPACE:
-            # Space: end turn
-            print("End current turn")
-            self._end_current_turn()
+    def _action_battle_log_down(self):
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            battle_log.scroll_down()
 
-        elif event.key == pygame.K_TAB:
-            # Tab: toggle statistics panel
-            print("Toggle statistics panel")
-            ui_state.show_stats = not ui_state.show_stats
+    def _action_battle_log_bottom(self):
+        battle_log = self.world.get_singleton_component(BattleLog)
+        if battle_log:
+            battle_log.scroll_to_bottom()
 
-        elif event.key == pygame.K_F1:
-            # F1: toggle help
-            print("Toggle help panel")
-            ui_state.show_help = not ui_state.show_help
+    def _action_toggle_hex_orientation(self):
+        print("Toggle hex orientation")
+        self._toggle_hex_orientation()
 
-        elif event.key == pygame.K_ESCAPE:
-            # ESC: clear selection
-            print("Clear selection")
-            ui_state.selected_unit = None
+    def _action_toggle_fog(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        fog = self._ensure_fog()
+        enabled = not fog.enabled
+        self._set_fog_enabled(ui_state, enabled=enabled)
+        if enabled:
+            print("Fog on - faction vision")
+        else:
+            print("Fog off - whole map visible to human, BOT, and agents")
 
-        elif event.key == pygame.K_PAGEUP:
-            # Page Up: scroll battle log up
-            if battle_log:
-                battle_log.scroll_up()
+    def _action_view_wei(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Switch to Wei view")
+        self._set_faction_view(ui_state, Faction.WEI)
 
-        elif event.key == pygame.K_PAGEDOWN:
-            # Page Down: scroll battle log down
-            if battle_log:
-                battle_log.scroll_down()
+    def _action_view_shu(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Switch to Shu view")
+        self._set_faction_view(ui_state, Faction.SHU)
 
-        elif event.key == pygame.K_END:
-            # End: scroll battle log to bottom
-            if battle_log:
-                battle_log.scroll_to_bottom()
+    def _action_view_wu(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        print("Switch to Wu view")
+        self._set_faction_view(ui_state, Faction.WU)
 
-        elif event.key == pygame.K_h:
-            # H: toggle hex orientation
-            print("Toggle hex orientation")
-            self._toggle_hex_orientation()
-
-        # View mode hotkeys
-        elif event.key == pygame.K_1:
-            # 1: toggle FogOfWar.enabled for everyone (human, BOT, agents)
-            fog = self._ensure_fog()
-            enabled = not fog.enabled
-            self._set_fog_enabled(ui_state, enabled=enabled)
-            if enabled:
-                print("Fog on - faction vision")
-            else:
-                print("Fog off - whole map visible to human, BOT, and agents")
-
-        elif event.key == pygame.K_2:
-            # 2: Wei view
-            print("Switch to Wei view")
-            self._set_faction_view(ui_state, Faction.WEI)
-
-        elif event.key == pygame.K_3:
-            # 3: Shu view
-            print("Switch to Shu view")
-            self._set_faction_view(ui_state, Faction.SHU)
-
-        elif event.key == pygame.K_4:
-            # 4: Wu view
-            print("Switch to Wu view")
-            self._set_faction_view(ui_state, Faction.WU)
-
-        elif event.key == pygame.K_v:
-            # V: toggle coordinate overlay
-            ui_state.show_coordinates = not ui_state.show_coordinates
-            print(f"Coordinates: {'ON' if ui_state.show_coordinates else 'OFF'}")
+    def _action_toggle_coordinates(self):
+        ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
+        ui_state.show_coordinates = not ui_state.show_coordinates
+        print(f"Coordinates: {'ON' if ui_state.show_coordinates else 'OFF'}")
 
     def _handle_keyboard(
         self,

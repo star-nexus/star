@@ -30,6 +30,7 @@ from framework.engine.game_engine import GameEngine
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
 from rotk_env.prefabs.config import PLAYER_PRESETS, GameConfig
+from rotk_env.prefabs.controls import format_cli_controls
 from rotk_env.prefabs.world_builder import DEFAULT_HUB_URL
 
 
@@ -38,19 +39,11 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Romance of the Three Kingdoms Strategy Game",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 Game description:
   This is a turn-based strategy game set on a hexagonal map, supporting both human and AI opponents. The game features a variety of terrain types, each affecting units in unique ways to add strategic depth.
 
-Controls:
-  Left Mouse Button: Select unit / Move / Attack
-  Right Mouse Button: Deselect
-  WASD or Arrow Keys: Move camera
-  V: Toggle coordinate display
-  Spacebar: End turn
-  Tab: Show/Hide statistics
-  F1: Show/Hide help
-  ESC: Cancel selection
+{format_cli_controls()}
 
 Victory Conditions:
   Annihilate every opposing unit to win. Being wiped is a loss.

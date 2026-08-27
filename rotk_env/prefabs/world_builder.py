@@ -3,6 +3,11 @@
 GameScene, pytest, and ``--headless --no-hub`` share this builder so the
 system list and opening setup stay one copy. ``hub_url=None`` installs an
 offline ``LLMSystem`` that never opens a websocket.
+
+This assembler is the current eval match: annihilate the enemy on one map.
+TerritorySystem, RandomEventSystem, ConstructionPoints, and SkillPoints stay
+in ENV for other scenes; they are not mounted here. Map tiles are terrain
+only — no TerritoryControl.
 """
 
 from __future__ import annotations
@@ -18,7 +23,6 @@ from ..components import (
     ActionPoints,
     BattleLog,
     Combat,
-    ConstructionPoints,
     FogOfWar,
     GameModeComponent,
     GameModeStatistics,
@@ -28,11 +32,9 @@ from ..components import (
     InputState,
     MapData,
     MatchRules,
-    MiniMap,
     MovementPoints,
     Player,
     RngService,
-    SkillPoints,
     TurnManager,
     UIState,
     Unit,
@@ -69,7 +71,6 @@ from ..systems.realtime_system import RealtimeSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
 from ..systems.statistics_system import StatisticsSystem
-from ..systems.territory_system import TerritorySystem
 from ..systems.turn_system import TurnSystem
 from ..systems.ui_button_system import UIButtonSystem
 from ..systems.ui_render_system import UIRenderSystem
@@ -163,7 +164,6 @@ class _SkirmishAssembler:
             [GameConfig.UNIT_MIX, GameConfig.UNIT_MIX, GameConfig.UNIT_MIX]
         )
         self._initialize_stats()
-        self._initialize_minimap()
 
     def _initialize_game_mode(self) -> None:
         self.world.add_singleton_component(GameModeComponent(mode=self.game_mode))
@@ -213,7 +213,6 @@ class _SkirmishAssembler:
             VisionSystem(),
             MovementSystem(),
             CombatSystem(),
-            TerritorySystem(),
             ResourceRecoverySystem(),
             MockLLMAISystem(),
             LLMSystem(server_url=self.hub_url, env_id=self.env_id),
@@ -373,10 +372,6 @@ class _SkirmishAssembler:
             unit_entity, ActionPoints(current_ap=ap, max_ap=ap)
         )
         self.world.add_component(
-            unit_entity, ConstructionPoints(current_cp=1, max_cp=1)
-        )
-        self.world.add_component(unit_entity, SkillPoints(current_sp=1, max_sp=1))
-        self.world.add_component(
             unit_entity,
             Combat(
                 base_attack=unit_stats.base_attack,
@@ -436,20 +431,3 @@ class _SkirmishAssembler:
                     break
         except Exception as e:
             print(f"[WorldBuilder] Failed to backfill map_info into GameStats: {e}")
-
-    def _initialize_minimap(self) -> None:
-        self.world.add_singleton_component(
-            MiniMap(
-                visible=True,
-                width=200,
-                height=150,
-                position=(10, 10),
-                scale=0.1,
-                center_on_camera=True,
-                show_units=True,
-                show_terrain=True,
-                show_fog_of_war=False,
-                show_camera_viewport=True,
-                clickable=True,
-            )
-        )

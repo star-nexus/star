@@ -70,7 +70,7 @@ from .unit_observation import (
     VisibilityTracker,
     GameModeStatistics,
 )
-from .game_over import Winner, GameStatistics, GameOverButtons
+from .game_over import Winner, GameStatistics, GameOverButtons, GameOverButton
 from .ui_button import UIButton, UIButtonCollection, UIPanel
 from .random_events import (
     DiceRoll,
@@ -149,6 +149,7 @@ __all__ = [
     "Winner",
     "GameStatistics",
     "GameOverButtons",
+    "GameOverButton",
     # UI button components
     "UIButton",
     "UIButtonCollection",

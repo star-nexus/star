@@ -179,47 +179,26 @@ class GameOverRenderSystem(System):
         if not button_component:
             return
 
-        for button_name, button in button_component.buttons.items():
-            # Button background
+        for button in button_component.buttons.values():
             button_color = (
-                button["hover_color"] if button["hover"] else button["default_color"]
+                button.hover_color if button.hover else button.default_color
             )
 
-            # Button background surface
-            button_surface = pygame.Surface(
-                (button["rect"].width, button["rect"].height)
-            )
+            button_surface = pygame.Surface((button.w, button.h))
             button_surface.fill(button_color)
-            RMS.draw(button_surface, (button["rect"].x, button["rect"].y))
+            RMS.draw(button_surface, (button.x, button.y))
 
-            # Border surface
-            border_surface = pygame.Surface(
-                (button["rect"].width, button["rect"].height), pygame.SRCALPHA
-            )
-            # pygame.draw.rect(
-            #     border_surface,
-            #     (120, 120, 140),
-            #     (0, 0, button["rect"].width, button["rect"].height),
-            #     2,
-            # )
+            border_surface = pygame.Surface((button.w, button.h), pygame.SRCALPHA)
             RMS.rect(
                 (120, 120, 140),
-                (
-                    button["rect"].x,
-                    button["rect"].y,
-                    button["rect"].width,
-                    button["rect"].height,
-                ),
+                (button.x, button.y, button.w, button.h),
                 width=2,
             )
-            RMS.draw(border_surface, (button["rect"].x, button["rect"].y))
+            RMS.draw(border_surface, (button.x, button.y))
 
-            # Button label
-            text_surface = self.font_medium.render(
-                button["text"], True, self.text_color
-            )
-            text_x = button["rect"].centerx - text_surface.get_width() // 2
-            text_y = button["rect"].centery - text_surface.get_height() // 2
+            text_surface = self.font_medium.render(button.label, True, self.text_color)
+            text_x = button.x + button.w // 2 - text_surface.get_width() // 2
+            text_y = button.y + button.h // 2 - text_surface.get_height() // 2
             RMS.draw(text_surface, (text_x, text_y))
 
     def set_button_hover(self, button_name: str) -> None:

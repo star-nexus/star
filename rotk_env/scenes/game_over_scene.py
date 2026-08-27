@@ -18,7 +18,12 @@ from framework import (
 )
 from framework.engine.engine_event import QuitEvent
 from framework.engine.scenes import Scene
-from ..components.game_over import Winner, GameStatistics, GameOverButtons
+from ..components.game_over import (
+    Winner,
+    GameStatistics,
+    GameOverButtons,
+    GameOverButton,
+)
 from ..systems.game_over_render_system import GameOverRenderSystem
 from ..systems.settlement_report_render_system import SettlementReportRenderSystem
 from ..prefabs.config import Faction, GameConfig
@@ -73,30 +78,36 @@ class GameOverScene(Scene):
         button_y = screen_height - 150
 
         buttons = {
-            "restart": {
-                "rect": pygame.Rect(start_x, button_y, button_width, button_height),
-                "text": "Restart",
-                "hover": False,
-                "default_color": (60, 60, 80),
-                "hover_color": (80, 80, 100),
-                "action": self._restart_game,
-            },
-            "view_report": {
-                "rect": pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height),
-                "text": "View Report",
-                "hover": False,
-                "default_color": (60, 80, 60),
-                "hover_color": (80, 100, 80),
-                "action": self._toggle_report_view,
-            },
-            "quit": {
-                "rect": pygame.Rect(start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height),
-                "text": "Quit",
-                "hover": False,
-                "default_color": (80, 60, 60),
-                "hover_color": (100, 80, 80),
-                "action": self._quit_game,
-            },
+            "restart": GameOverButton(
+                action="restart",
+                label="Restart",
+                x=start_x,
+                y=button_y,
+                w=button_width,
+                h=button_height,
+                default_color=(60, 60, 80),
+                hover_color=(80, 80, 100),
+            ),
+            "view_report": GameOverButton(
+                action="view_report",
+                label="View Report",
+                x=start_x + button_width + button_spacing,
+                y=button_y,
+                w=button_width,
+                h=button_height,
+                default_color=(60, 80, 60),
+                hover_color=(80, 100, 80),
+            ),
+            "quit": GameOverButton(
+                action="quit",
+                label="Quit",
+                x=start_x + 2 * (button_width + button_spacing),
+                y=button_y,
+                w=button_width,
+                h=button_height,
+                default_color=(80, 60, 60),
+                hover_color=(100, 80, 80),
+            ),
         }
 
         # Add buttons component
@@ -131,9 +142,10 @@ class GameOverScene(Scene):
         if not button_component:
             return
 
-        for button_name, button in button_component.buttons.items():
-            if button["rect"].collidepoint(pos):
-                button["action"]()
+        for button in button_component.buttons.values():
+            if button.contains(pos):
+                self._dispatch_button(button.action)
+                return
 
     def _handle_mouse_motion(self, pos: tuple) -> None:
         """Handle hover effects for buttons."""
@@ -141,11 +153,8 @@ class GameOverScene(Scene):
         if not button_component:
             return
 
-        for button_name, button in button_component.buttons.items():
-            if button["rect"].collidepoint(pos):
-                button["hover"] = True
-            else:
-                button["hover"] = False
+        for button in button_component.buttons.values():
+            button.hover = button.contains(pos)
 
     def _handle_mouse_wheel(self, y: int) -> None:
         """Handle mouse wheel: forward to settlement report system."""
@@ -157,6 +166,15 @@ class GameOverScene(Scene):
 
     def exit(self):
         return super().exit()
+
+    def _dispatch_button(self, action: str) -> None:
+        """Map button action ids to scene behavior."""
+        if action == "restart":
+            self._restart_game()
+        elif action == "view_report":
+            self._toggle_report_view()
+        elif action == "quit":
+            self._quit_game()
 
     def _restart_game(self) -> None:
         """Restart the game by switching to start scene."""

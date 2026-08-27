@@ -3,13 +3,25 @@
 from types import SimpleNamespace
 
 from framework.ecs.world import World
-from rotk_env.components import HexPosition, MovementPoints, Unit
+from rotk_env.components import (
+    ConstructionPoints,
+    HexPosition,
+    MapData,
+    MiniMap,
+    MovementPoints,
+    SkillPoints,
+    TerritoryControl,
+    Unit,
+)
 from rotk_env.main import resolve_hub_url
 from rotk_env.prefabs.config import Faction, GameMode, PlayerType
 from rotk_env.prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from rotk_env.systems.animation_system import AnimationSystem
 from rotk_env.systems.input_system import InputHandlingSystem
+from rotk_env.systems.minimap_system import MiniMapSystem
 from rotk_env.systems.llm_system import LLMSystem, NullEnvClient, SyncEnvClient
+from rotk_env.systems.random_event_system import RandomEventSystem
+from rotk_env.systems.territory_system import TerritorySystem
 from rotk_env.utils.hex_utils import HexMath
 
 
@@ -93,6 +105,8 @@ def test_builder_world_is_offline_and_can_move():
     assert not isinstance(llm.client, SyncEnvClient)
     assert not any(isinstance(s, InputHandlingSystem) for s in world.systems)
     assert not any(isinstance(s, AnimationSystem) for s in world.systems)
+    assert not any(isinstance(s, MiniMapSystem) for s in world.systems)
+    assert world.get_singleton_component(MiniMap) is None
 
     world.update(0.0)
 
@@ -120,6 +134,37 @@ def test_builder_world_is_offline_and_can_move():
     assert result is not None and result["success"] is True, result
     pos = world.get_component(unit_id, HexPosition)
     assert (pos.col, pos.row) == dest
+
+
+def test_minimap_system_creates_component_when_present():
+    world = World()
+    world.add_system(MiniMapSystem())
+    minimap = world.get_singleton_component(MiniMap)
+    assert minimap is not None
+    assert minimap.show_fog_of_war is False
+    assert minimap.clickable is True
+
+
+def test_eval_skirmish_does_not_mount_territory_skills_or_random_events():
+    world = build_skirmish_world(
+        players={Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
+        mode=GameMode.REAL_TIME,
+        seed=1,
+        hub_url=None,
+        display="none",
+    )
+    assert not any(isinstance(s, TerritorySystem) for s in world.systems)
+    assert not any(isinstance(s, RandomEventSystem) for s in world.systems)
+    units = list(world.query().with_component(Unit).entities())
+    assert units
+    for entity in units:
+        assert world.get_component(entity, ConstructionPoints) is None
+        assert world.get_component(entity, SkillPoints) is None
+    map_data = world.get_singleton_component(MapData)
+    assert map_data is not None and map_data.tiles
+    for tile in map_data.tiles.values():
+        assert world.get_component(tile, TerritoryControl) is None
+    assert not list(world.query().with_component(TerritoryControl).entities())
 
 
 def test_builder_world_can_construct_a_settlement_report():

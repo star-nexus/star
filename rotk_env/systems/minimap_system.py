@@ -27,8 +27,24 @@ class MiniMapSystem(System):
         )
 
     def initialize(self, world: World) -> None:
-        """Initialize system."""
+        """Initialize system and attach MiniMap when this system is present."""
         self.world = world
+        if self.world.get_singleton_component(MiniMap) is None:
+            self.world.add_singleton_component(
+                MiniMap(
+                    visible=True,
+                    width=200,
+                    height=150,
+                    position=(10, 10),
+                    scale=0.1,
+                    center_on_camera=True,
+                    show_units=True,
+                    show_terrain=True,
+                    show_fog_of_war=False,
+                    show_camera_viewport=True,
+                    clickable=True,
+                )
+            )
 
     def subscribe_events(self):
         """Subscribe to events."""

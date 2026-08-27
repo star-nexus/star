@@ -6,7 +6,7 @@ import random
 import math
 from typing import Dict, Tuple, List
 from framework import System, World
-from ..components import HexPosition, Terrain, MapData, TerritoryControl
+from ..components import HexPosition, Terrain, MapData
 from ..prefabs.config import GameConfig, TerrainType, Faction
 from ..utils.hex_utils import HexMath
 from .moba_map_generator import MOBAMapMixin
@@ -305,48 +305,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Create competitive map entities - offset coordinate version."""
-        # Calculate spawn positions (using offset coordinates)
-        center_row = GameConfig.MAP_HEIGHT // 2
-        spawn_distance = min(GameConfig.MAP_WIDTH, GameConfig.MAP_HEIGHT) // 2 - 1
-        spawn_points = {
-            Faction.SHU: (
-                GameConfig.MAP_WIDTH // 2,
-                center_row + spawn_distance,
-            ),  # Upper spawn point
-            Faction.WEI: (
-                GameConfig.MAP_WIDTH // 2,
-                center_row - spawn_distance,
-            ),  # Lower spawn point
-        }
-
         for (col, row), terrain_type in terrain_map.items():
-            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(col, row))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((col, row)))
-
-            # Set initial territory control near spawn points
-            controlling_faction = self._get_initial_territory_control(
-                (col, row), spawn_points
-            )
-            if controlling_faction:
-                self.world.add_component(
-                    tile_entity,
-                    TerritoryControl(
-                        controlling_faction=controlling_faction,
-                        being_captured=False,
-                        capturing_unit=None,
-                        capture_progress=0.0,
-                        capture_time_required=5.0,
-                        fortified=False,
-                        fortification_level=0,
-                        captured_time=0.0,
-                        is_city=(terrain_type == TerrainType.URBAN),
-                    ),
-                )
-
-            # Add to map data
             map_data.tiles[(col, row)] = tile_entity
 
     def _print_competitive_map_analysis_v2_offset(
@@ -488,22 +451,6 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
                 )
             if len(asymmetric_pairs) > 5:
                 print(f"    ... {len(asymmetric_pairs) - 5} more asymmetric positions")
-
-    def _get_initial_territory_control(
-        self,
-        pos: Tuple[int, int],
-        spawn_points: Dict[Faction, Tuple[int, int]],
-        control_radius: int = 2,
-    ) -> Faction:
-        """Determine initial territory control."""
-        q, r = pos
-
-        for faction, (spawn_q, spawn_r) in spawn_points.items():
-            distance = math.sqrt((q - spawn_q) ** 2 + (r - spawn_r) ** 2)
-            if distance <= control_radius:
-                return faction
-
-        return None
 
     def _print_competitive_map_analysis_v2(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
@@ -822,40 +769,11 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Create diagonal-symmetric competitive map entities."""
-        # Spawn points for diagonal mode
-        spawn_points = {
-            Faction.SHU: (-6, 6),  # Upper-left corner
-            Faction.WEI: (6, -6),  # Lower-right corner
-        }
-
         for (q, r), terrain_type in terrain_map.items():
-            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(q, r))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((q, r)))
-
-            # Set initial territory control near spawn points
-            controlling_faction = self._get_initial_territory_control(
-                (q, r), spawn_points, control_radius=3
-            )
-            if controlling_faction:
-                self.world.add_component(
-                    tile_entity,
-                    TerritoryControl(
-                        controlling_faction=controlling_faction,
-                        being_captured=False,
-                        capturing_unit=None,
-                        capture_progress=0.0,
-                        capture_time_required=5.0,
-                        fortified=False,
-                        fortification_level=0,
-                        captured_time=0.0,
-                        is_city=(terrain_type == TerrainType.URBAN),
-                    ),
-                )
-
-            # Add to map data
             map_data.tiles[(q, r)] = tile_entity
 
     def _print_diagonal_competitive_map_analysis(
@@ -1288,67 +1206,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Create river-split map entities."""
-        # Spawn points: at front-line positions in each faction's area
-        spawn_points = {
-            Faction.SHU: (-4, 4),  # Upper-left area front line
-            Faction.WEI: (4, -4),  # Lower-right area front line
-        }
-
         for (q, r), terrain_type in terrain_map.items():
-            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(q, r))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((q, r)))
-
-            # Set territory control near spawn points and cities
-            controlling_faction = self._get_river_split_territory_control(
-                (q, r), spawn_points
-            )
-            if controlling_faction:
-                self.world.add_component(
-                    tile_entity,
-                    TerritoryControl(
-                        controlling_faction=controlling_faction,
-                        being_captured=False,
-                        capturing_unit=None,
-                        capture_progress=0.0,
-                        capture_time_required=5.0,
-                        fortified=False,
-                        fortification_level=0,
-                        captured_time=0.0,
-                        is_city=(terrain_type == TerrainType.URBAN),
-                    ),
-                )
-
-            # Add to map data
             map_data.tiles[(q, r)] = tile_entity
-
-    def _get_river_split_territory_control(
-        self,
-        pos: Tuple[int, int],
-        spawn_points: Dict[Faction, Tuple[int, int]],
-        control_radius: int = 2,
-    ) -> Faction:
-        """Determine initial territory control for the river-split map."""
-        q, r = pos
-
-        # Control around spawn points
-        for faction, (spawn_q, spawn_r) in spawn_points.items():
-            distance = math.sqrt((q - spawn_q) ** 2 + (r - spawn_r) ** 2)
-            if distance <= control_radius:
-                return faction
-
-        # City control (center-symmetric)
-        # (5, 4) is in WEI's area (q+r > 0)
-        if math.sqrt((q - 5) ** 2 + (r - 4) ** 2) <= 2:
-            return Faction.WEI
-
-        # (-5, -4) is in SHU's area (q+r < 0)
-        if math.sqrt((q + 5) ** 2 + (r + 4) ** 2) <= 2:
-            return Faction.SHU
-
-        return None
 
     def _print_river_split_map_analysis(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]
@@ -1592,73 +1455,12 @@ class MapSystem(System, MOBAMapMixin, EncounterMapMixin):
         self, map_data: MapData, terrain_map: Dict[Tuple[int, int], TerrainType]
     ):
         """Create river-split map entities - (0,0)-centered coordinate version."""
-        # Calculate map radius
-        half_width = GameConfig.MAP_WIDTH // 2
-        half_height = GameConfig.MAP_HEIGHT // 2
-        
-        # Spawn points: symmetric positions in lower-left and upper-right corners
-        spawn_points = {
-            Faction.SHU: (-half_width + 3, -half_height + 3),  # Lower-left front line
-            Faction.WEI: (half_width - 3, half_height - 3),   # Upper-right front line
-        }
-
         for (x, y), terrain_type in terrain_map.items():
-            # Create tile entity
             tile_entity = self.world.create_entity()
             self.world.add_component(tile_entity, HexPosition(x, y))
             self.world.add_component(tile_entity, Terrain(terrain_type))
             self.world.add_component(tile_entity, Tile((x, y)))
-
-            # Set territory control near spawn points and cities
-            controlling_faction = self._get_river_split_territory_control_centered(
-                (x, y), spawn_points
-            )
-            if controlling_faction:
-                self.world.add_component(
-                    tile_entity,
-                    TerritoryControl(
-                        controlling_faction=controlling_faction,
-                        being_captured=False,
-                        capturing_unit=None,
-                        capture_progress=0.0,
-                        capture_time_required=5.0,
-                        fortified=False,
-                        fortification_level=0,
-                        captured_time=0.0,
-                        is_city=(terrain_type == TerrainType.URBAN),
-                    ),
-                )
-
-            # Add to map data
             map_data.tiles[(x, y)] = tile_entity
-
-    def _get_river_split_territory_control_centered(
-        self,
-        pos: Tuple[int, int],
-        spawn_points: Dict[Faction, Tuple[int, int]],
-        control_radius: int = 2,
-    ) -> Faction:
-        """Determine initial territory control for the river-split map - (0,0)-centered coordinate version."""
-        x, y = pos
-        half_width = GameConfig.MAP_WIDTH // 2
-        half_height = GameConfig.MAP_HEIGHT // 2
-
-        # Control around spawn points
-        for faction, (spawn_x, spawn_y) in spawn_points.items():
-            distance = math.sqrt((x - spawn_x) ** 2 + (y - spawn_y) ** 2)
-            if distance <= control_radius:
-                return faction
-
-        # City control (diagonal-symmetric)
-        # Lower-left city (-half_width+2, -half_height+2) is in SHU's area
-        if math.sqrt((x - (-half_width + 2)) ** 2 + (y - (-half_height + 2)) ** 2) <= 2:
-            return Faction.SHU
-
-        # Upper-right city (half_width-2, half_height-2) is in WEI's area
-        if math.sqrt((x - (half_width - 2)) ** 2 + (y - (half_height - 2)) ** 2) <= 2:
-            return Faction.WEI
-
-        return None
 
     def _print_river_split_map_analysis_offset(
         self, terrain_map: Dict[Tuple[int, int], TerrainType]

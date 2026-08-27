@@ -15,6 +15,7 @@ from ..components import (
     Player,
 )
 from ..prefabs.config import GameConfig, GameMode
+from ..prefabs.controls import help_panel_lines
 
 
 class UIRenderSystem(System):
@@ -208,9 +209,15 @@ class UIRenderSystem(System):
         if not ui_state or not ui_state.show_help:
             return
 
-        # Create help panel background
-        panel_width = 500
-        panel_height = 400
+        help_content = help_panel_lines()
+        line_height = 18
+        title_block = 70
+        bottom_pad = 24
+        content_h = sum(
+            line_height // 2 if line == "" else line_height for line in help_content
+        )
+        panel_width = 560
+        panel_height = title_block + content_h + bottom_pad
         panel_x = (GameConfig.WINDOW_WIDTH - panel_width) // 2
         panel_y = (GameConfig.WINDOW_HEIGHT - panel_height) // 2
 
@@ -219,42 +226,15 @@ class UIRenderSystem(System):
         panel_surface.fill((0, 0, 30))
         RMS.draw(panel_surface, (panel_x, panel_y))
 
-        # Draw border
         RMS.rect((100, 150, 200), (panel_x, panel_y, panel_width, panel_height), 3)
 
-        # Render title
         title_surface = self.font.render("GAME HELP", True, (255, 255, 255))
         title_rect = title_surface.get_rect(
             center=(panel_x + panel_width // 2, panel_y + 30)
         )
         RMS.draw(title_surface, title_rect)
 
-        # Render help content
-        help_content = [
-            "Basic Controls:",
-            "  Left Mouse - Select Unit",
-            "  Right Mouse - Move Unit",
-            "  Middle Mouse - Attack Enemy",
-            "",
-            "Keyboard Shortcuts:",
-            "  SPACE - End Turn",
-            "  ESC - Cancel Selection",
-            "  H - Toggle Help",
-            "  S - Toggle Statistics",
-            "  B - Toggle Battle Log",
-            "  1-4 - Switch View Mode",
-            "",
-            "Game Rules:",
-            "  Each unit can move once per turn",
-            "  Units cannot move after attacking",
-            "  Units die when health reaches 0",
-            "  Eliminate all enemies to win",
-            "",
-            "Press H to close this help panel",
-        ]
-
-        y_offset = panel_y + 70
-        line_height = 18
+        y_offset = panel_y + title_block
 
         for line in help_content:
             if y_offset + line_height > panel_y + panel_height - 20:
