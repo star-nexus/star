@@ -90,7 +90,7 @@ class EffectRenderSystem(System):
                 self._render_movement_range(ui_state.selected_unit, camera_offset, zoom)
 
             # Show attack range if the unit can currently attack
-            if combat and combat.can_attack():
+            if combat:
                 self._render_attack_range(ui_state.selected_unit, camera_offset, zoom)
 
     def _render_unit_selection(

@@ -1625,6 +1625,9 @@ class LLMSystem(System):
             }
 
         game_state.paused = True
+        game_time_system = self._get_game_time_system()
+        if game_time_system and hasattr(game_time_system, "pause_game"):
+            game_time_system.pause_game()
         return {"success": True, "message": "Game paused", "paused": True}
 
     def handle_resume_game(self, params: Dict) -> Dict:
@@ -1645,6 +1648,9 @@ class LLMSystem(System):
             }
 
         game_state.paused = False
+        game_time_system = self._get_game_time_system()
+        if game_time_system and hasattr(game_time_system, "resume_game"):
+            game_time_system.resume_game()
         return {"success": True, "message": "Game resumed", "paused": False}
 
     def handle_reset_game(self, params: Dict) -> Dict:

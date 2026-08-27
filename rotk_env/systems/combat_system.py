@@ -59,12 +59,11 @@ class CombatSystem(System):
     ) -> bool:
         """World-level attack readiness. Single query used by observation, AI, and handlers.
 
-        Without a target: the unit is alive, has Combat, Combat.can_attack()
-        (no realtime cooldown), and has AP for ATTACK.
+        Without a target: the unit is alive, has Combat, and has AP for ATTACK.
         With a target: plus range, enemy faction, and required components.
         """
         combat = self.world.get_component(attacker_entity, Combat)
-        if not combat or not combat.can_attack():
+        if not combat:
             return False
 
         unit_count = self.world.get_component(attacker_entity, UnitCount)
@@ -99,16 +98,6 @@ class CombatSystem(System):
                         "Ensure both attacker and target units exist "
                         "and are initialized correctly"
                     ),
-                },
-            }
-        if not combat.can_attack():
-            return {
-                "success": False,
-                "error": "attack_on_cooldown",
-                "message": "Unit cannot attack until cooldown expires",
-                "details": {
-                    "attacker_entity": attacker_entity,
-                    "attack_cooldown": combat.attack_cooldown,
                 },
             }
 
@@ -171,7 +160,6 @@ class CombatSystem(System):
         # Snapshot pre-battle state
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
         target_pos = self.world.get_component(target_entity, HexPosition)
-        attacker_combat = self.world.get_component(attacker_entity, Combat)
         attacker_count = self.world.get_component(attacker_entity, UnitCount)
         attacker_status = self.world.get_component(attacker_entity, UnitStatus)
         attacker_unit = self.world.get_component(attacker_entity, Unit)
@@ -321,7 +309,6 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
-        # attacker_combat.has_attacked = True  # removed single-attack restriction; multiple attacks allowed
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -369,7 +356,6 @@ class CombatSystem(System):
         # Get components
         attacker_pos = self.world.get_component(attacker_entity, HexPosition)
         target_pos = self.world.get_component(target_entity, HexPosition)
-        attacker_combat = self.world.get_component(attacker_entity, Combat)
         attacker_count = self.world.get_component(attacker_entity, UnitCount)
         attacker_status = self.world.get_component(attacker_entity, UnitStatus)
         attacker_unit = self.world.get_component(attacker_entity, Unit)
@@ -465,7 +451,6 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
-        # attacker_combat.has_attacked = True  # removed single-attack restriction; multiple attacks allowed
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -517,10 +502,6 @@ class CombatSystem(System):
             )
 
 
-
-        # Disabled single-attack-per-turn check - allow multiple attacks (if AP allows)
-        # if attacker_combat.has_attacked:
-        #     return False
 
         # Check attack range
         distance = HexMath.hex_distance(

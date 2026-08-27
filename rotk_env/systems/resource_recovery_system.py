@@ -3,10 +3,10 @@ Resource recovery system - handles automatic and manual recovery of multi-tier r
 Implemented per MULTILAYER_RESOURCE_SYSTEM_DESIGN.md.
 """
 
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 from framework import System, World
-from ..components import ActionPoints, MovementPoints, AttackPoints, SkillPoints, Terrain, GameTime
+from ..components import ActionPoints, MovementPoints, SkillPoints, Terrain, GameTime
 from ..prefabs.config import TerrainType
 
 
@@ -14,29 +14,27 @@ class ResourceRecoverySystem(System):
     """Multi-tier resource recovery system"""
 
     def __init__(self):
-        super().__init__(priority=50)  # runs early to ensure resource state is ready for other systems
+        super().__init__(priority=50)  # after GameTimeSystem (priority 10)
 
         # Action Point (AP) recovery config: recovers 1 AP per interval by default.
-        # Interval is in sim seconds. The engine steps 1/60 s at 60 FPS.
+        # Interval is board seconds from GameTime.game_elapsed_time.
         self.ap_recovery_interval = 1.0
         self.ap_recovery_amount = 1
 
         # Movement Point (MP) recovery config: full recovery after each interval
         self.mp_recovery_interval = 3.0
 
-        # Normal attack count recovery config: resets each interval
-        self.attack_recovery_interval = 1.0
-
-        # Skill cooldown update config: synchronized with attack recovery, updates each interval
+        # Skill cooldown update config
         self.skill_cooldown_interval = 5.0
 
-        # Per-entity accumulated recovery timers; prevents immediate re-grant after spending
+        # Per-entity remainder since the last granted tick, in board seconds.
         self.ap_elapsed: Dict[int, float] = {}
         self.mp_elapsed: Dict[int, float] = {}
-        self.attack_elapsed: Dict[int, float] = {}
         self.skill_elapsed: Dict[int, float] = {}
         # Last observed MP value per entity, used to detect when a move action has been spent
         self.mp_last_points: Dict[int, int] = {}
+        # Last GameTime.game_elapsed_time this system applied. Not engine delta_time.
+        self._last_game_elapsed: Optional[float] = None
 
         # Optional: accelerate recovery from decision quality. Not wired.
         # Tracks each unit's "decision quality score" to accelerate resource recovery.
@@ -44,25 +42,40 @@ class ResourceRecoverySystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
+        game_time = world.get_singleton_component(GameTime)
+        if game_time:
+            self._last_game_elapsed = game_time.game_elapsed_time
 
     def subscribe_events(self):
         pass
 
     def update(self, delta_time: float) -> None:
-        """Update resource recovery for all entities"""
+        """Recover from GameTime board seconds, not the engine dt argument.
+
+        Pause, time_scale, and a skipped GameTime tick all go through the
+        same ledger the HUD clock uses. ``delta_time`` is unused on purpose.
+        """
         game_time = self.world.get_singleton_component(GameTime)
-        if not game_time:
+        if not game_time or not game_time.is_real_time():
             return
 
-        # Only run recovery in real-time game mode
-        if game_time.is_real_time():
-            self._update_action_points(delta_time)
-            self._update_movement_points(delta_time)
-            self._update_attack_points(delta_time)
-            self._update_skill_cooldowns(delta_time)
+        now = game_time.game_elapsed_time
+        last = self._last_game_elapsed
+        if last is None:
+            self._last_game_elapsed = now
+            return
+
+        sim_dt = now - last
+        self._last_game_elapsed = now
+        if sim_dt <= 0:
+            return
+
+        self._update_action_points(sim_dt)
+        self._update_movement_points(sim_dt)
+        self._update_skill_cooldowns(sim_dt)
 
     # === Action point recovery ===
-    def _update_action_points(self, delta_time: float) -> None:
+    def _update_action_points(self, sim_dt: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.ap_recovery_interval
         amount = self.ap_recovery_amount
@@ -77,7 +90,7 @@ class ResourceRecoverySystem(System):
                 self.ap_elapsed.pop(entity, None)
                 continue
 
-            elapsed = self.ap_elapsed.get(entity, 0.0) + delta_time
+            elapsed = self.ap_elapsed.get(entity, 0.0) + sim_dt
             if elapsed < interval:
                 self.ap_elapsed[entity] = elapsed
                 continue
@@ -105,7 +118,7 @@ class ResourceRecoverySystem(System):
             self.ap_elapsed.pop(entity, None)
 
     # === Movement point recovery ===
-    def _update_movement_points(self, delta_time: float) -> None:
+    def _update_movement_points(self, sim_dt: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.mp_recovery_interval
 
@@ -130,7 +143,7 @@ class ResourceRecoverySystem(System):
                 self.mp_last_points[entity] = movement_points.current_mp
                 continue
 
-            elapsed = self.mp_elapsed.get(entity, 0.0) + delta_time
+            elapsed = self.mp_elapsed.get(entity, 0.0) + sim_dt
             if elapsed < interval:
                 self.mp_elapsed[entity] = elapsed
                 self.mp_last_points[entity] = movement_points.current_mp
@@ -160,45 +173,8 @@ class ResourceRecoverySystem(System):
         for entity in stale_last:
             self.mp_last_points.pop(entity, None)
 
-    # === Normal attack count recovery ===
-    def _update_attack_points(self, delta_time: float) -> None:
-        seen_entities: Set[int] = set()
-        interval = self.attack_recovery_interval
-
-        for entity in self.world.query().with_component(AttackPoints).entities():
-            seen_entities.add(entity)
-            attack_points = self.world.get_component(entity, AttackPoints)
-            if not attack_points:
-                continue
-
-            if attack_points.normal_attacks >= attack_points.max_normal_attacks:
-                self.attack_elapsed.pop(entity, None)
-                continue
-
-            elapsed = self.attack_elapsed.get(entity, 0.0) + delta_time
-            if elapsed < interval:
-                self.attack_elapsed[entity] = elapsed
-                continue
-
-            recover_ticks = int(elapsed // interval)
-            if recover_ticks <= 0:
-                self.attack_elapsed[entity] = elapsed
-                continue
-
-            attack_points.reset_normal_attacks()
-            elapsed -= interval * recover_ticks
-
-            if attack_points.normal_attacks >= attack_points.max_normal_attacks:
-                self.attack_elapsed.pop(entity, None)
-            else:
-                self.attack_elapsed[entity] = elapsed
-
-        stale_entities = set(self.attack_elapsed.keys()) - seen_entities
-        for entity in stale_entities:
-            self.attack_elapsed.pop(entity, None)
-
     # === Skill cooldown reduction ===
-    def _update_skill_cooldowns(self, delta_time: float) -> None:
+    def _update_skill_cooldowns(self, sim_dt: float) -> None:
         seen_entities: Set[int] = set()
         interval = self.skill_cooldown_interval
 
@@ -208,7 +184,7 @@ class ResourceRecoverySystem(System):
             if not skill_points:
                 continue
 
-            elapsed = self.skill_elapsed.get(entity, 0.0) + delta_time
+            elapsed = self.skill_elapsed.get(entity, 0.0) + sim_dt
             if elapsed < interval:
                 self.skill_elapsed[entity] = elapsed
                 continue

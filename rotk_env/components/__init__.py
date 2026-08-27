@@ -23,7 +23,6 @@ from .unit import Movement as LegacyMovement
 from .multilayer_resources import (
     ActionPoints,
     MovementPoints,
-    AttackPoints,
     ConstructionPoints,
     SkillPoints,
     # Movement,  # New Movement alias points to MovementPoints
@@ -103,7 +102,6 @@ __all__ = [
     "ActionPoints",  # New multi-layer ActionPoints component
     # Multi-layer resource components
     "MovementPoints",
-    "AttackPoints",
     "ConstructionPoints",
     "SkillPoints",
     # Backward compatibility

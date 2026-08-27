@@ -75,18 +75,6 @@ class Combat(Component):
     base_attack: int  # Base attack
     base_defense: int  # Base defense
     attack_range: int = 1
-    has_attacked: bool = False
-    # Real-time cooldown remaining in seconds. Turn-based play leaves this at 0.
-    attack_cooldown: float = 0.0
-
-    def can_attack(self) -> bool:
-        """Combat-local gate: this component is not locked out of attacking.
-
-        Turn-based: always True (multi-attack; AP is owned by ActionPoints).
-        Real-time: False while `attack_cooldown` is ticking.
-        Cross-component checks (alive, AP, range, faction) live on CombatSystem.
-        """
-        return self.attack_cooldown <= 0.0
 
     def in_attack_range(self, distance: int) -> bool:
         """Whether `distance` is a legal attack distance (not self, within range)."""

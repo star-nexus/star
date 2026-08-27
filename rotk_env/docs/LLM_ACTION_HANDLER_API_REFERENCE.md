@@ -476,7 +476,7 @@ Agent 的 `end_turn` tool 参数为空对象；faction 由 agent 自己填进 `b
     "position": {"col": 5, "row": 3},
     "health": {"current": 100, "max": 100, "percentage": 1.0},
     "movement": {"current": 3, "max": 3, "has_moved": false, "remaining_movement": 3},
-    "combat": {"attack": 85, "defense": 70, "range": 1, "has_attacked": false},
+    "combat": {"attack": 85, "defense": 70, "range": 1},
     "vision": {"sight_range": 5},
     "status": {
       "current_status": "ready",

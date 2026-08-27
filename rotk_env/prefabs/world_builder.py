@@ -16,7 +16,6 @@ from framework import World
 from ..components import (
     AIControlled,
     ActionPoints,
-    AttackPoints,
     BattleLog,
     Combat,
     ConstructionPoints,
@@ -372,9 +371,6 @@ class _SkirmishAssembler:
         ap = 2 if is_turn_based else 1
         self.world.add_component(
             unit_entity, ActionPoints(current_ap=ap, max_ap=ap)
-        )
-        self.world.add_component(
-            unit_entity, AttackPoints(normal_attacks=1, max_normal_attacks=1)
         )
         self.world.add_component(
             unit_entity, ConstructionPoints(current_cp=1, max_cp=1)

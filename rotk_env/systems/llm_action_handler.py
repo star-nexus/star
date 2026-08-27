@@ -832,7 +832,6 @@ class LLMActionHandler:
         pre_attack_state = {
             "attacker_action_points": attacker_action_points.current_ap,
             "target_count": target_count.current_count,
-            "attacker_has_attacked": attacker_combat.has_attacked,
         }
 
         # Invoke CombatSystem
@@ -860,7 +859,6 @@ class LLMActionHandler:
         post_attack_state = {
             "attacker_action_points": attacker_action_points.current_ap,
             "target_count": target_count.current_count,
-            "attacker_has_attacked": attacker_combat.has_attacked,
         }
 
         # Compute deltas
@@ -907,7 +905,6 @@ class LLMActionHandler:
             },
             "remaining_resources": {
                 "action_points": post_attack_state["attacker_action_points"],
-                # "can_attack_again": not post_attack_state["attacker_has_attacked"],  # Removed single-attack limit
             },
             "tactical_info": {
                 "attack_was_effective": casualties_inflicted > 0,
@@ -2671,10 +2668,10 @@ class LLMActionHandler:
             unit_ready = (
                 combat_system.can_attack(unit_id)
                 if combat_system
-                else combat.can_attack()
+                else True
             )
         else:
-            unit_ready = combat.can_attack()
+            unit_ready = True
 
         return {
             "in_attack_range": in_range,

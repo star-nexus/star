@@ -101,7 +101,6 @@ class UnitActionPanel(SingletonComponent):
             self.unit_info["attack"] = combat.base_attack
             self.unit_info["defense"] = combat.base_defense
             self.unit_info["range"] = combat.attack_range
-            self.unit_info["has_attacked"] = combat.has_attacked
 
     def update_available_actions(self, unit_entity: int, world):
         """Update available actions."""
@@ -130,7 +129,7 @@ class UnitActionPanel(SingletonComponent):
                 )
 
         # Attack
-        if combat and combat.can_attack():
+        if combat:
             if action_points.can_perform_action(ActionType.ATTACK):
                 self.available_actions.append(
                     UnitActionButton(

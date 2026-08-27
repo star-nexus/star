@@ -93,46 +93,6 @@ class MovementPoints(Component):
 
 
 @dataclass
-class AttackPoints(Component):
-    """Attack points - execution-layer attacks."""
-
-    normal_attacks: int = 1  # Normal attack count
-    max_normal_attacks: int = 1  # Max normal attacks
-    skill_points: int = 2  # Skill points
-    max_skill_points: int = 2  # Max skill points
-
-    def can_normal_attack(self) -> bool:
-        """Return whether a normal attack can be performed."""
-        return self.normal_attacks > 0
-
-    def can_use_skill(self, skill_cost: int) -> bool:
-        """Return whether there are enough points to use a skill."""
-        return self.skill_points >= skill_cost
-
-    def consume_normal_attack(self) -> bool:
-        """Consume one normal attack, if possible."""
-        if self.normal_attacks > 0:
-            self.normal_attacks -= 1
-            return True
-        return False
-
-    def consume_skill_points(self, cost: int) -> bool:
-        """Consume skill points, if possible."""
-        if self.skill_points >= cost:
-            self.skill_points -= cost
-            return True
-        return False
-
-    def reset_normal_attacks(self):
-        """Reset normal attacks (automatic per turn)."""
-        self.normal_attacks = self.max_normal_attacks
-
-    def restore_skill_points(self):
-        """Restore skill points (requires a rest action)."""
-        self.skill_points = self.max_skill_points
-
-
-@dataclass
 class ConstructionPoints(Component):
     """Construction points - execution-layer building."""
 
