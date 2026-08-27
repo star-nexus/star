@@ -1,5 +1,9 @@
 # Agent layer
 
+STAR’s **reference** LLM client for STARBench — not the SDK. The agent–ENV
+contract a third party must implement is
+[`docs/agent-protocol.md`](../docs/agent-protocol.md) (`protocol.AgentClient`).
+
 One entry point, one chat loop. What varies between models lives behind
 `ModelAdapter`, what varies between game modes behind `ModeStrategy`.
 
@@ -47,7 +51,7 @@ The LLM only calls what is registered as a tool. There is one shared
 
 | Tool | When | What it does |
 | :--- | :--- | :--- |
-| `perform_action` | every mode | ENV verbs allowed in this match. The `action` enum starts as the skirmish three (`move`, `attack`, `get_faction_state`) and is rebuilt from `register_agent_info.game_actions` after join. |
+| `perform_action` | every mode | ENV verbs allowed in this match. Before join the enum is a local fallback of the skirmish three (`move`, `attack`, `get_faction_state`). After `register_agent_info` the enum, param shapes, and board col/row range are taken from that reply — the agent does not import ENV modules. |
 | `end_turn` | turn-based only | Empty-arg tool. Ends the faction's turn and closes the turn gate. Real-time has no turn to end. |
 
 The ENV is the allow-list: a guessed name is **2010**, a verb that exists but is not in this match is **2003**. There is no `STAR_ACTION_PROFILE` upgrade.

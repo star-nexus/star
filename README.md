@@ -52,7 +52,7 @@ A benchmarking suite for strategic multi-agent scenarios.
 An agent architecture for competitive evaluation in STARBench.
 *   **Model-Agnostic:** Supports different LLM backends and provider configurations.
 *   **Agent-vs-Agent Evaluation:** Enables LLM agents to compete in standardized STARBench scenarios.
-*   **Custom Agent Support:** Researchers can plug in their own agent architectures and evaluate them under the same environment and protocol.
+*   **Custom Agent Support:** Researchers plug in via the [Agent–ENV protocol](docs/agent-protocol.md) and `protocol.AgentClient`. `rotk_agent` is a reference LLM client, not the SDK and not the only legal architecture.
 
 ### 🔌 The Protocol (`Star Protocol`)
 An asynchronous communication layer for integrating heterogeneous agents and ENVs.
@@ -75,7 +75,7 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 
 | Layer | Component | Description |
 | :--- | :--- | :--- |
-| **Agent Layer** | *Decision Host* | Decision hosts implementing perception–planning–action loops. |
+| **Agent Layer** | *Decision Host* | Decision hosts that speak the [Agent–ENV protocol](docs/agent-protocol.md). |
 | **Protocol Layer** | *Nexus Bridge* | Asynchronous protocol and communication abstraction. |
 | **Environment Layer** | *Simulation Logic* | Implements specific ENV rules (e.g., RoTK), physics, and vision systems. |
 | **Framework Layer** | *STAREngine* | Core ECS-based execution framework. |
@@ -255,6 +255,14 @@ hub and ENV, which exercises everything except the model itself:
 uv run rotk_agent/main.py --faction wei --provider fake --mode turn_based
 ```
 
+To plug in a **custom architecture**, implement the
+[Agent–ENV protocol](docs/agent-protocol.md) with `protocol.AgentClient` only
+(no `rotk_agent` / `rotk_env` imports). A no-LLM MUST-sequence probe:
+
+```bash
+uv run python examples/protocol_conformance.py --faction wei --mode turn_based
+```
+
 #### Controlling reasoning
 
 Two flags govern how much the model thinks and how much of that thinking stays
@@ -338,6 +346,7 @@ python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-
 - [x] LLM-based decision agents with tool-to-action mapping
 - [x] Multi-provider backend support
 - [x] Fully decoupled from environment runtime via protocol abstraction
+- [x] Minimal agent–ENV protocol spec for custom architectures (`docs/agent-protocol.md`)
 
 ## Citation
 

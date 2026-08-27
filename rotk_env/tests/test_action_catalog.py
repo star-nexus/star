@@ -14,7 +14,6 @@ from rotk_env.prefabs.action_catalog import (
 )
 from rotk_env.prefabs.config import ActionType, GameMode
 from rotk_env.components.gamemode import GameModeComponent, MatchRules
-from rotk_agent.core.tools import PERFORM_ACTION_SCHEMA, perform_action_schema
 from rotk_env.systems.llm_action_handler import LLMActionHandler
 from rotk_env.systems.llm_system import ActionExecutor, ActionRequest, LLMSystem
 from framework import World
@@ -40,20 +39,6 @@ def test_unimplemented_enums_are_not_on_the_master_table():
 
 def test_get_action_list_is_not_a_game_verb():
     assert "get_action_list" not in GAME_ACTION_NAMES
-
-
-def test_agent_schema_enum_is_the_skirmish_perform_set():
-    assert set(PERFORM_ACTION_SCHEMA["properties"]["action"]["enum"]) == {
-        "move",
-        "attack",
-        "get_faction_state",
-    }
-    assert "end_turn" not in PERFORM_ACTION_SCHEMA["properties"]["action"]["enum"]
-    widened = perform_action_schema(["move", "attack", "get_faction_state", "occupy"])
-    assert "occupy" in widened["properties"]["action"]["enum"]
-    assert "end_turn" not in perform_action_schema(
-        ["move", "end_turn"]
-    )["properties"]["action"]["enum"]
 
 
 def test_get_action_list_returns_this_match_only():
@@ -244,3 +229,16 @@ def test_move_docs_spend_mp_not_ap():
     assert "fog off (key 1)" in faction_state
     assert "visible_terrain" in faction_state
     assert "overlay" not in faction_state
+    assert docs["get_faction_state"]["parameters"]["faction"]["enum"] == [
+        "wei",
+        "shu",
+        "wu",
+    ]
+
+
+def test_occupy_and_fortify_docs_include_col_row():
+    docs = docs_for_names(("occupy", "fortify"))
+    for name in ("occupy", "fortify"):
+        position = docs[name]["parameters"]["position"]
+        assert position["properties"]["col"]["type"] == "int"
+        assert position["properties"]["row"]["type"] == "int"

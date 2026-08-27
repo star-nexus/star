@@ -1,18 +1,20 @@
 """Tool registry and the canonical tool schemas.
 
-There is one schema per tool, shared by every model. The old per-file agents
-had drifted apart here too: the Nemotron scripts shipped a Chinese schema with
-every field description stripped, so that model saw materially less guidance
-than the others, and they registered an extra `stop_running` tool whose name,
-description, docstring, and return value all disagreed with each other.
+There is one schema per tool, shared by every model. Names, parameter shapes,
+and board bounds after join come from ``register_agent_info`` — this module
+must not import ``rotk_env``.
+
+The pre-join fallback is a local copy of the skirmish three, used only until
+the ENV replies (or if join fails). It is a string tuple in this file, not a
+shared symbol with the ENV catalog.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
-
-from rotk_env.prefabs.action_catalog import SKIRMISH_ACTIONS
 
 from .types import ToolDefinition
 
@@ -42,10 +44,64 @@ class ToolManager:
         return tool.function(**arguments)
 
 
-# Hex coordinates are flat-topped even-q offsets centred on the origin, so the
-# 15x15 board spans -7..7 on both axes.
-BOARD_MIN = -7
-BOARD_MAX = 7
+# Pre-join placeholder. Must stay a local literal — do not import ENV.
+FALLBACK_ACTION_NAMES: tuple[str, ...] = ("move", "attack", "get_faction_state")
+
+_JSON_TYPES = {
+    "int": "integer",
+    "integer": "integer",
+    "str": "string",
+    "string": "string",
+    "bool": "boolean",
+    "boolean": "boolean",
+    "object": "object",
+    "array": "array",
+    "number": "number",
+}
+
+
+@dataclass(frozen=True)
+class BoardBounds:
+    """Inclusive even-q offset range for one match, from the join map sheet."""
+
+    col_min: int
+    col_max: int
+    row_min: int
+    row_max: int
+
+
+def board_bounds_from_map(briefing: Optional[dict]) -> Optional[BoardBounds]:
+    """Read board limits from ``register_agent_info.map``.
+
+    Prefer the explicit ``col_min``/``col_max``/``row_min``/``row_max`` the ENV
+    now sends. Older replies only had ``width``/``height``: those are treated as
+    a centered even-q grid (the map-file convention), not as 0-based indices.
+    """
+    if not isinstance(briefing, dict):
+        return None
+
+    keys = ("col_min", "col_max", "row_min", "row_max")
+    if all(type(briefing.get(k)) is int for k in keys):
+        return BoardBounds(
+            col_min=briefing["col_min"],
+            col_max=briefing["col_max"],
+            row_min=briefing["row_min"],
+            row_max=briefing["row_max"],
+        )
+
+    width = briefing.get("width")
+    height = briefing.get("height")
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        half_w = width // 2
+        half_h = height // 2
+        return BoardBounds(
+            col_min=-half_w,
+            col_max=width - half_w - 1,
+            row_min=-(height - half_h - 1),
+            row_max=half_h,
+        )
+    return None
+
 
 MOVE_PARAMS = {
     "type": "object",
@@ -64,15 +120,11 @@ MOVE_PARAMS = {
             "properties": {
                 "col": {
                     "type": "integer",
-                    "minimum": BOARD_MIN,
-                    "maximum": BOARD_MAX,
-                    "description": f"Target column (even-q offset), range {BOARD_MIN} to {BOARD_MAX}.",
+                    "description": "Target column (even-q offset).",
                 },
                 "row": {
                     "type": "integer",
-                    "minimum": BOARD_MIN,
-                    "maximum": BOARD_MAX,
-                    "description": f"Target row (even-q offset), range {BOARD_MIN} to {BOARD_MAX}.",
+                    "description": "Target row (even-q offset).",
                 },
             },
             "required": ["col", "row"],
@@ -122,7 +174,7 @@ FACTION_STATE_PARAMS = {
     "title": "get_faction_state",
 }
 
-_KNOWN_PARAM_SCHEMAS = {
+_FALLBACK_PARAM_SCHEMAS = {
     "move": MOVE_PARAMS,
     "attack": ATTACK_PARAMS,
     "get_faction_state": FACTION_STATE_PARAMS,
@@ -133,14 +185,145 @@ PERFORM_ACTION_DESCRIPTION = "Execute a specific action in the game environment.
 
 def perform_action_names(names: Optional[Iterable[str]] = None) -> List[str]:
     """Names advertised on ``perform_action``. ``end_turn`` is a dedicated tool."""
-    source = SKIRMISH_ACTIONS if names is None else names
-    return sorted(name for name in source if name != "end_turn")
+    source = FALLBACK_ACTION_NAMES if names is None else names
+    cleaned: List[str] = []
+    for name in source:
+        if not isinstance(name, str):
+            continue
+        if name == "end_turn" or not name:
+            continue
+        cleaned.append(name)
+    return sorted(cleaned)
 
 
-def perform_action_schema(names: Optional[Sequence[str]] = None) -> Dict[str, Any]:
-    """JSON schema for ``perform_action``. Enum is this match's game verbs."""
-    advertised = perform_action_names(names)
+def _env_field_to_json(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate one ENV ActionSpec field into JSON Schema."""
+    out: Dict[str, Any] = {}
+    raw_type = spec.get("type")
+    json_type = _JSON_TYPES.get(raw_type) if isinstance(raw_type, str) else None
+    if json_type:
+        out["type"] = json_type
+    description = spec.get("description")
+    if description:
+        out["description"] = description
+    if isinstance(spec.get("enum"), list) and spec["enum"]:
+        out["enum"] = list(spec["enum"])
+    for bound in ("minimum", "maximum"):
+        value = spec.get(bound)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        out[bound] = value
+
+    nested = spec.get("properties")
+    if json_type == "object" or isinstance(nested, dict):
+        out["type"] = "object"
+        out["additionalProperties"] = False
+        properties = nested if isinstance(nested, dict) else {}
+        out["properties"] = {
+            key: _env_field_to_json(value) if isinstance(value, dict) else {}
+            for key, value in properties.items()
+        }
+        if properties:
+            out["required"] = list(properties)
+    return out
+
+
+def _env_params_to_json_schema(parameters: Dict[str, Any], title: str) -> Dict[str, Any]:
+    properties: Dict[str, Any] = {}
+    required: List[str] = []
+    for name, spec in parameters.items():
+        if not isinstance(spec, dict):
+            properties[name] = {}
+            continue
+        properties[name] = _env_field_to_json(spec)
+        if spec.get("required") is True:
+            required.append(name)
     schema: Dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "title": title,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _apply_board_bounds(node: Any, board: BoardBounds) -> Any:
+    """Stamp inclusive col/row ranges onto integer axis fields."""
+    if isinstance(node, list):
+        return [_apply_board_bounds(item, board) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    updated = {key: _apply_board_bounds(value, board) for key, value in node.items()}
+    properties = updated.get("properties")
+    if not isinstance(properties, dict):
+        return updated
+
+    axes = (
+        ("col", board.col_min, board.col_max),
+        ("row", board.row_min, board.row_max),
+    )
+    for axis, lo, hi in axes:
+        field = properties.get(axis)
+        if not isinstance(field, dict):
+            continue
+        if field.get("type") not in (None, "integer"):
+            continue
+        field = dict(field)
+        field["type"] = "integer"
+        field["minimum"] = lo
+        field["maximum"] = hi
+        description = str(field.get("description") or axis).rstrip(".")
+        if "range" not in description.lower():
+            field["description"] = f"{description} (range {lo} to {hi})."
+        properties[axis] = field
+    return updated
+
+
+def _param_schema_for(
+    name: str,
+    docs: Optional[Dict[str, Any]],
+    board: Optional[BoardBounds],
+) -> Dict[str, Any]:
+    """One ``params`` oneOf variant for ``name``."""
+    spec = docs.get(name) if isinstance(docs, dict) else None
+    schema: Optional[Dict[str, Any]] = None
+    parameters = spec.get("parameters") if isinstance(spec, dict) else None
+    if isinstance(parameters, dict) and parameters:
+        schema = _env_params_to_json_schema(parameters, name)
+        description = spec.get("description")
+        if isinstance(description, str) and description:
+            schema["description"] = description
+    elif name in _FALLBACK_PARAM_SCHEMAS:
+        schema = copy.deepcopy(_FALLBACK_PARAM_SCHEMAS[name])
+    else:
+        schema = {
+            "type": "object",
+            "title": name,
+            "additionalProperties": True,
+        }
+
+    if board is not None:
+        schema = _apply_board_bounds(schema, board)
+    return schema
+
+
+def perform_action_schema(
+    names: Optional[Sequence[str]] = None,
+    *,
+    docs: Optional[Dict[str, Any]] = None,
+    board: Optional[BoardBounds] = None,
+) -> Dict[str, Any]:
+    """JSON schema for ``perform_action``.
+
+    ``names`` / ``docs`` / ``board`` are the join payload. Omit them for the
+    pre-join fallback (skirmish three, no coordinate clamp).
+    """
+    advertised = perform_action_names(names)
+    variants = [_param_schema_for(name, docs, board) for name in advertised]
+    return {
         "type": "object",
         "additionalProperties": False,
         "properties": {
@@ -151,24 +334,11 @@ def perform_action_schema(names: Optional[Sequence[str]] = None) -> Dict[str, An
             },
             "params": {
                 "description": "Parameters object for the specified action.",
-                "oneOf": [
-                    _KNOWN_PARAM_SCHEMAS[name]
-                    for name in advertised
-                    if name in _KNOWN_PARAM_SCHEMAS
-                ]
-                or [{"type": "object"}],
+                "oneOf": variants or [{"type": "object"}],
             },
         },
         "required": ["action", "params"],
     }
-    extra = [name for name in advertised if name not in _KNOWN_PARAM_SCHEMAS]
-    if extra:
-        # Match opened verbs the three-shape oneOf cannot describe.
-        schema["properties"]["params"] = {
-            "description": "Parameters object for the specified action.",
-            "type": "object",
-        }
-    return schema
 
 
 PERFORM_ACTION_SCHEMA = perform_action_schema()
@@ -182,13 +352,17 @@ END_TURN_DESCRIPTION = (
 
 
 def perform_action_tool(
-    function: Callable, names: Optional[Sequence[str]] = None
+    function: Callable,
+    names: Optional[Sequence[str]] = None,
+    *,
+    docs: Optional[Dict[str, Any]] = None,
+    board: Optional[BoardBounds] = None,
 ) -> ToolDefinition:
     """The one tool every agent gets, in every mode."""
     return ToolDefinition(
         name="perform_action",
         description=PERFORM_ACTION_DESCRIPTION,
-        parameters=perform_action_schema(names) if names is not None else PERFORM_ACTION_SCHEMA,
+        parameters=perform_action_schema(names, docs=docs, board=board),
         function=function,
     )
 
@@ -205,10 +379,13 @@ def end_turn_tool(function: Callable) -> ToolDefinition:
 
 __all__ = [
     "ToolManager",
+    "BoardBounds",
+    "FALLBACK_ACTION_NAMES",
     "PERFORM_ACTION_SCHEMA",
     "PERFORM_ACTION_DESCRIPTION",
     "END_TURN_SCHEMA",
     "END_TURN_DESCRIPTION",
+    "board_bounds_from_map",
     "perform_action_names",
     "perform_action_schema",
     "perform_action_tool",

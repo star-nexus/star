@@ -47,6 +47,7 @@ from .state import (
     GameStats,
     set_fog_enabled,
     map_briefing,
+    board_axis_bounds,
     formation_center,
 )
 from .unit_action_panel import (
@@ -136,6 +137,7 @@ __all__ = [
     "FogOfWar",
     "set_fog_enabled",
     "map_briefing",
+    "board_axis_bounds",
     "formation_center",
     "GameStats",
     "Camera",

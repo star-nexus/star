@@ -260,3 +260,21 @@ def test_register_returns_home_bases():
     assert result["game_actions"]["names"] == ["move", "attack", "get_faction_state"]
     assert "occupy" not in result["game_actions"]["docs"]
     assert "move" in result["game_actions"]["docs"]
+    assert result["map"]["width"] == 15
+    assert result["map"]["height"] == 15
+    assert result["map"]["col_min"] == -7
+    assert result["map"]["col_max"] == 7
+    assert result["map"]["row_min"] == -7
+    assert result["map"]["row_max"] == 7
+
+
+def test_map_briefing_uses_tile_keys_for_bounds():
+    from rotk_env.components import map_briefing
+
+    sheet = map_briefing(
+        MapData(width=15, height=15, tiles={(0, 0): 1, (4, -2): 2})
+    )
+    assert sheet["col_min"] == 0
+    assert sheet["col_max"] == 4
+    assert sheet["row_min"] == -2
+    assert sheet["row_max"] == 0

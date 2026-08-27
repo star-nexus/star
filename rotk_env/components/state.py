@@ -57,16 +57,42 @@ def formation_center(cells: List[Tuple[int, int]]) -> Tuple[int, int]:
     return (col, row)
 
 
+def board_axis_bounds(map_data: "MapData") -> tuple[int, int, int, int]:
+    """Inclusive even-q range: col_min, col_max, row_min, row_max.
+
+    Tile keys win when the board is populated. An empty ``tiles`` map falls
+    back to the centered ASCII convention used by map files: col = j - width//2,
+    row = height//2 - i.
+    """
+    if map_data.tiles:
+        cols = [col for col, _row in map_data.tiles]
+        rows = [row for _col, row in map_data.tiles]
+        return min(cols), max(cols), min(rows), max(rows)
+    half_w = int(map_data.width) // 2
+    half_h = int(map_data.height) // 2
+    return (
+        -half_w,
+        int(map_data.width) - half_w - 1,
+        -(int(map_data.height) - half_h - 1),
+        half_h,
+    )
+
+
 def map_briefing(map_data: Optional["MapData"]) -> Dict[str, Any]:
-    """Public map sheet at join: size plus each faction's home-base hex."""
+    """Public map sheet at join: size, axis bounds, and home-base hexes."""
     if map_data is None:
         return {
             "width": None,
             "height": None,
+            "col_min": None,
+            "col_max": None,
+            "row_min": None,
+            "row_max": None,
             "map_id": None,
             "home_bases": {},
             "home_bases_meaning": HOME_BASES_MEANING,
         }
+    col_min, col_max, row_min, row_max = board_axis_bounds(map_data)
     home_bases: Dict[str, Dict[str, Any]] = {}
     for faction, cell in (map_data.home_bases or {}).items():
         key = faction.value if hasattr(faction, "value") else str(faction)
@@ -78,6 +104,10 @@ def map_briefing(map_data: Optional["MapData"]) -> Dict[str, Any]:
     return {
         "width": int(map_data.width),
         "height": int(map_data.height),
+        "col_min": col_min,
+        "col_max": col_max,
+        "row_min": row_min,
+        "row_max": row_max,
         "map_id": map_data.map_id or None,
         "home_bases": home_bases,
         "home_bases_meaning": HOME_BASES_MEANING,

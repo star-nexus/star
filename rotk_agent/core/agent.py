@@ -27,7 +27,7 @@ from .errors import (
 from .filters import filter_tool_result
 from .scoring import detect_strategy
 from .stats import ErrorStatsCollector
-from .tools import ToolManager, perform_action_tool
+from .tools import ToolManager, board_bounds_from_map, perform_action_tool
 from ..profiles import apply_join_briefing_to_prompt
 from .types import Message, NormalizedReply, ToolCall, ToolDefinition
 
@@ -117,13 +117,24 @@ class RoTKChatAgent:
         for tool in self.mode.tools(self):
             self.tool_manager.register_tool(tool)
 
-    def _apply_game_action_tools(self, payload: Dict[str, Any]) -> None:
-        """Rebuild perform_action's enum from the match subset returned at join."""
-        names = payload.get("names")
-        if not isinstance(names, list) or not names:
-            return
+    def _apply_join_tools(self) -> None:
+        """Rebuild perform_action from the join map sheet and match verb list."""
+        names = None
+        docs = None
+        payload = self._game_actions
+        if isinstance(payload, dict):
+            raw_names = payload.get("names")
+            if isinstance(raw_names, list) and raw_names:
+                names = raw_names
+            if isinstance(payload.get("docs"), dict):
+                docs = payload["docs"]
         self.tool_manager.register_tool(
-            perform_action_tool(self.bridge.perform_action, names=names)
+            perform_action_tool(
+                self.bridge.perform_action,
+                names=names,
+                docs=docs,
+                board=board_bounds_from_map(self._map_briefing),
+            )
         )
 
     def register_tool(self, tool: ToolDefinition) -> None:
@@ -380,7 +391,7 @@ class RoTKChatAgent:
                     self._map_briefing = result["map"]
                 if isinstance(result.get("game_actions"), dict):
                     self._game_actions = result["game_actions"]
-                    self._apply_game_action_tools(result["game_actions"])
+                self._apply_join_tools()
                 console.print(
                     f"✅ Agent registered: {self.faction} - "
                     f"{config.provider}:{config.model_id} "

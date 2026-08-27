@@ -17,6 +17,8 @@ from pathlib import Path
 from string import Template
 from typing import Dict, Optional, Tuple
 
+from rotk_agent.core.tools import FALLBACK_ACTION_NAMES, board_bounds_from_map
+
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
 DEFAULT_LANGUAGE = "cn"
@@ -166,21 +168,23 @@ def format_home_bases_block(briefing: Optional[dict]) -> str:
             f"`({cell.get('col')}, {cell.get('row')})`"
         )
     if not lines:
-        return "本局尚未提供基地坐标。 / No home-base coordinates for this match."
-    meaning = (briefing or {}).get("home_bases_meaning") or ""
-    text = "\n".join(lines)
-    if meaning:
-        text += f"\n\n{meaning}"
+        text = "本局尚未提供基地坐标。 / No home-base coordinates for this match."
+    else:
+        meaning = (briefing or {}).get("home_bases_meaning") or ""
+        text = "\n".join(lines)
+        if meaning:
+            text += f"\n\n{meaning}"
+    bounds = board_bounds_from_map(briefing)
+    if bounds is not None:
+        text += (
+            f"\n\nBoard (even-q offset): col {bounds.col_min}..{bounds.col_max}, "
+            f"row {bounds.row_min}..{bounds.row_max}."
+        )
     return text
 
 
 def format_game_actions_block(payload: Optional[dict]) -> str:
     """Markdown list of this match's board verbs for the system prompt."""
-    from rotk_env.prefabs.action_catalog import (
-        SKIRMISH_ACTIONS,
-        docs_for_names,
-    )
-
     names: list = []
     docs: dict = {}
     if isinstance(payload, dict):
@@ -188,8 +192,7 @@ def format_game_actions_block(payload: Optional[dict]) -> str:
         names = [n for n in raw_names if n != "end_turn"]
         docs = payload.get("docs") or {}
     if not names:
-        names = list(SKIRMISH_ACTIONS)
-        docs = docs_for_names(names)
+        names = list(FALLBACK_ACTION_NAMES)
     lines = []
     for name in names:
         desc = ""

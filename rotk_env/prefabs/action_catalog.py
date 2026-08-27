@@ -24,6 +24,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 from .config import ActionType
 
 SKIRMISH_ACTIONS: Tuple[str, ...] = ("move", "attack", "get_faction_state")
+_FACTION_ENUM = ["wei", "shu", "wu"]
 
 
 @dataclass(frozen=True)
@@ -34,11 +35,25 @@ class ActionSpec:
     parameters: Dict[str, Any]
 
 
-def _p(typ: str, required: bool, description: str) -> Dict[str, Any]:
-    return {
+def _p(typ: str, required: bool, description: str, **extra: Any) -> Dict[str, Any]:
+    payload = {
         "type": typ,
         "required": required,
         "description": description,
+    }
+    payload.update(extra)
+    return payload
+
+
+def _hex(description: str) -> Dict[str, Any]:
+    return {
+        "type": "object",
+        "required": True,
+        "description": description,
+        "properties": {
+            "col": {"type": "int", "description": "column"},
+            "row": {"type": "int", "description": "row"},
+        },
     }
 
 
@@ -50,15 +65,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "unit",
         {
             "unit_id": _p("int", True, "ID of the moving unit (must be alive)"),
-            "target_position": {
-                "type": "object",
-                "required": True,
-                "description": "Target position (col/row)",
-                "properties": {
-                    "col": {"type": "int", "description": "column"},
-                    "row": {"type": "int", "description": "row"},
-                },
-            },
+            "target_position": _hex("Target position (col/row)"),
         },
     ),
     ActionSpec(
@@ -80,7 +87,12 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "another faction is rejected. Orders on units you do not own still fail.",
         "query",
         {
-            "faction": _p("string", True, "Your faction (wei | shu | wu)"),
+            "faction": _p(
+                "string",
+                True,
+                "Your faction (one of: wei, shu, wu).",
+                enum=_FACTION_ENUM,
+            ),
         },
     ),
     ActionSpec(
@@ -95,11 +107,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "unit",
         {
             "unit_id": _p("int", True, "Unit ID"),
-            "position": {
-                "type": "object",
-                "required": True,
-                "description": "Tile to occupy (col/row)",
-            },
+            "position": _hex("Tile to occupy (col/row)"),
         },
     ),
     ActionSpec(
@@ -108,11 +116,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "unit",
         {
             "unit_id": _p("int", True, "Unit ID"),
-            "position": {
-                "type": "object",
-                "required": True,
-                "description": "Tile to fortify (col/row)",
-            },
+            "position": _hex("Tile to fortify (col/row)"),
         },
     ),
     ActionSpec(
@@ -131,7 +135,12 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "plus a PNG of the current board render.",
         "query",
         {
-            "faction": _p("string", True, "Your faction (wei | shu | wu)"),
+            "faction": _p(
+                "string",
+                True,
+                "Your faction (one of: wei, shu, wu).",
+                enum=_FACTION_ENUM,
+            ),
         },
     ),
     ActionSpec(
@@ -139,7 +148,12 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "End the current faction's turn. Turn-based only.",
         "rule",
         {
-            "faction": _p("string", True, "Your faction (wei | shu | wu)"),
+            "faction": _p(
+                "string",
+                True,
+                "Your faction (one of: wei, shu, wu).",
+                enum=_FACTION_ENUM,
+            ),
             "force": _p("bool", False, "Force end turn"),
         },
     ),

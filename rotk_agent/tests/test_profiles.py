@@ -113,6 +113,26 @@ class TestPromptRendering:
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
         assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in filled
         assert "各阵营基地坐标" in filled
+        assert "Board (even-q offset)" not in filled
+
+    def test_map_briefing_includes_board_bounds_when_present(self):
+        filled = profiles.format_home_bases_block(
+            {
+                "home_bases": {"wei": {"col": 0, "row": 0, "kind": "home_base"}},
+                "col_min": -3,
+                "col_max": 4,
+                "row_min": -5,
+                "row_max": 6,
+            }
+        )
+        assert "Board (even-q offset): col -3..4, row -5..6." in filled
+
+    def test_fallback_game_actions_are_local_names(self):
+        block = profiles.format_game_actions_block(None)
+        assert "`move`" in block
+        assert "`attack`" in block
+        assert "`get_faction_state`" in block
+        assert "rotk_env" not in block
 
     def test_join_briefing_fills_game_actions_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")

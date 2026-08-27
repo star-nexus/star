@@ -550,6 +550,10 @@ class TestRegistration:
                     "map": {
                         "width": 15,
                         "height": 15,
+                        "col_min": -7,
+                        "col_max": 7,
+                        "row_min": -7,
+                        "row_max": 7,
                         "home_bases": {
                             "wei": {"col": 2, "row": 3, "kind": "home_base"},
                             "shu": {"col": -2, "row": -4, "kind": "home_base"},
@@ -557,11 +561,46 @@ class TestRegistration:
                         "home_bases_meaning": "各阵营基地坐标",
                     },
                     "game_actions": {
-                        "names": ["move", "attack", "get_faction_state"],
+                        "names": ["move", "attack", "get_faction_state", "occupy"],
                         "docs": {
-                            "move": {"description": "Move a unit"},
-                            "attack": {"description": "Attack an enemy"},
-                            "get_faction_state": {"description": "Screen census"},
+                            "move": {
+                                "description": "Move a unit",
+                                "parameters": {
+                                    "unit_id": {
+                                        "type": "int",
+                                        "required": True,
+                                        "description": "Unit ID",
+                                    },
+                                    "target_position": {
+                                        "type": "object",
+                                        "required": True,
+                                        "description": "Target position (col/row)",
+                                        "properties": {
+                                            "col": {"type": "int", "description": "column"},
+                                            "row": {"type": "int", "description": "row"},
+                                        },
+                                    },
+                                },
+                            },
+                            "occupy": {
+                                "description": "Occupy a tile",
+                                "parameters": {
+                                    "unit_id": {
+                                        "type": "int",
+                                        "required": True,
+                                        "description": "Unit ID",
+                                    },
+                                    "position": {
+                                        "type": "object",
+                                        "required": True,
+                                        "description": "Tile to occupy",
+                                        "properties": {
+                                            "col": {"type": "int", "description": "column"},
+                                            "row": {"type": "int", "description": "row"},
+                                        },
+                                    },
+                                },
+                            },
                         },
                     },
                 }
@@ -579,4 +618,13 @@ class TestRegistration:
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in system
         assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in system
         assert "`move`: Move a unit" in system
+        assert "Board (even-q offset): col -7..7, row -7..7." in system
         assert "start" == agent.conversation_history[1].content
+        schema = agent.tool_manager.tools["perform_action"].parameters
+        assert "occupy" in schema["properties"]["action"]["enum"]
+        occupy = next(
+            v for v in schema["properties"]["params"]["oneOf"] if v.get("title") == "occupy"
+        )
+        col = occupy["properties"]["position"]["properties"]["col"]
+        assert col["minimum"] == -7
+        assert col["maximum"] == 7
