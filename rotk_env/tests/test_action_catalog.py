@@ -231,3 +231,14 @@ def test_execute_action_enforces_the_match_subset():
 def test_match_game_actions_can_opt_in_implemented_verbs():
     names = match_game_actions(turn_based=False, extra=("occupy",))
     assert names == SKIRMISH_ACTIONS + ("occupy",)
+
+
+def test_move_docs_spend_mp_not_ap():
+    docs = docs_for_names(("move", "attack", "get_faction_state"))
+    move = docs["move"]["description"]
+    assert "MP" in move
+    assert "does not spend action points" in move
+    assert "until AP is exhausted" not in move
+    assert "until AP is exhausted" in docs["attack"]["description"]
+    assert "key 1" not in docs["get_faction_state"]["description"]
+    assert "key-1 overlay" in docs["get_faction_state"]["description"]

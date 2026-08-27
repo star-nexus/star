@@ -45,7 +45,8 @@ def _p(typ: str, required: bool, description: str) -> Dict[str, Any]:
 GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ActionSpec(
         "move",
-        "Move a unit to target position (may repeat until AP is exhausted)",
+        "Move a unit to a target tile. Spends movement points (MP) for the "
+        "terrain path; does not spend action points (AP). Repeatable while MP remains.",
         "unit",
         {
             "unit_id": _p("int", True, "ID of the moving unit (must be alive)"),
@@ -71,11 +72,11 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state",
-        "Your army (full detail, owner/commandable) plus enemies currently "
-        "visible on screen: unit id, type, position, count. Fog on = union of "
-        "your units' vision; fog off (key 1) = the whole map. faction must be "
-        "your own; querying another faction is rejected. Orders on units you "
-        "do not own still fail.",
+        "Your army (full detail, owner/commandable) plus living enemies on "
+        "tiles your units can currently see: unit id, type, position, count. "
+        "Visible area is the union of your units' vision. A human key-1 overlay "
+        "does not change this query. faction must be your own; querying another "
+        "faction is rejected. Orders on units you do not own still fail.",
         "query",
         {
             "faction": _p("string", True, "Your faction (wei | shu | wu)"),
@@ -125,7 +126,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state_vlm",
-        "Same JSON as get_faction_state (own army + screen-visible enemies), "
+        "Same JSON as get_faction_state (own army + enemies in unit vision), "
         "plus a PNG of the current board render.",
         "query",
         {

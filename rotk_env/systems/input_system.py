@@ -25,7 +25,6 @@ from ..components import (
     Camera,
     BattleLog,
     Player,
-    FogOfWar,
     set_screen_fog,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction
@@ -197,7 +196,7 @@ class InputHandlingSystem(System):
 
         # View mode hotkeys
         elif event.key == pygame.K_1:
-            # 1: toggle God view (fog off) vs faction fog
+            # 1: human screen overlay; agent queries still use faction vision
             self._set_god_mode(ui_state, not ui_state.god_mode)
 
         elif event.key == pygame.K_2:
@@ -368,18 +367,11 @@ class InputHandlingSystem(System):
                 return system
         return None
 
-    def _ensure_fog(self) -> FogOfWar:
-        fog = self.world.get_singleton_component(FogOfWar)
-        if fog is None:
-            fog = FogOfWar()
-            self.world.add_singleton_component(fog)
-        return fog
-
     def _set_god_mode(self, ui_state: UIState, enable: bool):
-        """Enable/disable God view (fog off). Same switch the agent query reads."""
-        set_screen_fog(ui_state, self._ensure_fog(), lifted=enable)
+        """Human screen overlay. Does not change FogOfWar.enabled or agent queries."""
+        set_screen_fog(ui_state, lifted=enable)
         if enable:
-            print("GOD VIEW enabled - all units visible")
+            print("GOD VIEW enabled - screen overlay; agent fog unchanged")
         else:
             print("GOD VIEW disabled")
 
@@ -390,7 +382,7 @@ class InputHandlingSystem(System):
             print(f"Faction {faction.value} does not exist in current game")
             return
 
-        set_screen_fog(ui_state, self._ensure_fog(), lifted=False)
+        set_screen_fog(ui_state, lifted=False)
         ui_state.view_faction = faction
         print(f"Switch to {faction.value} view - only that faction's vision is visible")
 

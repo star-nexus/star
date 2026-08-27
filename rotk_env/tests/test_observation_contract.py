@@ -276,13 +276,13 @@ def test_key_1_toggles_god_view():
     event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1})
     system._handle_key_down(event)
     assert ui_state.god_mode is True
-    assert fog.enabled is False
+    assert fog.enabled is True
     system._handle_key_down(event)
     assert ui_state.god_mode is False
     assert fog.enabled is True
     system._handle_key_down(event)
     assert ui_state.god_mode is True
-    assert fog.enabled is False
+    assert fog.enabled is True
 
 
 def test_observation_cache_hits_same_revision():

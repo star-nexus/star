@@ -40,7 +40,6 @@ from ..components import (
     GameModeComponent,
     GameStats,
     TeamCoordination,
-    UIState,
 )
 from ..prefabs.config import (
     Faction,
@@ -1333,12 +1332,13 @@ class LLMActionHandler:
     # ==================== Faction control ====================
 
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """What the observer would see on screen for their own faction.
+        """What the observer's army can see for their own faction.
 
-        ``units`` is the observer's full army (command panel). 
-        ``visible_enemy_units`` is every living enemy currently on a tile
-        the observer can see: the whole map when fog is lifted (key 1 /
-        god view), otherwise the union of that faction's unit vision.
+        ``units`` is the observer's full army (command panel).
+        ``visible_enemy_units`` is every living enemy on a tile in the
+        observer's unit vision. A human key-1 overlay does not lift this.
+        When ``FogOfWar.enabled`` is False (rules, not the overlay), the
+        whole map is visible.
         ``params.faction`` must be the observer. Cross-faction queries
         are rejected (2005); they are not an intelligence channel.
         Formation centers live on the join-time map briefing, not here.
@@ -1420,10 +1420,7 @@ class LLMActionHandler:
         return requested
 
     def _is_fog_lifted(self) -> bool:
-        """True when the screen shows the whole map (key 1 / FogOfWar off)."""
-        ui_state = self.world.get_singleton_component(UIState)
-        if ui_state is not None and ui_state.god_mode:
-            return True
+        """True when rules fog is off. UI god-view (key 1) does not count."""
         fog = self.world.get_singleton_component(FogOfWar)
         if fog is None or not fog.enabled:
             return True

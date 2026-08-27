@@ -26,8 +26,8 @@ $home_bases_block
 - **perform_action**: Execute a board action allowed in this match. The ENV rejects names outside this list:
 $game_actions_block
   Parameter meanings (the default eval three):
-  - get_faction_state: Your army plus enemies currently visible on screen (id, type, position, count). `faction` must be your own; querying the opponent is rejected. With fog on, visible area is the union of your units' vision; with fog off (same as pressing 1) it is the whole map.
-  - move: Move a specified unit to a target coordinate; parameters include unit id and target position (col,row).
+  - get_faction_state: Your army plus enemies currently in your units' vision (id, type, position, count). `faction` must be your own; querying the opponent is rejected. Visible area is the union of your units' vision.
+  - move: Move a specified unit to a target coordinate. Spends MP along the path, not AP. Parameters include unit id and target position (col,row).
   - attack: Make a specified unit attack a target unit; parameters include the friendly unit id and the target unit id.
 
 ### Parallel Calls
@@ -35,7 +35,7 @@ $game_actions_block
 - Merge independent operations into the same turn; use serial execution only for dependency chains.
 
 ## 4. Preflight Checklist (Execution Order)
-- Call `get_faction_state` once with your own faction. `units` is your army; `visible_enemy_units` is whoever is currently on screen. If no enemies are visible, advance toward the opponent's home base; once you see them, use `visible_enemy_units`. Do not query the enemy faction.
+- Call `get_faction_state` once with your own faction. `units` is your army; `visible_enemy_units` is whoever your units can currently see. If no enemies are visible, advance toward the opponent's home base; once you see them, use `visible_enemy_units`. Do not query the enemy faction.
 
 ## 5. Recommended OODA Cycle
 - **Observe**: Execute the preflight checks and keep state up to date.

@@ -92,7 +92,7 @@ class UIState(SingletonComponent):
     camera_position: Tuple[float, float] = (0.0, 0.0)
     zoom_level: float = 1.0
     # View-related
-    god_mode: bool = False  # God view (no fog of war)
+    god_mode: bool = False  # Human render overlay (key 1); not agent vision
     view_faction: Optional[Faction] = None  # Current viewed faction perspective
 
 
@@ -112,9 +112,10 @@ class FogOfWar(SingletonComponent):
 
     faction_vision: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
     explored_tiles: Dict[Faction, Set[Tuple[int, int]]] = field(default_factory=dict)
-    # Simulation switch. When False, limited observation treats the whole map
-    # as explored and visible. VisionSystem still maintains the tile sets so
-    # toggling back on is instant.
+    # Rules switch for agent queries and limited observation. When False the
+    # whole map is visible to every faction. Independent of UIState.god_mode
+    # (key-1 overlay). VisionSystem still maintains the tile sets so toggling
+    # back on is instant.
     enabled: bool = True
 
     def explored_for(self, faction: Faction) -> Set[Tuple[int, int]]:
@@ -126,22 +127,21 @@ class FogOfWar(SingletonComponent):
 
 def set_screen_fog(
     ui_state: Optional["UIState"],
-    fog: Optional[FogOfWar],
     *,
     lifted: bool,
 ) -> None:
-    """One switch for what the screen (and therefore the agent) can see.
+    """Human render overlay only (key 1). Does not change FogOfWar.enabled.
 
-    ``lifted=True`` is key-1 god view: the whole map is visible, fog is off.
-    ``lifted=False`` restores faction fog. Spectator faction (keys 2/3/4) is
-    cleared when lifting so the camera is not left on a stale bank.
+    ``lifted=True`` skips fog drawing so a human can see the whole map.
+    Agent queries (get_faction_state, limited observation) still read
+    ``FogOfWar.enabled`` and ``faction_vision``. Spectator faction
+    (keys 2/3/4) is cleared when lifting so the camera is not left on a
+    stale bank.
     """
     if ui_state is not None:
         ui_state.god_mode = lifted
         if lifted:
             ui_state.view_faction = None
-    if fog is not None:
-        fog.enabled = not lifted
 
 
 @dataclass

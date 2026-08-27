@@ -1929,7 +1929,7 @@ class LLMSystem(System):
         }
 
     def handle_toggle_god_mode(self, params: Dict) -> Dict:
-        """Toggle god mode. Same switch as key 1 and get_faction_state."""
+        """Toggle the human screen overlay. Same as key 1. Does not lift agent fog."""
         ui_state = self.world.get_singleton_component(UIState)
         if not ui_state:
             return {
@@ -1938,35 +1938,31 @@ class LLMSystem(System):
                 "message": "UI state not available",
             }
         fog = self.world.get_singleton_component(FogOfWar)
-        if fog is None:
-            fog = FogOfWar()
-            self.world.add_singleton_component(fog)
-        set_screen_fog(ui_state, fog, lifted=not ui_state.god_mode)
+        set_screen_fog(ui_state, lifted=not ui_state.god_mode)
         return {
             "success": True,
             "message": f"God mode {'enabled' if ui_state.god_mode else 'disabled'}",
             "god_mode": ui_state.god_mode,
-            "fog_enabled": fog.enabled,
+            "fog_enabled": fog.enabled if fog else True,
         }
 
     def handle_toggle_fog_of_war(self, params: Dict) -> Dict:
-        """Toggle fog. Same switch as key 1 / god view."""
-        ui_state = self.world.get_singleton_component(UIState)
+        """Toggle rules fog (agent queries). Independent of the key-1 overlay."""
         fog_of_war = self.world.get_singleton_component(FogOfWar)
         if fog_of_war is None:
             fog_of_war = FogOfWar()
             self.world.add_singleton_component(fog_of_war)
 
         if params.get("enabled") is not None:
-            lifted = not bool(params.get("enabled"))
+            fog_of_war.enabled = bool(params.get("enabled"))
         else:
-            lifted = fog_of_war.enabled
-        set_screen_fog(ui_state, fog_of_war, lifted=lifted)
+            fog_of_war.enabled = not fog_of_war.enabled
+        ui_state = self.world.get_singleton_component(UIState)
         return {
             "success": True,
             "message": f"Fog of war {'enabled' if fog_of_war.enabled else 'disabled'}",
             "fog_enabled": fog_of_war.enabled,
-            "god_mode": bool(ui_state.god_mode) if ui_state else lifted,
+            "god_mode": bool(ui_state.god_mode) if ui_state else False,
         }
 
     def handle_show_ui_panel(self, params: Dict) -> Dict:

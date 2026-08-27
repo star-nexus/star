@@ -1,8 +1,8 @@
 """Live probe for get_faction_state against a running ENV.
 
 Isolated pytest lives in rotk_env/tests/test_faction_state_fow.py. This script
-talks to the Hub the same way an agent does, so you can press 1 in the game
-window and see fog / visible_enemy_units change in the payload.
+talks to the Hub the same way an agent does. Pressing 1 in the game window
+lifts the human screen overlay only; this query still follows unit vision.
 
 Prerequisites
 -------------
@@ -20,7 +20,8 @@ Usage
     uv run python examples/probe_get_faction_state.py --faction wei
     uv run python examples/probe_get_faction_state.py --faction wei --watch
 
---watch re-queries on Enter so you can toggle key 1 (fog) and compare.
+--watch re-queries on Enter. Key 1 is a screen overlay and should not
+change visible_enemy_units.
 """
 
 from __future__ import annotations
@@ -330,8 +331,9 @@ async def run(args: argparse.Namespace) -> int:
 
         if args.watch:
             print(
-                "\n--watch: press Enter to query again after toggling key 1 "
-                "(fog) in the ENV window. Ctrl+C to quit."
+                "\n--watch: press Enter to query again. Key 1 in the ENV "
+                "window is a screen overlay and should not change this payload. "
+                "Ctrl+C to quit."
             )
             while True:
                 await asyncio.to_thread(input)
@@ -371,7 +373,7 @@ def main() -> None:
     parser.add_argument(
         "--watch",
         action="store_true",
-        help="Re-query on Enter so you can toggle fog (key 1) and compare.",
+        help="Re-query on Enter. Key 1 overlay should not change the payload.",
     )
     args = parser.parse_args()
     raise SystemExit(asyncio.run(run(args)))

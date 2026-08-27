@@ -67,9 +67,7 @@ def test_fog_off_returns_every_living_enemy():
     far = _spawn(world, faction=Faction.SHU, col=8, row=8, count=55)
     dead = _spawn(world, faction=Faction.SHU, col=2, row=0, count=0)
 
-    ui = world.get_singleton_component(UIState)
     fog = world.get_singleton_component(FogOfWar)
-    ui.god_mode = True
     fog.enabled = False
 
     result = LLMActionHandler(world).handle_faction_state({"faction": "wei"})
@@ -81,7 +79,7 @@ def test_fog_off_returns_every_living_enemy():
     assert by_id[far]["unit_status"]["current_count"] == 55
 
 
-def test_god_mode_alone_lifts_fog_for_the_query():
+def test_god_mode_overlay_does_not_lift_agent_fog():
     world = _world()
     _spawn(world, faction=Faction.WEI, col=0, row=0)
     far = _spawn(world, faction=Faction.SHU, col=8, row=8)
@@ -90,8 +88,9 @@ def test_god_mode_alone_lifts_fog_for_the_query():
     world.get_singleton_component(FogOfWar).faction_vision[Faction.WEI] = {(0, 0)}
 
     result = LLMActionHandler(world).handle_faction_state({"faction": "wei"})
-    assert result["fog"] == "disabled"
-    assert {e["unit_id"] for e in result["visible_enemy_units"]} == {far}
+    assert result["fog"] == "active"
+    assert {e["unit_id"] for e in result["visible_enemy_units"]} == set()
+    assert far not in {e["unit_id"] for e in result["visible_enemy_units"]}
 
 
 def test_registered_agent_cannot_census_the_opponent():
@@ -139,3 +138,26 @@ def test_vision_system_feeds_faction_state_fog():
     visible_ids = {e["unit_id"] for e in result["visible_enemy_units"]}
     assert visible_ids == {seen}
     assert hidden not in visible_ids
+
+
+def test_key_1_overlay_does_not_change_faction_state():
+    import pygame
+
+    from rotk_env.systems.input_system import InputHandlingSystem
+
+    world = _world()
+    _spawn(world, faction=Faction.WEI, col=0, row=0)
+    hidden = _spawn(world, faction=Faction.SHU, col=8, row=8)
+    fog = world.get_singleton_component(FogOfWar)
+    fog.faction_vision[Faction.WEI] = {(0, 0)}
+
+    system = InputHandlingSystem()
+    system.world = world
+    system._handle_key_down(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1}))
+    assert world.get_singleton_component(UIState).god_mode is True
+    assert fog.enabled is True
+
+    result = LLMActionHandler(world).handle_faction_state({"faction": "wei"})
+    assert result["fog"] == "active"
+    assert {e["unit_id"] for e in result["visible_enemy_units"]} == set()
+    assert hidden not in {e["unit_id"] for e in result["visible_enemy_units"]}
