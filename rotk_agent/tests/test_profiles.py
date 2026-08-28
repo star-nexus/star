@@ -96,6 +96,19 @@ class TestPromptRendering:
                 assert "$home_bases_block" in rendered
                 assert "$game_actions_block" in rendered
 
+    def test_prompts_do_not_duplicate_the_compact_row_schema(self):
+        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+
+        texts = [
+            profiles.load_prompt(kind, language)
+            for kind in ("realtime", "turn")
+            for language in ("cn", "en")
+        ]
+        texts.append(profiles.load_prompt("realtime", "cn", variant="baseline"))
+        for text in texts:
+            assert FACTION_STATE_COMPACT_DECODER not in text
+            assert "attack_range,attack_power,vision_range,defense" not in text
+
     def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
         rendered = profiles.render_prompt(template, "wei")
@@ -133,6 +146,10 @@ class TestPromptRendering:
         assert "`attack`" in block
         assert "`get_faction_state`" in block
         assert "rotk_env" not in block
+        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+
+        assert FACTION_STATE_COMPACT_DECODER not in block
+        assert profiles.FACTION_STATE_PROMPT_BLURB in block
 
     def test_join_briefing_fills_game_actions_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
@@ -158,6 +175,13 @@ class TestPromptRendering:
         assert "`move`: Move a unit" in filled
         assert "`end_turn`: End the turn" not in filled
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
+        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+
+        assert FACTION_STATE_COMPACT_DECODER not in filled
+        assert "`get_faction_state`: Screen census" not in filled
+        assert (
+            f"`get_faction_state`: {profiles.FACTION_STATE_PROMPT_BLURB}" in filled
+        )
 
     def test_unknown_faction_falls_back_to_wei(self):
         assert profiles.faction_info("qi") == profiles.faction_info("wei")

@@ -106,6 +106,11 @@ ENV does **not** push observations. Pull state with catalog query verbs
 (default: `get_faction_state` with `faction` equal to your own; another
 faction is rejected with **2005**).
 
+`get_faction_state` is **observation + current action affordance**: own units
+include `reachable` (legal `move` targets now) and `attackable` (legal
+`attack` `target_id`s now). Enemies and terrain are observation only. The
+benchmark split is in [`docs/observation-affordance.md`](observation-affordance.md).
+
 Mutate the board with names from join `game_actions.names` and parameter
 objects from join `docs`. Typical skirmish shapes:
 

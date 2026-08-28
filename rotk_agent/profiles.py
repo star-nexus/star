@@ -183,6 +183,9 @@ def format_home_bases_block(briefing: Optional[dict]) -> str:
     return text
 
 
+FACTION_STATE_PROMPT_BLURB = "compact state; see tool definition for row format"
+
+
 def format_game_actions_block(payload: Optional[dict]) -> str:
     """Markdown list of this match's board verbs for the system prompt."""
     names: list = []
@@ -195,9 +198,12 @@ def format_game_actions_block(payload: Optional[dict]) -> str:
         names = list(FALLBACK_ACTION_NAMES)
     lines = []
     for name in names:
-        desc = ""
-        if isinstance(docs.get(name), dict):
-            desc = docs[name].get("description") or ""
+        if name == "get_faction_state":
+            desc = FACTION_STATE_PROMPT_BLURB
+        else:
+            desc = ""
+            if isinstance(docs.get(name), dict):
+                desc = docs[name].get("description") or ""
         if desc:
             lines.append(f"- `{name}`: {desc}")
         else:

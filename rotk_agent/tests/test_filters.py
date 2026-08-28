@@ -29,59 +29,147 @@ class TestUnitStateKeys:
         assert "fatigue" not in unit_status
         assert unit_status["hp"] == 90
 
-    def test_faction_state_strips_noise_and_keeps_units(self):
-        result = filters.filter_faction_state_result(
-            {
-                "success": True,
-                "units": [
-                    {
-                        "unit_id": 7,
-                        "unit_status": {"morale": "low", "current_count": 40},
-                        "capabilities": {
-                            "attack_points": 2,
-                            "long_rest_resources": {},
-                            "properties": {"attack_range": 1},
+    def test_faction_state_compacts_to_fixed_rows(self):
+        original = {
+            "success": True,
+            "result": True,
+            "state": "active",
+            "faction": "wei",
+            "fog": "active",
+            "total_units": 1,
+            "alive_units": 1,
+            "actionable_units": 1,
+            "units": [
+                {
+                    "unit_id": 7,
+                    "unit_type": "infantry",
+                    "faction": "wei",
+                    "position": {"col": 1, "row": 3},
+                    "unit_status": {
+                        "morale": "low",
+                        "fatigue": "none",
+                        "current_count": 40,
+                        "max_count": 100,
+                        "health_percentage": 40.0,
+                    },
+                    "capabilities": {
+                        "attack_points": 2,
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
                         },
-                        "available_skills": [],
-                        "owner": "wei_vanguard",
-                        "commandable": False,
-                    }
-                ],
-            }
-        )
-        unit = result["units"][0]
-        assert unit["unit_id"] == 7
-        assert "morale" not in unit["unit_status"]
-        assert unit["unit_status"]["current_count"] == 40
-        assert "attack_points" not in unit["capabilities"]
-        assert "long_rest_resources" not in unit["capabilities"]
-        assert unit["capabilities"]["properties"] == {"attack_range": 1}
-        assert "available_skills" not in unit
-        assert unit["owner"] == "wei_vanguard"
-        assert unit["commandable"] is False
-        assert "success" not in result
+                        "unit_resources": {
+                            "remaining_action_points": 1,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "available_skills": [],
+                    "owner": "wei_vanguard",
+                    "commandable": False,
+                    "reachable": [
+                        {"col": -3, "row": 2},
+                        {"col": -3, "row": 3},
+                    ],
+                    "attackable": [236, 239],
+                }
+            ],
+        }
+        result = filters.filter_faction_state_result(original)
+        assert result == {
+            "state": "active",
+            "fog": "active",
+            "counts": [1, 1, 1],
+            "units": [
+                [
+                    7,
+                    "infantry",
+                    1,
+                    3,
+                    40,
+                    100,
+                    1,
+                    4,
+                    1,
+                    10,
+                    2,
+                    10,
+                    [[-3, 2], [-3, 3]],
+                    [236, 239],
+                ]
+            ],
+        }
+        assert original["units"][0]["reachable"][0] == {"col": -3, "row": 2}
+        assert original["units"][0]["attackable"] == [236, 239]
 
-    def test_faction_state_keeps_visible_enemies(self):
-        result = filters.filter_faction_state_result(
-            {
-                "success": True,
-                "units": [],
-                "visible_enemy_units": [
-                    {
-                        "unit_id": 9,
-                        "unit_type": "cavalry",
-                        "faction": "shu",
-                        "position": {"col": 1, "row": 0},
-                        "unit_status": {"morale": "high", "current_count": 80},
-                    }
-                ],
-            }
-        )
-        enemy = result["visible_enemy_units"][0]
-        assert enemy["unit_id"] == 9
-        assert enemy["unit_status"]["current_count"] == 80
-        assert "morale" not in enemy["unit_status"]
+    def test_faction_state_compacts_enemies_and_non_plain_terrain(self):
+        original = {
+            "success": True,
+            "visible_enemy_units": [
+                {
+                    "unit_id": 9,
+                    "unit_type": "cavalry",
+                    "faction": "shu",
+                    "position": {"col": 1, "row": 0},
+                    "unit_status": {"morale": "high", "current_count": 80},
+                    "reachable": [{"col": 0, "row": 0}],
+                }
+            ],
+            "visible_terrain": [
+                {
+                    "col": 0,
+                    "row": 0,
+                    "type": "plain",
+                    "movement_cost": 1,
+                    "passable": True,
+                },
+                {
+                    "col": 1,
+                    "row": 0,
+                    "type": "forest",
+                    "movement_cost": 2,
+                    "passable": True,
+                    "defense_bonus": 1,
+                },
+                {
+                    "col": 2,
+                    "row": 0,
+                    "type": "water",
+                    "movement_cost": 999,
+                    "passable": False,
+                },
+                {
+                    "position": {"col": 3, "row": 4},
+                    "type": "mountain",
+                    "movement_cost": 3,
+                },
+            ],
+        }
+        result = filters.filter_faction_state_result(original)
+        assert result["enemies"] == [[9, "cavalry", "shu", 1, 0, 80]]
+        assert result["terrain"] == {
+            "forest": [[1, 0]],
+            "water": [[2, 0]],
+            "mountain": [[3, 4]],
+        }
+        assert "plain" not in result["terrain"]
         assert "success" not in result
+        assert "visible_enemy_units" not in result
+        assert "visible_terrain" not in result
+
+    def test_faction_state_failure_is_left_intact(self):
+        payload = {
+            "success": False,
+            "error_code": 2005,
+            "error": "wrong faction",
+            "units": [{"unit_id": 1}],
+        }
+        assert filters.filter_faction_state_result(payload) is payload
+
+    def test_faction_state_result_false_is_left_intact(self):
+        payload = {"result": False, "details": "query failed"}
+        assert filters.filter_faction_state_result(payload) is payload
 
 
 class TestObservationTrimming:
@@ -255,3 +343,53 @@ class TestBooleanStringification:
             booleans_as_strings=True,
         )
         assert result == {"success": "true"}
+
+
+class TestDumpsForAgent:
+    def test_keeps_nested_hexes_on_one_line(self):
+        compact = {
+            "state": "active",
+            "fog": "active",
+            "counts": [5, 5, 5],
+            "units": [
+                [
+                    227,
+                    "infantry",
+                    1,
+                    3,
+                    100,
+                    100,
+                    2,
+                    4,
+                    1,
+                    10,
+                    2,
+                    10,
+                    [[-3, 2], [-3, 3], [-3, 4]],
+                    [],
+                ]
+            ],
+            "enemies": [],
+        }
+        text = filters.dumps_for_agent(compact)
+        assert "\n" not in text
+        assert "[[-3,2],[-3,3],[-3,4]]" in text
+        assert ": " not in text
+        assert ", " not in text
+
+    def test_passes_through_already_serialized_strings(self):
+        assert filters.dumps_for_agent("already") == "already"
+
+
+class TestCompactDecoder:
+    def test_decoder_lists_every_own_unit_column(self):
+        decoder = filters.FACTION_STATE_COMPACT_DECODER
+        assert "reachable" in decoder
+        assert "attackable" in decoder
+        assert "enemies" in decoder
+        assert "terrain" in decoder
+        assert "currently visible non-plain hexes only" in decoder
+        assert "visible plain or currently unknown" in decoder
+        assert "unlisted hexes are plain" not in decoder
+        assert "not the raw ENV object" in decoder
+        assert "state; fog" in decoder

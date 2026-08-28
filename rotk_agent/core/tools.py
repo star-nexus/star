@@ -16,6 +16,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
+from .filters import FACTION_STATE_COMPACT_DECODER
 from .types import ToolDefinition
 
 
@@ -154,14 +155,14 @@ ATTACK_PARAMS = {
     "title": "attack",
 }
 
+FACTION_STATE_CALL_RULES = (
+    "Query your army and currently visible enemies. "
+    "faction must be your own. Costs no AP or MP."
+)
+
 FACTION_STATE_PARAMS = {
     "type": "object",
-    "description": (
-        "Your army (positions, HP, remaining AP and MP) plus enemies currently "
-        "visible (id, type, position, count). Fog on = your units' vision; fog "
-        "off (key 1) = the whole map. faction must be your own. Does not "
-        "consume any points."
-    ),
+    "description": FACTION_STATE_CALL_RULES,
     "additionalProperties": False,
     "properties": {
         "faction": {
@@ -304,6 +305,14 @@ def _param_schema_for(
             "title": name,
             "additionalProperties": True,
         }
+
+    # The model sees the filtered compact object, not the raw ENV payload.
+    # Keep ENV param shapes (faction enum, etc.) but replace the result
+    # description so catalog field names cannot contradict the decoder.
+    if name == "get_faction_state":
+        schema["description"] = (
+            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
+        )
 
     if board is not None:
         schema = _apply_board_bounds(schema, board)

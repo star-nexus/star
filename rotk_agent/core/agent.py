@@ -24,7 +24,7 @@ from .errors import (
     is_network_unreachable_error,
     log_error_to_file,
 )
-from .filters import filter_tool_result
+from .filters import dumps_for_agent, filter_tool_result
 from .scoring import detect_strategy
 from .stats import ErrorStatsCollector
 from .tools import ToolManager, board_bounds_from_map, perform_action_tool
@@ -221,7 +221,7 @@ class RoTKChatAgent:
             self.conversation_history.append(
                 Message(
                     role="tool",
-                    content=json.dumps(content, ensure_ascii=False),
+                    content=dumps_for_agent(content),
                     tool_call_id=tool_call_id,
                 )
             )
@@ -283,6 +283,7 @@ class RoTKChatAgent:
                 booleans_as_strings=self.booleans_as_strings,
             )
             console.print(f"── Tool result (filtered): {call.name} ──", style="magenta")
+            # Pretty-print is for the operator only. History uses dumps_for_agent.
             console.print(
                 json.dumps(filtered, indent=2, ensure_ascii=False),
                 style="magenta",

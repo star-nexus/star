@@ -228,6 +228,8 @@ def test_move_docs_spend_mp_not_ap():
     faction_state = docs["get_faction_state"]["description"]
     assert "fog off (key 1)" in faction_state
     assert "visible_terrain" in faction_state
+    assert "reachable" in faction_state
+    assert "attackable" in faction_state
     assert "overlay" not in faction_state
     assert docs["get_faction_state"]["parameters"]["faction"]["enum"] == [
         "wei",

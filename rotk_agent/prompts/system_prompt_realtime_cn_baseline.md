@@ -12,7 +12,7 @@
 - 若 `col` 奇数: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`  
 - 距离：offset→axial (`q=c`, `r=r-floor(c/2)`)，再计算  
 `d = (|dq|+|dr|+|d(q+r)|)/2`。  
-- **禁止** 使用欧式/曼哈顿/切比雪夫距离。攻击/移动必须用 hex 距离验证。
+- 移动目标从该单位 `reachable` 中选，攻击目标从该单位 `attackable` 中选，不要自己重算合法性。朝基地行军时，在 `reachable` 里用 hex 距离选更接近对方基地的格子（禁止欧式/曼哈顿/切比雪夫）。
 - **本局各阵营基地坐标**（开局布阵中心，不是部队当前位置）：
 $home_bases_block
 
@@ -21,23 +21,23 @@ $home_bases_block
 - **参数格式**：`function.arguments` 是单层 JSON 对象，绝不能带反斜杠或外层引号。  
 - **禁止**：
 - 在 `content` 输出 JSON/工具调用。  
-- 臆造 `unit_id`、`target_id`，或声称看见了不在 `visible_enemy_units` 里的敌人。必须先通过工具获取。上文基地坐标可以当作行军方向。  
+- 臆造 `unit_id`、`target_id`，或声称看见了不在 `enemies` 里的敌人。必须先通过工具获取。上文基地坐标可以当作行军方向。  
 
 ### 工具列表
 
 - **perform_action**: 执行本局允许的棋盘动作。ENV 只接受下列动词，名单外的名字会被拒绝：
 $game_actions_block
   参数含义（评测默认三项）：
-  - get_faction_state：查询己方全部单位，以及当前视野内的敌军（编号、兵种、位置、人数）。参数里的阵营必须是你自己的；查敌方阵营会被拒绝。迷雾打开时可见区域是己方所有单位视野的并集；按 1 关闭迷雾后是整张地图。人、BOT、Agent 同一条规则。
-  - move：将指定单位移动到目标坐标，按路径消耗 MP，不消耗 AP；参数包含单位标识与目标坐标（col,row）。
-  - attack：让指定单位攻击目标单位；参数包含我方单位标识与目标单位标识。
+  - get_faction_state：返回 compact state。行格式见工具定义。faction 必须是己方。
+  - move：将指定单位移动到目标坐标，按路径消耗 MP，不消耗 AP；目标必须取自该单位当前 `reachable`。
+  - attack：让指定单位攻击目标单位；目标必须取自该单位当前 `attackable`。
 
 ### 并行调用
 - 允许一次回复中包含多个 tool_calls（例如多个单位的独立移动/攻击）。
 - 遇到相互独立的操作，合并到同一轮提交；存在依赖关系时再串行。
 
 ## 4. 前置检查清单（执行顺序）
-- 调用一次 `get_faction_state`（faction 填己方）。`units` 是我军，`visible_enemy_units` 是当前看得见的敌军。不要再查敌方阵营。
+- 调用一次 `get_faction_state`（faction 填己方）。`units` 是我军，`enemies` 是当前看得见的敌军。不要再查敌方阵营。
 
 ## 5. 推荐 OODA 流程
 - **观察 (Observe)**：执行前置检查，持续更新状态。  

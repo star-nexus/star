@@ -64,7 +64,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 
 入局 `register_agent_info` 同时返回 `map.home_bases` 和 `game_actions`（本局名单与文档）。Agent 写进 system prompt，不把主表当允许列表。第三方 Agent 的接线合同是仓库根目录 [`docs/agent-protocol.md`](../docs/agent-protocol.md)，不是本目录的 LLM handler 内部文档。
 
-`get_faction_state` 的 `faction` 必须是调用方自己的阵营（否则 2005）。返回己方全量单位（每条带 `owner` / `commandable`），以及当前视野内的敌军（`visible_enemy_units`：编号、兵种、位置、人数）。迷雾打开时，可见区域是己方所有单位视野的并集；按 `1` 关闭迷雾后，可见区域是整张地图。人、BOT、Agent 共用这一条开关。各阵营基地坐标在入局 `register_agent_info` 的 `map.home_bases` 里（开局布阵中心，带 `home_bases_meaning`）。Agent 把它们写进 system prompt 的地图章节，不进 `get_faction_state`。同阵营已认领单位只有主人能下令。
+`get_faction_state` 的 `faction` 必须是调用方自己的阵营（否则 2005）。返回的是 **observation + 当前动作掩码**：己方全量单位（每条带 `owner` / `commandable`，以及 `reachable` / `attackable`），当前视野内的敌军（`visible_enemy_units`：编号、兵种、位置、人数，不带掩码），以及 `visible_terrain`。`reachable` 是此刻 `move` 会接受的格子，不是 MP 半径；`attackable` 是此刻 `attack` 会接受的 `target_id`。敌方单位不给这两项。合同见 [`docs/observation-affordance.md`](../docs/observation-affordance.md)。迷雾打开时，可见区域是己方所有单位视野的并集；按 `1` 关闭迷雾后，可见区域是整张地图。人、BOT、Agent 共用这一条开关。各阵营基地坐标在入局 `register_agent_info` 的 `map.home_bases` 里（开局布阵中心，带 `home_bases_meaning`）。Agent 把它们写进 system prompt 的地图章节，不进 `get_faction_state`。同阵营已认领单位只有主人能下令。
 
 ## BOT
 

@@ -1,8 +1,13 @@
 """Live probe for get_faction_state against a running ENV.
 
-Isolated pytest lives in rotk_env/tests/test_faction_state_fow.py. This script
-talks to the Hub the same way an agent does, so you can press 1 in the game
-window and see fog / visible_enemy_units change in the payload.
+Isolated pytest lives in rotk_env/tests/test_faction_state_fow.py and
+test_faction_state_affordances.py. This script talks to the Hub the same way
+an agent does, so you can press 1 in the game window and see fog /
+visible_enemy_units / reachable counts change.
+
+It prints a one-line mask summary per own unit (reachable hex count,
+attackable ids). It cannot prove mask ≡ execute over the wire without
+issuing a real move; that check is the isolated pytest.
 
 Prerequisites
 -------------
@@ -153,9 +158,14 @@ def _own_line(unit: dict) -> str:
     caps = (unit.get("capabilities") or {}).get("unit_resources") or {}
     ap = caps.get("remaining_action_points", caps.get("action_points", "?"))
     mp = caps.get("remaining_movement_points", caps.get("movement_points", "?"))
+    reachable = unit.get("reachable")
+    attackable = unit.get("attackable")
+    reach_n = len(reachable) if isinstance(reachable, list) else "?"
+    fire = attackable if isinstance(attackable, list) else "?"
     return (
         f"  #{unit.get('unit_id')}  {unit.get('unit_type')}  {_pos(unit)}  "
         f"count={status.get('current_count')}  AP={ap} MP={mp}  "
+        f"reachable={reach_n} attackable={fire}  "
         f"owner={unit.get('owner')} commandable={unit.get('commandable')}"
     )
 
@@ -211,10 +221,15 @@ def check_own_payload(payload: Any, faction: str, checks: Check) -> None:
     checks.expect(isinstance(payload, dict), "own query returned a dict")
     if not isinstance(payload, dict):
         return
+    success_detail = ""
+    if payload.get("success") is not True:
+        success_detail = str(
+            payload.get("error") or payload.get("message") or payload
+        )
     checks.expect(
         payload.get("success") is True,
         "own query success=True",
-        f"got {payload.get('error') or payload.get('message') or payload}",
+        success_detail,
     )
     if payload.get("success") is not True:
         return
@@ -230,9 +245,53 @@ def check_own_payload(payload: Any, faction: str, checks: Check) -> None:
             "capabilities" in sample or "commandable" in sample,
             "own units include command panel (capabilities / commandable)",
         )
+        missing_masks = [
+            f"#{u.get('unit_id')}"
+            for u in units
+            if not isinstance(u.get("reachable"), list)
+            or not isinstance(u.get("attackable"), list)
+        ]
+        checks.expect(
+            not missing_masks,
+            "own units include reachable list and attackable ids",
+            ", ".join(missing_masks),
+        )
+        here_in_reach = []
+        for u in units:
+            if not isinstance(u.get("reachable"), list):
+                continue
+            pos = u.get("position") or {}
+            here = (pos.get("col"), pos.get("row"))
+            reach = {
+                (t.get("col"), t.get("row"))
+                for t in u["reachable"]
+                if isinstance(t, dict)
+            }
+            if here in reach:
+                here_in_reach.append(f"#{u.get('unit_id')}")
+        checks.expect(
+            not here_in_reach,
+            "reachable omits the unit's current hex",
+            ", ".join(here_in_reach),
+        )
+        enemy_ids = {
+            e.get("unit_id") for e in enemies if e.get("unit_id") is not None
+        }
+        stray_fire = [
+            f"#{u.get('unit_id')}->{tid}"
+            for u in units
+            if isinstance(u.get("attackable"), list)
+            for tid in u["attackable"]
+            if tid not in enemy_ids
+        ]
+        checks.expect(
+            not stray_fire,
+            "attackable ids are a subset of visible_enemy_units",
+            ", ".join(stray_fire),
+        )
     leaked = []
     for enemy in enemies:
-        for key in ENEMY_SECRETS:
+        for key in ENEMY_SECRETS + ("reachable", "attackable"):
             if key in enemy:
                 leaked.append(f"#{enemy.get('unit_id')}.{key}")
         status = enemy.get("unit_status") or {}

@@ -67,6 +67,59 @@ class TestToolCallHandling:
         assert tool_messages[0].tool_call_id == "call_1"
 
     @pytest.mark.asyncio
+    async def test_faction_state_history_is_compact_json(self):
+        payload = {
+            "success": True,
+            "result": True,
+            "state": "active",
+            "fog": "active",
+            "total_units": 1,
+            "alive_units": 1,
+            "actionable_units": 1,
+            "units": [
+                {
+                    "unit_id": 227,
+                    "unit_type": "infantry",
+                    "position": {"col": 1, "row": 3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 2,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [
+                        {"col": -3, "row": 2},
+                        {"col": -3, "row": 3},
+                        {"col": -3, "row": 4},
+                    ],
+                    "attackable": [],
+                }
+            ],
+            "visible_enemy_units": [],
+        }
+        agent = build_agent(
+            [tool_call_reply()],
+            bridge=RecordingBridge(responses={"get_faction_state": payload}),
+            max_iterations=2,
+        )
+        await agent.chat("start")
+
+        tool_messages = [m for m in agent.conversation_history if m.role == "tool"]
+        text = tool_messages[0].content
+        assert "\n" not in text
+        assert "[[-3,2],[-3,3],[-3,4]]" in text
+        parsed = json.loads(text)
+        assert parsed["units"][0][0] == 227
+        assert parsed["units"][0][12] == [[-3, 2], [-3, 3], [-3, 4]]
+
+    @pytest.mark.asyncio
     async def test_the_action_reaches_the_env(self):
         bridge = RecordingBridge()
         agent = build_agent(

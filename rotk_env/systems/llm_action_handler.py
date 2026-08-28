@@ -40,6 +40,7 @@ from ..components import (
     GameModeComponent,
     GameStats,
     TeamCoordination,
+    MovementAnimation,
 )
 from ..prefabs.config import (
     Faction,
@@ -997,7 +998,9 @@ class LLMActionHandler:
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Intelligence in the current shared vision for the observer faction.
 
-        ``units`` is the observer's full army (command panel).
+        ``units`` is the observer's full army (command panel), each with
+        ``reachable`` (legal ``move`` targets now) and ``attackable``
+        (legal ``attack`` target ids now). Masks are own-units only.
         ``visible_enemy_units`` is every living enemy in the current vision:
         union of that faction's unit vision while fog is on; the whole map
         when fog is off (key 1). Human, BOT, and agents share this switch.
@@ -1051,6 +1054,15 @@ class LLMActionHandler:
         fog_lifted = self._is_fog_lifted()
         visible_enemies = self._visible_enemy_units(observer, fog_lifted)
         visible_terrain = self._visible_terrain(observer, fog_lifted)
+        enemy_ids = [e["unit_id"] for e in visible_enemies]
+        for info in units:
+            unit_id = info.get("unit_id")
+            if not isinstance(unit_id, int):
+                info["reachable"] = []
+                info["attackable"] = []
+                continue
+            info["reachable"] = self._unit_reachable(unit_id)
+            info["attackable"] = self._unit_attackable(unit_id, enemy_ids)
 
         print(
             f"[FACTION_STATE] Completed for {observer.value} "
@@ -1153,6 +1165,68 @@ class LLMActionHandler:
                 }
             )
         return tiles
+
+    def _unit_reachable(self, unit_id: int) -> List[Dict[str, int]]:
+        """Positions where ``move(unit_id, target)`` succeeds on this snapshot."""
+        position = self.world.get_component(unit_id, HexPosition)
+        movement_points = self.world.get_component(unit_id, MovementPoints)
+        unit_count = self.world.get_component(unit_id, UnitCount)
+        if not position or not movement_points or not unit_count:
+            return []
+
+        anim = self.world.get_component(unit_id, MovementAnimation)
+        if anim is not None and anim.is_moving:
+            return []
+
+        unit_status = self.world.get_component(unit_id, UnitStatus)
+        if unit_status is not None:
+            status = unit_status.current_status
+            confused = (
+                status == UnitState.CONFUSION
+                or status == UnitState.CONFUSION.value
+            )
+            if confused:
+                return []
+
+        if movement_points.current_mp <= 0:
+            return []
+
+        budget = min(
+            int(movement_points.get_effective_movement(unit_count)),
+            int(movement_points.current_mp),
+        )
+        start = (int(position.col), int(position.row))
+        from ..utils.map_query import reachable_hexes
+
+        hexes = reachable_hexes(
+            self.world, start, budget, exclude_entity=unit_id
+        )
+        hexes.discard(start)
+        return [{"col": col, "row": row} for col, row in sorted(hexes)]
+
+    def _unit_attackable(
+        self, unit_id: int, visible_enemy_ids: List[int]
+    ) -> List[int]:
+        """``target_id``s where ``attack(unit_id, target)`` succeeds now."""
+        combat = self._attack_oracle()
+        attackable = [
+            target_id
+            for target_id in visible_enemy_ids
+            if combat.can_attack(unit_id, target_id)
+        ]
+        attackable.sort()
+        return attackable
+
+    def _attack_oracle(self):
+        """CombatSystem already on the world, or a world-bound oracle."""
+        existing = self._get_combat_system()
+        if existing is not None:
+            return existing
+        from .combat_system import CombatSystem
+
+        oracle = CombatSystem()
+        oracle.world = self.world
+        return oracle
 
     def _visible_enemy_unit_info(
         self, unit_id: int, unit: Unit, position: HexPosition

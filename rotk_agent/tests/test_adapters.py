@@ -10,7 +10,7 @@ from rotk_agent.adapters.chat_completions import (
     ChatCompletionsAdapter,
     resolve_base_url,
 )
-from rotk_agent.adapters.fake import FakeAdapter
+from rotk_agent.adapters.fake import FakeAdapter, ProbeScript
 from rotk_agent.adapters.nemotron import NemotronAdapter, ensure_closed_think_block
 from rotk_agent.adapters.responses import (
     ResponsesAdapter,
@@ -466,3 +466,25 @@ class TestAdapterFactory:
             PROFILES["gpt_oss"], config, stats, carry_reasoning=False
         )
         assert adapter.carry_reasoning is False
+
+
+class TestProbeScript:
+    def test_reads_compact_unit_rows(self):
+        script = ProbeScript(faction="wei")
+        messages = [
+            Message(
+                role="tool",
+                content=(
+                    '{"units":[[227,"infantry",1,3,100,100,2,4,1,10,2,10,'
+                    '[[-3,2]],[]]]}'
+                ),
+            )
+        ]
+        assert script._first_unit_id(messages) == 227
+
+    def test_still_reads_dict_unit_rows(self):
+        script = ProbeScript(faction="wei")
+        messages = [
+            Message(role="tool", content='{"units":[{"unit_id": 9}]}')
+        ]
+        assert script._first_unit_id(messages) == 9

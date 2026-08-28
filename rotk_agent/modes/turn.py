@@ -12,12 +12,12 @@ turn gets ended for it, instead of spinning until the game clock runs out.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..core.bridge import EnvBridge, RemoteContext
 from ..core.console import console
 from ..core.delays import no_delay
+from ..core.filters import dumps_for_agent
 from ..core.types import Message, ToolDefinition
 from ..core.tools import end_turn_tool
 from ..profiles import DEFAULT_LANGUAGE, faction_info
@@ -350,7 +350,7 @@ class TurnBasedMode(ModeStrategy):
             agent.conversation_history.append(
                 Message(
                     role="tool",
-                    content=json.dumps(error, ensure_ascii=False),
+                    content=dumps_for_agent(error),
                     tool_call_id=tool_call_id,
                 )
             )

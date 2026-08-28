@@ -38,7 +38,7 @@ class ProbeScript:
         self.step = 0
 
     @staticmethod
-    def _latest_units(messages: List[Message]) -> List[Dict[str, Any]]:
+    def _latest_units(messages: List[Message]) -> List[Any]:
         """Pull the unit list out of the newest tool result that has one."""
         for msg in reversed(messages):
             if msg.role != "tool" or not msg.content:
@@ -52,10 +52,20 @@ class ProbeScript:
                 return units
         return []
 
+    @staticmethod
+    def _unit_id(unit: Any) -> Optional[int]:
+        if isinstance(unit, dict):
+            unit_id = unit.get("unit_id")
+        elif isinstance(unit, (list, tuple)) and unit:
+            unit_id = unit[0]
+        else:
+            return None
+        return unit_id if isinstance(unit_id, int) else None
+
     def _first_unit_id(self, messages: List[Message]) -> Optional[int]:
         for unit in self._latest_units(messages):
-            unit_id = unit.get("unit_id") if isinstance(unit, dict) else None
-            if isinstance(unit_id, int):
+            unit_id = self._unit_id(unit)
+            if unit_id is not None:
                 return unit_id
         return None
 

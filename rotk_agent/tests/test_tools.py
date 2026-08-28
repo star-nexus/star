@@ -59,6 +59,19 @@ class TestFallbackSchema:
         schema = perform_action_schema(["move", "end_turn"])
         assert schema["properties"]["action"]["enum"] == ["move"]
 
+    def test_get_faction_state_description_includes_compact_decoder(self):
+        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.tools import FACTION_STATE_CALL_RULES
+
+        variant = next(
+            v
+            for v in PERFORM_ACTION_SCHEMA["properties"]["params"]["oneOf"]
+            if v.get("title") == "get_faction_state"
+        )
+        assert variant["description"] == (
+            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
+        )
+
 
 class TestJoinPayload:
     def test_docs_supply_param_shapes_for_new_verbs(self):
@@ -136,6 +149,35 @@ class TestJoinPayload:
         )
         faction = schema["properties"]["params"]["oneOf"][0]["properties"]["faction"]
         assert faction["enum"] == ["wei", "shu", "wu"]
+
+    def test_env_payload_description_is_replaced_by_decoder(self):
+        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.tools import FACTION_STATE_CALL_RULES
+
+        schema = perform_action_schema(
+            ["get_faction_state"],
+            docs={
+                "get_faction_state": {
+                    "description": (
+                        "Your army (full detail, owner/commandable) plus "
+                        "visible_enemy_units"
+                    ),
+                    "parameters": {
+                        "faction": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Your faction",
+                        }
+                    },
+                }
+            },
+        )
+        description = schema["properties"]["params"]["oneOf"][0]["description"]
+        assert description == (
+            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
+        )
+        assert "owner/commandable" not in description
+        assert "visible_enemy_units" not in description
 
     def test_non_string_names_are_dropped(self):
         schema = perform_action_schema(["move", 123, None, ""])  # type: ignore[list-item]

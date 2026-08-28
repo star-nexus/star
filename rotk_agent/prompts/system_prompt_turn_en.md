@@ -12,7 +12,7 @@
 - If `col` is odd: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`
 - Distance: convert offset→axial (`q=c`, `r=r-floor(c/2)`), then compute  
 `d = (|dq|+|dr|+|d(q+r)|)/2`.
-- **Forbidden**: using Euclidean/Manhattan/Chebyshev distances. Attack and movement validity must use the hex distance above.
+- Choose move targets from that unit's `reachable` and attack targets from its `attackable`; do not recompute legality. When marching toward a home base, pick the `reachable` hex that is closer in hex distance (never Euclidean/Manhattan/Chebyshev).
 - **Home-base coordinates this match** (center of each faction's opening formation, not live unit positions; march toward the enemy base until you see their units):
 $home_bases_block
 
@@ -20,23 +20,23 @@ $home_bases_block
 - **Exclusive Use of `tool_calls`**: All actions and data requests **MUST** be executed through the `tool_calls` field. The `content` field should only contain your strategic reasoning or a brief confirmation of your actions. **NEVER** place JSON or tool call syntax within the `content` field.
 - **Parameter Format**: `function.arguments` must be a flat (single-level) JSON object. Do not include backslashes or wrap it as a quoted string with outer quotes.
 
-- **Mandatory Information Gathering**: **DO NOT** invent `unit_id`, `target_id`, or claim to see enemies that are not in `visible_enemy_units`. You **MUST** use the provided tools first. The home-base coordinates above are legal march headings.
+- **Mandatory Information Gathering**: **DO NOT** invent `unit_id`, `target_id`, or claim to see enemies that are not in `enemies`. You **MUST** use the provided tools first. The home-base coordinates above are legal march headings.
 
 ### Tools
 - **end_turn**: End the current turn and restore AP/MP. Parameters is an empty object. Use only after core actions are done or when no higher-value action remains. Dedicated turn-based tool — do not nest it inside `perform_action`.
 - **perform_action**: Execute a board action allowed in this match. The ENV rejects names outside this list:
 $game_actions_block
   Parameter meanings (the default eval three):
-  - get_faction_state: Your army plus enemies currently visible (id, type, position, count). `faction` must be your own; querying the opponent is rejected. With fog on, visible area is the union of your units' vision; with fog off (key 1) it is the whole map. Same rule for human, BOT, and agents.
-  - move: Move a specified unit to a target coordinate. Spends MP along the path, not AP. Parameters include unit id and target position (col,row).
-  - attack: Make a specified unit attack a target unit; parameters include the friendly unit id and the target unit id.
+  - get_faction_state: Returns compact state. Row format is in the tool definition. `faction` must be your own.
+  - move: Move a specified unit to a target coordinate. Spends MP along the path, not AP. The target must be in that unit's current `reachable`.
+  - attack: Make a specified unit attack a target unit. The target must be in that unit's current `attackable`.
 
 ### Parallel Calls
 - You may include multiple tool_calls in a single reply (e.g., independent moves/attacks for multiple units).
 - Merge independent operations into the same turn; use serial execution only for dependency chains.
 
 ## 4. Preflight Checklist (Execution Order)
-- Call `get_faction_state` once with your own faction. `units` is your army; `visible_enemy_units` is whoever is currently visible. If no enemies are visible, advance toward the opponent's home base; once you see them, use `visible_enemy_units`. Do not query the enemy faction.
+- Call `get_faction_state` once with your own faction. `units` is your army; `enemies` is whoever is currently visible. If no enemies are visible, advance toward the opponent's home base using `reachable`; once you see them, use `enemies`. Do not query the enemy faction.
 
 ## 5. Recommended OODA Cycle
 - **Observe**: Execute the preflight checks and keep state up to date.

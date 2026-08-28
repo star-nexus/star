@@ -90,6 +90,8 @@ def test_own_army_is_complete_and_enemies_use_vision_when_fog_on():
     assert result["alive_units"] == 1
     assert [u["unit_id"] for u in result["units"]] == [own]
     assert "capabilities" in result["units"][0]
+    assert result["units"][0]["reachable"] == []
+    assert result["units"][0]["attackable"] == []
 
     visible_ids = _enemy_ids(result)
     assert visible_ids == {near}

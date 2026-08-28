@@ -52,7 +52,7 @@ A benchmarking suite for strategic multi-agent scenarios.
 An agent architecture for competitive evaluation in STARBench.
 *   **Model-Agnostic:** Supports different LLM backends and provider configurations.
 *   **Agent-vs-Agent Evaluation:** Enables LLM agents to compete in standardized STARBench scenarios.
-*   **Custom Agent Support:** Researchers plug in via the [Agent–ENV protocol](docs/agent-protocol.md) and `protocol.AgentClient`. `rotk_agent` is a reference LLM client, not the SDK and not the only legal architecture.
+*   **Custom Agent Support:** Researchers plug in via the [Agent–ENV protocol](docs/agent-protocol.md) and `protocol.AgentClient`. `rotk_agent` is a reference LLM client, not the SDK and not the only legal architecture. Board state is [observation + current affordance](docs/observation-affordance.md): ENV is the legality oracle; agents choose among legal actions.
 
 ### 🔌 The Protocol (`Star Protocol`)
 An asynchronous communication layer for integrating heterogeneous agents and ENVs.
@@ -347,6 +347,7 @@ python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-
 - [x] Multi-provider backend support
 - [x] Fully decoupled from environment runtime via protocol abstraction
 - [x] Minimal agent–ENV protocol spec for custom architectures (`docs/agent-protocol.md`)
+- [x] Observation + Affordance contract for `get_faction_state` (`docs/observation-affordance.md`)
 
 ## Citation
 
