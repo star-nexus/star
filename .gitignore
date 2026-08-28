@@ -175,6 +175,7 @@ unit_status.txt
 env_status.txt
 *.txt
 **/DESIGN.md
+logs/
 
 # Python-generated files
 *.py[oc]
