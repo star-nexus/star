@@ -183,6 +183,7 @@ logs/
 # editor config
 .vscode
 .github
+.codegraph
 
 screenshots/
 .configs.toml
