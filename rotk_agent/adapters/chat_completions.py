@@ -154,10 +154,12 @@ class ChatCompletionsAdapter(ModelAdapter):
         }
 
         console.print("── LLM request payload ──", style="green")
+        # markup=False: rich treats [id,type,...] in tool descriptions as style tags.
         console.print(
             json.dumps(payload, indent=2, ensure_ascii=False),
             style="green",
             highlight=False,
+            markup=False,
         )
 
         self.stats.add_total_api_call_count()
@@ -281,7 +283,10 @@ class ChatCompletionsAdapter(ModelAdapter):
 
         console.print("── LLM response ──", style="yellow")
         console.print(
-            json.dumps(raw, indent=2, ensure_ascii=False), style="yellow", highlight=False
+            json.dumps(raw, indent=2, ensure_ascii=False),
+            style="yellow",
+            highlight=False,
+            markup=False,
         )
         return reply
 

@@ -165,6 +165,12 @@ class TestCliDefaults:
         assert parse_args([]).carry_reasoning is True
         assert parse_args(["--no-carry-reasoning"]).carry_reasoning is False
 
+    def test_state_filter_defaults_to_f(self):
+        from rotk_agent.main import parse_args
+
+        assert parse_args([]).state_filter == "F"
+        assert parse_args(["--state-filter", "A"]).state_filter == "A"
+
     def test_api_key_is_omitted_from_repr(self):
         from rotk_agent.core.config import LLMConfig
 

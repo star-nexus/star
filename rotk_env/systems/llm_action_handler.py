@@ -998,7 +998,7 @@ class LLMActionHandler:
     def handle_faction_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Intelligence in the current shared vision for the observer faction.
 
-        ``units`` is the observer's full army (command panel), each with
+        ``units`` is the observer's full Units (command panel), each with
         ``reachable`` (legal ``move`` targets now) and ``attackable``
         (legal ``attack`` target ids now). Masks are own-units only.
         ``visible_enemy_units`` is every living enemy in the current vision:

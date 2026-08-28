@@ -60,7 +60,7 @@ class TestFallbackSchema:
         assert schema["properties"]["action"]["enum"] == ["move"]
 
     def test_get_faction_state_description_includes_compact_decoder(self):
-        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.filters import FILTER_PROFILES
         from rotk_agent.core.tools import FACTION_STATE_CALL_RULES
 
         variant = next(
@@ -69,7 +69,7 @@ class TestFallbackSchema:
             if v.get("title") == "get_faction_state"
         )
         assert variant["description"] == (
-            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
+            f"{FACTION_STATE_CALL_RULES} {FILTER_PROFILES['F'].decoder}"
         )
 
 
@@ -151,15 +151,19 @@ class TestJoinPayload:
         assert faction["enum"] == ["wei", "shu", "wu"]
 
     def test_env_payload_description_is_replaced_by_decoder(self):
-        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.filters import (
+            FILTER_PROFILES,
+            resolve_faction_state_filter,
+        )
         from rotk_agent.core.tools import FACTION_STATE_CALL_RULES
 
+        spec = resolve_faction_state_filter("A")
         schema = perform_action_schema(
             ["get_faction_state"],
             docs={
                 "get_faction_state": {
                     "description": (
-                        "Your army (full detail, owner/commandable) plus "
+                        "Your Units (full detail, owner/commandable) plus "
                         "visible_enemy_units"
                     ),
                     "parameters": {
@@ -171,13 +175,14 @@ class TestJoinPayload:
                     },
                 }
             },
+            faction_state_spec=spec,
         )
         description = schema["properties"]["params"]["oneOf"][0]["description"]
-        assert description == (
-            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
-        )
+        assert description == f"{FACTION_STATE_CALL_RULES} {spec.decoder}"
         assert "owner/commandable" not in description
         assert "visible_enemy_units" not in description
+        assert "reachable=" not in description
+        assert FILTER_PROFILES["F"].decoder not in description
 
     def test_non_string_names_are_dropped(self):
         schema = perform_action_schema(["move", 123, None, ""])  # type: ignore[list-item]

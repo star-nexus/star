@@ -100,24 +100,31 @@ class MovementSystem(System):
             }
 
         effective_movement = movement_points.get_effective_movement(unit_count)
+        spendable = min(int(effective_movement), int(current_mp))
         from ..utils.map_query import movement_obstacles, plan_hex_path
 
         obstacles = movement_obstacles(self.world, exclude_entity=entity)
+        # Uncapped cheapest route. A cap equal to remaining MP used to return
+        # empty when hills/mountains made the path cost more than hex-distance,
+        # which was mis-reported as no_path.
         path = plan_hex_path(
             self.world,
             current_pos,
             target_pos,
             exclude_entity=entity,
-            max_cost=effective_movement,
         )
-
         if not path or len(path) < 2:
             return self._no_path_result(
-                entity, current_pos, target_pos, obstacles, effective_movement, path
+                entity,
+                current_pos,
+                target_pos,
+                obstacles,
+                effective_movement,
+                path,
             )
 
         total_cost = self._calculate_total_movement_cost(path)
-        if total_cost > current_mp:
+        if total_cost > spendable:
             return self._insufficient_mp_result(
                 entity,
                 current_pos,
@@ -127,6 +134,7 @@ class MovementSystem(System):
                 effective_movement,
                 total_cost,
                 current_mp,
+                spendable,
             )
 
         print(f"✓ Unit {entity} moves to {target_pos}")
@@ -197,10 +205,17 @@ class MovementSystem(System):
             "obstacles_sample": list(obstacles)[:10],
             "adjacent_free_positions": adjacent_free,
             "possible_causes": [
-                "Target position out of movement range" if distance_issue else None,
-                "Target position blocked by obstacles" if target_blocked else None,
-                "No valid route exists",
-                "PathFinding algorithm limitation",
+                c
+                for c in (
+                    "Target position out of movement range"
+                    if distance_issue
+                    else None,
+                    "Target position blocked by obstacles"
+                    if target_blocked
+                    else None,
+                    "No valid route exists",
+                )
+                if c
             ],
             "suggestion": (
                 f"Try one of these nearby positions: {adjacent_free[:3]}"
@@ -219,12 +234,13 @@ class MovementSystem(System):
         effective_movement: int,
         total_cost: int,
         current_mp: int,
+        spendable: int,
     ) -> Dict[str, Any]:
         cumulative_cost = 0
         reachable_along_path = []
         for pos in path[1:]:
             step_cost = self._get_terrain_movement_cost(pos)
-            if cumulative_cost + step_cost <= current_mp:
+            if cumulative_cost + step_cost <= spendable:
                 cumulative_cost += step_cost
                 reachable_along_path.append(pos)
             else:
@@ -233,56 +249,66 @@ class MovementSystem(System):
 
         nearby = []
         for cand in self._adjacent_free(current_pos, obstacles):
-            if self._get_terrain_movement_cost(cand) <= current_mp:
+            if self._get_terrain_movement_cost(cand) <= spendable:
                 nearby.append((HexMath.hex_distance(cand, target_pos), cand))
         nearby.sort(key=lambda x: x[0])
         nearby_positions = [c for _, c in nearby[:3]]
 
+        farthest = {"col": closest[0], "row": closest[1]}
         if closest != current_pos:
             suggestion = (
-                f"Try moving to the closest reachable position this turn: {closest}"
+                f"Try moving to the farthest hex on this path this turn: {closest}"
             )
+            suggested_target = closest
         elif nearby_positions:
             suggestion = (
                 "No step along the path is reachable this turn. "
                 f"Try one of these nearby positions: {nearby_positions}"
             )
+            suggested_target = nearby_positions[0]
         else:
             suggestion = (
                 "No nearby reachable positions this turn. "
                 "Wait to recover movement points."
             )
+            suggested_target = None
 
-        return {
+        payload = {
             "success": False,
             "reason": "insufficient_mp",
             "failure_reason": "insufficient_movement_points",
             "message": (
-                f"Insufficient movement points this turn: "
-                f"need {total_cost}, have {current_mp}."
+                f"Shortest path costs {total_cost} MP; unit has {spendable} MP. "
+                f"Farthest reachable hex along this path: ({closest[0]}, {closest[1]})."
             ),
             "unit_id": entity,
             "required_movement_points": total_cost,
             "current_movement_points": current_mp,
-            "deficit": total_cost - current_mp,
-            "path": path,
+            "deficit": total_cost - spendable,
+            "path": [[col, row] for col, row in path],
             "path_length": len(path) - 1,
             "effective_movement": effective_movement,
             "terrain_costs": self._path_terrain_breakdown(path),
-            "closest_reachable_position": {"col": closest[0], "row": closest[1]},
+            "closest_reachable_position": farthest,
+            "farthest_reachable_on_path": farthest,
             "reachable_steps": len(reachable_along_path),
-            "suggested_action": {
-                "action": "move",
-                "params": {
-                    "unit_id": entity,
-                    "target_position": {"col": closest[0], "row": closest[1]},
-                },
-            },
             "nearby_reachable_positions": [
                 {"col": p[0], "row": p[1]} for p in nearby_positions
             ],
             "suggestion": suggestion,
         }
+        if suggested_target is not None:
+            payload["suggested_action"] = {
+                "action": "move",
+                "params": {
+                    "unit_id": entity,
+                    "target_position": {
+                        "col": suggested_target[0],
+                        "row": suggested_target[1],
+                    },
+                },
+            }
+        return payload
 
     def _adjacent_free(
         self, center: Tuple[int, int], obstacles: Set[Tuple[int, int]]

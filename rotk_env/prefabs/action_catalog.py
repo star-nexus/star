@@ -79,7 +79,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state",
-        "Your army (full detail, owner/commandable) plus living enemies in "
+        "Your Units (full detail, owner/commandable) plus living enemies in "
         "the current vision: unit id, type, position, count. Each own unit "
         "also has reachable (positions move would accept now) and attackable "
         "(enemy ids attack would accept now). Enemies have neither. Also "
@@ -133,7 +133,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         "get_faction_state_vlm",
-        "Same JSON as get_faction_state (own army + currently visible enemies), "
+        "Same JSON as get_faction_state (own Units + currently visible enemies), "
         "plus a PNG of the current board render.",
         "query",
         {

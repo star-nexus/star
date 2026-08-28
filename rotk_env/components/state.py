@@ -42,7 +42,7 @@ class MapData(SingletonComponent):
 HOME_BASES_MEANING = (
     "各阵营基地坐标（开局布阵中心），不是部队现在站的格子。"
     " Home-base hex of each faction: center of that side's opening formation, "
-    "not live unit positions. Until enemies appear in visible_enemy_units, "
+    "not live unit positions. Until enemies appear in enemies, "
     "march toward the opponent's home_base."
 )
 

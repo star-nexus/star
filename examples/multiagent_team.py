@@ -77,7 +77,7 @@ async def run_agent(
     list_id = await client.send_action("list_team", {})
     print(f"[{agent_id}] sent list_team (request_id={list_id})")
 
-    # 3) Claim our portion of the army.
+    # 3) Claim our portion of the units.
     claim_id = await client.send_action(
         "claim_units",
         {"unit_ids": units_to_claim, "exclusive": True},

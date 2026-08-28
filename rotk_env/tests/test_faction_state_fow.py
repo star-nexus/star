@@ -1,4 +1,4 @@
-"""get_faction_state follows FogOfWar.enabled: own army plus currently visible enemies.
+"""get_faction_state follows FogOfWar.enabled: own Units plus currently visible enemies.
 
 Run the assertions:
 
@@ -80,7 +80,7 @@ def _fog_switch_setup():
     return world, own, near, far, fog
 
 
-def test_own_army_is_complete_and_enemies_use_vision_when_fog_on():
+def test_own_units_is_complete_and_enemies_use_vision_when_fog_on():
     world, own, near, far, _fog = _fog_switch_setup()
     hidden = far
 
@@ -121,7 +121,7 @@ def test_fog_off_returns_every_living_enemy():
 
 
 def test_key_1_toggles_fog_for_get_faction_state():
-    """Same world: fog on → key 1 off → key 1 on. Own army never shrinks."""
+    """Same world: fog on → key 1 off → key 1 on. Own Units never shrink."""
     world, own, near, far, fog = _fog_switch_setup()
 
     on = _query(world)

@@ -40,7 +40,8 @@ uv run rotk_agent/main.py --faction wei --provider deepseek --mode turn_based
 Useful flags: `--profile` pins the model profile instead of inferring it from
 `--provider`, `--lang {cn,en}` picks the prompt language, and
 `--max-api-calls-per-turn` caps how long a turn-based agent may deliberate
-before the turn is ended for it. `--reasoning-effort low|high|max` (default
+before the turn is ended for it. `--state-filter {A,B,C,D,E,F}` (default `F`)
+selects the faction-state ablation pack. `--reasoning-effort low|high|max` (default
 `low`) and `--no-carry-reasoning` control thinking budget and whether the
 chain stays in context.
 

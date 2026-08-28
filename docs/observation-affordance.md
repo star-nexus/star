@@ -49,7 +49,7 @@ Those are environment mechanics, not tactical intelligence.
 
 | Field | Kind | Whose | Meaning |
 | :--- | :--- | :--- | :--- |
-| `units` | observation | own army | Full command panel (id, type, position, AP, MP, range, …) |
+| `units` | observation | own Units | Full command panel (id, type, position, AP, MP, range, …) |
 | `units[].reachable` | affordance | own unit | Positions where `move(unit_id, target)` succeeds on this snapshot |
 | `units[].attackable` | affordance | own unit | `target_id`s where `attack(unit_id, target_id)` succeeds on this snapshot |
 | `visible_enemy_units` | observation | visible enemies | id, type, position, count. No MP/AP, no masks |

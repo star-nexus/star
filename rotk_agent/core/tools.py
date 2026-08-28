@@ -16,7 +16,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from .filters import FACTION_STATE_COMPACT_DECODER
+from .filters import FactionStateFilterSpec, resolve_faction_state_filter
 from .types import ToolDefinition
 
 
@@ -156,7 +156,7 @@ ATTACK_PARAMS = {
 }
 
 FACTION_STATE_CALL_RULES = (
-    "Query your army and currently visible enemies. "
+    "Query your Units and currently visible enemies. "
     "faction must be your own. Costs no AP or MP."
 )
 
@@ -287,6 +287,7 @@ def _param_schema_for(
     name: str,
     docs: Optional[Dict[str, Any]],
     board: Optional[BoardBounds],
+    faction_state_spec: Optional[FactionStateFilterSpec] = None,
 ) -> Dict[str, Any]:
     """One ``params`` oneOf variant for ``name``."""
     spec = docs.get(name) if isinstance(docs, dict) else None
@@ -310,8 +311,9 @@ def _param_schema_for(
     # Keep ENV param shapes (faction enum, etc.) but replace the result
     # description so catalog field names cannot contradict the decoder.
     if name == "get_faction_state":
+        profile = faction_state_spec or resolve_faction_state_filter()
         schema["description"] = (
-            f"{FACTION_STATE_CALL_RULES} {FACTION_STATE_COMPACT_DECODER}"
+            f"{FACTION_STATE_CALL_RULES} {profile.decoder}"
         )
 
     if board is not None:
@@ -324,6 +326,7 @@ def perform_action_schema(
     *,
     docs: Optional[Dict[str, Any]] = None,
     board: Optional[BoardBounds] = None,
+    faction_state_spec: Optional[FactionStateFilterSpec] = None,
 ) -> Dict[str, Any]:
     """JSON schema for ``perform_action``.
 
@@ -331,7 +334,10 @@ def perform_action_schema(
     pre-join fallback (skirmish three, no coordinate clamp).
     """
     advertised = perform_action_names(names)
-    variants = [_param_schema_for(name, docs, board) for name in advertised]
+    variants = [
+        _param_schema_for(name, docs, board, faction_state_spec)
+        for name in advertised
+    ]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -366,12 +372,18 @@ def perform_action_tool(
     *,
     docs: Optional[Dict[str, Any]] = None,
     board: Optional[BoardBounds] = None,
+    faction_state_spec: Optional[FactionStateFilterSpec] = None,
 ) -> ToolDefinition:
     """The one tool every agent gets, in every mode."""
     return ToolDefinition(
         name="perform_action",
         description=PERFORM_ACTION_DESCRIPTION,
-        parameters=perform_action_schema(names, docs=docs, board=board),
+        parameters=perform_action_schema(
+            names,
+            docs=docs,
+            board=board,
+            faction_state_spec=faction_state_spec,
+        ),
         function=function,
     )
 

@@ -268,6 +268,7 @@ class ResponsesAdapter(ModelAdapter):
                 json.dumps(response.model_dump(), indent=2, ensure_ascii=False),
                 style="yellow",
                 highlight=False,
+                markup=False,
             )
 
             self.stats.record_usage(getattr(response, "usage", None))

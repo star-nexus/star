@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 NOISE_CAPABILITIES = ("attack_points", "construction_points", "skill_points")
@@ -25,23 +26,115 @@ DEFAULT_TERRAIN_TYPE = "plain"
 # `indent=2` would re-expand each coordinate across four lines.
 COMPACT_JSON_SEPARATORS = (",", ":")
 
-# Canonical row-schema decoder. Attached only to the get_faction_state tool
-# description in tools.py — do not copy into prompts or $game_actions_block.
-# Keep in sync with `_compact_own_units` / `_compact_enemy_units` / `_compact_terrain`.
-FACTION_STATE_COMPACT_DECODER = (
-    "The result you receive is filtered compact JSON (no extra whitespace), "
-    "not the raw ENV object. "
-    "state; fog; counts=[total,alive,actionable]; "
-    "units=[id,type,col,row,current,max,AP,MP,attack_range,attack_power,"
-    "vision_range,defense,reachable,attackable] "
-    "where reachable=[[col,row],...] legal move hexes now (current hex omitted) "
-    "and attackable=[enemy_id,...] legal attack ids now; "
-    "enemies=[id,type,faction,col,row,current]; "
-    "terrain={type:[[col,row],...]} currently visible non-plain hexes only; "
-    "unlisted hexes may be visible plain or currently unknown. "
-    "Pick move targets from that unit's reachable and attack targets from its "
-    "attackable."
+OWN_UNIT_BASIC_COLUMNS = (
+    "id",
+    "type",
+    "col",
+    "row",
+    "current",
+    "max",
+    "AP",
+    "MP",
+    "attack_range",
+    "attack_power",
+    "vision_range",
+    "defense",
 )
+ENEMY_UNIT_COLUMNS = ("id", "type", "faction", "col", "row", "current")
+
+
+@dataclass(frozen=True)
+class FactionStateFilterSpec:
+    """One ablation pack: which channels to keep, plus the matching decoder.
+
+    Lookup a name in FILTER_PROFILES and use that object for both
+    ``filter_faction_state_result`` and the tool-schema description.
+    Do not keep a module-level decoder string — it would freeze pack F
+    while the data path uses another pack.
+    """
+
+    name: str
+    reachable: bool
+    attackable: bool
+    terrain: bool
+
+    @property
+    def decoder(self) -> str:
+        """How to *read* this pack's payload. No decision policy."""
+        return _compact_decoder_text(self)
+
+
+# Pack = channels + decoder. Same object drives the transform and the schema.
+FILTER_PROFILES = {
+    "A": FactionStateFilterSpec(
+        "A", reachable=False, attackable=False, terrain=False
+    ),
+    "B": FactionStateFilterSpec(
+        "B", reachable=True, attackable=False, terrain=False
+    ),
+    "C": FactionStateFilterSpec(
+        "C", reachable=False, attackable=True, terrain=False
+    ),
+    "D": FactionStateFilterSpec(
+        "D", reachable=True, attackable=True, terrain=False
+    ),
+    "E": FactionStateFilterSpec(
+        "E", reachable=False, attackable=False, terrain=True
+    ),
+    "F": FactionStateFilterSpec(
+        "F", reachable=True, attackable=True, terrain=True
+    ),
+}
+DEFAULT_FACTION_STATE_FILTER = "F"
+
+
+def resolve_faction_state_filter(
+    name: Optional[str] = None,
+) -> FactionStateFilterSpec:
+    key = (name or DEFAULT_FACTION_STATE_FILTER).strip().upper()
+    try:
+        return FILTER_PROFILES[key]
+    except KeyError:
+        available = ", ".join(sorted(FILTER_PROFILES))
+        raise ValueError(
+            f"Unknown state filter '{name}'. Available: {available}"
+        ) from None
+
+
+def _compact_decoder_text(spec: FactionStateFilterSpec) -> str:
+    """Row-schema decoder for one pack.
+
+    Attached only to the get_faction_state tool description in tools.py —
+    do not copy into prompts or $game_actions_block.
+    """
+    unit_cols = list(OWN_UNIT_BASIC_COLUMNS)
+    extras = []
+    if spec.reachable:
+        unit_cols.append("reachable")
+        extras.append(
+            "reachable=[[col,row],...] legal move hexes now (current hex omitted)"
+        )
+    if spec.attackable:
+        unit_cols.append("attackable")
+        extras.append("attackable=[enemy_id,...] legal attack ids now")
+
+    text = (
+        "The result you receive is filtered compact JSON (no extra whitespace), "
+        "not the raw ENV object. "
+        "state; fog; counts=[total,alive,actionable]; "
+        f"units=[{','.join(unit_cols)}]"
+    )
+    if extras:
+        text += " where " + " and ".join(extras)
+    text += f"; enemies=[{','.join(ENEMY_UNIT_COLUMNS)}]"
+    if spec.terrain:
+        text += (
+            "; terrain={type:[[col,row],...]} currently visible non-plain "
+            "hexes only; unlisted hexes may be visible plain or currently unknown"
+        )
+    else:
+        text += "; no terrain key"
+    return text + "."
 
 
 def dumps_for_agent(data: Any) -> str:
@@ -131,13 +224,35 @@ def _compact_hexes(points: Any) -> Any:
     return compact
 
 
-def _compact_own_units(units: Any) -> Any:
+def _own_unit_basic_values(unit: Dict[str, Any]) -> Dict[str, Any]:
+    """Map decoder column names to ENV fields. Order comes from OWN_UNIT_BASIC_COLUMNS."""
+    position = unit.get("position") or {}
+    status = unit.get("unit_status") or unit.get("status") or {}
+    capabilities = unit.get("capabilities") or {}
+    properties = capabilities.get("properties") or {}
+    resources = capabilities.get("unit_resources") or {}
+    return {
+        "id": unit.get("unit_id"),
+        "type": unit.get("unit_type"),
+        "col": position.get("col"),
+        "row": position.get("row"),
+        "current": status.get("current_count"),
+        "max": status.get("max_count"),
+        "AP": resources.get("remaining_action_points"),
+        "MP": resources.get("remaining_movement_points"),
+        "attack_range": properties.get("attack_range"),
+        "attack_power": properties.get("attack_power"),
+        "vision_range": properties.get("vision_range"),
+        "defense": properties.get("defense"),
+    }
+
+
+def _compact_own_units(units: Any, spec: FactionStateFilterSpec) -> Any:
     """Serialize friendly units as fixed-order rows.
 
-    Row schema:
-    [id, type, col, row, current, max, AP, MP,
-     attack_range, attack_power, vision_range, defense,
-     reachable, attackable]
+    Basic columns follow OWN_UNIT_BASIC_COLUMNS (same names as the decoder),
+    then reachable and/or attackable appended in that order when the spec
+    enables them. Disabled channels are omitted, not emptied.
     """
     if not isinstance(units, list):
         return units
@@ -147,43 +262,33 @@ def _compact_own_units(units: Any) -> Any:
         if not isinstance(unit, dict):
             continue
 
-        position = unit.get("position") or {}
-        status = unit.get("unit_status") or unit.get("status") or {}
-        capabilities = unit.get("capabilities") or {}
-        properties = capabilities.get("properties") or {}
-        resources = capabilities.get("unit_resources") or {}
-        attackable = unit.get("attackable")
-        if not isinstance(attackable, list):
-            attackable = []
-
-        rows.append(
-            [
-                unit.get("unit_id"),
-                unit.get("unit_type"),
-                position.get("col"),
-                position.get("row"),
-                status.get("current_count"),
-                status.get("max_count"),
-                resources.get("remaining_action_points"),
-                resources.get("remaining_movement_points"),
-                properties.get("attack_range"),
-                properties.get("attack_power"),
-                properties.get("vision_range"),
-                properties.get("defense"),
-                _compact_hexes(unit.get("reachable")),
-                list(attackable),
-            ]
-        )
+        values = _own_unit_basic_values(unit)
+        row = [values[col] for col in OWN_UNIT_BASIC_COLUMNS]
+        if spec.reachable:
+            row.append(_compact_hexes(unit.get("reachable")))
+        if spec.attackable:
+            attackable = unit.get("attackable")
+            row.append(list(attackable) if isinstance(attackable, list) else [])
+        rows.append(row)
 
     return rows
 
 
-def _compact_enemy_units(units: Any) -> Any:
-    """Serialize visible enemy units as fixed-order rows.
+def _enemy_unit_values(unit: Dict[str, Any]) -> Dict[str, Any]:
+    position = unit.get("position") or {}
+    status = unit.get("unit_status") or unit.get("status") or {}
+    return {
+        "id": unit.get("unit_id"),
+        "type": unit.get("unit_type"),
+        "faction": unit.get("faction"),
+        "col": position.get("col"),
+        "row": position.get("row"),
+        "current": status.get("current_count"),
+    }
 
-    Row schema:
-    [id, type, faction, col, row, current]
-    """
+
+def _compact_enemy_units(units: Any) -> Any:
+    """Serialize visible enemy units as fixed-order rows (ENEMY_UNIT_COLUMNS)."""
     if not isinstance(units, list):
         return units
 
@@ -191,20 +296,8 @@ def _compact_enemy_units(units: Any) -> Any:
     for unit in units:
         if not isinstance(unit, dict):
             continue
-
-        position = unit.get("position") or {}
-        status = unit.get("unit_status") or unit.get("status") or {}
-
-        rows.append(
-            [
-                unit.get("unit_id"),
-                unit.get("unit_type"),
-                unit.get("faction"),
-                position.get("col"),
-                position.get("row"),
-                status.get("current_count"),
-            ]
-        )
+        values = _enemy_unit_values(unit)
+        rows.append([values[col] for col in ENEMY_UNIT_COLUMNS])
 
     return rows
 
@@ -230,11 +323,16 @@ def _compact_terrain(tiles: Any) -> Any:
     return grouped
 
 
-def filter_faction_state_result(result: Dict[str, Any]) -> Dict[str, Any]:
+def filter_faction_state_result(
+    result: Dict[str, Any],
+    spec: FactionStateFilterSpec,
+) -> Dict[str, Any]:
     """Whitelist get_faction_state into the compact decision-state schema.
 
     Failures (success or result is false) pass through so the model still sees
     the ENV diagnosis. Success is rebuilt from scratch: no leftover keys.
+    Optional channels follow ``spec`` — callers must pass a FILTER_PROFILES
+    entry so the transform cannot silently fall back to pack F.
     """
     if result.get("success") is False or result.get("result") is False:
         return result
@@ -257,26 +355,34 @@ def filter_faction_state_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ]
 
     if "units" in result:
-        filtered["units"] = _compact_own_units(result["units"])
+        filtered["units"] = _compact_own_units(result["units"], spec)
 
     if "visible_enemy_units" in result:
         filtered["enemies"] = _compact_enemy_units(result["visible_enemy_units"])
 
-    if "visible_terrain" in result:
+    if spec.terrain and "visible_terrain" in result:
         filtered["terrain"] = _compact_terrain(result["visible_terrain"])
 
     return filtered
 
+
 def filter_move_result(result: Dict[str, Any]) -> Dict[str, Any]:
     """On failure keep the diagnosis; on success drop the animation narration."""
-    if not result.get("result", True) and "suggested_action" in result:
+    if not result.get("result", True) and (
+        "suggested_action" in result
+        or result.get("failure_reason") == "insufficient_movement_points"
+    ):
         essential = {
             "result",
             "details",
+            "reason",
             "failure_reason",
             "current_movement_points",
             "required_movement_points",
+            "path",
+            "terrain_costs",
             "closest_reachable_position",
+            "farthest_reachable_on_path",
             "suggested_action",
             "suggestion",
         }
@@ -346,7 +452,8 @@ ACTION_FILTERS = {
     "move": filter_move_result,
     "attack": filter_attack_result,
     "observation": filter_observation_result,
-    "get_faction_state": filter_faction_state_result,
+    # get_faction_state is not here: it needs the pack spec. filter_tool_result
+    # calls filter_faction_state_result(data, spec) directly.
 }
 
 
@@ -371,18 +478,28 @@ def filter_tool_result(
     result: Any,
     tool_arguments: Optional[Dict[str, Any]] = None,
     booleans_as_strings: bool = False,
+    faction_state_spec: Optional[FactionStateFilterSpec] = None,
 ) -> Any:
     """Route a tool result to the filter matching the action it performed."""
     if not isinstance(result, dict):
         return result
 
+    spec = faction_state_spec
     data = copy.deepcopy(result)
     if function_name == "perform_action":
         action = (tool_arguments or {}).get("action")
         action = action.strip().lower() if isinstance(action, str) else None
-        handler = ACTION_FILTERS.get(action)
-        if handler is not None:
-            data = handler(data)
+        if action == "get_faction_state":
+            if spec is None:
+                raise TypeError(
+                    "get_faction_state requires a FILTER_PROFILES spec; "
+                    "pass faction_state_spec so data and decoder stay paired"
+                )
+            data = filter_faction_state_result(data, spec)
+        else:
+            handler = ACTION_FILTERS.get(action)
+            if handler is not None:
+                data = handler(data)
 
     return replace_booleans_with_strings(data) if booleans_as_strings else data
 
@@ -395,6 +512,9 @@ __all__ = [
     "filter_tool_result",
     "replace_booleans_with_strings",
     "dumps_for_agent",
-    "FACTION_STATE_COMPACT_DECODER",
+    "resolve_faction_state_filter",
+    "FILTER_PROFILES",
+    "DEFAULT_FACTION_STATE_FILTER",
+    "FactionStateFilterSpec",
     "ACTION_FILTERS",
 ]

@@ -124,7 +124,7 @@ def test_settlement_lists_every_registered_agent():
     assert [row["agent_id"] for row in report.registered_agents] == ids
 
 
-def test_faction_state_lists_full_army_with_commandable():
+def test_faction_state_lists_full_units_with_commandable():
     from rotk_env.components import GameStats
 
     world = World()
@@ -174,7 +174,7 @@ def test_faction_state_lists_full_army_with_commandable():
 
 
 def test_registered_agent_cannot_census_another_faction():
-    """Shu asking for Wei's army is rejected; visible enemies come from own query."""
+    """Shu asking for Wei's Units is rejected; visible enemies come from own query."""
     from rotk_env.components import FogOfWar, GameStats, UIState
 
     world = World()

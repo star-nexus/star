@@ -24,7 +24,12 @@ from .errors import (
     is_network_unreachable_error,
     log_error_to_file,
 )
-from .filters import dumps_for_agent, filter_tool_result
+from .filters import (
+    DEFAULT_FACTION_STATE_FILTER,
+    dumps_for_agent,
+    filter_tool_result,
+    resolve_faction_state_filter,
+)
 from .scoring import detect_strategy
 from .stats import ErrorStatsCollector
 from .tools import ToolManager, board_bounds_from_map, perform_action_tool
@@ -47,14 +52,14 @@ TOOL_FORMAT_REMINDER = (
 )
 
 # ENV rejection messages that mean the model misjudged the board rather than
-# malformed its request. Each entry matches a message `LLMActionHandler` actually
-# emits; the inherited list was mostly phrasings the ENV never sends, so the two
-# commonest move failures ("No valid path", "Insufficient movement points") were
-# being counted as malformed tool calls instead.
+# malformed its request. Prefer structured ``failure_reason`` / ``reason`` from
+# MovementSystem; the substrings are a fallback for older wording still in
+# attack/occupy errors.
 SPATIAL_ERROR_PATTERNS = (
     # Movement: the target cannot be reached from here this turn.
     "no valid path",
     "insufficient movement points",
+    "shortest path costs",
     "out of movement range",
     "no nearby reachable positions",
     # Attack: the target sits outside weapon reach.
@@ -65,6 +70,14 @@ SPATIAL_ERROR_PATTERNS = (
     "blocked by obstacles",
     "occupied",
     "already controlled by faction",
+)
+
+SPATIAL_FAILURE_REASONS = frozenset(
+    {
+        "insufficient_movement_points",
+        "no_path",
+        "insufficient_mp",
+    }
 )
 
 # Deliberately *not* spatial: running out of action, construction, or skill
@@ -89,6 +102,7 @@ class RoTKChatAgent:
         system_prompt: str = "",
         agent_id: str = "agent_1",
         max_iterations: int = 1000,
+        state_filter: str = DEFAULT_FACTION_STATE_FILTER,
     ):
         self.adapter = adapter
         self.mode = mode
@@ -98,6 +112,7 @@ class RoTKChatAgent:
         self.system_prompt = system_prompt
         self.agent_id = agent_id
         self.max_iterations = max_iterations
+        self.faction_state_spec = resolve_faction_state_filter(state_filter)
 
         self.tool_manager = ToolManager()
         self.conversation_history: List[Message] = []
@@ -113,7 +128,12 @@ class RoTKChatAgent:
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
-        self.tool_manager.register_tool(perform_action_tool(self.bridge.perform_action))
+        self.tool_manager.register_tool(
+            perform_action_tool(
+                self.bridge.perform_action,
+                faction_state_spec=self.faction_state_spec,
+            )
+        )
         for tool in self.mode.tools(self):
             self.tool_manager.register_tool(tool)
 
@@ -134,6 +154,7 @@ class RoTKChatAgent:
                 names=names,
                 docs=docs,
                 board=board_bounds_from_map(self._map_briefing),
+                faction_state_spec=self.faction_state_spec,
             )
         )
 
@@ -182,11 +203,16 @@ class RoTKChatAgent:
         if not isinstance(result, dict):
             return False
 
+        for key in ("failure_reason", "reason"):
+            value = result.get(key)
+            if isinstance(value, str) and value in SPATIAL_FAILURE_REASONS:
+                return True
+
         for key in ("details", "message"):
             if key in result:
                 text = str(result[key]).lower()
-                if text:
-                    return any(p in text for p in SPATIAL_ERROR_PATTERNS)
+                if text and any(p in text for p in SPATIAL_ERROR_PATTERNS):
+                    return True
         return False
 
     def _record_env_rejection(self, result: Any) -> None:
@@ -281,6 +307,7 @@ class RoTKChatAgent:
                 result,
                 arguments,
                 booleans_as_strings=self.booleans_as_strings,
+                faction_state_spec=self.faction_state_spec,
             )
             console.print(f"── Tool result (filtered): {call.name} ──", style="magenta")
             # Pretty-print is for the operator only. History uses dumps_for_agent.
@@ -288,6 +315,7 @@ class RoTKChatAgent:
                 json.dumps(filtered, indent=2, ensure_ascii=False),
                 style="magenta",
                 highlight=False,
+                markup=False,
             )
 
             await self._append_tool_message(filtered, call.id)

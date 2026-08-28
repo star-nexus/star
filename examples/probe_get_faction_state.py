@@ -315,7 +315,7 @@ def check_cross_faction(payload: Any, checks: Check) -> None:
     checks.expect(code == 2005, "enemy query error_code=2005", f"got {code}")
     checks.expect(
         "visible_enemy_units" not in payload and "units" not in payload,
-        "enemy query does not dump army lists",
+        "enemy query does not dump Units lists",
     )
 
 

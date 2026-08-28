@@ -22,6 +22,10 @@ if __package__ in (None, ""):
 from rotk_agent.adapters import build_adapter
 from rotk_agent.core.agent import RoTKChatAgent
 from rotk_agent.core.bridge import EnvBridge
+from rotk_agent.core.filters import (
+    DEFAULT_FACTION_STATE_FILTER,
+    FILTER_PROFILES,
+)
 from rotk_agent.core.config import (
     DEFAULT_REASONING_EFFORT,
     LLMConfig,
@@ -122,6 +126,15 @@ def parse_args(argv=None) -> argparse.Namespace:
             "Pass --no-carry-reasoning to echo an empty field instead."
         ),
     )
+    parser.add_argument(
+        "--state-filter",
+        default=DEFAULT_FACTION_STATE_FILTER,
+        choices=sorted(FILTER_PROFILES),
+        help=(
+            "Faction-state ablation pack (compact rows). A–F toggle reachable / "
+            "attackable / terrain; F keeps all three."
+        ),
+    )
     parser.add_argument("--hub-url", default=DEFAULT_HUB_URL, help="Hub websocket URL.")
     parser.add_argument(
         "--config", default=".configs.toml", help="Path to the provider config."
@@ -206,6 +219,7 @@ async def run(args: argparse.Namespace) -> int:
             system_prompt=system_prompt,
             agent_id=args.agent_id,
             max_iterations=args.max_iterations,
+            state_filter=args.state_filter,
         )
 
     runner = AgentRunner(

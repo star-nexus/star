@@ -183,31 +183,20 @@ def format_home_bases_block(briefing: Optional[dict]) -> str:
     return text
 
 
-FACTION_STATE_PROMPT_BLURB = "compact state; see tool definition for row format"
-
-
 def format_game_actions_block(payload: Optional[dict]) -> str:
-    """Markdown list of this match's board verbs for the system prompt."""
+    """Markdown list of this match's board verbs for the system prompt.
+
+    Names only. Param shapes and result format live on the tool schema;
+    pasting ENV catalog copy here duplicated that and mixed English into CN
+    prompts.
+    """
     names: list = []
-    docs: dict = {}
     if isinstance(payload, dict):
         raw_names = payload.get("names") or []
         names = [n for n in raw_names if n != "end_turn"]
-        docs = payload.get("docs") or {}
     if not names:
         names = list(FALLBACK_ACTION_NAMES)
-    lines = []
-    for name in names:
-        if name == "get_faction_state":
-            desc = FACTION_STATE_PROMPT_BLURB
-        else:
-            desc = ""
-            if isinstance(docs.get(name), dict):
-                desc = docs[name].get("description") or ""
-        if desc:
-            lines.append(f"- `{name}`: {desc}")
-        else:
-            lines.append(f"- `{name}`")
+    lines = [f"- `{name}`" for name in names]
     return "\n".join(lines) if lines else "- (none)"
 
 

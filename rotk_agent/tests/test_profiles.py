@@ -97,7 +97,7 @@ class TestPromptRendering:
                 assert "$game_actions_block" in rendered
 
     def test_prompts_do_not_duplicate_the_compact_row_schema(self):
-        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.filters import FILTER_PROFILES
 
         texts = [
             profiles.load_prompt(kind, language)
@@ -106,8 +106,42 @@ class TestPromptRendering:
         ]
         texts.append(profiles.load_prompt("realtime", "cn", variant="baseline"))
         for text in texts:
-            assert FACTION_STATE_COMPACT_DECODER not in text
+            for profile in FILTER_PROFILES.values():
+                assert profile.decoder not in text
             assert "attack_range,attack_power,vision_range,defense" not in text
+
+    def test_prompts_omit_filter_schema_and_tactical_policy(self):
+        texts = [
+            profiles.load_prompt(kind, language)
+            for kind in ("realtime", "turn")
+            for language in ("cn", "en")
+        ]
+        texts.append(profiles.load_prompt("realtime", "cn", variant="baseline"))
+        banned = (
+            "若提供 reachable",
+            "若单位行含 `reachable`",
+            "朝基地行军",
+            "朝对方基地推进",
+            "善于吸引火力",
+            "适合机动进攻",
+            "适合战术进攻",
+            "战斗提示",
+            "贸然深入",
+            "尽可能用掉所有AP",
+            "Choose move targets from that unit's `reachable`",
+            "march toward",
+            "legal march headings",
+            "Combat Tips",
+            "Do not send a single unit",
+            "Parameter meanings (the default eval three)",
+            "If that unit row includes `reachable`",
+            "advance toward the opponent's home base",
+            "Pick move targets",
+            "Pick attack targets",
+        )
+        for text in texts:
+            for phrase in banned:
+                assert phrase not in text, phrase
 
     def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
@@ -146,10 +180,10 @@ class TestPromptRendering:
         assert "`attack`" in block
         assert "`get_faction_state`" in block
         assert "rotk_env" not in block
-        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.filters import FILTER_PROFILES
 
-        assert FACTION_STATE_COMPACT_DECODER not in block
-        assert profiles.FACTION_STATE_PROMPT_BLURB in block
+        assert all(p.decoder not in block for p in FILTER_PROFILES.values())
+        assert "compact state; see tool definition" not in block
 
     def test_join_briefing_fills_game_actions_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
@@ -172,16 +206,15 @@ class TestPromptRendering:
             },
         )
         assert "$game_actions_block" not in filled
-        assert "`move`: Move a unit" in filled
-        assert "`end_turn`: End the turn" not in filled
+        assert "`move`" in filled
+        assert "Move a unit" not in filled
+        assert "- `end_turn`" not in filled
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
-        from rotk_agent.core.filters import FACTION_STATE_COMPACT_DECODER
+        from rotk_agent.core.filters import FILTER_PROFILES
 
-        assert FACTION_STATE_COMPACT_DECODER not in filled
-        assert "`get_faction_state`: Screen census" not in filled
-        assert (
-            f"`get_faction_state`: {profiles.FACTION_STATE_PROMPT_BLURB}" in filled
-        )
+        assert all(p.decoder not in filled for p in FILTER_PROFILES.values())
+        assert "Screen census" not in filled
+        assert "compact state; see tool definition" not in filled
 
     def test_unknown_faction_falls_back_to_wei(self):
         assert profiles.faction_info("qi") == profiles.faction_info("wei")

@@ -120,6 +120,62 @@ class TestToolCallHandling:
         assert parsed["units"][0][12] == [[-3, 2], [-3, 3], [-3, 4]]
 
     @pytest.mark.asyncio
+    async def test_state_filter_a_omits_optional_channels(self):
+        payload = {
+            "success": True,
+            "units": [
+                {
+                    "unit_id": 227,
+                    "unit_type": "infantry",
+                    "position": {"col": 1, "row": 3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 2,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [{"col": -3, "row": 2}],
+                    "attackable": [9],
+                }
+            ],
+            "visible_terrain": [{"col": 1, "row": 0, "type": "forest"}],
+        }
+        agent = build_agent(
+            [tool_call_reply()],
+            bridge=RecordingBridge(responses={"get_faction_state": payload}),
+            max_iterations=2,
+            state_filter="A",
+        )
+        await agent.chat("start")
+
+        parsed = json.loads(
+            [m for m in agent.conversation_history if m.role == "tool"][0].content
+        )
+        assert len(parsed["units"][0]) == 12
+        assert "terrain" not in parsed
+
+    def test_tool_schema_decoder_matches_the_state_filter(self):
+        from rotk_agent.core.filters import FILTER_PROFILES
+
+        agent = build_agent([], state_filter="A")
+        tool = agent.tool_manager.tools["perform_action"]
+        variant = next(
+            v
+            for v in tool.parameters["properties"]["params"]["oneOf"]
+            if v.get("title") == "get_faction_state"
+        )
+        assert FILTER_PROFILES["A"].decoder in variant["description"]
+        assert FILTER_PROFILES["F"].decoder not in variant["description"]
+        assert "reachable=" not in variant["description"]
+
+    @pytest.mark.asyncio
     async def test_the_action_reaches_the_env(self):
         bridge = RecordingBridge()
         agent = build_agent(
@@ -184,6 +240,36 @@ class TestToolCallHandling:
         assert agent.stats.tool_invalid_tool == 0
 
     @pytest.mark.asyncio
+    async def test_shortest_path_mp_rejection_is_spatial_not_invalid_tool(self):
+        bridge = RecordingBridge(
+            responses={
+                "move": {
+                    "result": False,
+                    "details": (
+                        "Shortest path costs 5 MP; unit has 4 MP. "
+                        "Farthest reachable hex along this path: (-1, -1)."
+                    ),
+                    "failure_reason": "insufficient_movement_points",
+                    "reason": "insufficient_mp",
+                    "suggested_action": {
+                        "action": "move",
+                        "params": {
+                            "unit_id": 233,
+                            "target_position": {"col": -1, "row": -1},
+                        },
+                    },
+                }
+            }
+        )
+        agent = build_agent(
+            [tool_call_reply(action="move")], bridge=bridge, max_iterations=2
+        )
+        await agent.chat("start")
+
+        assert agent.stats.spatial_awareness_error == 1
+        assert agent.stats.tool_invalid_tool == 0
+
+    @pytest.mark.asyncio
     async def test_other_rejections_are_classified_as_invalid_tool_use(self):
         bridge = RecordingBridge(
             responses={"move": {"result": False, "details": "Unit 42 not found"}}
@@ -198,11 +284,12 @@ class TestToolCallHandling:
 
 
 class TestSpatialErrorClassification:
-    """Pinned to the messages `LLMActionHandler._create_error_response` sends.
+    """Pinned to MovementSystem reason codes and handler error text.
 
-    These strings are the contract; the inherited pattern list was full of
-    phrasings the ENV never emits, so the two commonest move failures were being
-    charged to the wrong metric.
+    Structured ``failure_reason`` / ``reason`` are checked independently so one
+    non-spatial code cannot hide the other. Substrings cover attack/occupy
+    wording that has no reason code. Resource exhaustion (AP / construction /
+    skill / empty MP bar) stays in ``tool_invalid_tool``.
     """
 
     @staticmethod
@@ -216,6 +303,8 @@ class TestSpatialErrorClassification:
         [
             "No valid path to target position {'col': 3, 'row': 4}",
             "Insufficient movement points this turn: need 6, have 4.",
+            "Shortest path costs 5 MP; unit has 4 MP. "
+            "Farthest reachable hex along this path: (-1, -1).",
             "No nearby reachable positions this turn. Wait to recover movement points.",
             "Target out of attack range: distance 5, range 2",
             "Cannot occupy position (1, 2): too far from unit position (5, 5). "
@@ -233,6 +322,63 @@ class TestSpatialErrorClassification:
         # so it must not land in two different buckets.
         assert self.classify("No valid path to target position {'col': 0, 'row': 0}")
         assert self.classify("Insufficient movement points this turn: need 6, have 4.")
+        assert self.classify(
+            "Shortest path costs 5 MP; unit has 4 MP. "
+            "Farthest reachable hex along this path: (-1, -1)."
+        )
+
+    def test_structured_insufficient_mp_counts_as_spatial_without_old_wording(self):
+        assert RoTKChatAgent.is_spatial_awareness_error(
+            {
+                "result": False,
+                "failure_reason": "insufficient_movement_points",
+                "reason": "insufficient_mp",
+                "details": "Shortest path costs 5 MP; unit has 4 MP.",
+            }
+        )
+
+    def test_reason_is_checked_even_when_failure_reason_is_unrelated(self):
+        assert RoTKChatAgent.is_spatial_awareness_error(
+            {"result": False, "failure_reason": "other", "reason": "no_path"}
+        )
+
+    def test_ap_exhaustion_is_not_spatial_even_with_a_reason_field(self):
+        assert not RoTKChatAgent.is_spatial_awareness_error(
+            {
+                "result": False,
+                "reason": "insufficient_ap",
+                "details": "Insufficient action points for attack: need 2, have 1",
+            }
+        )
+
+    def test_handler_shaped_insufficient_mp_payload_is_spatial(self):
+        # Exact keys LLMActionHandler._translate_move_result copies through.
+        assert RoTKChatAgent.is_spatial_awareness_error(
+            {
+                "success": False,
+                "result": False,
+                "details": (
+                    "Shortest path costs 5 MP; unit has 4 MP. "
+                    "Farthest reachable hex along this path: (-1, -1)."
+                ),
+                "message": (
+                    "Shortest path costs 5 MP; unit has 4 MP. "
+                    "Farthest reachable hex along this path: (-1, -1)."
+                ),
+                "reason": "insufficient_mp",
+                "failure_reason": "insufficient_movement_points",
+            }
+        )
+
+    def test_empty_mp_bar_is_resource_not_spatial(self):
+        assert not RoTKChatAgent.is_spatial_awareness_error(
+            {
+                "result": False,
+                "reason": "no_mp",
+                "details": "Unit has no movement points left: 0",
+                "message": "Unit has no movement points left: 0",
+            }
+        )
 
     @pytest.mark.parametrize(
         "details",
@@ -670,7 +816,8 @@ class TestRegistration:
         assert system == agent.system_prompt
         assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in system
         assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in system
-        assert "`move`: Move a unit" in system
+        assert "`move`" in system
+        assert "Move a unit" not in system
         assert "Board (even-q offset): col -7..7, row -7..7." in system
         assert "start" == agent.conversation_history[1].content
         schema = agent.tool_manager.tools["perform_action"].parameters

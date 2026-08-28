@@ -135,6 +135,106 @@ def test_mountain_hex_costs_three_and_can_block_a_short_move():
     assert mp == 0
 
 
+def test_path_over_budget_is_insufficient_mp_not_no_path():
+    """A* capped at current MP used to return no_path when terrain made the
+    cheapest route cost more than hex-distance. Report that route instead."""
+    world = World()
+    _disc(world, radius=3, extras={(1, 0): TerrainType.MOUNTAIN})
+    movement = MovementSystem()
+    world.add_system(movement)
+    unit = _spawn(world, col=0, row=0, mp=2)
+
+    result = movement.move_unit(unit, (1, 0))
+    assert result["success"] is False
+    assert result["reason"] == "insufficient_mp"
+    assert result["required_movement_points"] == 3
+    assert result["current_movement_points"] == 2
+    assert result["path"] == [[0, 0], [1, 0]]
+    assert result["farthest_reachable_on_path"] == {"col": 0, "row": 0}
+    assert "Shortest path costs 3 MP" in result["message"]
+    suggested = result.get("suggested_action")
+    if suggested:
+        dest = suggested["params"]["target_position"]
+        assert (dest["col"], dest["row"]) != (0, 0)
+
+
+def test_farthest_reachable_stops_before_an_unaffordable_step():
+    """Corridor: plains then mountain. 3 MP reaches the plains hex only."""
+    extras = {
+        (2, 0): TerrainType.MOUNTAIN,
+        (3, -1): TerrainType.MOUNTAIN,
+        (2, -1): TerrainType.MOUNTAIN,
+        (1, -1): TerrainType.MOUNTAIN,
+        (2, 1): TerrainType.MOUNTAIN,
+        (3, 0): TerrainType.MOUNTAIN,
+    }
+    world = World()
+    _disc(world, radius=3, extras=extras)
+    movement = MovementSystem()
+    world.add_system(movement)
+    unit = _spawn(world, col=0, row=0, mp=3)
+
+    result = movement.move_unit(unit, (2, 0))
+    assert result["success"] is False
+    assert result["reason"] == "insufficient_mp"
+    assert result["required_movement_points"] == 4
+    assert result["path"][0] == [0, 0]
+    assert result["path"][-1] == [2, 0]
+    assert result["farthest_reachable_on_path"] == {"col": 1, "row": 0}
+
+
+def test_opening_wei_march_to_plain_reports_path_when_hills_inflate_cost():
+    """Filter-A opening: hex distance 4, MP 4, but hills make the route cost 5."""
+    from rotk_env.prefabs.config import PlayerType
+    from rotk_env.prefabs.world_builder import build_skirmish_world
+
+    world = build_skirmish_world(
+        players={Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
+        mode=GameMode.REAL_TIME,
+        seed=1,
+        hub_url=None,
+        display="none",
+    )
+    mover = None
+    for entity in world.query().with_all(HexPosition, Unit).entities():
+        pos = world.get_component(entity, HexPosition)
+        if (pos.col, pos.row) == (1, 4):
+            mover = entity
+            break
+    assert mover is not None
+    movement = next(s for s in world.systems if isinstance(s, MovementSystem))
+    result = movement.move_unit(mover, (0, 1))
+    assert result["success"] is False
+    assert result["reason"] == "insufficient_mp"
+    assert result["required_movement_points"] == 5
+    assert result["current_movement_points"] == 4
+    assert result["path"][-1] == [0, 1]
+    assert result["farthest_reachable_on_path"] == {"col": 0, "row": 2}
+    assert HexMath.hex_distance((1, 4), (0, 1)) == 4
+
+
+def test_effective_cap_below_current_mp_does_not_report_no_path():
+    """Capped A* used effective_movement; if that is below path cost but
+    current_mp is above it, the old fallback returned no_path instead of
+    insufficient_mp or success. Uncapped plan + spendable budget fixes it."""
+    world = World()
+    _disc(world, radius=3, extras={(1, 0): TerrainType.MOUNTAIN})
+    movement = MovementSystem()
+    world.add_system(movement)
+    # current_mp=4 would afford a 3-cost mountain if we only checked current_mp,
+    # but effective_movement follows base_mp=2 so spendable is 2.
+    unit = _spawn(world, col=0, row=0, mp=4, base_mp=2)
+
+    result = movement.move_unit(unit, (1, 0))
+    assert result["success"] is False
+    assert result["reason"] == "insufficient_mp"
+    assert result["required_movement_points"] == 3
+    assert result["current_movement_points"] == 4
+    assert "unit has 2 MP" in result["message"]
+    pos = world.get_component(unit, HexPosition)
+    assert (pos.col, pos.row) == (0, 0)
+
+
 def test_move_cannot_leave_the_map_disc():
     world = World()
     _disc(world, radius=2)
@@ -211,8 +311,12 @@ def test_handle_move_translates_insufficient_mp_from_the_system():
         {"unit_id": unit, "target_position": {"col": 1, "row": 0}}
     )
     assert result["success"] is False
+    assert result["reason"] == "insufficient_mp"
     assert result["failure_reason"] == "insufficient_movement_points"
     assert result["required_movement_points"] == 3
+    assert result["path"] == [[0, 0], [1, 0]]
+    assert result["farthest_reachable_on_path"] == {"col": 0, "row": 0}
+    assert "Shortest path costs 3 MP" in result["details"]
     pos = world.get_component(unit, HexPosition)
     assert (pos.col, pos.row) == (0, 0)
 
