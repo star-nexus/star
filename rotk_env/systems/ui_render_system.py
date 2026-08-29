@@ -5,7 +5,8 @@ statistics, help and other UI elements
 
 import pygame
 from pathlib import Path
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     GameState,
     GameStats,

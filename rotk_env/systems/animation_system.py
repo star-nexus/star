@@ -5,7 +5,8 @@ Animation system - handles unit movement animations and visual effects
 from pathlib import Path
 import pygame
 from typing import Tuple, Optional
-from framework import System, World, RMS
+from framework import System, World
+from framework.engine import RMS
 from ..components import (
     HexPosition,
     MovementAnimation,
@@ -33,8 +34,11 @@ class AnimationSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
-        # Initialize font
-        # pygame.font.init()
+        # Same defensive init as the other font-using systems. This used to work
+        # by accident: importing `framework` constructed the engine and called
+        # pygame.init(). Now that import is side-effect free, a system that
+        # needs fonts has to ask for them.
+        pygame.font.init()
         self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.damage_font = pygame.font.Font(self.font_file_path, 24)
         self.font_dict = {}

@@ -55,27 +55,17 @@ from ..prefabs.config import (
     PlayerType,
     UnitType,
 )
-from ..systems.animation_system import AnimationSystem
 from ..systems.combat_system import CombatSystem
-from ..systems.effect_render_system import EffectRenderSystem
 from ..systems.game_time_system import GameTimeSystem
-from ..systems.input_system import InputHandlingSystem
 from ..systems.llm_system import LLMSystem
-from ..systems.map_render_system import MapRenderSystem
 from ..systems.map_system import MapSystem
-from ..systems.minimap_system import MiniMapSystem
 from ..systems.mock_llm_ai_system import MockLLMAISystem
 from ..systems.movement_system import MovementSystem
-from ..systems.panel_render_system import PanelRenderSystem
 from ..systems.realtime_system import RealtimeSystem
 from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
 from ..systems.statistics_system import StatisticsSystem
 from ..systems.turn_system import TurnSystem
-from ..systems.ui_button_system import UIButtonSystem
-from ..systems.ui_render_system import UIRenderSystem
-from ..systems.unit_action_button_system import UnitActionButtonSystem
-from ..systems.unit_render_system import UnitRenderSystem
 from ..systems.vision_system import VisionSystem
 
 DEFAULT_HUB_URL = "ws://localhost:8000/ws/metaverse"
@@ -219,9 +209,24 @@ class _SkirmishAssembler:
             StatisticsSystem(),
             SettlementReportSystem(),
         ]
+        # Display-dependent systems are imported here, not at module scope:
+        # they pull in pygame, and `display="none"` (the eval path) mounts none
+        # of them. A module-level import would put SDL in every headless run.
         if self.display in ("dummy", "window"):
+            from ..systems.animation_system import AnimationSystem
+            from ..systems.input_system import InputHandlingSystem
+
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
+            from ..systems.effect_render_system import EffectRenderSystem
+            from ..systems.map_render_system import MapRenderSystem
+            from ..systems.minimap_system import MiniMapSystem
+            from ..systems.panel_render_system import PanelRenderSystem
+            from ..systems.ui_button_system import UIButtonSystem
+            from ..systems.ui_render_system import UIRenderSystem
+            from ..systems.unit_action_button_system import UnitActionButtonSystem
+            from ..systems.unit_render_system import UnitRenderSystem
+
             systems.extend(
                 [
                     UnitActionButtonSystem(),

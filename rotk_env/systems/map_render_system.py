@@ -13,7 +13,8 @@ import os
 import random
 import math
 from typing import Tuple, Set, List, Dict, Optional
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     MapData,
     Terrain,

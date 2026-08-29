@@ -6,14 +6,8 @@ tile hover/selection, and dispatches domain events.
 
 import pygame
 from typing import Tuple, Optional
-from framework import (
-    System,
-    World,
-    QuitEvent,
-    KeyDownEvent,
-    MouseButtonDownEvent,
-    MouseMotionEvent,
-)
+from framework import System, World
+from framework.engine import QuitEvent, KeyDownEvent, MouseButtonDownEvent, MouseMotionEvent
 from framework.engine.events import EBS
 
 from ..components import (

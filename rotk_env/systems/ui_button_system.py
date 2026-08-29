@@ -4,7 +4,8 @@ UI Button System - Handles UI button rendering, interaction and callbacks
 
 import pygame
 from pathlib import Path
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     UIButton,
     UIButtonCollection,

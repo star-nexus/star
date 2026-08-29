@@ -10,8 +10,8 @@ from .renders import RenderEngine
 from .inputs import InputSystem
 from .events import EventBus
 from ..ecs.world import World
+from ..ecs import profiling
 from .engine_event import QuitEvent
-from performance_profiler import profiler
 
 # Eval and interactive play share this cap. Real-time AP/MP recover from
 # fixed 1/FPS seconds per frame, so a 30fps loop would recover at half
@@ -20,7 +20,12 @@ DEFAULT_FPS = 60
 
 
 class GameEngine:
-    """Game engine - runs the main loop and core managers."""
+    """Game engine - runs the main loop and core managers.
+
+    One instance per process (managers below are module-level singletons that
+    the engine wires to a single screen). Construction initialises SDL, so it is
+    never done at import time -- use `get_engine()` or construct explicitly.
+    """
 
     _instance = None
 
@@ -36,11 +41,13 @@ class GameEngine:
         height: int = 800,
         fps: int = DEFAULT_FPS,
     ):
-        """Initialize the game engine (idempotent for singleton)."""
+        """Initialize the game engine."""
         if hasattr(self, "_initialized"):
-            # Module import constructs GAMEENGINE with defaults; the ENV
-            # entry point still pins FPS so recovery rate stays 1 AP / 60 frames.
-            self.fps = fps
+            # Already built for this process. Only FPS is re-pinnable, because
+            # real-time AP/MP recovery is defined per frame; window geometry and
+            # headless mode cannot change after SDL is up.
+            if fps != self.fps:
+                self.fps = fps
             return
 
         # Load config to check for headless mode
@@ -82,21 +89,24 @@ class GameEngine:
 
     def _init_pygame(self) -> None:
         """Initialize Pygame context and screen."""
-        pygame.init()
+        # SDL reads SDL_VIDEODRIVER while initialising its video subsystem, so
+        # this has to happen *before* pygame.init(). Setting it afterwards left
+        # headless runs on the real driver -- which crashes on a machine with no
+        # display, and was only survivable because the shell wrapper and the
+        # test conftest exported the variable externally.
         if self.headless:
-            os.environ["SDL_VIDEODRIVER"] = "dummy"
-            # Set a minimal screen size for headless mode
+            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+        pygame.init()
+
+        if self.headless:
+            # Minimal surface: render systems still need a blit target.
             self.screen = pygame.display.set_mode((1, 1))
         else:
             self.screen = pygame.display.set_mode((self.width, self.height))
             pygame.display.set_caption(self.title)
-            
-        self.clock = pygame.time.Clock()
 
-    # def _init_world(self) -> None:
-    #     """初始化世界"""
-    #     # 如果需要 ECS 系统，可以在这里初始化
-    #     self.world = World()
+        self.clock = pygame.time.Clock()
 
     def _init_managers(self) -> None:
         """Initialize manager singletons and wire them up."""
@@ -143,6 +153,7 @@ class GameEngine:
 
     def _update(self) -> None:
         """Update one frame of game logic and rendering."""
+        profiler = profiling.profiler
         profiler.start_frame()
 
         if not self.headless:
@@ -207,4 +218,16 @@ class GameEngine:
         return self.delta_time
 
 
-GAMEENGINE = GameEngine()
+def get_engine(**kwargs) -> GameEngine:
+    """Return the process engine, constructing it on first call.
+
+    There is deliberately no module-level instance: `GameEngine()` initialises
+    SDL and opens a window, so building one at import time meant that merely
+    importing the ECS core required a display.
+    """
+    return GameEngine(**kwargs)
+
+
+def reset_engine() -> None:
+    """Drop the cached instance. For tests only."""
+    GameEngine._instance = None

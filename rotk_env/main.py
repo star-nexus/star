@@ -26,7 +26,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # Add framework to path
 sys.path.append(str(Path(__file__).parent.parent / "framework"))
 
+from framework import set_profiler
 from framework.engine.game_engine import GameEngine
+from performance_profiler import profiler
+
+# The ECS core ships a no-op profiler so it stays free of repo-root imports.
+# The ENV entry point is the layer that knows about `performance_profiler`.
+set_profiler(profiler)
 
 from rotk_env.scenes import GameScene, GameOverScene, StartScene
 from rotk_env.prefabs.config import PLAYER_PRESETS, GameConfig

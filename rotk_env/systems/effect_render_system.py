@@ -6,7 +6,8 @@ attack range, tile hover effects, and visual effect animations
 import random
 import pygame
 from typing import List, Tuple
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     UIState,
     InputState,

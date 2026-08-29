@@ -5,7 +5,7 @@ Defines various in-game events.
 
 from dataclasses import dataclass
 from typing import Tuple, Optional
-from framework import Event
+from framework.engine import Event
 from ..prefabs.config import Faction
 
 

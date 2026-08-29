@@ -14,7 +14,8 @@ import math
 import time  # import time module
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     HexPosition,
     Unit,

@@ -4,16 +4,8 @@ Start scene.
 
 import pygame
 from typing import Dict, Any, Optional
-from framework import (
-    World,
-    RMS,
-    EBS,
-    MouseButtonDownEvent,
-    MouseMotionEvent,
-    Event,
-    KeyDownEvent,
-    QuitEvent,
-)
+from framework import World
+from framework.engine import RMS, EBS, MouseButtonDownEvent, MouseMotionEvent, Event, KeyDownEvent, QuitEvent
 from framework.engine.scenes import Scene
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..components.start_menu import StartMenuConfig, StartMenuButtons, StartMenuOptions

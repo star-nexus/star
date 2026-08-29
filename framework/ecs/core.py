@@ -38,6 +38,16 @@ class SingletonComponent(Component):
 
 
 class System(ABC):
+    """Base class for systems (game logic over component data).
+
+    ``required_components`` declares the component signature this system
+    operates on. It is not enforced automatically -- systems still write their
+    own queries -- but ``matched_entities()`` runs the declared query, so the
+    declaration is executable rather than decorative.
+
+    ``enabled`` is honoured by ``World.update``: a disabled system is skipped.
+    """
+
     def __init__(
         self, required_components: Set[Type[Component]] = None, priority: int = 100
     ):
@@ -60,3 +70,17 @@ class System(ABC):
     def update(self, delta_time: float) -> None:
         """更新系统逻辑"""
         pass
+
+    def matched_entities(self) -> Set["Entity"]:
+        """Entities satisfying ``required_components``.
+
+        Empty when nothing is declared or the system is not attached to a
+        world -- callers get a signature-driven query without each system
+        rebuilding the same ``with_component`` chain by hand.
+        """
+        if not self.required_components or self.world is None:
+            return set()
+        query = self.world.query()
+        for component_type in self.required_components:
+            query = query.with_component(component_type)
+        return query.entities()

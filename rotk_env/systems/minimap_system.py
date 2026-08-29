@@ -4,7 +4,8 @@ Minimap system.
 
 import pygame
 from typing import Tuple, Optional
-from framework import System, World, RMS, EBS, MouseButtonDownEvent
+from framework import System, World
+from framework.engine import RMS, EBS, MouseButtonDownEvent
 from ..components import (
     MiniMap,
     MapData,

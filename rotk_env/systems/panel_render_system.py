@@ -6,7 +6,8 @@ battle log panel (bottom-right), and minimap (top-right)
 import pygame
 import time
 from pathlib import Path
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     UIState,
     Unit,

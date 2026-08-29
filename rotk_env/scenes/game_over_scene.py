@@ -6,16 +6,8 @@ and wires up render systems and mouse interactions.
 
 import pygame
 from typing import Dict, Any, Optional
-from framework import (
-    World,
-    SMS,
-    RMS,
-    EBS,
-    MouseButtonDownEvent,
-    MouseMotionEvent,
-    MouseWheelEvent,
-    Event,
-)
+from framework import World
+from framework.engine import SMS, RMS, EBS, MouseButtonDownEvent, MouseMotionEvent, MouseWheelEvent, Event
 from framework.engine.engine_event import QuitEvent
 from framework.engine.scenes import Scene
 from ..components.game_over import (

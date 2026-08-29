@@ -10,7 +10,11 @@ from .builder import QueryBuilder
 from typing import Dict, Set, Type, List, Any, Optional, FrozenSet
 from collections import defaultdict
 import time
-from performance_profiler import profiler
+
+# Imported as a module, not `from .profiling import profiler`: `set_profiler`
+# rebinds the module attribute, and a direct name import would freeze the
+# no-op default at import time.
+from . import profiling
 
 
 class World:
@@ -332,11 +336,13 @@ class World:
         self.revision += 1
 
     def update(self, delta_time: float) -> None:
-        """Update all systems once with the provided delta time."""
+        """Update all enabled systems once with the provided delta time."""
         self.bump_revision()
         for system in self.systems:
+            if not system.enabled:
+                continue
             system_name = system.__class__.__name__
-            with profiler.time_system(system_name):
+            with profiling.profiler.time_system(system_name):
                 system.update(delta_time)
 
     def get_entities_with_component(

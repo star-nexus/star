@@ -6,7 +6,8 @@ Renders background panel, winner info, aggregated statistics, and buttons.
 from pathlib import Path
 import pygame
 from typing import Dict, Any
-from framework import World, System, RMS
+from framework import World, System
+from framework.engine import RMS
 from ..prefabs.config import Faction, GameConfig
 from ..components.game_over import Winner, GameStatistics, GameOverButtons
 

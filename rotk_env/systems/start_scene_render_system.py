@@ -5,7 +5,8 @@ Start Scene Render System
 from pathlib import Path
 import pygame
 from typing import Dict, Any
-from framework import World, System, RMS
+from framework import World, System
+from framework.engine import RMS
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..components.start_menu import StartMenuConfig, StartMenuButtons, StartMenuOptions
 

@@ -5,7 +5,6 @@ UI button components.
 from dataclasses import dataclass, field
 from typing import Tuple, Optional, Callable, Any
 from framework import Component, SingletonComponent
-import pygame
 
 
 @dataclass

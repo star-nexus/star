@@ -4,7 +4,8 @@ Unit Action Button System - Responsible for rendering and handling action button
 
 import pygame
 from pathlib import Path
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components import (
     UIState,
     GameState,

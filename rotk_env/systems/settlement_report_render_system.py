@@ -6,7 +6,8 @@ and agent/model info, with a simple scrollbar.
 
 import pygame
 from typing import Dict, Any, Optional
-from framework import System, RMS
+from framework import System
+from framework.engine import RMS
 from ..components.settlement_report import SettlementReport
 from ..prefabs.config import GameConfig, Faction
 
