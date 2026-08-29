@@ -171,6 +171,20 @@ class TestCliDefaults:
         assert parse_args([]).state_filter == "F"
         assert parse_args(["--state-filter", "A"]).state_filter == "A"
 
+    def test_enforce_reachable_defaults_off(self):
+        from rotk_agent.main import parse_args
+
+        assert parse_args([]).enforce_reachable is False
+        assert parse_args(["--enforce-reachable"]).enforce_reachable is True
+        assert parse_args(["--no-enforce-reachable"]).enforce_reachable is False
+
+    def test_hub_url_is_still_accepted(self):
+        from rotk_agent.core.runner import DEFAULT_HUB_URL
+        from rotk_agent.main import parse_args
+
+        assert parse_args([]).hub_url == DEFAULT_HUB_URL
+        assert parse_args(["--hub-url", "ws://x"]).hub_url == "ws://x"
+
     def test_api_key_is_omitted_from_repr(self):
         from rotk_agent.core.config import LLMConfig
 

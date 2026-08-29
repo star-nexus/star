@@ -89,6 +89,11 @@ class ErrorStatsCollector:
         # The model misjudged the game world (distance, reachability, vision).
         self.spatial_awareness_error = 0
 
+        # Agent-side shadow: move target not in the latest reachable list.
+        self.reachable_mismatch = 0
+        self.reachable_mismatch_enforced = 0
+        self.reachable_mismatch_events: list = []
+
         # Token accounting across successful responses.
         self.prompt_tokens = 0
         self.completion_tokens = 0
@@ -128,6 +133,14 @@ class ErrorStatsCollector:
 
     def add_spatial_awareness_error(self):
         self.spatial_awareness_error += 1
+
+    def add_reachable_mismatch(self, event: Dict[str, Any]) -> None:
+        """Record one shadow mismatch. Always counted; enforcement is a flag."""
+        self.reachable_mismatch += 1
+        if event.get("enforced"):
+            self.reachable_mismatch_enforced += 1
+        if len(self.reachable_mismatch_events) < 64:
+            self.reachable_mismatch_events.append(event)
 
     def record_usage(self, usage: Any) -> Dict[str, int]:
         """Fold one response's usage into the run totals and log the hit rate."""
@@ -240,7 +253,10 @@ class ErrorStatsCollector:
             "llm_capability_errors_total": self.get_llm_capability_errors_total(),
             "llm_capability": {
                 "spatial_awareness_error": self.spatial_awareness_error,
+                "reachable_mismatch": self.reachable_mismatch,
+                "reachable_mismatch_enforced": self.reachable_mismatch_enforced,
             },
+            "reachable_mismatch_events": list(self.reachable_mismatch_events),
         }
 
 

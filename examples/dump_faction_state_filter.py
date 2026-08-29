@@ -22,7 +22,11 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rotk_agent.core.filters import filter_faction_state_result
+from rotk_agent.core.filters import (
+    DEFAULT_FACTION_STATE_FILTER,
+    filter_faction_state_result,
+    resolve_faction_state_filter,
+)
 from rotk_env.components import FogOfWar, set_fog_enabled
 from rotk_env.prefabs.config import Faction, GameMode, PlayerType
 from rotk_env.prefabs.world_builder import build_skirmish_world
@@ -53,12 +57,13 @@ def _summarize(raw: dict, compact: dict) -> None:
     )
     for raw_unit, row in zip(raw_units, compact_units):
         raw_reach = raw_unit.get("reachable") or []
-        compact_reach = row[12] if len(row) > 12 else []
+        anchor = row[12] if len(row) > 12 and isinstance(row[12], dict) else {}
+        compact_reach = anchor.get("reachable") or []
         print(
             f"  #{row[0]}  {row[1]}  ({row[2]}, {row[3]})  "
             f"AP={row[6]} MP={row[7]}  "
             f"reachable {len(raw_reach)}->{len(compact_reach)}  "
-            f"attackable={row[13] if len(row) > 13 else []}"
+            f"attackable={anchor.get('attackable', [])}"
         )
 
 
@@ -87,7 +92,8 @@ def main() -> int:
             set_fog_enabled(fog, False)
 
     raw = LLMActionHandler(world).handle_faction_state({"faction": args.faction})
-    compact = filter_faction_state_result(raw)
+    spec = resolve_faction_state_filter(DEFAULT_FACTION_STATE_FILTER)
+    compact = filter_faction_state_result(raw, spec)
 
     print("── summary ──")
     _summarize(raw, compact)

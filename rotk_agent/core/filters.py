@@ -31,10 +31,10 @@ OWN_UNIT_BASIC_COLUMNS = (
     "type",
     "col",
     "row",
-    "current",
-    "max",
-    "AP",
-    "MP",
+    "current_manpower",
+    "max_manpower",
+    "current_AP",
+    "current_MP",
     "attack_range",
     "attack_power",
     "vision_range",
@@ -60,7 +60,7 @@ class FactionStateFilterSpec:
 
     @property
     def decoder(self) -> str:
-        """How to *read* this pack's payload. No decision policy."""
+        """How to *read* this pack's payload. No tactical policy."""
         return _compact_decoder_text(self)
 
 
@@ -101,31 +101,58 @@ def resolve_faction_state_filter(
         ) from None
 
 
+CURRENT_RESOURCE_NOTE = (
+    "current_AP and current_MP are the unit's currently available resources "
+    "in this snapshot, not maximum values."
+)
+TERRAIN_OMISSION_NOTE = (
+    "terrain is a partial snapshot under fog. A coordinate absent from the "
+    "latest terrain object does NOT imply that its terrain changed or became "
+    "plain; it may simply be currently unobserved. Do not infer terrain "
+    "changes from omission."
+)
+REACHABLE_MOVE_PROTOCOL = (
+    "For every move action, target_position MUST be selected exactly from that "
+    "unit's reachable list in the latest get_faction_state result. Do not invent, "
+    "estimate, calculate, or substitute another coordinate. If reachable is empty, "
+    "that unit currently has no legal move target. Treat reachable as authoritative "
+    "for movement legality. Do not override it using your own distance, terrain, "
+    "pathfinding, obstacle, or occupancy assumptions. If a coordinate appears in "
+    "reachable, it is a legal move target for that unit in this snapshot. When "
+    "multiple historical get_faction_state results exist, use the most recent one "
+    "for current unit positions, MP, and reachable when issuing actions."
+)
+
+
+def _affordance_anchor_schema(spec: FactionStateFilterSpec) -> str:
+    """Named trailing object for action affordances. Empty when the pack has none."""
+    fields = []
+    if spec.reachable:
+        fields.append("reachable:[[col,row],...]")
+    if spec.attackable:
+        fields.append("attackable:[enemy_id,...]")
+    if not fields:
+        return ""
+    return "{" + ",".join(fields) + "}"
+
+
 def _compact_decoder_text(spec: FactionStateFilterSpec) -> str:
     """Row-schema decoder for one pack.
 
     Attached only to the get_faction_state tool description in tools.py —
     do not copy into prompts or $game_actions_block.
     """
-    unit_cols = list(OWN_UNIT_BASIC_COLUMNS)
-    extras = []
-    if spec.reachable:
-        unit_cols.append("reachable")
-        extras.append(
-            "reachable=[[col,row],...] legal move hexes now (current hex omitted)"
-        )
-    if spec.attackable:
-        unit_cols.append("attackable")
-        extras.append("attackable=[enemy_id,...] legal attack ids now")
+    units_schema = ",".join(OWN_UNIT_BASIC_COLUMNS)
+    anchor = _affordance_anchor_schema(spec)
+    if anchor:
+        units_schema = f"{units_schema},{anchor}"
 
     text = (
         "The result you receive is filtered compact JSON (no extra whitespace), "
         "not the raw ENV object. "
         "state; fog; counts=[total,alive,actionable]; "
-        f"units=[{','.join(unit_cols)}]"
+        f"units=[{units_schema}]"
     )
-    if extras:
-        text += " where " + " and ".join(extras)
     text += f"; enemies=[{','.join(ENEMY_UNIT_COLUMNS)}]"
     if spec.terrain:
         text += (
@@ -134,7 +161,13 @@ def _compact_decoder_text(spec: FactionStateFilterSpec) -> str:
         )
     else:
         text += "; no terrain key"
-    return text + "."
+    text += "."
+    text += " " + CURRENT_RESOURCE_NOTE
+    if spec.terrain:
+        text += " " + TERRAIN_OMISSION_NOTE
+    if spec.reachable:
+        text += " " + REACHABLE_MOVE_PROTOCOL
+    return text
 
 
 def dumps_for_agent(data: Any) -> str:
@@ -236,10 +269,10 @@ def _own_unit_basic_values(unit: Dict[str, Any]) -> Dict[str, Any]:
         "type": unit.get("unit_type"),
         "col": position.get("col"),
         "row": position.get("row"),
-        "current": status.get("current_count"),
-        "max": status.get("max_count"),
-        "AP": resources.get("remaining_action_points"),
-        "MP": resources.get("remaining_movement_points"),
+        "current_manpower": status.get("current_count"),
+        "max_manpower": status.get("max_count"),
+        "current_AP": resources.get("remaining_action_points"),
+        "current_MP": resources.get("remaining_movement_points"),
         "attack_range": properties.get("attack_range"),
         "attack_power": properties.get("attack_power"),
         "vision_range": properties.get("vision_range"),
@@ -248,11 +281,11 @@ def _own_unit_basic_values(unit: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _compact_own_units(units: Any, spec: FactionStateFilterSpec) -> Any:
-    """Serialize friendly units as fixed-order rows.
+    """Serialize friendly units as observation columns plus an affordance anchor.
 
-    Basic columns follow OWN_UNIT_BASIC_COLUMNS (same names as the decoder),
-    then reachable and/or attackable appended in that order when the spec
-    enables them. Disabled channels are omitted, not emptied.
+    Columns follow OWN_UNIT_BASIC_COLUMNS. When the pack enables reachable
+    and/or attackable, those go in one trailing object so the decoder can name
+    them; disabled channels are omitted, not emptied.
     """
     if not isinstance(units, list):
         return units
@@ -264,11 +297,16 @@ def _compact_own_units(units: Any, spec: FactionStateFilterSpec) -> Any:
 
         values = _own_unit_basic_values(unit)
         row = [values[col] for col in OWN_UNIT_BASIC_COLUMNS]
+        affordance: Dict[str, Any] = {}
         if spec.reachable:
-            row.append(_compact_hexes(unit.get("reachable")))
+            affordance["reachable"] = _compact_hexes(unit.get("reachable"))
         if spec.attackable:
             attackable = unit.get("attackable")
-            row.append(list(attackable) if isinstance(attackable, list) else [])
+            affordance["attackable"] = (
+                list(attackable) if isinstance(attackable, list) else []
+            )
+        if affordance:
+            row.append(affordance)
         rows.append(row)
 
     return rows
@@ -516,5 +554,8 @@ __all__ = [
     "FILTER_PROFILES",
     "DEFAULT_FACTION_STATE_FILTER",
     "FactionStateFilterSpec",
+    "CURRENT_RESOURCE_NOTE",
+    "TERRAIN_OMISSION_NOTE",
+    "REACHABLE_MOVE_PROTOCOL",
     "ACTION_FILTERS",
 ]

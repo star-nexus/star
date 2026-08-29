@@ -28,8 +28,10 @@ from .filters import (
     DEFAULT_FACTION_STATE_FILTER,
     dumps_for_agent,
     filter_tool_result,
+    replace_booleans_with_strings,
     resolve_faction_state_filter,
 )
+from .reachable_guard import ReachableGuard
 from .scoring import detect_strategy
 from .stats import ErrorStatsCollector
 from .tools import ToolManager, board_bounds_from_map, perform_action_tool
@@ -103,6 +105,7 @@ class RoTKChatAgent:
         agent_id: str = "agent_1",
         max_iterations: int = 1000,
         state_filter: str = DEFAULT_FACTION_STATE_FILTER,
+        enforce_reachable: bool = False,
     ):
         self.adapter = adapter
         self.mode = mode
@@ -113,6 +116,7 @@ class RoTKChatAgent:
         self.agent_id = agent_id
         self.max_iterations = max_iterations
         self.faction_state_spec = resolve_faction_state_filter(state_filter)
+        self.reachable_guard = ReachableGuard(enforce=enforce_reachable)
 
         self.tool_manager = ToolManager()
         self.conversation_history: List[Message] = []
@@ -215,6 +219,30 @@ class RoTKChatAgent:
                     return True
         return False
 
+    @staticmethod
+    def _env_rejected(result: Any) -> bool:
+        if not isinstance(result, dict):
+            return False
+        for key in ("success", "result"):
+            value = result.get(key)
+            if value is False or value == "false":
+                return True
+        return False
+
+    def _maybe_observe_faction_state(
+        self, call: ToolCall, arguments: Dict[str, Any], filtered: Any
+    ) -> None:
+        if call.name != "perform_action":
+            return
+        action = arguments.get("action")
+        if not (isinstance(action, str) and action.strip().lower() == "get_faction_state"):
+            return
+        if not isinstance(filtered, dict) or "units" not in filtered:
+            return
+        if self._env_rejected(filtered):
+            return
+        self.reachable_guard.observe_faction_state(filtered)
+
     def _record_env_rejection(self, result: Any) -> None:
         """Attribute an ENV rejection to the right error class."""
         if not isinstance(result, dict):
@@ -241,6 +269,33 @@ class RoTKChatAgent:
                 f"(total: {self.stats.tool_invalid_tool})",
                 style="yellow",
             )
+
+    async def _intercept_unreachable_move(
+        self, call: ToolCall, arguments: Dict[str, Any]
+    ) -> bool:
+        """Shadow-check a move; optionally reject it before ENV sees it."""
+        if call.name != "perform_action":
+            return False
+        mismatch = self.reachable_guard.check_move(arguments)
+        if mismatch is None:
+            return False
+
+        enforced = self.reachable_guard.enforce
+        event = mismatch.as_event(enforced=enforced)
+        self.stats.add_reachable_mismatch(event)
+        console.print(
+            f"📊 Reachable mismatch: unit {mismatch.unit_id} -> "
+            f"({mismatch.target[0]}, {mismatch.target[1]}) not in latest "
+            f"reachable ({len(mismatch.reachable)} hexes) "
+            f"[{'enforced' if enforced else 'shadow'}] "
+            f"(total: {self.stats.reachable_mismatch})",
+            style="yellow",
+        )
+        if not enforced:
+            return False
+
+        await self._append_tool_message(mismatch.tool_error(), call.id)
+        return True
 
     async def _append_tool_message(self, content: Any, tool_call_id: str) -> None:
         async with self.history_lock:
@@ -298,6 +353,9 @@ class RoTKChatAgent:
             ):
                 return
 
+            if await self._intercept_unreachable_move(call, arguments):
+                return
+
             result = await self.tool_manager.execute_tool(call.name, arguments)
             self._record_env_rejection(result)
             self.mode.on_tool_result(self, call.name, arguments, result)
@@ -306,9 +364,12 @@ class RoTKChatAgent:
                 call.name,
                 result,
                 arguments,
-                booleans_as_strings=self.booleans_as_strings,
+                booleans_as_strings=False,
                 faction_state_spec=self.faction_state_spec,
             )
+            self._maybe_observe_faction_state(call, arguments, filtered)
+            if self.booleans_as_strings:
+                filtered = replace_booleans_with_strings(filtered)
             console.print(f"── Tool result (filtered): {call.name} ──", style="magenta")
             # Pretty-print is for the operator only. History uses dumps_for_agent.
             console.print(
@@ -453,6 +514,11 @@ class RoTKChatAgent:
                 "toolcall_error_total": self.stats.get_tool_call_gen_errors_total(),
                 "http_error_total": self.stats.get_http_errors_total(),
                 "spatial_awareness_error": self.stats.get_llm_capability_errors_total(),
+                "reachable_mismatch": self.stats.reachable_mismatch,
+                "reachable_mismatch_enforced": self.stats.reachable_mismatch_enforced,
+                "reachable_mismatch_events": list(
+                    self.stats.reachable_mismatch_events
+                ),
                 "error_breakdown": self.stats.get_error_breakdown(),
                 "provider": self.adapter.config.provider,
                 "model_id": self.adapter.config.model_id,

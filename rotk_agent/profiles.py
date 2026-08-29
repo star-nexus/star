@@ -155,6 +155,26 @@ def render_prompt(template_text: str, faction: str) -> str:
     )
 
 
+def _offset_compass_label(col, row) -> str:
+    """Bilingual compass from even-q offset signs: +col east, +row north."""
+    try:
+        c = int(col)
+        r = int(row)
+    except (TypeError, ValueError):
+        return ""
+    if c == 0 and r == 0:
+        return "地图中心 / map center"
+    east_west_cn = "东" if c > 0 else ("西" if c < 0 else "")
+    north_south_cn = "北" if r > 0 else ("南" if r < 0 else "")
+    east_west_en = "east" if c > 0 else ("west" if c < 0 else "")
+    north_south_en = "north" if r > 0 else ("south" if r < 0 else "")
+    if east_west_cn and north_south_cn:
+        return f"{east_west_cn}{north_south_cn} / {north_south_en}{east_west_en}"
+    if east_west_cn:
+        return f"{east_west_cn}侧 / {east_west_en}"
+    return f"{north_south_cn}侧 / {north_south_en}"
+
+
 def format_home_bases_block(briefing: Optional[dict]) -> str:
     """Markdown list of home-base hexes for the system prompt."""
     home_bases = (briefing or {}).get("home_bases") or {}
@@ -163,9 +183,12 @@ def format_home_bases_block(briefing: Optional[dict]) -> str:
         if not isinstance(cell, dict):
             continue
         info = faction_info(str(key))
+        col, row = cell.get("col"), cell.get("row")
+        compass = _offset_compass_label(col, row)
+        suffix = f"（{compass}）" if compass else ""
         lines.append(
             f"- **{info['name']} ({key}) 基地 / home base**: "
-            f"`({cell.get('col')}, {cell.get('row')})`"
+            f"`({col}, {row})`{suffix}"
         )
     if not lines:
         text = "本局尚未提供基地坐标。 / No home-base coordinates for this match."

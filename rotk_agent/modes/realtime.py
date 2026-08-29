@@ -17,8 +17,8 @@ LENGTH_NUDGE = (
 )
 
 STOP_NUDGE = (
-    "Note: You are the commander. You decide the strategy and act on it without "
-    "asking for confirmation. Issue your next orders as tool calls now."
+    "You are the commander. You decide the strategy and the actions. "
+    "Continue with tool calls."
 )
 
 OPENING_PROMPT_CN = (

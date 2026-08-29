@@ -181,7 +181,7 @@ class TestJoinPayload:
         assert description == f"{FACTION_STATE_CALL_RULES} {spec.decoder}"
         assert "owner/commandable" not in description
         assert "visible_enemy_units" not in description
-        assert "reachable=" not in description
+        assert "reachable" not in description
         assert FILTER_PROFILES["F"].decoder not in description
 
     def test_non_string_names_are_dropped(self):

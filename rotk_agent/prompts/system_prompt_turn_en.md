@@ -5,8 +5,11 @@
 - This is **turn-based**: sides act in turns.
 
 ## 2. Map & Coordinates
-- Map: 15×15 hex grid, **flat-topped even-q offset** coordinates `(col,row)`.
-- Axis rules: `col` increases to the right and decreases to the left; `row` increases upward and decreases downward.
+- Map: 15×15 hex grid, **flat-topped even-q offset** coordinates `(col,row)`. `(0,0)` is the map center.
+- Axes relative to the origin:
+  - Increasing `col` is east (right); decreasing `col` is west (left). `col > 0` is east, `col < 0` is west.
+  - Increasing `row` is north (up); decreasing `row` is south (down). `row > 0` is north, `row < 0` is south.
+- Read a displacement from the coordinate delta, not from compass habits: `Δcol > 0` east, `< 0` west; `Δrow > 0` north, `< 0` south.
 - Neighbor coordinates:
 - If `col` is even: `(c+1,r) (c+1,r-1) (c,r-1) (c-1,r-1) (c-1,r) (c,r+1)`
 - If `col` is odd: `(c+1,r+1) (c+1,r) (c,r-1) (c-1,r) (c-1,r+1) (c,r+1)`
@@ -51,7 +54,8 @@ $game_actions_block
 - A unit cannot attack when AP is 0.
 
 **Movement Points (MP):**
-- Moving consumes **MP**, based on distance and terrain.
+- Moving consumes **MP**. Entering a hex costs that hex's terrain enter-cost; the hex you leave is not charged.
+- Enter-cost: `plain` 1; `forest` / `hill` / `urban` 2; `mountain` 3. `water` is **impassable** (no path, not a high cost).
 - A unit cannot keep moving when MP is 0.
 - All `move` actions consume MP.
 - AP and MP are independent; you can move then attack, or attack then move.

@@ -109,6 +109,8 @@ class TestPromptRendering:
             for profile in FILTER_PROFILES.values():
                 assert profile.decoder not in text
             assert "attack_range,attack_power,vision_range,defense" not in text
+            assert "current_manpower,max_manpower,current_AP,current_MP" not in text
+            assert "Do not infer terrain changes from omission" not in text
 
     def test_prompts_omit_filter_schema_and_tactical_policy(self):
         texts = [
@@ -143,6 +145,37 @@ class TestPromptRendering:
             for phrase in banned:
                 assert phrase not in text, phrase
 
+    def test_prompts_state_offset_compass_convention(self):
+        texts = [
+            profiles.load_prompt(kind, language)
+            for kind in ("realtime", "turn")
+            for language in ("cn", "en")
+        ]
+        texts.append(profiles.load_prompt("realtime", "cn", variant="baseline"))
+        for text in texts:
+            assert "(0,0)" in text
+            assert "Δcol" in text
+            assert "Δrow" in text
+
+    def test_prompts_state_terrain_enter_costs(self):
+        texts = [
+            profiles.load_prompt(kind, language)
+            for kind in ("realtime", "turn")
+            for language in ("cn", "en")
+        ]
+        texts.append(profiles.load_prompt("realtime", "cn", variant="baseline"))
+        for text in texts:
+            assert "`plain`" in text
+            assert "`forest`" in text
+            assert "`hill`" in text
+            assert "`urban`" in text
+            assert "`mountain`" in text
+            assert "`water`" in text
+            assert "999" not in text
+            from rotk_agent.core.filters import TERRAIN_OMISSION_NOTE
+
+            assert TERRAIN_OMISSION_NOTE not in text
+
     def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")
         rendered = profiles.render_prompt(template, "wei")
@@ -157,10 +190,24 @@ class TestPromptRendering:
             },
         )
         assert "$home_bases_block" not in filled
-        assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
-        assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`" in filled
+        assert "**魏 (wei) 基地 / home base**: `(2, 3)`（东北 / northeast）" in filled
+        assert "**蜀 (shu) 基地 / home base**: `(-2, -4)`（西南 / southwest）" in filled
         assert "各阵营基地坐标" in filled
         assert "Board (even-q offset)" not in filled
+
+    def test_home_base_compass_follows_offset_signs(self):
+        filled = profiles.format_home_bases_block(
+            {
+                "home_bases": {
+                    "wei": {"col": 0, "row": 6, "kind": "home_base"},
+                    "shu": {"col": 0, "row": 0, "kind": "home_base"},
+                    "wu": {"col": -3, "row": 0, "kind": "home_base"},
+                }
+            }
+        )
+        assert "`(0, 6)`（北侧 / north）" in filled
+        assert "`(0, 0)`（地图中心 / map center）" in filled
+        assert "`(-3, 0)`（西侧 / west）" in filled
 
     def test_map_briefing_includes_board_bounds_when_present(self):
         filled = profiles.format_home_bases_block(
@@ -209,7 +256,7 @@ class TestPromptRendering:
         assert "`move`" in filled
         assert "Move a unit" not in filled
         assert "- `end_turn`" not in filled
-        assert "**魏 (wei) 基地 / home base**: `(2, 3)`" in filled
+        assert "**魏 (wei) 基地 / home base**: `(2, 3)`（东北 / northeast）" in filled
         from rotk_agent.core.filters import FILTER_PROFILES
 
         assert all(p.decoder not in filled for p in FILTER_PROFILES.values())

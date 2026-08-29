@@ -35,9 +35,8 @@ LENGTH_NUDGE = (
 )
 
 STOP_NUDGE = (
-    "Note: You are the commander. You decide the strategy and the action. Do not "
-    "ask for confirmation. Once you know where the enemy is, move your units into "
-    "range and attack. When you are done for this turn, call end_turn."
+    "You are the commander. You decide the strategy and the actions. "
+    "Continue with tool calls."
 )
 
 END_TURN_MISUSE_MESSAGE = (

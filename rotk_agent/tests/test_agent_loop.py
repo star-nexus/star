@@ -117,7 +117,10 @@ class TestToolCallHandling:
         assert "[[-3,2],[-3,3],[-3,4]]" in text
         parsed = json.loads(text)
         assert parsed["units"][0][0] == 227
-        assert parsed["units"][0][12] == [[-3, 2], [-3, 3], [-3, 4]]
+        assert parsed["units"][0][12] == {
+            "reachable": [[-3, 2], [-3, 3], [-3, 4]],
+            "attackable": [],
+        }
 
     @pytest.mark.asyncio
     async def test_state_filter_a_omits_optional_channels(self):
@@ -173,7 +176,7 @@ class TestToolCallHandling:
         )
         assert FILTER_PROFILES["A"].decoder in variant["description"]
         assert FILTER_PROFILES["F"].decoder not in variant["description"]
-        assert "reachable=" not in variant["description"]
+        assert "reachable" not in variant["description"]
 
     @pytest.mark.asyncio
     async def test_the_action_reaches_the_env(self):
@@ -185,6 +188,225 @@ class TestToolCallHandling:
         )
         await agent.chat("start")
 
+        assert "move" in bridge.actions
+
+    @pytest.mark.asyncio
+    async def test_move_off_reachable_is_recorded_but_still_sent(self):
+        payload = {
+            "success": True,
+            "result": True,
+            "units": [
+                {
+                    "unit_id": 231,
+                    "unit_type": "infantry",
+                    "position": {"col": -1, "row": -3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 1,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [{"col": -1, "row": -2}],
+                    "attackable": [],
+                }
+            ],
+        }
+        bridge = RecordingBridge(
+            responses={
+                "get_faction_state": payload,
+                "move": {"success": False, "result": False, "details": "No valid path"},
+            }
+        )
+        agent = build_agent(
+            [
+                tool_call_reply(),
+                tool_call_reply(
+                    action="move",
+                    params={
+                        "unit_id": 231,
+                        "target_position": {"col": 9, "row": 9},
+                    },
+                    call_id="call_2",
+                ),
+            ],
+            bridge=bridge,
+            max_iterations=3,
+        )
+        await agent.chat("start")
+
+        assert agent.stats.reachable_mismatch == 1
+        assert agent.stats.reachable_mismatch_enforced == 0
+        assert agent.stats.spatial_awareness_error == 1
+        assert "move" in bridge.actions
+        event = agent.stats.reachable_mismatch_events[0]
+        assert event["unit_id"] == 231
+        assert event["target"] == {"col": 9, "row": 9}
+        assert event["enforced"] is False
+
+    @pytest.mark.asyncio
+    async def test_enforce_reachable_blocks_the_env_and_returns_the_list(self):
+        payload = {
+            "success": True,
+            "result": True,
+            "units": [
+                {
+                    "unit_id": 231,
+                    "unit_type": "infantry",
+                    "position": {"col": -1, "row": -3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 1,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [{"col": -1, "row": -2}, {"col": 0, "row": -2}],
+                    "attackable": [],
+                }
+            ],
+        }
+        bridge = RecordingBridge(responses={"get_faction_state": payload})
+        agent = build_agent(
+            [
+                tool_call_reply(),
+                tool_call_reply(
+                    action="move",
+                    params={
+                        "unit_id": 231,
+                        "target_position": {"col": 9, "row": 9},
+                    },
+                    call_id="call_2",
+                ),
+            ],
+            bridge=bridge,
+            max_iterations=3,
+            enforce_reachable=True,
+        )
+        await agent.chat("start")
+
+        assert "move" not in bridge.actions
+        assert agent.stats.reachable_mismatch == 1
+        assert agent.stats.reachable_mismatch_enforced == 1
+        assert agent.stats.spatial_awareness_error == 0
+        tool_messages = [m for m in agent.conversation_history if m.role == "tool"]
+        rejection = json.loads(tool_messages[-1].content)
+        assert rejection["reason"] == "not_in_reachable"
+        assert rejection["details"] == "target not in latest reachable"
+        assert "reachable" not in rejection
+        assert "Legal hexes" not in rejection["details"]
+
+    @pytest.mark.asyncio
+    async def test_listed_reachable_hex_is_not_a_mismatch(self):
+        payload = {
+            "success": True,
+            "result": True,
+            "units": [
+                {
+                    "unit_id": 231,
+                    "unit_type": "infantry",
+                    "position": {"col": -1, "row": -3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 1,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [{"col": -1, "row": -2}],
+                    "attackable": [],
+                }
+            ],
+        }
+        bridge = RecordingBridge(responses={"get_faction_state": payload})
+        agent = build_agent(
+            [
+                tool_call_reply(),
+                tool_call_reply(
+                    action="move",
+                    params={
+                        "unit_id": 231,
+                        "target_position": {"col": -1, "row": -2},
+                    },
+                    call_id="call_2",
+                ),
+            ],
+            bridge=bridge,
+            max_iterations=3,
+            enforce_reachable=True,
+        )
+        await agent.chat("start")
+
+        assert agent.stats.reachable_mismatch == 0
+        assert "move" in bridge.actions
+
+    @pytest.mark.asyncio
+    async def test_pack_a_cannot_shadow_check_reachable(self):
+        payload = {
+            "success": True,
+            "result": True,
+            "units": [
+                {
+                    "unit_id": 231,
+                    "unit_type": "infantry",
+                    "position": {"col": -1, "row": -3},
+                    "unit_status": {"current_count": 100, "max_count": 100},
+                    "capabilities": {
+                        "properties": {
+                            "attack_range": 1,
+                            "attack_power": 10,
+                            "vision_range": 2,
+                            "defense": 10,
+                        },
+                        "unit_resources": {
+                            "remaining_action_points": 1,
+                            "remaining_movement_points": 4,
+                        },
+                    },
+                    "reachable": [{"col": -1, "row": -2}],
+                    "attackable": [],
+                }
+            ],
+        }
+        bridge = RecordingBridge(responses={"get_faction_state": payload})
+        agent = build_agent(
+            [
+                tool_call_reply(),
+                tool_call_reply(
+                    action="move",
+                    params={
+                        "unit_id": 231,
+                        "target_position": {"col": 9, "row": 9},
+                    },
+                    call_id="call_2",
+                ),
+            ],
+            bridge=bridge,
+            max_iterations=3,
+            state_filter="A",
+            enforce_reachable=True,
+        )
+        await agent.chat("start")
+
+        assert agent.stats.reachable_mismatch == 0
         assert "move" in bridge.actions
 
     @pytest.mark.asyncio
@@ -537,6 +759,9 @@ class TestGameEnd:
         assert payload["http_error_total"] == 1
         assert payload["toolcall_error_total"] == 1
         assert payload["spatial_awareness_error"] == 1
+        assert payload["reachable_mismatch"] == 0
+        assert payload["reachable_mismatch_enforced"] == 0
+        assert payload["reachable_mismatch_events"] == []
         assert payload["error_breakdown"]["http"]["timeout"] == 1
         assert payload["api_stats"]["prompt_cache_hit_tokens"] == 0
         assert payload["api_stats"]["cache_hit_rate"] == 0.0

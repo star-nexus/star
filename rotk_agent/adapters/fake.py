@@ -69,6 +69,32 @@ class ProbeScript:
                 return unit_id
         return None
 
+    @staticmethod
+    def _reachable_target(unit: Any) -> Optional[Dict[str, int]]:
+        """Copy the first listed hex so the probe does not invent a coordinate."""
+        reachable = None
+        if isinstance(unit, list) and len(unit) > 12 and isinstance(unit[12], dict):
+            reachable = unit[12].get("reachable")
+        elif isinstance(unit, dict):
+            reachable = unit.get("reachable")
+        if not isinstance(reachable, list) or not reachable:
+            return None
+        hexes = reachable[0]
+        if isinstance(hexes, dict) and "col" in hexes and "row" in hexes:
+            return {"col": int(hexes["col"]), "row": int(hexes["row"])}
+        if isinstance(hexes, (list, tuple)) and len(hexes) >= 2:
+            return {"col": int(hexes[0]), "row": int(hexes[1])}
+        return None
+
+    def _move_target(self, messages: List[Message], unit_id: int) -> Dict[str, int]:
+        for unit in self._latest_units(messages):
+            if self._unit_id(unit) != unit_id:
+                continue
+            copied = self._reachable_target(unit)
+            if copied is not None:
+                return copied
+        return self.target
+
     def __call__(
         self, messages: List[Message], tool_names: List[str]
     ) -> NormalizedReply:
@@ -99,7 +125,10 @@ class ProbeScript:
                 tool_calls=[
                     _call("perform_action",
                           {"action": "move",
-                           "params": {"unit_id": unit_id, "target_position": self.target}},
+                           "params": {
+                               "unit_id": unit_id,
+                               "target_position": self._move_target(messages, unit_id),
+                           }},
                           call_id)
                 ],
                 finish_reason="tool_calls",

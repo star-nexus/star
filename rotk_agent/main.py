@@ -135,6 +135,17 @@ def parse_args(argv=None) -> argparse.Namespace:
             "attackable / terrain; F keeps all three."
         ),
     )
+    parser.add_argument(
+        "--enforce-reachable",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When a move target is not in the latest get_faction_state "
+            "reachable list, reject it in the agent and ask the model to "
+            "copy a listed hex. Off by default: the mismatch is still "
+            "recorded, but ENV is the one that rejects the illegal move."
+        ),
+    )
     parser.add_argument("--hub-url", default=DEFAULT_HUB_URL, help="Hub websocket URL.")
     parser.add_argument(
         "--config", default=".configs.toml", help="Path to the provider config."
@@ -220,6 +231,7 @@ async def run(args: argparse.Namespace) -> int:
             agent_id=args.agent_id,
             max_iterations=args.max_iterations,
             state_filter=args.state_filter,
+            enforce_reachable=args.enforce_reachable,
         )
 
     runner = AgentRunner(
