@@ -3,14 +3,18 @@ Type definitions for the Star Client SDK
 """
 
 from datetime import datetime
-from typing import Dict, Any, Callable, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
 
-@dataclass
-class ClientType(Enum):
-    """Client type enum."""
+class ClientType(str, Enum):
+    """Client type, as it appears in the `sender`/`recipient` envelope fields.
+
+    A `str` enum so members serialise to their wire value directly. (This class
+    was previously decorated with `@dataclass`, which is meaningless on an Enum
+    and only generated a misleading `__repr__`.)
+    """
 
     AGENT = "agent"
     ENVIRONMENT = "env"
@@ -18,8 +22,8 @@ class ClientType(Enum):
     HUB = "hub"
 
 
-class MessageType(Enum):
-    """Message instruction enum."""
+class MessageType(str, Enum):
+    """Envelope `type`: which transport-level instruction this message is."""
 
     BROADCAST = "broadcast"
     # Message instruction
@@ -63,7 +67,11 @@ class ClientInfo:
 
 @dataclass
 class Envelope:
-    """Message envelope structure."""
+    """The Hub envelope. Every message on the wire has this shape.
+
+    See `docs/hub-envelope.md` for the wire format and the payload types that
+    ride inside `payload`.
+    """
 
     type: str
     sender: ClientInfo
@@ -73,9 +81,11 @@ class Envelope:
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
 
 
-# Event handler types
+# Hub listener callbacks. Both sync and async handlers are accepted; the
+# message loop awaits the result when it is a coroutine.
 EventHandler = Callable[[Dict[str, Any]], Any]
-AsyncEventHandler = Callable[[Dict[str, Any]], Any]
+AsyncEventHandler = Callable[[Dict[str, Any]], Awaitable[Any]]
 
-# Message target type
+# What `send_message(target=...)` accepts: a bare id, a `{"type", "id"}` dict,
+# or a ClientInfo.
 MessageTarget = Union[str, Dict[str, Any], ClientInfo]

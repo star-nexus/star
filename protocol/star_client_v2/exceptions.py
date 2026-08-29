@@ -2,6 +2,8 @@
 Custom exception classes for the Star Client SDK
 """
 
+import builtins
+
 
 class AgentClientError(Exception):
     """Base exception for the SDK."""
@@ -36,11 +38,14 @@ class ProtocolError(AgentClientError):
         self.request_id = request_id
 
 
-class ActionTimeout(TimeoutError):
+class ActionTimeout(TimeoutError, builtins.TimeoutError):
     """No outcome arrived for an action within its timeout.
 
     Carries the request context so callers can log which action stalled without
     re-deriving it from the message text.
+
+    Also a builtin `TimeoutError` so that callers written against the old
+    hand-rolled polling loop -- which raised the builtin -- keep working.
     """
 
     def __init__(self, action: str, request_id: object, timeout: float):

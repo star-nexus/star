@@ -41,7 +41,7 @@ from typing import Any, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from protocol import AgentClient, MessageType
+from protocol import ActionTimeout, AgentClient, AgentClientError
 from protocol.conformance import ConformanceError, run_must_sequence
 
 os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1,::1")
@@ -59,64 +59,31 @@ def _parse_outcome(raw: Any) -> Any:
     return raw
 
 
-def _request_id(value: Any) -> Any:
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return value
-
-
 class LiveSession:
-    """AgentClient plus awaitable outcomes and ENV push events."""
+    """AgentClient plus ENV push events.
+
+    Correlation used to be reimplemented here -- a third copy, with its own
+    pending dict, its own id counter and its own int/str coercion. It now comes
+    from `AgentClient`, and this class only adds what is specific to a
+    conformance run: JSON-decoding outcomes and queueing unsolicited pushes.
+    """
 
     def __init__(self, hub_url: str, env_id: str, agent_id: str):
         self.client = AgentClient(hub_url, env_id, agent_id)
-        self._pending: dict[Any, asyncio.Future] = {}
-        self._next_id = 1
         self._pushes: asyncio.Queue[dict] = asyncio.Queue()
-        self.client.add_hub_listener("message", self._on_message)
-        self.client.add_hub_listener("error", self._on_error)
-        self.client.add_hub_listener("disconnect", self._on_disconnect)
-
-    def _fail_pending(self, error: Any, request_id: Any = None) -> None:
-        result = {"success": False, "error": error, "error_code": None}
-        if isinstance(error, dict):
-            result["error"] = error.get("error") or error.get("message") or error
-            result["error_code"] = error.get("error_code")
-        targets = (
-            [self._pending[request_id]]
-            if request_id in self._pending
-            else list(self._pending.values())
+        self.client.add_hub_listener("message", self._on_push)
+        self.client.add_hub_listener("error", lambda data: print(f"Hub error: {data}"))
+        self.client.add_hub_listener(
+            "disconnect", lambda data: print(f"Hub disconnected: {data}")
         )
-        for future in targets:
-            if not future.done():
-                future.set_result(result)
 
-    def _on_message(self, data: dict) -> None:
+    def _on_push(self, data: dict) -> None:
+        """Queue unsolicited ENV events. Outcomes are the client's business."""
         payload = data.get("payload") if isinstance(data, dict) else None
         if not isinstance(payload, dict):
             return
-        kind = payload.get("type")
-        if kind == "outcome":
-            request_id = _request_id(payload.get("id"))
-            future = self._pending.get(request_id)
-            if future is None or future.done():
-                return
-            future.set_result(_parse_outcome(payload.get("outcome")))
-            return
-        if kind in ("turn_start", "game_end_notification"):
+        if payload.get("type") in ("turn_start", "game_end_notification"):
             self._pushes.put_nowait(payload)
-
-    def _on_error(self, data: Any) -> None:
-        print(f"Hub error: {data}")
-        payload = data.get("payload") if isinstance(data, dict) else None
-        request_id = (
-            _request_id(payload.get("id")) if isinstance(payload, dict) else None
-        )
-        self._fail_pending(payload if payload is not None else data, request_id)
-
-    def _on_disconnect(self, data: Any) -> None:
-        print(f"Hub disconnected: {data}")
-        self._fail_pending(f"Hub disconnected: {data}")
 
     async def connect(self) -> None:
         await self.client.connect()
@@ -128,27 +95,18 @@ class LiveSession:
     async def call(
         self, action: str, parameters: Optional[dict] = None, timeout: float = 8.0
     ) -> Any:
-        request_id = self._next_id
-        self._next_id += 1
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        self._pending[request_id] = future
+        """Run one action, returning a decoded outcome or an error-shaped dict.
+
+        The conformance sequence inspects `success`/`error_code`, so transport
+        and protocol failures are reported in that shape rather than raised.
+        """
         try:
-            sent = await self.client.send_message(
-                MessageType.MESSAGE.value,
-                {
-                    "type": "action",
-                    "id": request_id,
-                    "action": action,
-                    "parameters": parameters or {},
-                },
-                target={"type": "env", "id": self.client.env_id},
-            )
-            if not sent:
-                raise RuntimeError(f"Failed to send {action}")
-            return await asyncio.wait_for(future, timeout=timeout)
-        finally:
-            self._pending.pop(request_id, None)
+            outcome = await self.client.call(action, parameters or {}, timeout=timeout)
+        except ActionTimeout as e:
+            return {"success": False, "error": str(e), "error_code": None}
+        except AgentClientError as e:
+            return {"success": False, "error": str(e), "error_code": None}
+        return _parse_outcome(outcome)
 
     async def wait_push(self, event_type: str, timeout: float = 30.0) -> dict:
         deadline = asyncio.get_running_loop().time() + timeout

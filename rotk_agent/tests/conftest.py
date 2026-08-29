@@ -30,9 +30,11 @@ def config():
 
 @pytest.fixture
 def clean_remote_context():
-    """Give the test an empty status and id_map."""
+    """Give the test an empty status.
+
+    There is no id_map to reset any more: pending requests live on the
+    `AgentClient` that issued them, not in process-global state.
+    """
     RemoteContext.set_status({})
-    RemoteContext.set_id_map({})
     yield RemoteContext
     RemoteContext.set_status({})
-    RemoteContext.set_id_map({})

@@ -75,8 +75,10 @@ class AgentRunner:
                 )
 
             elif msg_type == "outcome":
+                # Correlation is the client's job; this listener only logs.
+                # It used to also file the outcome in `RemoteContext.id_map`,
+                # which `EnvBridge` then polled.
                 outcome = payload.get("outcome")
-                RemoteContext.get_id_map().update({payload["id"]: outcome})
                 RemoteContext.update_status(
                     self_status={f"Task{payload['id']}": outcome}
                 )
@@ -121,13 +123,11 @@ class AgentRunner:
             self.messages.append(message)
 
         def on_error(data):
-            payload = data.get("payload") or {}
+            # The client fails the matching pending request itself, which
+            # surfaces as a ProtocolError at the await site rather than as a
+            # bare error string smuggled in where an outcome was expected.
             message = f"⚠️ Agent error: {data}"
             console.print(message, style="red")
-            if "id" in payload:
-                RemoteContext.get_id_map().update(
-                    {payload["id"]: payload.get("error", "Unknown error")}
-                )
             self.messages.append(message)
 
         self.agent_client.add_hub_listener("connect", on_connect)

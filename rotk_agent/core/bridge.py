@@ -1,9 +1,11 @@
 """The agent's side of the ENV conversation.
 
-Requests go out over the protocol client and come back asynchronously through
-the hub listener, which parks each outcome in `RemoteContext.id_map` keyed by
-request id. `EnvBridge` turns that into awaitable calls, and its bound methods
-are what gets registered as LLM tools.
+Correlation lives in `AgentClient` (see `protocol/star_client_v2/correlation.py`),
+not here. This module used to keep its own `id_map` and poll it every 100ms while
+`runner.py` filled it from the hub listener -- two halves of one mechanism, split
+across two files, with a third copy in `examples/`. `EnvBridge` now just adds
+mode-specific pacing and error logging on top of `client.call()`, and its bound
+methods are what gets registered as LLM tools.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from protocol import AgentClient
+from protocol import ActionTimeout, AgentClient
 
 from .console import console
 from .delays import calculate_action_delay
@@ -29,12 +31,14 @@ class RemoteContext:
     `ContextVar.set` there is invisible to the agent loop. The previous version
     used `ContextVar`s and worked only because every writer happened to mutate
     the dict in place; replacing a dict wholesale silently lost the update.
+
+    There is no `id_map` here any more. Pending requests live on the client that
+    issued them, which is also what makes two agents in one process possible.
     """
 
     _client: Optional[AgentClient] = None
     _status: Dict[str, Any] = {}
     _task_manager: Optional[object] = None
-    _id_map: Dict[Any, Any] = {}
 
     @staticmethod
     def set_client(client: AgentClient):
@@ -68,14 +72,6 @@ class RemoteContext:
     def get_task_manager() -> object:
         return RemoteContext._task_manager
 
-    @staticmethod
-    def set_id_map(id_map: dict):
-        RemoteContext._id_map = id_map
-
-    @staticmethod
-    def get_id_map() -> dict:
-        return RemoteContext._id_map
-
 
 class EnvBridge:
     """Awaitable ENV actions, with mode-specific pacing."""
@@ -89,46 +85,47 @@ class EnvBridge:
         self.response_timeout = response_timeout
 
     async def get_env_response(
-        self, request_id: Any, timeout_seconds: Optional[float] = None
+        self,
+        request_id: Any,
+        timeout_seconds: Optional[float] = None,
+        *,
+        action: str = "<unknown>",
     ) -> Any:
-        """Wait for the outcome the hub listener files under `request_id`."""
+        """Await the outcome for `request_id`.
+
+        A thin wrapper over the client's correlator, kept for the logging and
+        for callers that send and await in separate steps.
+        """
         timeout = self.response_timeout if timeout_seconds is None else timeout_seconds
+        client = RemoteContext.get_client()
         start_time = time.time()
         console.print(
             f"⏳ Waiting for ENV response ID: {request_id}, timeout set to: {timeout}s",
             style="cyan",
         )
-
-        while True:
-            response = RemoteContext.get_id_map().get(request_id, None)
-            if response is not None:
-                RemoteContext.get_id_map().pop(request_id, None)
-                elapsed = time.time() - start_time
-                console.print(
-                    f"✅ Received ENV response ID: {request_id}, elapsed time: {elapsed:.2f}s",
-                    style="cyan",
-                )
-                return response
-
+        try:
+            response = await client.await_outcome(request_id, timeout, action=action)
+        except ActionTimeout as e:
             elapsed = time.time() - start_time
-            if elapsed >= timeout:
-                console.print(
-                    f"⏰ ENV response timeout ID: {request_id}, elapsed time: {elapsed:.2f}s",
-                    style="red",
-                )
-                console.print(
-                    f"🔍 Current ID mapping state: {dict(RemoteContext.get_id_map())}",
-                    style="red",
-                )
-                error = TimeoutError(
-                    f"ENV response timeout: ID {request_id}, timeout time: {timeout}s"
-                )
-                error.request_id = request_id
-                error.elapsed_time = elapsed
-                error.timeout_seconds = timeout
-                raise error
+            console.print(
+                f"⏰ ENV response timeout ID: {request_id}, elapsed time: {elapsed:.2f}s",
+                style="red",
+            )
+            console.print(
+                f"🔍 Still awaiting: {client.pending_requests}",
+                style="red",
+            )
+            # Attributes the error logger reads. `ActionTimeout` carries
+            # request_id and timeout_seconds already; elapsed is measured here.
+            e.elapsed_time = elapsed
+            raise
 
-            await asyncio.sleep(0.1)
+        elapsed = time.time() - start_time
+        console.print(
+            f"✅ Received ENV response ID: {request_id}, elapsed time: {elapsed:.2f}s",
+            style="cyan",
+        )
+        return response
 
     async def perform_action(self, action: str, params: Any) -> Any:
         """Send one action and wait for its outcome."""
@@ -143,7 +140,7 @@ class EnvBridge:
         try:
             client = RemoteContext.get_client()
             request_id = await client.send_action(action, params)
-            response = await self.get_env_response(request_id)
+            response = await self.get_env_response(request_id, action=action)
 
             delay = self.delay_policy(action, params, response)
             if delay > 0:
@@ -224,7 +221,7 @@ class EnvBridge:
 
             client = RemoteContext.get_client()
             request_id = await client.send_actions(requests)
-            return await self.get_env_response(request_id)
+            return await self.get_env_response(request_id, action="action_batch")
 
         except TimeoutError as e:
             console.print(
@@ -261,13 +258,17 @@ class EnvBridge:
         """End the turn. The caller owns the turn-gate consequences."""
         client = RemoteContext.get_client()
         request_id = await client.send_action("end_turn", {"faction": faction})
-        return await self.get_env_response(request_id)
+        return await self.get_env_response(request_id, action="end_turn")
 
     async def send_turn_start_ack(self, faction: str, turn_number: int) -> None:
         """Acknowledge a turn start so the ENV stops resending it."""
         client = RemoteContext.get_client()
+        # Fire-and-forget: the ENV replies `{"success": true}` but nothing awaits
+        # it, so no correlation slot is reserved.
         await client.send_action(
-            "turn_start_ack", {"faction": str(faction).lower(), "turn_number": turn_number}
+            "turn_start_ack",
+            {"faction": str(faction).lower(), "turn_number": turn_number},
+            expect_outcome=False,
         )
 
 

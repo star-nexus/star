@@ -40,7 +40,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from protocol import AgentClient
+from protocol import ActionTimeout, AgentClient
 
 
 async def run_agent(
@@ -50,62 +50,63 @@ async def run_agent(
     role: str,
     units_to_claim: list[int],
 ) -> None:
-    """Drive one agent through register → claim → broadcast/read."""
+    """Drive one agent through register → claim → broadcast/read.
+
+    Every step uses `client.call()`, which sends and awaits the matching
+    outcome. That is the whole reason there are no `asyncio.sleep` guesses
+    between steps: each call returns when the ENV has actually answered it.
+    """
     client = AgentClient(hub_url, env_id, agent_id)
     await client.connect()
     print(f"[{agent_id}] connected as {role}")
 
-    # 1) Register so the env knows our faction.
-    reg_id = await client.send_action(
-        "register_agent_info",
-        {
-            "faction": "wei",
-            "provider": "demo",
-            "model_id": f"demo-{role}",
-            "base_url": "http://localhost",
-            "agent_id": agent_id,
-            "note": f"multi-agent team demo: {role}",
-        },
-    )
-    print(f"[{agent_id}] sent register_agent_info (request_id={reg_id})")
-
-    # Give the env time to broadcast back its handshake; in a real agent
-    # you'd await the response via your tool-execution loop.
-    await asyncio.sleep(0.5)
-
-    # 2) Ask who's on our team.
-    list_id = await client.send_action("list_team", {})
-    print(f"[{agent_id}] sent list_team (request_id={list_id})")
-
-    # 3) Claim our portion of the units.
-    claim_id = await client.send_action(
-        "claim_units",
-        {"unit_ids": units_to_claim, "exclusive": True},
-    )
-    print(
-        f"[{agent_id}] sent claim_units (request_id={claim_id}) "
-        f"for units {units_to_claim}"
-    )
-
-    # 4) Team chat: vanguard broadcasts, rearguard reads.
-    if role == "vanguard":
-        await asyncio.sleep(1.0)  # give rearguard time to register first
-        broadcast_id = await client.send_action(
-            "broadcast_to_team",
+    try:
+        # 1) Register so the env knows our faction.
+        outcome = await client.call(
+            "register_agent_info",
             {
-                "text": "Engaging center hex. Hold the flank.",
-                "metadata": {"priority": "high", "hex": [0, 0]},
+                "faction": "wei",
+                "provider": "demo",
+                "model_id": f"demo-{role}",
+                "base_url": "http://localhost",
+                "agent_id": agent_id,
+                "note": f"multi-agent team demo: {role}",
             },
         )
-        print(f"[{agent_id}] broadcast sent (request_id={broadcast_id})")
-    else:
-        await asyncio.sleep(2.0)  # wait for vanguard's broadcast
-        read_id = await client.send_action("read_team_messages", {})
-        print(f"[{agent_id}] requested inbox (request_id={read_id})")
+        print(f"[{agent_id}] registered: {outcome}")
 
-    await asyncio.sleep(2.0)
-    await client.disconnect()
-    print(f"[{agent_id}] disconnected")
+        # 2) Ask who's on our team.
+        print(f"[{agent_id}] team: {await client.call('list_team', {})}")
+
+        # 3) Claim our portion of the units.
+        outcome = await client.call(
+            "claim_units",
+            {"unit_ids": units_to_claim, "exclusive": True},
+        )
+        print(f"[{agent_id}] claimed {units_to_claim}: {outcome}")
+
+        # 4) Team chat: vanguard broadcasts, rearguard reads.
+        if role == "vanguard":
+            outcome = await client.call(
+                "broadcast_to_team",
+                {
+                    "text": "Engaging center hex. Hold the flank.",
+                    "metadata": {"priority": "high", "hex": [0, 0]},
+                },
+            )
+            print(f"[{agent_id}] broadcast: {outcome}")
+        else:
+            # The broadcast is only in the inbox once vanguard has sent it, and
+            # nothing here orders the two agents. A real agent reads its inbox
+            # on each decision tick instead of waiting a fixed time.
+            await asyncio.sleep(2.0)
+            print(f"[{agent_id}] inbox: {await client.call('read_team_messages', {})}")
+
+    except ActionTimeout as e:
+        print(f"[{agent_id}] ENV did not answer: {e}")
+    finally:
+        await client.disconnect()
+        print(f"[{agent_id}] disconnected")
 
 
 async def main() -> None:
