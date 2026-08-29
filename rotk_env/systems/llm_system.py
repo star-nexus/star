@@ -38,6 +38,12 @@ from protocol.star_client_v2 import (
     ClientType,
     MessageType,
 )
+from protocol.error_codes import (
+    DESCRIPTIONS as ERROR_DESCRIPTIONS,
+    ErrorCode,
+    describe as describe_error_code,
+    is_rejected_before_dispatch,
+)
 from ..prefabs.action_catalog import (
     GAME_ACTION_NAMES,
     allowed_game_actions,
@@ -82,52 +88,68 @@ class ActionExecutor:
     def execute(self, request: ActionRequest) -> Dict[str, Any]:
         """
         Execute a single action request and return the result.
-        
+
         Args:
             request: The ActionRequest to execute
-            
+
         Returns:
             Dict containing the execution result
         """
-        action = request.action_name
-        params = request.parameters
+        result: Optional[Dict[str, Any]] = None
+        try:
+            result = self._dispatch(request.action_name, request.parameters)
+            return result
+        finally:
+            # In a `finally` so a raising handler cannot skip it. Exceptions
+            # propagate to `_process_action_request`, which turns them into an
+            # INTERNAL_ERROR response; if the bump lived on the return path
+            # only, a handler that raised mid-mutation would leave the
+            # observation cache serving a board it had already changed.
+            self._invalidate_observation_cache(request.action_name, result)
 
+    def _dispatch(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Route one action through the firewall to its handler."""
         # 1. System-level (identity / session / docs). Always on for this ENV.
         if action in self.llm_system.system_actions:
-            result = self.llm_system.system_actions[action](params)
+            return self.llm_system.system_actions[action](params)
 
         # 2. Game-level firewall: master table, then this match's subset.
-        elif action in GAME_ACTION_NAMES:
+        if action in GAME_ACTION_NAMES:
             if action not in allowed_game_actions(self.world):
-                result = self.llm_system._create_system_error_response(
+                return self.llm_system._create_system_error_response(
                     action,
                     "Operation not supported in current game mode",
-                    2003,
+                    ErrorCode.ACTION_NOT_IN_MATCH,
                 )
-            elif action in self.llm_system.action_handler.action_handlers:
-                result = self.llm_system.action_handler.execute_action(action, params)
-            else:
-                result = self.llm_system._create_system_error_response(
-                    action, f"UNKNOWN ACTION: {action}", 2010
-                )
-
-        # 3. Unknown name
-        else:
-            result = self.llm_system._create_system_error_response(
-                action, f"UNKNOWN ACTION: {action}", 2010
+            if action in self.llm_system.action_handler.action_handlers:
+                return self.llm_system.action_handler.execute_action(action, params)
+            return self.llm_system._create_system_error_response(
+                action, f"UNKNOWN ACTION: {action}", ErrorCode.UNKNOWN_ACTION
             )
 
-        # In-place component writes do not bump World.revision. Mutating
-        # actions must, or the next observation can reuse a stale cache.
-        # 2010 (unknown) and 2003 (not in this match) never change the board.
-        if (
-            result.get("error_code") not in (2010, 2003)
-            and is_world_mutating(action)
-            and self.world is not None
-        ):
-            self.world.bump_revision()
+        # 3. Unknown name
+        return self.llm_system._create_system_error_response(
+            action, f"UNKNOWN ACTION: {action}", ErrorCode.UNKNOWN_ACTION
+        )
 
-        return result
+    def _invalidate_observation_cache(
+        self, action: str, result: Optional[Dict[str, Any]]
+    ) -> None:
+        """Bump `World.revision` unless the board is provably untouched.
+
+        In-place component writes do not bump the revision themselves, so a
+        mutating action has to, or the next observation answers from a stale
+        cache. Only firewall rejections may skip it: UNKNOWN_ACTION and
+        ACTION_NOT_IN_MATCH are refused before any handler runs.
+
+        `result is None` means the handler raised, so it may have applied part of
+        its mutation -- that must invalidate.
+        """
+        if self.world is None or not is_world_mutating(action):
+            return
+        if result is not None and is_rejected_before_dispatch(result.get("error_code")):
+            return
+        self.world.bump_revision()
 
 
 class SyncEnvClient(SyncWebSocketClient):
@@ -215,20 +237,11 @@ class LLMSystem(System):
         self._turn_start_retry_interval: float = 8.0
         self._turn_start_max_retries: int = 5
 
-        # System-level error codes
-        self.system_error_codes = {
-            2001: "Game not initialized",
-            2002: "Game already finished",
-            2003: "Operation not supported in current game mode",
-            2004: "Insufficient system resources",
-            2005: "Insufficient permissions",
-            2006: "Operation timed out",
-            2007: "Parameter validation failed",
-            2008: "Invalid system state",
-            2009: "Network connection error",
-            2010: "Internal service error",
-            2011: "Operation rate limit exceeded",
-        }
+        # System-level error codes. Derived from the protocol enum rather than
+        # hand-maintained: the previous literal dict had drifted, labelling 2010
+        # "Internal service error" while both the docs and the firewall use it
+        # for an unknown action.
+        self.system_error_codes = {int(code): text for code, text in ERROR_DESCRIPTIONS.items()}
 
     def initialize(self, world):
         self.world = world
@@ -1510,7 +1523,9 @@ class LLMSystem(System):
             return standardized_result
         except Exception as e:
             print(f"[LLMSystem] Error while executing action {action}: {e}")
-            error_result = self._create_system_error_response(action, str(e), 2010)
+            error_result = self._create_system_error_response(
+                action, str(e), ErrorCode.INTERNAL_ERROR
+            )
             if send_response and agent_id:
                 try:
                     self.client.response_to_agent(agent_id, action_id, error_result, "str")
@@ -1566,13 +1581,17 @@ class LLMSystem(System):
         return base_response
 
     def _create_system_error_response(
-        self, action: str, error_message: str, error_code: int = 2010
+        self, action: str, error_message: str, error_code: int = ErrorCode.INTERNAL_ERROR
     ) -> Dict:
-        """Create a standardized system-level error response."""
+        """Create a standardized system-level error response.
+
+        The default is INTERNAL_ERROR, not UNKNOWN_ACTION: callers that omit the
+        code are always exception handlers. Unknown verbs pass 2010 explicitly.
+        """
         return {
             "success": False,
-            "error": self.system_error_codes.get(error_code, "Unknown system error"),
-            "error_code": error_code,
+            "error": describe_error_code(error_code),
+            "error_code": int(error_code),
             "message": f"Action {action} failed: {error_message}",
             "api_version": "v1.0",
             "metadata": {"action": action, "timestamp": time.time()},
@@ -1603,7 +1622,7 @@ class LLMSystem(System):
         except Exception as e:
             return {
                 "success": False,
-                "error_code": 2010,
+                "error_code": int(ErrorCode.INTERNAL_ERROR),
                 "message": f"Failed to start game: {str(e)}",
             }
 
@@ -1669,7 +1688,7 @@ class LLMSystem(System):
         except Exception as e:
             return {
                 "success": False,
-                "error_code": 2010,
+                "error_code": int(ErrorCode.INTERNAL_ERROR),
                 "message": f"Failed to reset game: {str(e)}",
             }
 
@@ -1710,7 +1729,7 @@ class LLMSystem(System):
             except Exception as e:
                 return {
                     "success": False,
-                    "error_code": 2010,
+                    "error_code": int(ErrorCode.INTERNAL_ERROR),
                     "message": f"Failed to end turn: {str(e)}",
                 }
         return {
@@ -1771,7 +1790,7 @@ class LLMSystem(System):
             except Exception as e:
                 return {
                     "success": False,
-                    "error_code": 2010,
+                    "error_code": int(ErrorCode.INTERNAL_ERROR),
                     "message": f"Failed to force next turn: {str(e)}",
                 }
 
@@ -1796,7 +1815,7 @@ class LLMSystem(System):
             except Exception as e:
                 return {
                     "success": False,
-                    "error_code": 2010,
+                    "error_code": int(ErrorCode.INTERNAL_ERROR),
                     "message": f"Failed to advance time: {str(e)}",
                 }
 
@@ -1853,7 +1872,7 @@ class LLMSystem(System):
             except Exception as e:
                 return {
                     "success": False,
-                    "error_code": 2010,
+                    "error_code": int(ErrorCode.INTERNAL_ERROR),
                     "message": f"Failed to set time scale: {str(e)}",
                 }
 
@@ -2199,7 +2218,7 @@ class LLMSystem(System):
         except Exception as e:
             return {
                 "success": False,
-                "error_code": 2010,
+                "error_code": int(ErrorCode.INTERNAL_ERROR),
                 "message": f"Validation error: {str(e)}",
             }
 

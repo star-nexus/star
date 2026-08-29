@@ -12,9 +12,8 @@ import base64
 import io
 from typing import Dict, List, Any, Optional, Tuple, Set
 
-import pygame
 from framework import World
-from framework.engine.renders import RenderEngine
+from protocol.error_codes import ErrorCode
 from ..components import (
     Unit,
     UnitCount,
@@ -96,13 +95,13 @@ class LLMActionHandler:
             if action_type not in self.action_handlers:
                 return self._create_error_response(
                     f"Unsupported action: {action_type}",
-                    {"error_code": 2010},
+                    {"error_code": int(ErrorCode.UNKNOWN_ACTION)},
                 )
 
             if action_type not in allowed_game_actions(self.world):
                 return self._create_error_response(
                     "Operation not supported in current game mode",
-                    {"error_code": 2003},
+                    {"error_code": int(ErrorCode.ACTION_NOT_IN_MATCH)},
                 )
 
             # dispatch
@@ -110,7 +109,12 @@ class LLMActionHandler:
             return self.action_handlers[action_type](params)
 
         except Exception as e:
-            return self._create_error_response(f"Action execution failed: {str(e)}")
+            # INTERNAL_ERROR, not UNKNOWN_ACTION: the handler ran and raised, so
+            # the caller must assume the board may have been partially written.
+            return self._create_error_response(
+                f"Action execution failed: {str(e)}",
+                {"error_code": int(ErrorCode.INTERNAL_ERROR)},
+            )
 
     # ==================== Unit control actions ====================
 
@@ -1029,7 +1033,7 @@ class LLMActionHandler:
                     f"Visible enemies are in visible_enemy_units."
                 ),
                 {
-                    "error_code": 2005,
+                    "error_code": int(ErrorCode.INSUFFICIENT_PERMISSIONS),
                     "registered_faction": observer.value,
                     "requested_faction": requested.value,
                 },
@@ -1291,6 +1295,16 @@ class LLMActionHandler:
         Returns:
             (base64_str, None) on success; (None, error_message) on failure.
         """
+        # pygame and the render stack are imported here rather than at module
+        # scope: this is the only path in the handler that needs a display, and
+        # `get_faction_state_vlm` is not in the skirmish action set. A top-level
+        # import would pull SDL into every headless rule test.
+        try:
+            import pygame
+            from framework.engine.renders import RenderEngine
+        except ImportError as e:
+            return None, f"Display stack unavailable: {e}"
+
         try:
             re = RenderEngine()
             screen = re.screen

@@ -26,3 +26,27 @@ class AuthenticationError(AgentClientError):
 class TimeoutError(AgentClientError):
     """Timeout error."""
     pass
+
+
+class ProtocolError(AgentClientError):
+    """The peer answered, but with a protocol-level error rather than an outcome."""
+
+    def __init__(self, message: str, request_id: object = None):
+        super().__init__(message)
+        self.request_id = request_id
+
+
+class ActionTimeout(TimeoutError):
+    """No outcome arrived for an action within its timeout.
+
+    Carries the request context so callers can log which action stalled without
+    re-deriving it from the message text.
+    """
+
+    def __init__(self, action: str, request_id: object, timeout: float):
+        super().__init__(
+            f"No outcome for action '{action}' (id={request_id}) within {timeout}s"
+        )
+        self.action = action
+        self.request_id = request_id
+        self.timeout_seconds = timeout

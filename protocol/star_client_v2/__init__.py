@@ -9,10 +9,19 @@ from .client import AgentClient, EnvironmentClient
 from .base import BaseWebSocketClient
 from .async_client import AsyncWebSocketClient
 from .sync_client import SyncWebSocketClient
-from .exceptions import ConnectionError, MessageError, AgentClientError
+from .exceptions import (
+    ConnectionError,
+    MessageError,
+    AgentClientError,
+    ActionTimeout,
+    ProtocolError,
+)
+from .ids import gen_id, normalize_id
 from .types import Envelope, ClientInfo, EventHandler, ClientType, MessageType
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
+PROTOCOL_VERSION = "1.0"
+
 __all__ = [
     "AgentClient",
     "EnvironmentClient",
@@ -22,9 +31,14 @@ __all__ = [
     "ConnectionError",
     "MessageError",
     "AgentClientError",
+    "ActionTimeout",
+    "ProtocolError",
+    "gen_id",
+    "normalize_id",
     "Envelope",
     "ClientInfo",
     "EventHandler",
     "ClientType",
     "MessageType",
+    "PROTOCOL_VERSION",
 ]
