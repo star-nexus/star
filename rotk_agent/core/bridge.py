@@ -33,7 +33,8 @@ class RemoteContext:
     the dict in place; replacing a dict wholesale silently lost the update.
 
     There is no `id_map` here any more. Pending requests live on the client that
-    issued them, which is also what makes two agents in one process possible.
+    issued them. `_client` / `_status` / `_task_manager` are still process-global,
+    so two `EnvBridge`s in one process still cannot each have their own client.
     """
 
     _client: Optional[AgentClient] = None

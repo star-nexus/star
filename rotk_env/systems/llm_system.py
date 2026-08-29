@@ -37,6 +37,7 @@ from protocol.star_client_v2 import (
     ClientInfo,
     ClientType,
     MessageType,
+    gen_id,
 )
 from protocol.error_codes import (
     DESCRIPTIONS as ERROR_DESCRIPTIONS,
@@ -53,6 +54,22 @@ from ..prefabs.action_catalog import (
 
 from .llm_action_handler import LLMActionHandler
 from .llm_observation_system import LLMObservationSystem
+
+
+def _inbound_id(raw: Any, fallback: Optional[Any] = None) -> Any:
+    """The request id to echo back, distinguishing absent from falsy.
+
+    This used to be `payload.get("id") or <generated>`, which treats `0` and
+    `""` as missing. An agent that numbered its requests from zero got a reply
+    carrying a *different* id, never correlated it, and timed out. `0` is a
+    legal id per the protocol schema, so only `None` counts as absent.
+
+    The generated fallback uses the SDK's counter rather than a timestamp: two
+    actions arriving inside one clock tick would otherwise share an "id".
+    """
+    if raw is None:
+        return fallback if fallback is not None else gen_id("env")
+    return raw
 
 
 # ==================== Action Request Data Structure ====================
@@ -552,7 +569,7 @@ class LLMSystem(System):
             elif payload.get("type") == "action_batch":
                 # Handle batch action message
                 actions = payload.get("actions", [])
-                batch_id = payload.get("id") or int(time.time() * 1e9)
+                batch_id = _inbound_id(payload.get("id"))
                 agent_id = sender.get("id") if sender.get("type") == "agent" else None
                 if agent_id:
                     self.client.connected_agents[agent_id] = sender
@@ -582,7 +599,9 @@ class LLMSystem(System):
                 batch_results: List[Dict[str, Any]] = []
                 for idx, item in enumerate(actions):
                     action_name = item.get("action")
-                    action_request_id = item.get("id") or f"{batch_id}_{idx}"
+                    action_request_id = _inbound_id(
+                        item.get("id"), fallback=f"{batch_id}_{idx}"
+                    )
                     if not action_name:
                         error_result = self._create_system_error_response(
                             "unknown",
@@ -1539,7 +1558,7 @@ class LLMSystem(System):
         payload = message.get("payload", {})
 
         agent_id = sender.get("id") if sender.get("type") == "agent" else None
-        action_id = payload.get("id") or int(time.time() * 1e9)
+        action_id = _inbound_id(payload.get("id"))
         action = payload.get("action")
         params = self._prepare_parameters(payload.get("parameters", {}))
 

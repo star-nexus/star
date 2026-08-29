@@ -145,6 +145,46 @@ async def test_fail_raises_at_the_await_site():
         await task
 
 
+async def test_failing_an_unawaited_slot_is_quiet(recwarn):
+    """No "Future exception was never retrieved" noise on stderr.
+
+    A slot can be failed with nobody awaiting it: a fire-and-forget send, or a
+    caller that already timed out. Callers that *are* waiting still see the
+    exception raised at their await; see the tests above.
+    """
+    import gc
+
+    c = Correlator()
+    c.expect("nobody-waits")
+    c.abandon_all(ClientConnectionError("bye"))
+
+    c2 = Correlator()
+    c2.expect("also-nobody")
+    c2.fail("also-nobody", ProtocolError("x", "also-nobody"))
+
+    del c, c2
+    gc.collect()
+
+
+async def test_abandon_all_keeps_the_waiters_mapping_ordered():
+    """Pruning relies on insertion order, so the swap must preserve the type."""
+    c = Correlator()
+    c.expect("a")
+    c.abandon_all(ClientConnectionError("bye"))
+    c.expect("b")
+    c.expect("c")
+    assert c.pending_ids == ["b", "c"]
+
+
+async def test_abandoned_slots_are_bounded():
+    """A caller that sends without ever awaiting must not grow memory forever."""
+    c = Correlator(max_waiters=4)
+    for i in range(100):
+        c.expect(f"sent-{i}")
+        c.resolve(f"sent-{i}", i)  # answered, but never awaited
+    assert len(c.pending_ids) <= 5, c.pending_ids
+
+
 async def test_abandon_all_fails_every_waiter():
     """A disconnect should fail fast, not make each caller wait out its timeout."""
     c = Correlator()

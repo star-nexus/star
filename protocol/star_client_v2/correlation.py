@@ -25,19 +25,33 @@ from .exceptions import ActionTimeout
 from .ids import normalize_id
 
 
+def _mark_retrieved(future: Optional[asyncio.Future]) -> None:
+    """Consume a future's exception so asyncio does not log it as unretrieved.
+
+    A slot can be failed with nobody awaiting it -- a fire-and-forget send, or a
+    caller that already timed out. asyncio prints "Future exception was never
+    retrieved" to stderr for those at GC time, which is noise, not a signal:
+    every caller that *is* waiting still gets the exception raised at its await.
+    """
+    if future is None or not future.done() or future.cancelled():
+        return
+    future.exception()
+
+
 class Correlator:
     """Matches inbound outcomes to outbound requests.
 
     Not thread-safe by design: everything runs on one asyncio loop.
     """
 
-    def __init__(self, max_unclaimed: int = 512):
+    def __init__(self, max_unclaimed: int = 512, max_waiters: int = 512):
         # Insertion-ordered so abandoned slots can be pruned oldest-first.
         self._waiters: "OrderedDict[Any, asyncio.Future]" = OrderedDict()
         # Outcomes for ids nobody registered. Bounded so a peer that answers
         # requests nobody reads cannot grow this without limit.
         self._unclaimed: "OrderedDict[Any, Any]" = OrderedDict()
         self._max_unclaimed = max_unclaimed
+        self._max_waiters = max_waiters
 
     # ---------------------------------------------------------------- sending
 
@@ -80,9 +94,7 @@ class Correlator:
             return False
         if not future.done():
             future.set_exception(error)
-            # Nothing may ever await this, and an unretrieved exception is noisy
-            # at GC time. Mark it seen; `wait` re-raises from the future anyway.
-            future.exception()
+            _mark_retrieved(future)
         return True
 
     def discard(self, request_id: Any) -> None:
@@ -111,11 +123,11 @@ class Correlator:
         (fire-and-forget, or a caller that gave up). Those are the only entries
         safe to discard: a pending slot may still have a live awaiter.
         """
-        if len(self._waiters) <= self._max_unclaimed:
+        if len(self._waiters) <= self._max_waiters:
             return
         for key in [k for k, f in self._waiters.items() if f.done()]:
-            del self._waiters[key]
-            if len(self._waiters) <= self._max_unclaimed:
+            _mark_retrieved(self._waiters.pop(key))
+            if len(self._waiters) <= self._max_waiters:
                 return
 
     # ---------------------------------------------------------------- awaiting
@@ -158,11 +170,12 @@ class Correlator:
         Without this, a disconnect leaves callers blocked until each individual
         timeout expires instead of failing fast.
         """
-        waiters, self._waiters = self._waiters, {}
+        waiters, self._waiters = self._waiters, OrderedDict()
         count = 0
         for future in waiters.values():
             if not future.done():
                 future.set_exception(error)
+                _mark_retrieved(future)
                 count += 1
         return count
 
