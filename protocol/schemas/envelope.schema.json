@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbench.dev/schemas/envelope.schema.json",
+  "title": "Hub envelope",
+  "description": "Every message on the wire, in both directions. The Hub routes on `type`, `sender` and `recipient`; it does not interpret `payload`.",
+  "type": "object",
+  "required": ["type", "sender", "recipient", "payload"],
+  "properties": {
+    "type": {
+      "description": "Transport-level instruction. Business traffic uses `message`.",
+      "enum": ["message", "broadcast", "heartbeat", "connect", "disconnect", "error"]
+    },
+    "sender": { "$ref": "#/$defs/clientRef" },
+    "recipient": { "$ref": "#/$defs/clientRef" },
+    "payload": {
+      "description": "Opaque to the Hub. For `type: message` this is one of the payload types in payloads.schema.json.",
+      "type": ["object", "string"]
+    },
+    "timestamp": {
+      "description": "Unix seconds, set by the sender. Informational: never used for correlation.",
+      "type": "number"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "clientRef": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "enum": ["agent", "env", "human", "hub"] },
+        "id": {
+          "description": "Empty string is allowed for `hub`, which is a singleton.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

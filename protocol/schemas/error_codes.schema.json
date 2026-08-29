@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbench.dev/schemas/error_codes.schema.json",
+  "title": "Agent-facing error codes",
+  "description": "Generated from protocol/error_codes.py; protocol/tests/test_schemas.py fails if the two drift. `retryable` means an agent may resend the same request unchanged; everything else is a permanent rejection.",
+  "type": "integer",
+  "oneOf": [
+    {
+      "const": 2001,
+      "title": "GAME_NOT_INITIALIZED",
+      "description": "Game not initialized",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2002,
+      "title": "GAME_ALREADY_FINISHED",
+      "description": "Game already finished",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2003,
+      "title": "ACTION_NOT_IN_MATCH",
+      "description": "Operation not supported in current game mode",
+      "retryable": false,
+      "rejectedBeforeDispatch": true
+    },
+    {
+      "const": 2004,
+      "title": "INSUFFICIENT_RESOURCES",
+      "description": "Insufficient system resources",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2005,
+      "title": "INSUFFICIENT_PERMISSIONS",
+      "description": "Insufficient permissions",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2006,
+      "title": "OPERATION_TIMED_OUT",
+      "description": "Operation timed out",
+      "retryable": true,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2007,
+      "title": "PARAMETER_VALIDATION_FAILED",
+      "description": "Parameter validation failed",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2008,
+      "title": "INVALID_SYSTEM_STATE",
+      "description": "Invalid system state",
+      "retryable": false,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2009,
+      "title": "NETWORK_ERROR",
+      "description": "Network connection error",
+      "retryable": true,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2010,
+      "title": "UNKNOWN_ACTION",
+      "description": "Unknown action",
+      "retryable": false,
+      "rejectedBeforeDispatch": true
+    },
+    {
+      "const": 2011,
+      "title": "RATE_LIMITED",
+      "description": "Operation rate limit exceeded",
+      "retryable": true,
+      "rejectedBeforeDispatch": false
+    },
+    {
+      "const": 2012,
+      "title": "INTERNAL_ERROR",
+      "description": "Internal service error",
+      "retryable": true,
+      "rejectedBeforeDispatch": false
+    }
+  ]
+}

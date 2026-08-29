@@ -13,6 +13,10 @@ Wire verbs, parameter shapes, and board bounds for a given match come from the
 A no-LLM probe of the MUST sequence lives at
 [`examples/protocol_conformance.py`](../examples/protocol_conformance.py).
 
+The wire format itself — envelope shape, payload types, correlation rules and
+the full error-code table — is in [`hub-envelope.md`](hub-envelope.md), with
+JSON Schemas in [`protocol/schemas/`](../protocol/schemas/).
+
 ---
 
 ## 1. Connect
@@ -37,10 +41,19 @@ Send business traffic as Hub `message` envelopes whose **payload** is:
 | `actions` | — | list of `{id, action, parameters}` |
 
 ENV replies with payload `type: "outcome"`, **the same `id`**, and `outcome`
-(object or JSON string). Match replies to requests by `id`.
+(object or JSON string). Match replies to requests by `id`, comparing ids as
+strings — a JSON layer may turn `7` into `"7"`. See
+[`hub-envelope.md`](hub-envelope.md#3-correlation).
 
-`AgentClient.send_action` / `send_actions` wrap this. The LLM-facing tool
-`perform_action` exists only inside `rotk_agent`; **it is not on the wire**.
+`AgentClient` does the correlation for you:
+
+```python
+state = await client.call("get_faction_state", {"faction": "wei"})
+```
+
+`send_action` / `send_actions` return the id if you want to await it separately.
+The LLM-facing tool `perform_action` exists only inside `rotk_agent`; **it is
+not on the wire**.
 
 ---
 
@@ -91,7 +104,10 @@ a mismatch with the authenticated sender id.
 - `game_actions.names` is the **only** legal board-verb list for this match.
   `game_actions.docs` gives parameter shapes (types, required, nested
   `col`/`row`, enums). Unknown names are **2010**. A verb that exists in ENV
-  but is not in this match is **2003**.
+  but is not in this match is **2003**. Both are refused before anything runs,
+  so the board is untouched — unlike **2012**, which means a handler raised
+  mid-action and state may be partially modified. Full table in
+  [`hub-envelope.md`](hub-envelope.md#4-error-codes).
 - Default skirmish names: `move`, `attack`, `get_faction_state`. Turn-based
   matches also list `end_turn`.
 
@@ -198,6 +214,8 @@ every **registered** faction has reported. Non-LLM agents send zeros.
 | :--- | :--- |
 | `protocol.AgentClient` | SDK / plug-in point |
 | [`docs/agent-protocol.md`](agent-protocol.md) | This contract |
+| [`docs/hub-envelope.md`](hub-envelope.md) | Wire format, correlation, error codes |
+| [`protocol/schemas/`](../protocol/schemas/) | JSON Schemas for the above |
 | `rotk_agent` / `RoTKChatAgent` | Reference LLM tool-use client |
 | [`examples/protocol_conformance.py`](../examples/protocol_conformance.py) | No-LLM MUST-sequence probe |
 | [`examples/probe_get_faction_state.py`](../examples/probe_get_faction_state.py) | Live fog / vision probe |
@@ -214,7 +232,7 @@ protocol.
 
 1. Connect with `AgentClient`.
 2. `register_agent_info`.
-3. Handle `outcome` messages keyed by request `id`.
+3. Correlate `outcome` messages by request `id`, comparing ids as strings.
 4. On `game_end_notification`, `report_llm_stats` then disconnect.
 
 **MUST (default skirmish board, from join `names`)**

@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbench.dev/schemas/payloads.schema.json",
+  "title": "Agent-ENV payload types",
+  "description": "The `payload` of a `type: message` envelope. Agent->ENV: action, action_batch. ENV->agent: outcome, turn_start, game_end_notification.",
+  "oneOf": [
+    { "$ref": "#/$defs/action" },
+    { "$ref": "#/$defs/actionBatch" },
+    { "$ref": "#/$defs/outcome" },
+    { "$ref": "#/$defs/turnStart" },
+    { "$ref": "#/$defs/gameEndNotification" }
+  ],
+  "$defs": {
+    "requestId": {
+      "description": "Correlation key. An int or a string; the ENV echoes it back byte-for-byte in the matching outcome. Because JSON layers may render an int as a string, agents should compare ids as strings. Keep ints under 2**53.",
+      "type": ["integer", "string"]
+    },
+
+    "action": {
+      "title": "action (agent -> ENV)",
+      "type": "object",
+      "required": ["type", "id", "action"],
+      "properties": {
+        "type": { "const": "action" },
+        "id": { "$ref": "#/$defs/requestId" },
+        "action": {
+          "description": "Verb name. The legal set for a match comes from the register_agent_info reply, not from this schema.",
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": { "type": "object", "default": {} }
+      },
+      "additionalProperties": false
+    },
+
+    "actionBatch": {
+      "title": "action_batch (agent -> ENV)",
+      "description": "Several actions in one message. The ENV replies with a single outcome carrying the batch id.",
+      "type": "object",
+      "required": ["type", "id", "actions"],
+      "properties": {
+        "type": { "const": "action_batch" },
+        "id": { "$ref": "#/$defs/requestId" },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "action"],
+            "properties": {
+              "id": { "$ref": "#/$defs/requestId" },
+              "action": { "type": "string", "minLength": 1 },
+              "parameters": { "type": "object", "default": {} }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "outcome": {
+      "title": "outcome (ENV -> agent)",
+      "type": "object",
+      "required": ["type", "id", "outcome"],
+      "properties": {
+        "type": { "const": "outcome" },
+        "id": { "$ref": "#/$defs/requestId" },
+        "outcome": {
+          "description": "The result body. When `outcome_type` is \"str\" this is a JSON-encoded string that the agent must decode.",
+          "type": ["object", "array", "string", "number", "boolean", "null"]
+        },
+        "outcome_type": {
+          "description": "\"str\" means `outcome` is a JSON string rather than an object.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "outcomeBody": {
+      "title": "Decoded outcome body",
+      "description": "The shape inside `outcome` once decoded. Failures always carry `success: false`; `error_code` is one of the codes in error_codes.schema.json.",
+      "type": "object",
+      "required": ["success"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "error": { "type": "string" },
+        "error_code": { "type": ["integer", "string", "null"] },
+        "message": { "type": "string" },
+        "api_version": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+
+    "turnStart": {
+      "title": "turn_start (ENV -> agent, unsolicited)",
+      "description": "Turn-based mode only. Resent until the agent replies with a turn_start_ack action, or until it sends any other action.",
+      "type": "object",
+      "required": ["type", "faction"],
+      "properties": {
+        "type": { "const": "turn_start" },
+        "faction": { "enum": ["wei", "shu", "wu"] },
+        "turn_number": { "type": ["integer", "null"] },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+
+    "gameEndNotification": {
+      "title": "game_end_notification (ENV -> agent, unsolicited)",
+      "description": "The match is over. The agent should report stats and stop acting.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "game_end_notification" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
