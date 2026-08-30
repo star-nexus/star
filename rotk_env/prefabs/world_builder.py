@@ -216,25 +216,27 @@ class _SkirmishAssembler:
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
-            from ..systems.effect_render_system import EffectRenderSystem
-            from ..systems.map_render_system import MapRenderSystem
-            from ..systems.minimap_system import MiniMapSystem
+            from ..systems.fast_render_systems import (
+                FastEffectRenderSystem,
+                FastMapRenderSystem,
+                FastMiniMapSystem,
+                FastUnitRenderSystem,
+            )
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
             from ..systems.ui_render_system import UIRenderSystem
             from ..systems.unit_action_button_system import UnitActionButtonSystem
-            from ..systems.unit_render_system import UnitRenderSystem
 
             systems.extend(
                 [
                     UnitActionButtonSystem(),
                     UIButtonSystem(),
-                    MapRenderSystem(),
-                    UnitRenderSystem(),
-                    EffectRenderSystem(),
+                    FastMapRenderSystem(),
+                    FastUnitRenderSystem(),
+                    FastEffectRenderSystem(),
                     PanelRenderSystem(),
                     UIRenderSystem(),
-                    MiniMapSystem(),
+                    FastMiniMapSystem(),
                 ]
             )
         if self.game_mode == GameMode.REAL_TIME:
