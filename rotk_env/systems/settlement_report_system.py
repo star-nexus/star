@@ -29,6 +29,69 @@ from ..components import (
 from ..prefabs.config import Faction, TerrainType, GameConfig
 from ..components.agent_info import AgentInfo, AgentInfoRegistry
 
+_LLM_TOKEN_INT_KEYS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "prompt_cache_hit_tokens",
+    "prompt_cache_miss_tokens",
+    "reasoning_tokens",
+)
+
+
+def _empty_llm_faction_stats() -> Dict[str, Any]:
+    """Stable per-faction LLM stats shape, including token fields."""
+    return {
+        "total_calls": 0,
+        "successful_calls": 0,
+        "failed_calls": 0,
+        "success_rate": 0.0,
+        "toolcall_error_total": 0,
+        "http_error_total": 0,
+        "spatial_awareness_error": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_hit_rate": 0.0,
+        "provider": "unknown",
+        "model_id": "unknown",
+    }
+
+
+def _copy_llm_faction_stats(live: Any) -> Dict[str, Any]:
+    """Keep the settlement schema stable; drop extra ingest keys such as timestamp."""
+    copied = _empty_llm_faction_stats()
+    if not isinstance(live, dict):
+        return copied
+    for key in copied:
+        if key in live:
+            copied[key] = live[key]
+    return copied
+
+
+def _sum_llm_token_totals(per_faction: Dict[str, Any]) -> Dict[str, Any]:
+    """Roll per-faction token counters into a match-wide spend summary.
+
+    `total_tokens` is prompt + completion (reasoning is a subset of completion).
+    `cache_hit_rate` is weighted over summed prompt tokens, matching the agent.
+    """
+    totals = {key: 0 for key in _LLM_TOKEN_INT_KEYS}
+    for stats in per_faction.values():
+        if not isinstance(stats, dict):
+            continue
+        for key in _LLM_TOKEN_INT_KEYS:
+            try:
+                totals[key] += int(stats.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                continue
+    prompt = totals["prompt_tokens"]
+    totals["total_tokens"] = totals["prompt_tokens"] + totals["completion_tokens"]
+    totals["cache_hit_rate"] = (
+        round(totals["prompt_cache_hit_tokens"] / prompt * 100, 2) if prompt else 0.0
+    )
+    return totals
+
 
 class SettlementReportSystem(System):
     """Generates the settlement report after game over."""
@@ -538,31 +601,27 @@ class SettlementReportSystem(System):
         except Exception as e:
             print(f"[SettlementReport] ⚠️ Failed to read strategy_scores: {e}")
 
-        # LLM API statistics
-        llm_api_stats: Dict[str, Dict[str, Any]] = {"wei": {}, "shu": {}, "wu": {}}
+        # LLM API statistics (per faction + match-wide token spend)
+        llm_api_stats: Dict[str, Dict[str, Any]] = {
+            "wei": _empty_llm_faction_stats(),
+            "shu": _empty_llm_faction_stats(),
+            "wu": _empty_llm_faction_stats(),
+        }
         try:
             if game_stats and hasattr(game_stats, "llm_api_stats"):
                 from ..prefabs.config import Faction as _Faction
                 for f in [_Faction.WEI, _Faction.SHU, _Faction.WU]:
                     if f in game_stats.llm_api_stats:
-                        llm_api_stats[f.value] = game_stats.llm_api_stats[f]
+                        llm_api_stats[f.value] = _copy_llm_faction_stats(
+                            game_stats.llm_api_stats[f]
+                        )
                         print(f"[SettlementReport] ✅ {f.value} LLM API stats: {game_stats.llm_api_stats[f]}")
-                    else:
-                        llm_api_stats[f.value] = {
-                            "total_calls": 0,
-                            "successful_calls": 0, 
-                            "failed_calls": 0,
-                            "success_rate": 0.0,
-                            "toolcall_error_total": 0,
-                            "http_error_total": 0,
-                            "spatial_awareness_error": 0,
-                            "provider": "unknown",
-                            "model_id": "unknown"
-                        }
             else:
                 print("[SettlementReport] ⚠️ llm_api_stats not found in GameStats")
         except Exception as e:
             print(f"[SettlementReport] ⚠️ Failed to read llm_api_stats: {e}")
+
+        llm_token_totals = _sum_llm_token_totals(llm_api_stats)
 
         return {
             "model_info": model_info,
@@ -573,6 +632,7 @@ class SettlementReportSystem(System):
             "action_counts": action_counts,
             "interaction_counts": interaction_counts,
             "llm_api_stats": llm_api_stats,
+            "llm_token_totals": llm_token_totals,
             # Provider info for each faction and a short slug used in file names
             "providers": providers,
             "providers_slug": self._build_providers_slug(providers),
@@ -834,7 +894,7 @@ class SettlementReportSystem(System):
         # LLM API Statistics
         if "llm_api_stats" in report_data and report_data["llm_api_stats"]:
             print(f"\n🤖 LLM API Statistics:")
-            for faction_key in ["wei", "shu"]:
+            for faction_key in ["wei", "shu", "wu"]:
                 if faction_key in report_data["llm_api_stats"]:
                     stats = report_data["llm_api_stats"][faction_key]
                     # Only show if there are actual calls
@@ -859,5 +919,22 @@ class SettlementReportSystem(System):
                         print(f"     HTTP errors: {stats.get('http_error_total', 0)}")
                         print(f"     Tool call errors: {stats.get('toolcall_error_total', 0)}")
                         print(f"     Spatial awareness errors: {stats.get('spatial_awareness_error', 0)}")
+
+            totals = report_data.get("llm_token_totals") or _sum_llm_token_totals(
+                report_data.get("llm_api_stats") or {}
+            )
+            print(f"\n💰 Token spend (all factions):")
+            print(f"   Prompt tokens: {totals.get('prompt_tokens', 0)}")
+            print(
+                f"   Cache hit/miss: "
+                f"{totals.get('prompt_cache_hit_tokens', 0)}/"
+                f"{totals.get('prompt_cache_miss_tokens', 0)} "
+                f"({totals.get('cache_hit_rate', 0.0):.2f}%)"
+            )
+            print(
+                f"   Completion tokens: {totals.get('completion_tokens', 0)}"
+                f" (reasoning: {totals.get('reasoning_tokens', 0)})"
+            )
+            print(f"   Total tokens: {totals.get('total_tokens', 0)}")
         
         print("=" * 80)

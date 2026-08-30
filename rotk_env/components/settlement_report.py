@@ -54,6 +54,9 @@ class SettlementReport(SingletonComponent):
     
     # LLM API statistics by faction
     llm_api_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    # Match-wide token spend (sum of per-faction llm_api_stats)
+    llm_token_totals: Dict[str, Any] = field(default_factory=dict)
     
     # Battle statistics
     battle_statistics: Dict[str, Any] = field(default_factory=dict)

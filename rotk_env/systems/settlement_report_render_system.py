@@ -419,6 +419,19 @@ class SettlementReportRenderSystem(System):
         interaction_surface = content_font.render(interaction_text, True, (150, 150, 150))
         screen.blit(interaction_surface, (40, y_offset))
         y_offset += 25
+
+        totals = report.llm_token_totals or {}
+        token_text = (
+            f"   Token spend: prompt={totals.get('prompt_tokens', 0)} "
+            f"completion={totals.get('completion_tokens', 0)} "
+            f"total={totals.get('total_tokens', 0)} "
+            f"cache {totals.get('prompt_cache_hit_tokens', 0)}/"
+            f"{totals.get('prompt_cache_miss_tokens', 0)} "
+            f"({totals.get('cache_hit_rate', 0.0):.2f}%)"
+        )
+        token_surface = content_font.render(token_text, True, (150, 220, 255))
+        screen.blit(token_surface, (40, y_offset))
+        y_offset += 25
         
         # Update max scroll distance
         self.max_scroll = max(0, y_offset - GameConfig.WINDOW_HEIGHT + 300)

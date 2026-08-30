@@ -231,6 +231,68 @@ class NullEnvClient:
         return ""
 
 
+_LLM_STATS_ADD_KEYS = (
+    "total_calls",
+    "successful_calls",
+    "failed_calls",
+    "toolcall_error_total",
+    "http_error_total",
+    "spatial_awareness_error",
+    "prompt_tokens",
+    "completion_tokens",
+    "prompt_cache_hit_tokens",
+    "prompt_cache_miss_tokens",
+    "reasoning_tokens",
+)
+
+
+def _coerce_stat_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _join_stat_label(previous: Any, incoming: Any) -> str:
+    parts: List[str] = []
+    for value in (previous, incoming):
+        if not value or value == "unknown":
+            continue
+        text = str(value)
+        if text not in parts:
+            parts.append(text)
+    return " + ".join(parts) if parts else "unknown"
+
+
+def _accumulate_llm_api_stats(
+    previous: Optional[Dict[str, Any]],
+    incoming: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Add numeric counters when a second agent reports for the same faction."""
+    if not isinstance(previous, dict) or not previous:
+        return incoming
+    merged = dict(incoming)
+    for key in _LLM_STATS_ADD_KEYS:
+        merged[key] = _coerce_stat_int(previous.get(key)) + _coerce_stat_int(
+            incoming.get(key)
+        )
+    total = merged["total_calls"]
+    merged["success_rate"] = (
+        round(merged["successful_calls"] / total * 100, 2) if total else 0.0
+    )
+    prompt = merged["prompt_tokens"]
+    merged["cache_hit_rate"] = (
+        round(merged["prompt_cache_hit_tokens"] / prompt * 100, 2) if prompt else 0.0
+    )
+    merged["provider"] = _join_stat_label(
+        previous.get("provider"), incoming.get("provider")
+    )
+    merged["model_id"] = _join_stat_label(
+        previous.get("model_id"), incoming.get("model_id")
+    )
+    return merged
+
+
 class LLMSystem(System):
     """LLM System - Global game control interface"""
 
@@ -953,8 +1015,9 @@ class LLMSystem(System):
             if not hasattr(stats, 'llm_api_stats'):
                 stats.llm_api_stats = {}
             
-            # Store LLM API statistics data
-            stats.llm_api_stats[faction] = {
+            # Same-faction agents each report once; add numeric counters so
+            # match-wide token spend is the sum, not last-writer-wins.
+            incoming = {
                 "total_calls": api_stats.get("total_calls", 0),
                 "successful_calls": api_stats.get("successful_calls", 0),
                 "toolcall_error_total": toolcall_error_total,
@@ -970,8 +1033,12 @@ class LLMSystem(System):
                 "cache_hit_rate": api_stats.get("cache_hit_rate", 0.0),
                 "provider": provider,
                 "model_id": model_id,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
+            stats.llm_api_stats[faction] = _accumulate_llm_api_stats(
+                stats.llm_api_stats.get(faction),
+                incoming,
+            )
             
             print(f"[LLMSystem] ✅ Received LLM API stats for faction {faction_key}: {api_stats}")
             print(f"[LLMSystem] 📊 Error stats - HTTP errors: {http_error_total}, Tool-call errors: {toolcall_error_total}, spatial-awareness errors: {spatial_awareness_error}")

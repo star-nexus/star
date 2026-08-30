@@ -98,6 +98,163 @@ def test_observation_is_not_faction_gated():
     )
 
 
+def test_settlement_rolls_up_match_token_spend():
+    world = World()
+    stats = GameStats()
+    stats.llm_api_stats[Faction.WEI] = {
+        "total_calls": 2,
+        "prompt_tokens": 100,
+        "completion_tokens": 40,
+        "prompt_cache_hit_tokens": 60,
+        "prompt_cache_miss_tokens": 40,
+        "reasoning_tokens": 10,
+        "cache_hit_rate": 60.0,
+        "provider": "p1",
+        "model_id": "m1",
+    }
+    stats.llm_api_stats[Faction.SHU] = {
+        "total_calls": 1,
+        "prompt_tokens": 50,
+        "completion_tokens": 20,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 50,
+        "reasoning_tokens": 0,
+        "cache_hit_rate": 0.0,
+        "provider": "p2",
+        "model_id": "m2",
+    }
+    world.add_singleton_component(stats)
+
+    system = SettlementReportSystem()
+    system.initialize(world)
+    payload = system._collect_placeholder_data()
+
+    assert payload["llm_api_stats"]["wei"]["prompt_tokens"] == 100
+    assert payload["llm_api_stats"]["shu"]["prompt_tokens"] == 50
+    assert payload["llm_api_stats"]["wu"]["prompt_tokens"] == 0
+
+    totals = payload["llm_token_totals"]
+    assert totals["prompt_tokens"] == 150
+    assert totals["completion_tokens"] == 60
+    assert totals["total_tokens"] == 210
+    assert totals["prompt_cache_hit_tokens"] == 60
+    assert totals["prompt_cache_miss_tokens"] == 90
+    assert totals["reasoning_tokens"] == 10
+    assert totals["cache_hit_rate"] == 40.0
+
+    report = SettlementReport(**payload)
+    assert report.llm_token_totals["total_tokens"] == 210
+    assert "timestamp" not in payload["llm_api_stats"]["wei"]
+
+
+def test_token_totals_match_agent_cache_rate_and_exclude_reasoning():
+    from rotk_env.systems.settlement_report_system import (
+        _copy_llm_faction_stats,
+        _sum_llm_token_totals,
+    )
+
+    totals = _sum_llm_token_totals(
+        {
+            "wei": {
+                "prompt_tokens": 100,
+                "completion_tokens": 40,
+                "prompt_cache_hit_tokens": 60,
+                "prompt_cache_miss_tokens": 40,
+                "reasoning_tokens": 25,
+            },
+            "shu": {
+                "prompt_tokens": 50,
+                "completion_tokens": 20,
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 50,
+                "reasoning_tokens": 0,
+            },
+        }
+    )
+    assert totals["total_tokens"] == 210
+    assert totals["reasoning_tokens"] == 25
+    assert totals["cache_hit_rate"] == 40.0
+
+    empty = _sum_llm_token_totals({"wei": {}})
+    assert empty["total_tokens"] == 0
+    assert empty["cache_hit_rate"] == 0.0
+
+    copied = _copy_llm_faction_stats(
+        {"prompt_tokens": 3, "timestamp": 1.5, "extra": True}
+    )
+    assert copied["prompt_tokens"] == 3
+    assert "timestamp" not in copied
+    assert "extra" not in copied
+
+
+def test_same_faction_reports_accumulate_into_settlement_tokens():
+    world = World()
+    registry = AgentInfoRegistry()
+    registry.register_agent(
+        "wei", AgentInfo(provider="p1", model_id="m1", agent_id="wei_1")
+    )
+    registry.register_agent(
+        "wei", AgentInfo(provider="p2", model_id="m2", agent_id="wei_2")
+    )
+    world.add_singleton_component(registry)
+    world.add_singleton_component(GameStats())
+    gate = _gate(world)
+
+    first = gate.handle_report_llm_stats(
+        {
+            "faction": "wei",
+            "api_stats": {
+                "total_calls": 2,
+                "successful_calls": 2,
+                "failed_calls": 0,
+                "success_rate": 100.0,
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "prompt_cache_hit_tokens": 40,
+                "prompt_cache_miss_tokens": 60,
+                "reasoning_tokens": 4,
+                "cache_hit_rate": 40.0,
+            },
+            "provider": "p1",
+            "model_id": "m1",
+        }
+    )
+    second = gate.handle_report_llm_stats(
+        {
+            "faction": "wei",
+            "api_stats": {
+                "total_calls": 1,
+                "successful_calls": 1,
+                "failed_calls": 0,
+                "success_rate": 100.0,
+                "prompt_tokens": 50,
+                "completion_tokens": 20,
+                "prompt_cache_hit_tokens": 10,
+                "prompt_cache_miss_tokens": 40,
+                "reasoning_tokens": 1,
+                "cache_hit_rate": 20.0,
+            },
+            "provider": "p2",
+            "model_id": "m2",
+        }
+    )
+    assert first["success"] is True
+    assert second["success"] is True
+
+    system = SettlementReportSystem()
+    system.initialize(world)
+    payload = system._collect_placeholder_data()
+    wei = payload["llm_api_stats"]["wei"]
+    assert wei["prompt_tokens"] == 150
+    assert wei["completion_tokens"] == 30
+    assert wei["total_calls"] == 3
+    assert wei["cache_hit_rate"] == 33.33
+    assert wei["provider"] == "p1 + p2"
+    assert payload["llm_token_totals"]["total_tokens"] == 180
+    assert payload["llm_token_totals"]["reasoning_tokens"] == 5
+    assert payload["llm_token_totals"]["cache_hit_rate"] == 33.33
+
+
 def test_settlement_lists_every_registered_agent():
     world = World()
     registry = AgentInfoRegistry()
