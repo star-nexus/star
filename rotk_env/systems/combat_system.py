@@ -16,7 +16,6 @@ from ..components import (
     Player,
     MapData,
     Terrain,
-    Tile,
     GameStats,
     GameState,
     ActionPoints,
@@ -503,11 +502,11 @@ class CombatSystem(System):
 
 
 
-        # Check attack range
+        # Check attack range: hex distance ≤ attack_range, including same hex.
         distance = HexMath.hex_distance(
             (attacker_pos.col, attacker_pos.row), (target_pos.col, target_pos.row)
         )
-        if distance > attacker_combat.attack_range:
+        if not attacker_combat.in_attack_range(distance):
             return (
                 False,
                 "target_out_of_range",
@@ -790,18 +789,8 @@ class CombatSystem(System):
                 player.units.discard(entity)
                 break
 
-        # Clear tile occupation
-        position = self.world.get_component(entity, HexPosition)
-        if position:
-            map_data = self.world.get_singleton_component(MapData)
-            if map_data:
-                tile_entity = map_data.tiles.get((position.col, position.row))
-                if tile_entity:
-                    tile = self.world.get_component(tile_entity, Tile)
-                    if tile and tile.occupied_by == entity:
-                        tile.occupied_by = None
-
-                # Publish unit death event
+        # No tile-side occupancy to clear: destroying the entity removes its
+        # HexPosition, which is what the movement checks read.
         EBS.publish(UnitDeathEvent(entity, unit.faction))
 
         # Destroy entity

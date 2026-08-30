@@ -278,8 +278,13 @@ def test_water_is_an_obstacle_not_a_walkable_999_tile():
     result = movement.move_unit(unit, (1, 0))
     assert result["success"] is False
     assert result["reason"] == "no_path"
+    from rotk_env.utils.map_query import path_blockers
+
     path = PathFinding.find_path(
-        (0, 0), (1, 0), movement._get_obstacles(exclude_entity=unit), max_distance=8
+        (0, 0),
+        (1, 0),
+        path_blockers(world, exclude_entity=unit),
+        max_distance=8,
     )
     assert path == []
 
@@ -321,37 +326,27 @@ def test_handle_move_translates_insufficient_mp_from_the_system():
     assert (pos.col, pos.row) == (0, 0)
 
 
-def _tile_at(world, pos):
-    from rotk_env.components import Tile
-
-    map_data = world.get_singleton_component(MapData)
-    return world.get_component(map_data.tiles[pos], Tile)
+def _occupied(world, unit):
+    pos = world.get_component(unit, HexPosition)
+    return (pos.col, pos.row)
 
 
-def test_occupancy_commits_with_hex_position_on_instant_move():
-    from rotk_env.components import Tile
-
+def test_instant_move_commits_hex_position():
+    """No animation system: the mover lands on the target in one step."""
     world = World()
     _disc(world, radius=3)
-    map_data = world.get_singleton_component(MapData)
-    for pos, tile_entity in map_data.tiles.items():
-        world.add_component(tile_entity, Tile(pos))
     world.add_system(MovementSystem())
     unit = _spawn(world, col=0, row=0, mp=4)
-    world.get_component(map_data.tiles[(0, 0)], Tile).occupied_by = unit
 
     result = world.systems[0].move_unit(unit, (1, 0))
     assert result["success"] is True
     assert result["animated"] is False
-    pos = world.get_component(unit, HexPosition)
-    assert (pos.col, pos.row) == (1, 0)
-    assert _tile_at(world, (0, 0)).occupied_by is None
-    assert _tile_at(world, (1, 0)).occupied_by == unit
+    assert _occupied(world, unit) == (1, 0)
 
 
-def test_animation_defers_occupancy_until_hex_commits():
+def test_animation_defers_hex_position_until_each_hex_commits():
+    """Occupancy is HexPosition, and HexPosition moves per committed hex."""
     from framework import System
-    from rotk_env.components import Tile
 
     class AnimationSystem(System):
         def initialize(self, world):
@@ -369,25 +364,15 @@ def test_animation_defers_occupancy_until_hex_commits():
 
     world = World()
     _disc(world, radius=3)
-    map_data = world.get_singleton_component(MapData)
-    for pos, tile_entity in map_data.tiles.items():
-        world.add_component(tile_entity, Tile(pos))
     movement = MovementSystem()
     world.add_system(movement)
     world.add_system(AnimationSystem())
     unit = _spawn(world, col=0, row=0, mp=4)
-    world.get_component(map_data.tiles[(0, 0)], Tile).occupied_by = unit
 
     result = movement.move_unit(unit, (1, 0))
     assert result["success"] is True
     assert result["animated"] is True
-    pos = world.get_component(unit, HexPosition)
-    assert (pos.col, pos.row) == (0, 0)
-    assert _tile_at(world, (0, 0)).occupied_by == unit
-    assert _tile_at(world, (1, 0)).occupied_by is None
+    assert _occupied(world, unit) == (0, 0)
 
     movement.commit_hex_position(unit, 1, 0, arrived=True)
-    pos = world.get_component(unit, HexPosition)
-    assert (pos.col, pos.row) == (1, 0)
-    assert _tile_at(world, (0, 0)).occupied_by is None
-    assert _tile_at(world, (1, 0)).occupied_by == unit
+    assert _occupied(world, unit) == (1, 0)

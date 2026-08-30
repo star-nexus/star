@@ -48,10 +48,18 @@ def _spawn_unit(world: World, *, faction=Faction.WEI, col=0, row=0, ap=2):
 
 def test_combat_in_attack_range():
     combat = Combat(base_attack=10, base_defense=8, attack_range=3)
-    assert combat.in_attack_range(0) is False
+    assert combat.in_attack_range(0) is True
     assert combat.in_attack_range(1) is True
     assert combat.in_attack_range(3) is True
     assert combat.in_attack_range(4) is False
+
+
+def test_combat_system_can_attack_same_hex_enemy():
+    """Co-located enemies are in range: attack_range >= hex distance, and 0 counts."""
+    world, combat_system = _world_with_combat()
+    attacker = _spawn_unit(world, faction=Faction.WEI, col=0, row=0)
+    enemy = _spawn_unit(world, faction=Faction.SHU, col=0, row=0)
+    assert combat_system.can_attack(attacker, enemy) is True
 
 
 def test_combat_system_can_attack_requires_ap_and_alive():

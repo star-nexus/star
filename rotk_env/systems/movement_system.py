@@ -1,10 +1,14 @@
 """
 Movement System - Handles unit movement end-to-end:
-- pathfinding via map_query (board clip, terrain cost, obstacles)
+- destination legality (must be unoccupied) and faction-relative pathfinding,
+  both via map_query -- see that module for the movement invariants
 - resource spending (movement points)
 - animation kickoff and fallback instant move
-- tile occupancy committed with HexPosition
+- HexPosition committed per hex; it is the occupancy truth
 - terrain-triggered events on arrival
+
+Legality is decided once, when the order is processed. An accepted move is
+never revalidated: the route is not re-checked while the unit travels.
 """
 
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -14,8 +18,6 @@ from ..components import (
     MovementPoints,
     Unit,
     UnitCount,
-    MapData,
-    Tile,
     MovementAnimation,
     UnitStatus,
 )
@@ -40,7 +42,12 @@ class MovementSystem(System):
         pass
 
     def move_unit(self, entity: int, target_pos: Tuple[int, int]) -> Dict[str, Any]:
-        """Plan a path once, spend MP, then start anim or commit position."""
+        """Judge the order once against the world as it is now, then commit to it.
+
+        Destination must be unoccupied, a faction-relative route must exist, and
+        that route must fit the budget. Once those pass the move is accepted for
+        good: nothing below revalidates it while the unit travels.
+        """
         position = self.world.get_component(entity, HexPosition)
         movement_points = self.world.get_component(entity, MovementPoints)
         unit_count = self.world.get_component(entity, UnitCount)
@@ -100,10 +107,15 @@ class MovementSystem(System):
             }
 
         effective_movement = movement_points.get_effective_movement(unit_count)
-        spendable = min(int(effective_movement), int(current_mp))
-        from ..utils.map_query import movement_obstacles, plan_hex_path
+        spendable = movement_points.spendable(unit_count)
+        from ..utils.map_query import occupied_cells, plan_hex_path
 
-        obstacles = movement_obstacles(self.world, exclude_entity=entity)
+        # Invariant 1: the destination must be free of units, either faction.
+        # Checked before planning so "someone is standing there" is never
+        # reported as "no route exists".
+        if target_pos in occupied_cells(self.world, exclude_entity=entity):
+            return self._destination_occupied_result(entity, current_pos, target_pos)
+
         # Uncapped cheapest route. A cap equal to remaining MP used to return
         # empty when hills/mountains made the path cost more than hex-distance,
         # which was mis-reported as no_path.
@@ -111,14 +123,13 @@ class MovementSystem(System):
             self.world,
             current_pos,
             target_pos,
-            exclude_entity=entity,
+            mover=entity,
         )
         if not path or len(path) < 2:
             return self._no_path_result(
                 entity,
                 current_pos,
                 target_pos,
-                obstacles,
                 effective_movement,
                 path,
             )
@@ -130,7 +141,6 @@ class MovementSystem(System):
                 current_pos,
                 target_pos,
                 path,
-                obstacles,
                 effective_movement,
                 total_cost,
                 current_mp,
@@ -167,27 +177,58 @@ class MovementSystem(System):
     def commit_hex_position(
         self, entity: int, col: int, row: int, *, arrived: bool = False
     ) -> None:
-        """Write HexPosition and occupancy together. Fire move_end on arrival."""
+        """Write the unit's committed hex. HexPosition is the occupancy truth.
+
+        The move was already judged legal when the order was accepted and is not
+        revalidated here, so this writes the planned hex even if another unit
+        stepped onto it in the meantime.
+        """
         position = self.world.get_component(entity, HexPosition)
         if position is not None:
             position.col, position.row = col, row
-        self._update_tile_occupation(entity, (col, row))
         if arrived:
             self._trigger_terrain_events(entity, "move_end")
+
+    def _destination_occupied_result(
+        self,
+        entity: int,
+        current_pos: Tuple[int, int],
+        target_pos: Tuple[int, int],
+    ) -> Dict[str, Any]:
+        """Invariant 1 rejection.
+
+        Says nothing about who is standing there: the occupant may be a unit
+        this faction cannot see, and the occupant's faction is not a fact the
+        mover is entitled to.
+        """
+        return {
+            "success": False,
+            "reason": "destination_occupied",
+            "message": f"Target position {target_pos} is already occupied by a unit",
+            "unit_id": entity,
+            "start_position": current_pos,
+            "target_position": target_pos,
+            "suggestion": (
+                "Pick an unoccupied hex; this unit's reachable list only "
+                "contains hexes that were free when it was computed"
+            ),
+        }
 
     def _no_path_result(
         self,
         entity: int,
         current_pos: Tuple[int, int],
         target_pos: Tuple[int, int],
-        obstacles: Set[Tuple[int, int]],
         effective_movement: int,
         path: Optional[List[Tuple[int, int]]],
     ) -> Dict[str, Any]:
+        blockers = self._get_obstacles(exclude_entity=entity)
         hex_distance = HexMath.hex_distance(current_pos, target_pos)
         distance_issue = hex_distance > effective_movement
-        target_blocked = target_pos in obstacles
-        adjacent_free = self._adjacent_free(current_pos, obstacles)
+        target_blocked = target_pos in blockers
+        adjacent_free = self._adjacent_free(
+            current_pos, blockers | self._occupied(entity)
+        )
         return {
             "success": False,
             "reason": "no_path",
@@ -201,8 +242,10 @@ class MovementSystem(System):
             "target_blocked": target_blocked,
             "path_found": bool(path),
             "path_length": len(path) if path else 0,
-            "obstacle_count": len(obstacles),
-            "obstacles_sample": list(obstacles)[:10],
+            # No global blocker dump here: since friendly units stopped being
+            # blockers, that sample was a list of enemy positions, most of them
+            # outside this faction's vision. Facts about the hex the agent named
+            # are fair game; the rest of the board is not.
             "adjacent_free_positions": adjacent_free,
             "possible_causes": [
                 c
@@ -230,25 +273,27 @@ class MovementSystem(System):
         current_pos: Tuple[int, int],
         target_pos: Tuple[int, int],
         path: List[Tuple[int, int]],
-        obstacles: Set[Tuple[int, int]],
         effective_movement: int,
         total_cost: int,
         current_mp: int,
         spendable: int,
     ) -> Dict[str, Any]:
+        occupied = self._occupied(entity)
         cumulative_cost = 0
         reachable_along_path = []
         for pos in path[1:]:
             step_cost = self._get_terrain_movement_cost(pos)
-            if cumulative_cost + step_cost <= spendable:
-                cumulative_cost += step_cost
-                reachable_along_path.append(pos)
-            else:
+            if cumulative_cost + step_cost > spendable:
                 break
+            cumulative_cost += step_cost
+            # Friendly hexes are legal to walk through, not to stand on.
+            if pos not in occupied:
+                reachable_along_path.append(pos)
         closest = reachable_along_path[-1] if reachable_along_path else current_pos
 
+        blocked = self._get_obstacles(exclude_entity=entity) | occupied
         nearby = []
-        for cand in self._adjacent_free(current_pos, obstacles):
+        for cand in self._adjacent_free(current_pos, blocked):
             if self._get_terrain_movement_cost(cand) <= spendable:
                 nearby.append((HexMath.hex_distance(cand, target_pos), cand))
         nearby.sort(key=lambda x: x[0])
@@ -311,15 +356,16 @@ class MovementSystem(System):
         return payload
 
     def _adjacent_free(
-        self, center: Tuple[int, int], obstacles: Set[Tuple[int, int]]
+        self, center: Tuple[int, int], blocked: Set[Tuple[int, int]]
     ) -> List[Tuple[int, int]]:
+        """On-board neighbours a unit could actually stand on right now."""
         from ..utils.map_query import board_hexes
 
         walkable = board_hexes(self.world)
         return [
             n
             for n in HexMath.hex_neighbors(*center)
-            if n not in obstacles and (walkable is None or n in walkable)
+            if n not in blocked and (walkable is None or n in walkable)
         ]
 
     def _path_terrain_breakdown(
@@ -363,10 +409,24 @@ class MovementSystem(System):
     def _get_obstacles(
         self, exclude_entity: Optional[int] = None
     ) -> Set[Tuple[int, int]]:
-        """Blocked hexes: other units and impassable terrain. Exclude the mover."""
-        from ..utils.map_query import movement_obstacles
+        """Hexes this mover may not traverse: impassable terrain and enemies.
 
-        return movement_obstacles(self.world, exclude_entity)
+        Friendly units are not obstacles (invariant 2); they are only excluded
+        as destinations, which is `_occupied`'s job.
+        """
+        from ..utils.map_query import faction_of, path_blockers
+
+        return path_blockers(
+            self.world,
+            faction_of(self.world, exclude_entity),
+            exclude_entity=exclude_entity,
+        )
+
+    def _occupied(self, exclude_entity: Optional[int] = None) -> Set[Tuple[int, int]]:
+        """Hexes holding a unit of any faction: illegal destinations (invariant 1)."""
+        from ..utils.map_query import occupied_cells
+
+        return occupied_cells(self.world, exclude_entity=exclude_entity)
 
     def _trigger_terrain_events(self, entity: int, action: str):
         """Trigger terrain events in RandomEventSystem for a given action."""
@@ -386,20 +446,3 @@ class MovementSystem(System):
             if system.__class__.__name__ == "AnimationSystem":
                 return system
         return None
-
-    def _update_tile_occupation(self, entity: int, position: Tuple[int, int]):
-        """Update tile occupancy to match the unit's committed HexPosition."""
-        map_data = self.world.get_singleton_component(MapData)
-        if not map_data:
-            return
-
-        for tile_entity in map_data.tiles.values():
-            tile = self.world.get_component(tile_entity, Tile)
-            if tile and tile.occupied_by == entity:
-                tile.occupied_by = None
-
-        tile_entity = map_data.tiles.get(position)
-        if tile_entity:
-            tile = self.world.get_component(tile_entity, Tile)
-            if tile:
-                tile.occupied_by = entity

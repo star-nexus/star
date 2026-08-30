@@ -58,10 +58,15 @@ class TerrainModifier(Component):
 
 @dataclass
 class Tile(Component):
-    """Map tile component."""
+    """Map tile marker.
+
+    Deliberately carries no occupancy field: `HexPosition` is the single truth
+    for where units are. A tile-side slot could not represent co-location, which
+    the movement rules allow (see `utils/map_query.py`), and a duplicated index
+    could disagree with the positions the legality checks actually read.
+    """
 
     position: Tuple[int, int]  # Tile coordinates
-    occupied_by: Optional[int] = None  # Occupying unit entity id
 
 
 @dataclass

@@ -180,6 +180,20 @@ def test_attackable_is_visible_in_range_ids_not_tiles():
     assert accepted.get("success") is True or accepted.get("result") is True
 
 
+def test_same_hex_enemy_is_attackable():
+    world = _world()
+    own = _spawn(world, faction=Faction.WEI, col=0, row=0, mp=2)
+    stacked = _spawn(world, faction=Faction.SHU, col=0, row=0, mp=2)
+    fog = world.get_singleton_component(FogOfWar)
+    fog.faction_vision[Faction.WEI] = {(0, 0)}
+
+    assert _own(_query(world), own)["attackable"] == [stacked]
+    accepted = LLMActionHandler(world).handle_attack_action(
+        {"unit_id": own, "target_id": stacked}
+    )
+    assert accepted.get("success") is True or accepted.get("result") is True
+
+
 def test_zero_ap_and_confusion_clear_masks():
     world = _world()
     tired = _spawn(world, faction=Faction.WEI, col=0, row=0, mp=4, ap=0)

@@ -31,7 +31,6 @@ from ..components import (
     ConstructionPoints,
     SkillPoints,
     Terrain,
-    Tile,
     BattleLog,
     MapData,
     TerritoryControl,
@@ -467,7 +466,7 @@ class LLMActionHandler:
 
         # print(f"[ATTACK_ACTION] Distance={distance}, Attack range={attack_range}")
 
-        if distance > attack_range:
+        if not attacker_combat.in_attack_range(distance):
             return self._create_error_response(
                 f"Target out of attack range: distance {distance}, range {attack_range}",
                 {
@@ -1195,15 +1194,14 @@ class LLMActionHandler:
         if movement_points.current_mp <= 0:
             return []
 
-        budget = min(
-            int(movement_points.get_effective_movement(unit_count)),
-            int(movement_points.current_mp),
-        )
         start = (int(position.col), int(position.row))
         from ..utils.map_query import reachable_hexes
 
         hexes = reachable_hexes(
-            self.world, start, budget, exclude_entity=unit_id
+            self.world,
+            start,
+            movement_points.spendable(unit_count),
+            mover=unit_id,
         )
         hexes.discard(start)
         return [{"col": col, "row": row} for col, row in sorted(hexes)]
@@ -1793,98 +1791,6 @@ class LLMActionHandler:
 
         return visible_tiles
 
-    def _calculate_movement_info(
-        self,
-        unit_id: int,
-        current_pos: Tuple[int, int],
-        target_pos: Tuple[int, int],
-        movement_points: MovementPoints,
-        unit_count: UnitCount,
-    ) -> Dict[str, Any]:
-        """Compute movement info from current to target tile."""
-
-        if current_pos == target_pos:
-            return {
-                "reachable": True,
-                "is_current_position": True,
-                "movement_cost": 0,
-                "path_length": 0,
-                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
-                "effective_movement_range": movement_points.get_effective_movement(
-                    unit_count
-                ),
-                "current_movement_points": movement_points.current_mp,
-                # "path": [current_pos],
-            }
-
-        # Effective movement (consider strength)
-        effective_movement = movement_points.get_effective_movement(unit_count)
-
-        # Get obstacles and compute a path
-        from ..utils.map_query import plan_hex_path
-
-        try:
-            path = plan_hex_path(
-                self.world,
-                current_pos,
-                target_pos,
-                exclude_entity=unit_id,
-                max_cost=effective_movement,
-            )
-
-            if path and len(path) > 1:
-                # Compute total path cost
-                total_movement_cost = self._calculate_total_movement_cost(path)
-
-                # Check reachability
-                reachable = total_movement_cost <= movement_points.current_mp
-
-                return {
-                    "reachable": reachable,
-                    "is_current_position": False,
-                    "movement_cost": total_movement_cost,
-                    "path_length": len(path) - 1,
-                    "terrain_movement_cost": self._get_terrain_movement_cost(
-                        target_pos
-                    ),
-                    "effective_movement_range": effective_movement,
-                    "current_movement_points": movement_points.current_mp,
-                    # "path": path,
-                    "reachable_reason": (
-                        "sufficient_movement_points"
-                        if reachable
-                        else f"need_{total_movement_cost}_have_{movement_points.current_mp}"
-                    ),
-                }
-            else:
-                # No valid path
-                return {
-                    "reachable": False,
-                    "is_current_position": False,
-                    "movement_cost": -1,
-                    "path_length": -1,
-                    "terrain_movement_cost": self._get_terrain_movement_cost(
-                        target_pos
-                    ),
-                    "effective_movement_range": effective_movement,
-                    "current_movement_points": movement_points.current_mp,
-                    # "path": [],
-                    "reachable_reason": "no_valid_path",
-                }
-        except Exception as e:
-            # Path calculation error
-            return {
-                "reachable": False,
-                "is_current_position": False,
-                "movement_cost": -1,
-                "path_length": -1,
-                "terrain_movement_cost": self._get_terrain_movement_cost(target_pos),
-                "effective_movement_range": effective_movement,
-                "current_movement_points": movement_points.current_mp,
-                # "path": [],
-                "reachable_reason": f"path_calculation_error: {str(e)}",
-            }
-
     def _get_tactical_info(self, unit_id: int) -> Dict[str, Any]:
         """Get tactical info (placeholder)."""
         # Simplified placeholder implementation
@@ -1987,33 +1893,6 @@ class LLMActionHandler:
         return None
 
     # ==================== Game logic helpers ====================
-
-    def _get_obstacles_excluding_unit(
-        self, exclude_unit_id: int
-    ) -> Set[Tuple[int, int]]:
-        """Other units + impassable terrain, matching MovementSystem."""
-        from ..utils.map_query import movement_obstacles
-
-        return movement_obstacles(self.world, exclude_unit_id)
-
-    def _get_adjacent_free_positions(
-        self, center_pos: Tuple[int, int], obstacles: Set[Tuple[int, int]]
-    ) -> List[Tuple[int, int]]:
-        """Get unblocked adjacent positions around the given tile."""
-        from ..utils.hex_utils import HexMath
-
-        col, row = center_pos
-
-        # Six adjacent axial directions
-        adjacent_positions = []
-        directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-
-        for dx, dy in directions:
-            adj_pos = (col + dx, row + dy)
-            if adj_pos not in obstacles:
-                adjacent_positions.append(adj_pos)
-
-        return adjacent_positions
 
     def _calculate_total_movement_cost(self, path: List[Tuple[int, int]]) -> int:
         """Compute total movement cost for a path."""
@@ -2325,13 +2204,22 @@ class LLMActionHandler:
         movement_points: MovementPoints,
         unit_count: UnitCount,
     ) -> Dict[str, Any]:
+        """Per-tile move legality for the ``observation`` channel.
 
+        Reads the same oracle as `move`: `occupied_cells` for the destination,
+        `plan_hex_path` for the route, `MovementPoints.spendable` for the budget.
+        No second pathfinder here.
+        """
+
+        remaining = (
+            movement_points.current_mp if movement_points else 0
+        )
         if not current_pos or not movement_points or not unit_count:
             return {
                 "reachable": False,
                 "reason": "missing_movement_components",
                 "movement_cost": -1,
-                "remaining_movement_points": 0,
+                "remaining_movement_points": remaining,
             }
 
         if current_pos == target_pos:
@@ -2339,65 +2227,80 @@ class LLMActionHandler:
                 "reachable": True,
                 "reason": "current_position",
                 "movement_cost": 0,
-                "remaining_movement_points": movement_points.current_mp,
+                "remaining_movement_points": remaining,
                 "is_current_position": True,
             }
 
-        effective_movement = movement_points.get_effective_movement(unit_count)
-
-        obstacles = self._get_obstacles_excluding_unit(unit_id)
-        if target_pos in obstacles:
+        anim = self.world.get_component(unit_id, MovementAnimation)
+        if anim is not None and anim.is_moving:
             return {
                 "reachable": False,
-                "reason": "position_occupied",
+                "reason": "already_moving",
                 "movement_cost": -1,
-                "remaining_movement_points": movement_points.current_mp,
-                "blocked_by": "other_unit",
+                "remaining_movement_points": remaining,
             }
 
-        # Try to find a path
+        unit_status = self.world.get_component(unit_id, UnitStatus)
+        if unit_status is not None:
+            status = unit_status.current_status
+            confused = (
+                status == UnitState.CONFUSION
+                or status == UnitState.CONFUSION.value
+            )
+            if confused:
+                return {
+                    "reachable": False,
+                    "reason": "confused",
+                    "movement_cost": -1,
+                    "remaining_movement_points": remaining,
+                }
+
         try:
-            from ..utils.map_query import plan_hex_path
+            from ..utils.map_query import occupied_cells, plan_hex_path
+
+            if target_pos in occupied_cells(self.world, exclude_entity=unit_id):
+                return {
+                    "reachable": False,
+                    "reason": "destination_occupied",
+                    "movement_cost": -1,
+                    "remaining_movement_points": remaining,
+                }
 
             path = plan_hex_path(
                 self.world,
                 current_pos,
                 target_pos,
-                exclude_entity=unit_id,
-                max_cost=effective_movement,
+                mover=unit_id,
             )
 
-            if path and len(path) > 1:
-                # Calculate total movement cost
-                total_movement_cost = self._calculate_total_movement_cost(path)
-
-                # Check if reachable
-                reachable = total_movement_cost <= movement_points.current_mp
-
-                return {
-                    "reachable": reachable,
-                    # "reason": (
-                    #     "sufficient_movement" if reachable else "insufficient_movement"
-                    # ),
-                    # "movement_cost": total_movement_cost,
-                    # "remaining_movement": movement_points.current_mp,
-                    # "path_length": len(path) - 1,
-                    # "effective_movement_range": effective_movement,
-                }
-            else:
+            if not path or len(path) < 2:
                 return {
                     "reachable": False,
-                    "reason": "no_valid_path",
+                    "reason": "no_path",
                     "movement_cost": -1,
-                    "remaining_movement_points": movement_points.current_mp,
-                    "effective_movement_range": effective_movement,
+                    "remaining_movement_points": remaining,
                 }
+
+            total_movement_cost = self._calculate_total_movement_cost(path)
+            spendable = movement_points.spendable(unit_count)
+            if total_movement_cost > spendable:
+                return {
+                    "reachable": False,
+                    "reason": "insufficient_mp",
+                    "movement_cost": total_movement_cost,
+                    "remaining_movement_points": remaining,
+                }
+            return {
+                "reachable": True,
+                "movement_cost": total_movement_cost,
+                "remaining_movement_points": remaining,
+            }
         except Exception as e:
             return {
                 "reachable": False,
-                "reason": f"path_calculation_error",
+                "reason": "path_calculation_error",
                 "movement_cost": -1,
-                "remaining_movement_points": movement_points.current_mp,
+                "remaining_movement_points": remaining,
                 "error": str(e),
             }
 

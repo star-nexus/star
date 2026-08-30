@@ -13,6 +13,7 @@ from ..components import (
     InputState,
     HexPosition,
     Unit,
+    UnitCount,
     MovementPoints,
     Combat,
     Camera,
@@ -129,10 +130,15 @@ class EffectRenderSystem(System):
     def _render_movement_range(
         self, unit_entity: int, camera_offset: List[float], zoom: float = 1.0
     ):
-        """Render reachable movement tiles as blue overlays"""
+        """Render reachable movement tiles as blue overlays.
+
+        Same helper and same budget as `get_faction_state.units[].reachable`, so
+        the blue tiles a human sees are exactly the hexes an agent is offered.
+        """
         position = self.world.get_component(unit_entity, HexPosition)
         movement = self.world.get_component(unit_entity, MovementPoints)
         unit = self.world.get_component(unit_entity, Unit)
+        unit_count = self.world.get_component(unit_entity, UnitCount)
 
         if not position or not movement or not unit:
             return
@@ -142,8 +148,8 @@ class EffectRenderSystem(System):
         movement_range = reachable_hexes(
             self.world,
             (position.col, position.row),
-            movement.current_mp,
-            exclude_entity=unit_entity,
+            movement.spendable(unit_count),
+            mover=unit_entity,
         )
 
         # # Get all tiles within movement range

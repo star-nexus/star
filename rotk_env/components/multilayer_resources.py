@@ -74,6 +74,15 @@ class MovementPoints(Component):
         effective = self.base_mp - penalty
         return max(2, effective)
 
+    def spendable(self, unit_count) -> int:
+        """MP this unit may spend on a single move order.
+
+        The one definition of the move budget. `MovementSystem`, the wire
+        affordance, the observation channel and the UI range overlay all read it
+        from here so they cannot drift apart.
+        """
+        return min(int(self.get_effective_movement(unit_count)), int(self.current_mp))
+
     def can_move(self, cost: int) -> bool:
         """Return whether there is enough MP."""
         return self.current_mp >= cost

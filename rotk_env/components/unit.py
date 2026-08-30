@@ -77,8 +77,8 @@ class Combat(Component):
     attack_range: int = 1
 
     def in_attack_range(self, distance: int) -> bool:
-        """Whether `distance` is a legal attack distance (not self, within range)."""
-        return 0 < distance <= self.attack_range
+        """Legal iff hex distance ≤ attack_range. Distance 0 (same hex) is in range."""
+        return 0 <= distance <= self.attack_range
 
     def attack_multiplier(self, h, A_m=0.92, p=0.5550325, s=0.035):
         # h should be in [0,1]
