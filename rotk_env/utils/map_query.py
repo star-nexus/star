@@ -28,6 +28,11 @@ channel and the UI range overlay all read the rules from here.
 Consequence of 3 and 4: `reachable` and `move` are equivalent only when both
 are evaluated against the same world state. A mask read from an older world
 revision is a statement about that revision, not a promise about this one.
+
+Performance note: board membership and impassable terrain are static for the
+current skirmish maps. They are cached on MapData so asking for `reachable`
+for many agents does not rescan every map tile for every unit. Dynamic unit
+occupancy remains live on every query.
 """
 
 from typing import Dict, List, Optional, Set, Tuple
@@ -39,13 +44,43 @@ from .hex_utils import PathFinding
 
 Hex = Tuple[int, int]
 
+_BOARD_CACHE_ATTR = "_map_query_board_cache"
+_IMPASSABLE_CACHE_ATTR = "_map_query_impassable_cache"
+_CACHE_TILE_COUNT_ATTR = "_map_query_cache_tile_count"
+
+
+def _static_cache_valid(map_data: MapData) -> bool:
+    return getattr(map_data, _CACHE_TILE_COUNT_ATTR, None) == len(map_data.tiles)
+
+
+def invalidate_static_map_cache(world) -> None:
+    """Invalidate cached board/terrain geometry after an actual terrain edit.
+
+    Eval/skirmish maps are immutable after load, so normal movement and combat
+    never need this. Scenario editors or future terrain-mutating mechanics can
+    call it explicitly after changing MapData/Terrain.
+    """
+    map_data = world.get_singleton_component(MapData)
+    if not map_data:
+        return
+    for attr in (_BOARD_CACHE_ATTR, _IMPASSABLE_CACHE_ATTR, _CACHE_TILE_COUNT_ATTR):
+        if hasattr(map_data, attr):
+            delattr(map_data, attr)
+
 
 def board_hexes(world) -> Optional[Set[Hex]]:
     """Map tile keys, or None when the world has no MapData (unbounded tests)."""
     map_data = world.get_singleton_component(MapData)
     if not map_data:
         return None
-    return set(map_data.tiles)
+    if not _static_cache_valid(map_data):
+        invalidate_static_map_cache(world)
+    cached = getattr(map_data, _BOARD_CACHE_ATTR, None)
+    if cached is None:
+        cached = frozenset(map_data.tiles)
+        setattr(map_data, _BOARD_CACHE_ATTR, cached)
+        setattr(map_data, _CACHE_TILE_COUNT_ATTR, len(map_data.tiles))
+    return cached
 
 
 def faction_of(world, entity: Optional[int]) -> Optional[Faction]:
@@ -81,16 +116,26 @@ def unit_cells(world, *, exclude_entity: Optional[int] = None) -> Dict[Hex, Set[
 
 
 def impassable_terrain(world) -> Set[Hex]:
-    """Hexes no unit may enter: enter-cost >= 999 (water on the eval maps)."""
-    blocked: Set[Hex] = set()
+    """Hexes no unit may enter: enter-cost >= 999 (water on eval maps).
+
+    The result is static for a loaded skirmish map and therefore cached.
+    """
     map_data = world.get_singleton_component(MapData)
     if not map_data:
-        return blocked
-    for cell, tile_entity in map_data.tiles.items():
-        terrain = world.get_component(tile_entity, Terrain)
-        if terrain and effect_for(terrain.terrain_type).movement_cost >= 999:
-            blocked.add(cell)
-    return blocked
+        return set()
+    if not _static_cache_valid(map_data):
+        invalidate_static_map_cache(world)
+    cached = getattr(map_data, _IMPASSABLE_CACHE_ATTR, None)
+    if cached is None:
+        blocked = set()
+        for cell, tile_entity in map_data.tiles.items():
+            terrain = world.get_component(tile_entity, Terrain)
+            if terrain and effect_for(terrain.terrain_type).movement_cost >= 999:
+                blocked.add(cell)
+        cached = frozenset(blocked)
+        setattr(map_data, _IMPASSABLE_CACHE_ATTR, cached)
+        setattr(map_data, _CACHE_TILE_COUNT_ATTR, len(map_data.tiles))
+    return cached
 
 
 def _held_by_other(cells: Dict[Hex, Set[Faction]], faction: Optional[Faction]) -> Set[Hex]:
