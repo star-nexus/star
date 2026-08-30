@@ -29,16 +29,16 @@ Consequence of 3 and 4: `reachable` and `move` are equivalent only when both
 are evaluated against the same world state. A mask read from an older world
 revision is a statement about that revision, not a promise about this one.
 
-Performance note: board membership and impassable terrain are static for the
-current skirmish maps. They are cached on MapData so asking for `reachable`
-for many agents does not rescan every map tile for every unit. Dynamic unit
-occupancy remains live on every query.
+Performance note: board membership, impassable terrain and terrain enter-costs
+are static for the current skirmish maps. They are cached on MapData so asking
+for `reachable` for many agents does not rescan ECS tile components during each
+Dijkstra/A* expansion. Dynamic unit occupancy remains live on every query.
 """
 
 from typing import Dict, List, Optional, Set, Tuple
 
 from ..components import HexPosition, MapData, Terrain, Unit
-from ..components.terrain import effect_for, movement_cost_at
+from ..components.terrain import effect_for
 from ..prefabs.config import Faction
 from .hex_utils import PathFinding
 
@@ -46,6 +46,7 @@ Hex = Tuple[int, int]
 
 _BOARD_CACHE_ATTR = "_map_query_board_cache"
 _IMPASSABLE_CACHE_ATTR = "_map_query_impassable_cache"
+_COST_CACHE_ATTR = "_map_query_movement_cost_cache"
 _CACHE_TILE_COUNT_ATTR = "_map_query_cache_tile_count"
 
 
@@ -63,7 +64,12 @@ def invalidate_static_map_cache(world) -> None:
     map_data = world.get_singleton_component(MapData)
     if not map_data:
         return
-    for attr in (_BOARD_CACHE_ATTR, _IMPASSABLE_CACHE_ATTR, _CACHE_TILE_COUNT_ATTR):
+    for attr in (
+        _BOARD_CACHE_ATTR,
+        _IMPASSABLE_CACHE_ATTR,
+        _COST_CACHE_ATTR,
+        _CACHE_TILE_COUNT_ATTR,
+    ):
         if hasattr(map_data, attr):
             delattr(map_data, attr)
 
@@ -79,6 +85,29 @@ def board_hexes(world) -> Optional[Set[Hex]]:
     if cached is None:
         cached = frozenset(map_data.tiles)
         setattr(map_data, _BOARD_CACHE_ATTR, cached)
+        setattr(map_data, _CACHE_TILE_COUNT_ATTR, len(map_data.tiles))
+    return cached
+
+
+def movement_costs(world) -> Dict[Hex, int]:
+    """Static enter-cost lookup for the loaded board, cached per MapData."""
+    map_data = world.get_singleton_component(MapData)
+    if not map_data:
+        return {}
+    if not _static_cache_valid(map_data):
+        invalidate_static_map_cache(world)
+    cached = getattr(map_data, _COST_CACHE_ATTR, None)
+    if cached is None:
+        costs: Dict[Hex, int] = {}
+        for cell, tile_entity in map_data.tiles.items():
+            terrain = world.get_component(tile_entity, Terrain)
+            costs[cell] = (
+                int(effect_for(terrain.terrain_type).movement_cost)
+                if terrain is not None
+                else 999
+            )
+        cached = costs
+        setattr(map_data, _COST_CACHE_ATTR, cached)
         setattr(map_data, _CACHE_TILE_COUNT_ATTR, len(map_data.tiles))
     return cached
 
@@ -116,10 +145,7 @@ def unit_cells(world, *, exclude_entity: Optional[int] = None) -> Dict[Hex, Set[
 
 
 def impassable_terrain(world) -> Set[Hex]:
-    """Hexes no unit may enter: enter-cost >= 999 (water on eval maps).
-
-    The result is static for a loaded skirmish map and therefore cached.
-    """
+    """Hexes no unit may enter: enter-cost >= 999 (water on eval maps)."""
     map_data = world.get_singleton_component(MapData)
     if not map_data:
         return set()
@@ -127,12 +153,9 @@ def impassable_terrain(world) -> Set[Hex]:
         invalidate_static_map_cache(world)
     cached = getattr(map_data, _IMPASSABLE_CACHE_ATTR, None)
     if cached is None:
-        blocked = set()
-        for cell, tile_entity in map_data.tiles.items():
-            terrain = world.get_component(tile_entity, Terrain)
-            if terrain and effect_for(terrain.terrain_type).movement_cost >= 999:
-                blocked.add(cell)
-        cached = frozenset(blocked)
+        cached = frozenset(
+            cell for cell, cost in movement_costs(world).items() if cost >= 999
+        )
         setattr(map_data, _IMPASSABLE_CACHE_ATTR, cached)
         setattr(map_data, _CACHE_TILE_COUNT_ATTR, len(map_data.tiles))
     return cached
@@ -182,13 +205,14 @@ def plan_hex_path(
     Destination legality is the caller's separate `occupied_cells` check, so a
     caller can tell "no route exists" from "someone is standing there".
     """
+    costs = movement_costs(world)
     return PathFinding.find_path(
         start,
         goal,
         path_blockers(world, faction_of(world, mover), exclude_entity=mover),
         max_cost,
         walkable=board_hexes(world),
-        step_cost=lambda pos: movement_cost_at(world, pos),
+        step_cost=lambda pos: costs.get(pos, 999),
     )
 
 
@@ -209,11 +233,12 @@ def reachable_hexes(
     blocked = impassable_terrain(world) | _held_by_other(
         cells, faction_of(world, mover)
     )
+    costs = movement_costs(world)
     within_budget = PathFinding.get_movement_range(
         start,
         movement_points,
         blocked,
         walkable=board_hexes(world),
-        step_cost=lambda pos: movement_cost_at(world, pos),
+        step_cost=lambda pos: costs.get(pos, 999),
     )
     return within_budget - set(cells)
