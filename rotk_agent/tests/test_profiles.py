@@ -58,8 +58,10 @@ class TestPromptResolution:
         primed = profiles.load_prompt("realtime", "cn")
         control = profiles.load_prompt("realtime", "cn", variant="baseline")
         assert control != primed
-        assert "思考进攻战术" in primed
-        assert "思考进攻战术" not in control
+        assert "优先评估攻击机会" in primed
+        assert "优先评估攻击机会" not in control
+        assert "以敌方 home_base 坐标作为推进目标" in primed
+        assert "以敌方 home_base 坐标作为推进目标" not in control
 
     def test_variant_falls_back_when_absent(self):
         # There is no turn-based baseline prompt, so it uses the plain one.
@@ -108,9 +110,10 @@ class TestPromptRendering:
         for text in texts:
             for profile in FILTER_PROFILES.values():
                 assert profile.decoder not in text
-            assert "attack_range,attack_power,vision_range,defense" not in text
+            assert "attack_range,attack_power,vision,defense" not in text
             assert "current_manpower,max_manpower,current_AP,current_MP" not in text
-            assert "Do not infer terrain changes from omission" not in text
+            assert "Move only to reachable" not in text
+            assert "attack only attackable" not in text
 
     def test_prompts_omit_filter_schema_and_tactical_policy(self):
         texts = [
@@ -172,9 +175,9 @@ class TestPromptRendering:
             assert "`mountain`" in text
             assert "`water`" in text
             assert "999" not in text
-            from rotk_agent.core.filters import TERRAIN_OMISSION_NOTE
+            from rotk_agent.core.filters import AFFORDANCE_TARGET_NOTE
 
-            assert TERRAIN_OMISSION_NOTE not in text
+            assert AFFORDANCE_TARGET_NOTE not in text
 
     def test_map_briefing_fills_home_bases_in_the_system_prompt(self):
         template = profiles.load_prompt("turn", "cn")

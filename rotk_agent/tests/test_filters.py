@@ -276,14 +276,13 @@ class TestFactionStateAblation:
         decoder = spec.decoder
         assert ("reachable:[[col,row],...]" in decoder) is expect_reachable
         assert ("attackable:[enemy_id,...]" in decoder) is expect_attackable
-        assert (filters.REACHABLE_MOVE_PROTOCOL in decoder) is expect_reachable
+        assert ("Move only to reachable" in decoder) is expect_reachable
+        assert ("attack only attackable" in decoder.lower()) is expect_attackable
         if expect_terrain:
-            assert "currently visible non-plain" in decoder
-            assert "no terrain key" not in decoder
-            assert filters.TERRAIN_OMISSION_NOTE in decoder
+            assert "contains currently visible non-plain cells" in decoder
+            assert "terrain={type:[[col,row],...]}" in decoder
         else:
-            assert "no terrain key" in decoder
-            assert filters.TERRAIN_OMISSION_NOTE not in decoder
+            assert "terrain=" not in decoder
 
     def test_unknown_pack_is_rejected(self):
         with pytest.raises(ValueError, match="Unknown state filter"):
@@ -546,33 +545,36 @@ class TestDumpsForAgent:
 class TestCompactDecoder:
     def test_pack_f_decoder_lists_every_own_unit_column(self):
         decoder = filters.FILTER_PROFILES["F"].decoder
-        assert (
+        assert decoder == (
+            "state; fog; counts=[total,alive,actionable]\n"
+            "\n"
             "units=[id,type,col,row,current_manpower,max_manpower,current_AP,"
-            "current_MP,attack_range,attack_power,vision_range,defense,"
-            "{reachable:[[col,row],...],attackable:[enemy_id,...]}]"
-        ) in decoder
-        assert filters.CURRENT_RESOURCE_NOTE in decoder
-        assert filters.TERRAIN_OMISSION_NOTE in decoder
-        assert "current,max,AP,MP" not in decoder
-        assert "enemies" in decoder
-        assert "terrain" in decoder
-        assert "currently visible non-plain hexes only" in decoder
-        assert "visible plain or currently unknown" in decoder
-        assert "unlisted hexes are plain" not in decoder
-        assert "not the raw ENV object" in decoder
-        assert "state; fog" in decoder
+            "current_MP,attack_range,attack_power,vision,defense,"
+            "{reachable:[[col,row],...],attackable:[enemy_id,...]}]\n"
+            "\n"
+            "enemies=[id,type,faction,col,row,current]\n"
+            "\n"
+            "terrain={type:[[col,row],...]} contains currently visible "
+            "non-plain cells.\n"
+            "\n"
+            f"{filters.LATEST_STATE_NOTE}\n"
+            f"{filters.AFFORDANCE_TARGET_NOTE}"
+        )
         assert "Pick move" not in decoder
         assert "Pick attack" not in decoder
         assert " where " not in decoder
-        assert decoder.endswith(filters.REACHABLE_MOVE_PROTOCOL)
-        assert decoder.count(filters.REACHABLE_MOVE_PROTOCOL) == 1
 
     def test_reachable_protocol_only_on_packs_that_expose_reachable(self):
         for name, profile in filters.FILTER_PROFILES.items():
-            has = filters.REACHABLE_MOVE_PROTOCOL in profile.decoder
-            assert has is profile.reachable, name
-            if not profile.reachable:
-                assert "MUST" not in profile.decoder
+            assert (
+                "Move only to reachable" in profile.decoder
+            ) is profile.reachable, name
+            assert (
+                "attack only attackable" in profile.decoder.lower()
+            ) is profile.attackable, name
+            assert (
+                filters.AFFORDANCE_TARGET_NOTE in profile.decoder
+            ) is (profile.reachable and profile.attackable), name
 
     def test_decoder_has_no_tactical_policy_on_any_pack(self):
         for profile in filters.FILTER_PROFILES.values():
@@ -591,23 +593,14 @@ class TestCompactDecoder:
             assert len(row) == n_cols
             assert ("reachable:[[col,row],...]" in decoder) is profile.reachable
             assert ("attackable:[enemy_id,...]" in decoder) is profile.attackable
-            assert (
-                filters.REACHABLE_MOVE_PROTOCOL in decoder
-            ) is profile.reachable
-            assert ("no terrain key" in decoder) is (not profile.terrain)
+            assert ("Move only to reachable" in decoder) is profile.reachable
+            assert ("attack only attackable" in decoder.lower()) is profile.attackable
+            assert ("terrain=" in decoder) is profile.terrain
             assert ("terrain" in result) is profile.terrain
-            assert (filters.TERRAIN_OMISSION_NOTE in decoder) is profile.terrain
             basic = ",".join(filters.OWN_UNIT_BASIC_COLUMNS)
             assert f"units=[{basic}" in decoder
             assert f"enemies=[{','.join(filters.ENEMY_UNIT_COLUMNS)}]" in decoder
-            assert filters.CURRENT_RESOURCE_NOTE in decoder
-
-    def test_decoder_labels_ap_mp_as_current_snapshot_resources(self):
-        for profile in filters.FILTER_PROFILES.values():
-            decoder = profile.decoder
-            assert "current_manpower,max_manpower,current_AP,current_MP" in decoder
-            assert ",AP,MP," not in decoder
-            assert filters.CURRENT_RESOURCE_NOTE in decoder
+            assert filters.LATEST_STATE_NOTE in decoder
 
     def test_compact_rows_follow_decoder_column_names(self):
         values = filters._own_unit_basic_values(

@@ -156,8 +156,7 @@ ATTACK_PARAMS = {
 }
 
 FACTION_STATE_CALL_RULES = (
-    "Query your Units and currently visible enemies. "
-    "faction must be your own. Costs no AP or MP."
+    "Get the latest state for your own faction. Costs no AP/MP."
 )
 
 FACTION_STATE_PARAMS = {
@@ -312,9 +311,7 @@ def _param_schema_for(
     # description so catalog field names cannot contradict the decoder.
     if name == "get_faction_state":
         profile = faction_state_spec or resolve_faction_state_filter()
-        schema["description"] = (
-            f"{FACTION_STATE_CALL_RULES} {profile.decoder}"
-        )
+        schema["description"] = f"{FACTION_STATE_CALL_RULES}\n\n{profile.decoder}"
 
     if board is not None:
         schema = _apply_board_bounds(schema, board)

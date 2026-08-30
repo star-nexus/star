@@ -37,7 +37,7 @@ OWN_UNIT_BASIC_COLUMNS = (
     "current_MP",
     "attack_range",
     "attack_power",
-    "vision_range",
+    "vision",
     "defense",
 )
 ENEMY_UNIT_COLUMNS = ("id", "type", "faction", "col", "row", "current")
@@ -101,27 +101,10 @@ def resolve_faction_state_filter(
         ) from None
 
 
-CURRENT_RESOURCE_NOTE = (
-    "current_AP and current_MP are the unit's currently available resources "
-    "in this snapshot, not maximum values."
-)
-TERRAIN_OMISSION_NOTE = (
-    "terrain is a partial snapshot under fog. A coordinate absent from the "
-    "latest terrain object does NOT imply that its terrain changed or became "
-    "plain; it may simply be currently unobserved. Do not infer terrain "
-    "changes from omission."
-)
-REACHABLE_MOVE_PROTOCOL = (
-    "For every move action, target_position MUST be selected exactly from that "
-    "unit's reachable list in the latest get_faction_state result. Do not invent, "
-    "estimate, calculate, or substitute another coordinate. If reachable is empty, "
-    "that unit currently has no legal move target. Treat reachable as authoritative "
-    "for movement legality. Do not override it using your own distance, terrain, "
-    "pathfinding, obstacle, or occupancy assumptions. If a coordinate appears in "
-    "reachable, it is a legal move target for that unit in this snapshot. When "
-    "multiple historical get_faction_state results exist, use the most recent one "
-    "for current unit positions, MP, and reachable when issuing actions."
-)
+LATEST_STATE_NOTE = "Use the latest result for current state."
+AFFORDANCE_TARGET_NOTE = "Move only to reachable; attack only attackable."
+MOVE_ONLY_NOTE = "Move only to reachable."
+ATTACK_ONLY_NOTE = "Attack only attackable."
 
 
 def _affordance_anchor_schema(spec: FactionStateFilterSpec) -> str:
@@ -147,27 +130,24 @@ def _compact_decoder_text(spec: FactionStateFilterSpec) -> str:
     if anchor:
         units_schema = f"{units_schema},{anchor}"
 
-    text = (
-        "The result you receive is filtered compact JSON (no extra whitespace), "
-        "not the raw ENV object. "
-        "state; fog; counts=[total,alive,actionable]; "
-        f"units=[{units_schema}]"
-    )
-    text += f"; enemies=[{','.join(ENEMY_UNIT_COLUMNS)}]"
+    blocks = [
+        "state; fog; counts=[total,alive,actionable]",
+        f"units=[{units_schema}]",
+        f"enemies=[{','.join(ENEMY_UNIT_COLUMNS)}]",
+    ]
     if spec.terrain:
-        text += (
-            "; terrain={type:[[col,row],...]} currently visible non-plain "
-            "hexes only; unlisted hexes may be visible plain or currently unknown"
+        blocks.append(
+            "terrain={type:[[col,row],...]} contains currently visible "
+            "non-plain cells."
         )
-    else:
-        text += "; no terrain key"
-    text += "."
-    text += " " + CURRENT_RESOURCE_NOTE
-    if spec.terrain:
-        text += " " + TERRAIN_OMISSION_NOTE
-    if spec.reachable:
-        text += " " + REACHABLE_MOVE_PROTOCOL
-    return text
+    notes = [LATEST_STATE_NOTE]
+    if spec.reachable and spec.attackable:
+        notes.append(AFFORDANCE_TARGET_NOTE)
+    elif spec.reachable:
+        notes.append(MOVE_ONLY_NOTE)
+    elif spec.attackable:
+        notes.append(ATTACK_ONLY_NOTE)
+    return "\n\n".join(blocks) + "\n\n" + "\n".join(notes)
 
 
 def dumps_for_agent(data: Any) -> str:
@@ -275,7 +255,7 @@ def _own_unit_basic_values(unit: Dict[str, Any]) -> Dict[str, Any]:
         "current_MP": resources.get("remaining_movement_points"),
         "attack_range": properties.get("attack_range"),
         "attack_power": properties.get("attack_power"),
-        "vision_range": properties.get("vision_range"),
+        "vision": properties.get("vision_range"),
         "defense": properties.get("defense"),
     }
 
@@ -554,8 +534,9 @@ __all__ = [
     "FILTER_PROFILES",
     "DEFAULT_FACTION_STATE_FILTER",
     "FactionStateFilterSpec",
-    "CURRENT_RESOURCE_NOTE",
-    "TERRAIN_OMISSION_NOTE",
-    "REACHABLE_MOVE_PROTOCOL",
+    "LATEST_STATE_NOTE",
+    "AFFORDANCE_TARGET_NOTE",
+    "MOVE_ONLY_NOTE",
+    "ATTACK_ONLY_NOTE",
     "ACTION_FILTERS",
 ]

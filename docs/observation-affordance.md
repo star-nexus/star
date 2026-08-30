@@ -244,10 +244,10 @@ after ENV, not on the wire:
 
 Compact rows (not the wire):
 
-- Own units are 12 positional columns. The tool-schema decoder names manpower
-  `current_manpower` / `max_manpower` and resources `current_AP` / `current_MP`
-  (remaining this snapshot, not caps). That decoder lives on
-  `get_faction_state`, not in the system prompt.
+- Own units are 12 positional columns: `id,type,col,row,current_manpower,
+  max_manpower,current_AP,current_MP,attack_range,attack_power,vision,defense`.
+  The decoder lives on `get_faction_state`, not in the system prompt. Packs
+  with masks append `{reachable:...}` and/or `{attackable:...}`.
 - Packs with terrain (E, F) keep visible **non-plain** hexes as
   `{type: [[col,row],...]}` and drop per-tile `movement_cost`. An absent
   coordinate does **not** mean the terrain changed or became plain; it may be a
@@ -255,5 +255,6 @@ Compact rows (not the wire):
 - Because E/F drop the numeric cost, the reference system prompts include the
   enter-cost table above. Without it, Filter E asks the model to guess whether
   `water` is walkable — that is not the ablation.
-- Packs with `reachable` (B, D, F) tell the model to copy `target_position`
-  from that unit’s latest `reachable` list.
+- Use the latest `get_faction_state` result. Packs with both masks (D, F):
+  `Move only to reachable; attack only attackable.` Packs with one mask keep
+  only that half.

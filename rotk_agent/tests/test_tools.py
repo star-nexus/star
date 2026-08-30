@@ -69,7 +69,7 @@ class TestFallbackSchema:
             if v.get("title") == "get_faction_state"
         )
         assert variant["description"] == (
-            f"{FACTION_STATE_CALL_RULES} {FILTER_PROFILES['F'].decoder}"
+            f"{FACTION_STATE_CALL_RULES}\n\n{FILTER_PROFILES['F'].decoder}"
         )
 
 
@@ -178,7 +178,7 @@ class TestJoinPayload:
             faction_state_spec=spec,
         )
         description = schema["properties"]["params"]["oneOf"][0]["description"]
-        assert description == f"{FACTION_STATE_CALL_RULES} {spec.decoder}"
+        assert description == f"{FACTION_STATE_CALL_RULES}\n\n{spec.decoder}"
         assert "owner/commandable" not in description
         assert "visible_enemy_units" not in description
         assert "reachable" not in description
