@@ -155,21 +155,20 @@ class GameConfig:
     """游戏总配置类"""
 
     # Display. Real-time AP/MP recover 1/FPS seconds per frame; keep at 60.
+    # WINDOW_* start at this floor; GameEngine grows to the desktop and
+    # sync_from_display() follows live resizes.
+    MIN_WINDOW_WIDTH = 1200
+    MIN_WINDOW_HEIGHT = 800
     WINDOW_WIDTH = 1200
     WINDOW_HEIGHT = 800
     FPS = 60
 
-    # 地图配置
-    MAP_WIDTH = 15
-    MAP_HEIGHT = 15
     HEX_SIZE = 50
     HEX_ORIENTATION = HexOrientation.FLAT_TOP  # 六边形方向：尖顶向上或平顶向上
 
     # 游戏配置
     MAX_TURNS = 100  # 回合制超时回合数（超过后平局）
     MAX_REALTIME_SECONDS = 3600  # 实时制超时秒数（到达后平局）
-    # Per-faction mix: [infantry, archer, cavalry].
-    UNIT_MIX = [1, 3, 1]
     VISION_FADE_ALPHA = 128  # 战争迷雾透明度
 
     # 战争迷雾颜色配置
@@ -316,6 +315,22 @@ class GameConfig:
         TerrainType.INHIBITOR: (255, 20, 147),  # 深粉色 - 兵营
         TerrainType.ANCIENT: (255, 215, 0),  # 金色 - 主堡
     }
+
+    @classmethod
+    def sync_from_display(cls) -> None:
+        """Copy the live pygame surface size into WINDOW_WIDTH/HEIGHT."""
+        try:
+            import pygame
+
+            surface = pygame.display.get_surface()
+        except Exception:
+            return
+        if surface is None:
+            return
+        width, height = surface.get_size()
+        if width >= 2 and height >= 2:
+            cls.WINDOW_WIDTH = width
+            cls.WINDOW_HEIGHT = height
 
     @classmethod
     def get_default_players(cls) -> Dict[Faction, PlayerConfig]:

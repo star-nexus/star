@@ -9,6 +9,7 @@ from .engine_event import (
     MouseButtonUpEvent,
     MouseMotionEvent,
     MouseWheelEvent,
+    WindowResizeEvent,
 )
 
 
@@ -30,6 +31,7 @@ class InputSystem:
 
         self.event_manager = EventBus()
         self.logger = logging.getLogger(__name__)
+        self._last_window_size: tuple[int, int] | None = None
         self._initialized = True
 
     def update(self):
@@ -96,6 +98,13 @@ class InputSystem:
                     self.logger.debug(
                         f"鼠标移动: pos {event.pos} rel {event.rel} buttons {event.buttons}"
                     )
+                case pygame.VIDEORESIZE:
+                    self._publish_window_resize(event.w, event.h)
+                case t if t is not None and t in (
+                    getattr(pygame, "WINDOWRESIZED", None),
+                    getattr(pygame, "WINDOWSIZECHANGED", None),
+                ):
+                    self._publish_window_resize(event.x, event.y)
                 case pygame.MOUSEWHEEL:
                     self._publisher(
                         MouseWheelEvent(
@@ -111,6 +120,20 @@ class InputSystem:
                     )
                 case _:
                     self.logger.debug(f"其他事件: {event}")
+
+    def _publish_window_resize(self, width: int, height: int) -> None:
+        size = (int(width), int(height))
+        if size[0] <= 0 or size[1] <= 0 or size == self._last_window_size:
+            return
+        self._last_window_size = size
+        self._publisher(
+            WindowResizeEvent(
+                width=size[0],
+                height=size[1],
+                sender=type(self).__name__,
+                timestamp=pygame.time.get_ticks(),
+            )
+        )
 
     def _publisher(self, event: Event):
         """发布输入事件"""

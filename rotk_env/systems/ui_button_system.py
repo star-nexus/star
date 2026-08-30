@@ -49,9 +49,30 @@ class UIButtonSystem(System):
 
     def update(self, delta_time: float) -> None:
         """Update button system"""
+        self._layout_ui_buttons()
         self._update_button_states()
         self._handle_button_clicks()
         self._render_buttons()
+
+    def _layout_ui_buttons(self) -> None:
+        collection = self.world.get_singleton_component(UIButtonCollection)
+        if not collection:
+            return
+        w, h = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
+        specs = {
+            "end_turn": (w - 150, h - 60),
+            "settings": (w - 80, 10),
+            "help": (w - 160, 10),
+            "stats": (w - 240, 10),
+        }
+        for name, (x, y) in specs.items():
+            entity = collection.get_button(name)
+            if entity is None:
+                continue
+            button = self.world.get_component(entity, UIButton)
+            if button:
+                button.x = x
+                button.y = y
 
     def _create_ui_buttons(self):
         """Create UI buttons"""

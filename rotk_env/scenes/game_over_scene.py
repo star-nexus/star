@@ -115,11 +115,32 @@ class GameOverScene(Scene):
 
     def update(self, dt: float) -> None:
         """Update scene world."""
+        GameConfig.sync_from_display()
+        self._layout_buttons()
         if self.world:
             self.world.update(dt)
 
+    def _layout_buttons(self) -> None:
+        if not getattr(self, "world", None):
+            return
+        button_component = self.world.get_singleton_component(GameOverButtons)
+        if not button_component:
+            return
+        screen_width = GameConfig.WINDOW_WIDTH
+        screen_height = GameConfig.WINDOW_HEIGHT
+        button_width = 150
+        button_spacing = 20
+        total_width = 3 * button_width + 2 * button_spacing
+        start_x = (screen_width - total_width) // 2
+        button_y = screen_height - 150
+        for i, button in enumerate(button_component.buttons.values()):
+            button.x = start_x + i * (button_width + button_spacing)
+            button.y = button_y
+
     def handle_event(self, event: Event) -> None:
         """Handle mouse input events."""
+        if not self.is_active or not getattr(self, "world", None):
+            return
         if isinstance(event, MouseButtonDownEvent):
             if event.button == 1:  # left click
                 self._handle_mouse_click(event.pos)
@@ -150,14 +171,16 @@ class GameOverScene(Scene):
 
     def _handle_mouse_wheel(self, y: int) -> None:
         """Handle mouse wheel: forward to settlement report system."""
-        # Forward to settlement report render system
+        if not getattr(self, "world", None):
+            return
         for system in self.world.systems:
             if isinstance(system, SettlementReportRenderSystem):
                 system.handle_scroll(y)
                 break
 
     def exit(self):
-        return super().exit()
+        super().exit()
+        self.cleanup()
 
     def _dispatch_button(self, action: str) -> None:
         """Map button action ids to scene behavior."""

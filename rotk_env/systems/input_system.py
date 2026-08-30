@@ -37,6 +37,9 @@ class InputHandlingSystem(System):
         self.hex_converter = HexConverter(
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
+        self.min_zoom = 0.5
+        self.max_zoom = 3.0
+        self._window_size: tuple[int, int] | None = None
 
     def initialize(self, world: World) -> None:
         """Initialize input system and default singletons."""
@@ -50,15 +53,62 @@ class InputHandlingSystem(System):
         ui_state = UIState()
         self.world.add_singleton_component(ui_state)
 
-        # Camera – center (0,0) of map at screen center
+        # Camera – center (0,0) of map at screen center. Zoom out on boards
+        # larger than the window so a 33×33 map is visible, not just ~15 hexes.
         camera = Camera()
         camera.set_offset(GameConfig.WINDOW_WIDTH // 2, GameConfig.WINDOW_HEIGHT // 2)
+        map_data = self.world.get_singleton_component(MapData)
+        fit = self._zoom_to_fit_map(map_data)
+        self.min_zoom = min(0.5, max(0.15, fit * 0.75))
+        camera.zoom = min(1.0, fit)
         self.world.add_singleton_component(camera)
+        self._window_size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+
+    def _zoom_to_fit_map(self, map_data: MapData | None) -> float:
+        """Zoom that fits the loaded board in the window (capped at 1.0)."""
+        if map_data is None or not map_data.tiles:
+            return 1.0
+        xs = []
+        ys = []
+        for col, row in map_data.tiles:
+            x, y = self.hex_converter.hex_to_pixel(col, row)
+            xs.append(x)
+            ys.append(y)
+        pad = GameConfig.HEX_SIZE * 2
+        world_w = max(xs) - min(xs) + pad * 2
+        world_h = max(ys) - min(ys) + pad * 2
+        if world_w <= 0 or world_h <= 0:
+            return 1.0
+        zx = GameConfig.WINDOW_WIDTH / world_w
+        zy = GameConfig.WINDOW_HEIGHT / world_h
+        return max(0.15, min(1.0, min(zx, zy) * 0.92))
+
+    def _follow_window_resize(self) -> None:
+        size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+        if self._window_size is None:
+            self._window_size = size
+            return
+        if size == self._window_size:
+            return
+        old_w, old_h = self._window_size
+        camera = self.world.get_singleton_component(Camera)
+        if camera is not None:
+            camera.offset_x += (size[0] - old_w) / 2
+            camera.offset_y += (size[1] - old_h) / 2
+        fit = self._zoom_to_fit_map(self.world.get_singleton_component(MapData))
+        self.min_zoom = min(0.5, max(0.15, fit * 0.75))
+        if camera is not None:
+            camera.zoom = min(self.max_zoom, max(self.min_zoom, camera.zoom))
+        self._window_size = size
 
     def subscribe_events(self):
         """Subscribe input events to handlers."""
         EBS.subscribe(KeyDownEvent, self._handle_key_down)
         EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
+
+    def cleanup(self) -> None:
+        EBS.unsubscribe(KeyDownEvent, self._handle_key_down)
+        EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_click)
 
     def update(self, delta_time: float) -> None:
         """Process input per frame (mouse position, hover tile, held keys)."""
@@ -67,6 +117,8 @@ class InputHandlingSystem(System):
 
         if not input_state or not ui_state:
             return
+
+        self._follow_window_resize()
 
         # Update mouse position
         mouse_pos = pygame.mouse.get_pos()
@@ -90,6 +142,8 @@ class InputHandlingSystem(System):
     def _handle_mouse_click(self, event: MouseButtonDownEvent):
         """Handle mouse click."""
         ui_state = self.world.get_singleton_component(UIState)
+        if not ui_state:
+            return
 
         # First, check if clicking on UI
         # if ui_layer_manager.should_block_map_interaction(event.pos):
@@ -149,6 +203,8 @@ class InputHandlingSystem(System):
 
     def _handle_key_down(self, event: KeyDownEvent):
         """Handle key down (edge-triggered actions from the shared keymap)."""
+        if self.world is None or self.world.get_singleton_component(UIState) is None:
+            return
         binding = binding_for_key(event.key)
         if binding is None:
             return
@@ -261,9 +317,9 @@ class InputHandlingSystem(System):
 
         # Camera zoom
         if keys[pygame.K_PLUS] or keys[pygame.K_EQUALS]:  # plus: zoom in
-            camera.zoom = min(camera.zoom + 2.0 * delta_time, 3.0)  # max 3x
+            camera.zoom = min(camera.zoom + 2.0 * delta_time, self.max_zoom)
         if keys[pygame.K_MINUS]:  # minus: zoom out
-            camera.zoom = max(camera.zoom - 2.0 * delta_time, 0.5)  # min 0.5x
+            camera.zoom = max(camera.zoom - 2.0 * delta_time, self.min_zoom)
 
     def _screen_to_hex(self, screen_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """Convert screen coordinates to hex (high-precision)."""

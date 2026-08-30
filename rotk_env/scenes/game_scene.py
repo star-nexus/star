@@ -7,7 +7,7 @@ from framework.engine.scenes import Scene, SMS
 from framework import World
 from ..components.settlement_report import SettlementReport
 from ..components import GameState, Unit, UnitCount
-from ..prefabs.config import Faction, PlayerType, GameMode
+from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from performance_profiler import profiler
 
@@ -80,6 +80,7 @@ class GameScene(Scene):
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
+            GameConfig.sync_from_display()
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
             with profiler.time_system("world_update"):

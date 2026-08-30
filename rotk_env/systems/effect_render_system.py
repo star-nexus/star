@@ -19,6 +19,7 @@ from ..components import (
     Camera,
     FogOfWar,
     GameState,
+    MapData,
     EffectAnimation,
     AttackAnimation,
     ProjectileAnimation,
@@ -249,17 +250,16 @@ class EffectRenderSystem(System):
             position.col, position.row, combat.attack_range
         )
 
+        map_data = self.world.get_singleton_component(MapData)
+
         # Render attack range overlays
         for tile_col, tile_row in attack_tiles:
             # Skip the unit's own tile
             if tile_col == position.col and tile_row == position.row:
                 continue
 
-            # Skip tiles outside map bounds
-            if not (
-                -GameConfig.MAP_WIDTH // 2 <= tile_col < GameConfig.MAP_WIDTH // 2
-                and -GameConfig.MAP_HEIGHT // 2 <= tile_row < GameConfig.MAP_HEIGHT // 2
-            ):
+            # Skip tiles outside the loaded map (combat range is unchanged)
+            if map_data is not None and (tile_col, tile_row) not in map_data.tiles:
                 continue
 
             # Convert to screen coordinates

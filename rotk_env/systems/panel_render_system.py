@@ -233,9 +233,11 @@ class PanelRenderSystem(System):
         if not map_data:
             return
 
-        # Calculate scale ratio
-        scale_x = minimap_size / GameConfig.MAP_WIDTH
-        scale_y = minimap_size / GameConfig.MAP_HEIGHT
+        # Calculate scale ratio from the loaded board, not a global map size
+        board_w = max(1, map_data.width)
+        board_h = max(1, map_data.height)
+        scale_x = minimap_size / board_w
+        scale_y = minimap_size / board_h
         scale = min(scale_x, scale_y)
 
         # Render terrain (simplified)
@@ -245,8 +247,8 @@ class PanelRenderSystem(System):
                 continue
 
             # Convert coordinates
-            pixel_x = (q + GameConfig.MAP_WIDTH // 2) * scale
-            pixel_y = (r + GameConfig.MAP_HEIGHT // 2) * scale
+            pixel_x = (q + board_w // 2) * scale
+            pixel_y = (r + board_h // 2) * scale
 
             mini_x = minimap_x + pixel_x
             mini_y = minimap_y + pixel_y
@@ -269,8 +271,8 @@ class PanelRenderSystem(System):
                 continue
 
             # Convert coordinates
-            pixel_x = (position.col + GameConfig.MAP_WIDTH // 2) * scale
-            pixel_y = (position.row + GameConfig.MAP_HEIGHT // 2) * scale
+            pixel_x = (position.col + board_w // 2) * scale
+            pixel_y = (position.row + board_h // 2) * scale
 
             mini_x = minimap_x + pixel_x
             mini_y = minimap_y + pixel_y

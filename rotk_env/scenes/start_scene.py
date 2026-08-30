@@ -5,10 +5,16 @@ Start scene.
 import pygame
 from typing import Dict, Any, Optional
 from framework import World
-from framework.engine import RMS, EBS, MouseButtonDownEvent, MouseMotionEvent, Event, KeyDownEvent, QuitEvent
+from framework.engine import RMS, EBS, MouseButtonDownEvent, MouseMotionEvent, MouseWheelEvent, Event, KeyDownEvent, QuitEvent
 from framework.engine.scenes import Scene
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
-from ..components.start_menu import StartMenuConfig, StartMenuButtons, StartMenuOptions
+from ..components.start_menu import (
+    StartMenuConfig,
+    StartMenuButtons,
+    StartMenuOptions,
+    start_panel_layout,
+    clamp_scenario_scroll,
+)
 from ..systems.start_scene_render_system import StartSceneRenderSystem
 
 
@@ -68,16 +74,46 @@ class StartScene(Scene):
     def subscribe_events(self) -> None:
         EBS.subscribe(MouseMotionEvent, self._update_hover_state)
         EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
+        EBS.subscribe(MouseWheelEvent, self._handle_mouse_wheel)
         # EBS.subscribe(KeyDownEvent, self._handle_key_down)
 
     def update(self, dt: float) -> None:
         """Update the scene."""
-
-        # Update render system
+        GameConfig.sync_from_display()
+        self._layout_buttons()
+        self._clamp_scenario_scroll()
         self.world.update(dt)
+
+    def _clamp_scenario_scroll(self) -> None:
+        config = self.world.get_singleton_component(StartMenuConfig)
+        if not config:
+            return
+        geom = start_panel_layout(len(config.scenario_catalog or []))
+        config.scenario_scroll = clamp_scenario_scroll(
+            config.scenario_scroll, len(config.scenario_catalog or []), geom
+        )
+
+    def _layout_buttons(self) -> None:
+        buttons_component = self.world.get_singleton_component(StartMenuButtons)
+        if not buttons_component:
+            return
+        screen_width = GameConfig.WINDOW_WIDTH
+        screen_height = GameConfig.WINDOW_HEIGHT
+        start = buttons_component.buttons.get("start_game")
+        quit_btn = buttons_component.buttons.get("quit")
+        if start:
+            start["rect"] = pygame.Rect(
+                screen_width // 2 - 100, screen_height - 150, 200, 50
+            )
+        if quit_btn:
+            quit_btn["rect"] = pygame.Rect(
+                screen_width // 2 - 100, screen_height - 80, 200, 50
+            )
 
     def _update_hover_state(self, event: MouseMotionEvent) -> None:
         """Update hover state."""
+        if not self.is_active:
+            return
         buttons_component = self.world.get_singleton_component(StartMenuButtons)
         if not buttons_component:
             return
@@ -137,6 +173,9 @@ class StartScene(Scene):
 
     def _handle_mouse_click(self, event: MouseButtonDownEvent) -> None:
         """Handle mouse click."""
+        if not self.is_active:
+            return
+        GameConfig.sync_from_display()
         pos = event.pos
         # Check button clicks
         buttons_component = self.world.get_singleton_component(StartMenuButtons)
@@ -155,32 +194,17 @@ class StartScene(Scene):
         if not config:
             return
 
-        # Get screen size
-        screen_width = GameConfig.WINDOW_WIDTH
-        screen_height = GameConfig.WINDOW_HEIGHT
-        # Panel position
-        panel_x = (screen_width - 600) // 2
-        panel_y = 200
+        geom = start_panel_layout(len(config.scenario_catalog or []))
+        panel_x = geom["panel_x"]
 
-        print(
-            f"Click position: {pos}, panel position: ({panel_x}, {panel_y})"
-        )  # Debug
-
-        # Check game mode option clicks
-        mode_y = panel_y + 30 + 60  # panel_y + 30 (y_offset) + 60 (option_y offset)
+        mode_y = geom["mode_y"] + 60
         for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
-            # Vertical layout (kept consistent with render system)
-            option_rect = pygame.Rect(panel_x + 50, mode_y + i * 45, 300, 30)
-            print(
-                f"Mode option {i} ({mode.value}) rect: {option_rect}"
-            )  # Debug
+            option_rect = pygame.Rect(panel_x + 50, mode_y + i * 45, 250, 30)
             if option_rect.collidepoint(pos):
                 config.selected_mode = mode
-                print(f"Selected mode: {mode.value}")  # Debug
                 return
 
-        # Check player configuration option clicks
-        player_y = panel_y + 190 + 60  # panel_y + 190 (y_offset + 160) + 60 (option_y offset)
+        player_y = geom["player_y"] + 60
         player_configs = [
             {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
             {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
@@ -192,25 +216,47 @@ class StartScene(Scene):
         ]
 
         for i, player_config in enumerate(player_configs):
-            # 45px spacing (kept consistent with render system)
-            option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 400, 30)
-            config_name = ["Human vs AI", "AI vs AI", "Three Kingdoms Mode"][i]
-            print(f"Player config {i} ({config_name}) rect: {option_rect}")  # Debug
+            option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
             if option_rect.collidepoint(pos):
                 config.selected_players = player_config.copy()
-                print(
-                    f"Selected player config: {config_name}, factions: {list(player_config.keys())}"
-                )  # Debug
                 return
 
-        # # Check scenario option clicks
-        # scenario_y = panel_y + 290
-        # scenarios = ["default", "plains", "mountains"]
-        # for i, scenario in enumerate(scenarios):
-        #     option_rect = pygame.Rect(panel_x + 50, scenario_y + i * 30, 200, 30)
-        #     if option_rect.collidepoint(pos):
-        #         config.selected_scenario = scenario
-        #         return
+        catalog = config.scenario_catalog or []
+        option_y = geom["scenario_option_y"]
+        cols = geom["scenario_cols"]
+        col_w = geom["scenario_col_w"]
+        row_h = geom["scenario_row_h"]
+        visible_rows = geom["scenario_visible_rows"]
+        scroll = clamp_scenario_scroll(config.scenario_scroll, len(catalog), geom)
+        config.scenario_scroll = scroll
+        for i, item in enumerate(catalog):
+            col = i % cols
+            vis_row = i // cols - scroll
+            if vis_row < 0 or vis_row >= visible_rows:
+                continue
+            option_rect = pygame.Rect(
+                panel_x + 50 + col * col_w,
+                option_y + vis_row * row_h,
+                col_w - 20,
+                row_h - 4,
+            )
+            if option_rect.collidepoint(pos):
+                config.selected_scenario = item["scenario"]
+                return
+
+    def _handle_mouse_wheel(self, event: MouseWheelEvent) -> None:
+        if not self.is_active:
+            return
+        config = self.world.get_singleton_component(StartMenuConfig)
+        if not config:
+            return
+        GameConfig.sync_from_display()
+        geom = start_panel_layout(len(config.scenario_catalog or []))
+        config.scenario_scroll = clamp_scenario_scroll(
+            config.scenario_scroll - int(event.y),
+            len(config.scenario_catalog or []),
+            geom,
+        )
 
     def _start_game(self) -> None:
         """Start the game."""
@@ -243,6 +289,7 @@ class StartScene(Scene):
             self.world.reset()
         EBS.unsubscribe(MouseMotionEvent, self._update_hover_state)
         EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_click)
+        EBS.unsubscribe(MouseWheelEvent, self._handle_mouse_wheel)
 
     def get_game_config(self) -> Optional[Dict[str, Any]]:
         """Get the prepared game configuration."""

@@ -54,12 +54,14 @@ class EventBus:
     def publish(self, event: Event) -> None:
         """发布事件"""
         event_type = type(event)
-        if event_type in self._listeners:
-            for callback in self._listeners[event_type]:
-                try:
-                    callback(event)
-                except Exception as e:
-                    print(f"事件处理错误: {e}")
+        # Copy so subscribe/unsubscribe inside a handler cannot skip
+        # listeners or deliver this event to a scene that just entered.
+        listeners = list(self._listeners.get(event_type, ()))
+        for callback in listeners:
+            try:
+                callback(event)
+            except Exception as e:
+                print(f"事件处理错误: {e}")
 
     def clear(self) -> None:
         """清空所有监听器"""

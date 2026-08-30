@@ -5,8 +5,6 @@
   const HEX_SIZE = 28;
   const SQRT3 = Math.sqrt(3);
   const STORAGE_KEY = "star-map-editor-v1.5";
-  const EXPECTED_FORMATION_CELLS = 5;
-
   const TERRAIN = {
     ".": { name: "Plain", color: "#90ee90", movement: 1 },
     "~": { name: "Water", color: "#87cefa", movement: 999 },
@@ -33,6 +31,7 @@
     mode: "edit",
     referenceImage: null,
     referenceImageUrl: null,
+    unitMix: null,
     undo: [],
     redo: [],
     strokeActive: false,
@@ -124,6 +123,7 @@
       height: state.height,
       terrain: Array.from(state.terrain.entries()),
       formations: JSON.parse(JSON.stringify(state.formations)),
+      unitMix: state.unitMix == null ? null : JSON.parse(JSON.stringify(state.unitMix)),
     };
   }
 
@@ -134,6 +134,7 @@
     state.height = snap.height;
     state.terrain = new Map(snap.terrain);
     state.formations = JSON.parse(JSON.stringify(snap.formations));
+    state.unitMix = snap.unitMix == null ? null : JSON.parse(JSON.stringify(snap.unitMix));
     syncInputs();
     render();
   }
@@ -353,15 +354,17 @@
   }
 
   function mapToDocument() {
-    return {
+    const doc = {
       id: state.id.trim() || "untitled",
       name: state.name.trim() || "Untitled Map",
       width: state.width,
       height: state.height,
       coordinate_system: "centered",
       terrain: rowsNorthFirst().map((row) => cols().map((col) => state.terrain.get(key(col, row)) || ".").join("")),
-      formations: Object.fromEntries(Object.entries(state.formations).map(([f, cells]) => [f, cells.map(([c,r]) => [c,r])])),
+      formations: Object.fromEntries(Object.entries(state.formations).map(([f, cells]) => [f, cells.map((cell) => cell.length > 2 ? [cell[0], cell[1], cell[2]] : [cell[0], cell[1]])])),
     };
+    if (state.unitMix != null) doc.unit_mix = state.unitMix;
+    return doc;
   }
 
   function loadDocument(doc, { checkpointBefore = true } = {}) {
@@ -391,8 +394,16 @@
     state.formations = { wei: [], shu: [], wu: [] };
     for (const faction of Object.keys(FACTIONS)) {
       const cells = doc.formations?.[faction] || [];
-      state.formations[faction] = cells.map((cell) => [Number(cell[0]), Number(cell[1])]);
+      state.formations[faction] = cells.map((cell) => {
+        const col = Number(cell.col ?? cell[0]);
+        const row = Number(cell.row ?? cell[1]);
+        const type = cell.type || cell[2];
+        return type ? [col, row, String(type)] : [col, row];
+      });
     }
+    state.unitMix = Array.isArray(doc.unit_mix) || (doc.unit_mix && typeof doc.unit_mix === "object")
+      ? JSON.parse(JSON.stringify(doc.unit_mix))
+      : null;
     syncInputs();
     render();
   }
@@ -594,8 +605,7 @@
     const occupiedSpawn = new Map();
     for (const [faction, cells] of Object.entries(state.formations)) {
       if (!cells.length) push("warn", `${FACTIONS[faction].label} has no formation cells.`);
-      else if (cells.length === EXPECTED_FORMATION_CELLS) push("ok", `${FACTIONS[faction].label} has ${cells.length} formation cells.`);
-      else push("warn", `${FACTIONS[faction].label} has ${cells.length} formation cells; current STAR default uses ${EXPECTED_FORMATION_CELLS}.`);
+      else push("ok", `${FACTIONS[faction].label} has ${cells.length} formation cells.`);
 
       for (const [c,r] of cells) {
         if (!inBounds(c,r)) push("error", `${FACTIONS[faction].label} formation (${c},${r}) is off-map.`);

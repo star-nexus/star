@@ -11,12 +11,14 @@ from .inputs import InputSystem
 from .events import EventBus
 from ..ecs.world import World
 from ..ecs import profiling
-from .engine_event import QuitEvent
+from .engine_event import QuitEvent, WindowResizeEvent
 
 # Eval and interactive play share this cap. Real-time AP/MP recover from
 # fixed 1/FPS seconds per frame, so a 30fps loop would recover at half
 # the intended rate. Do not lower this without changing recovery intervals.
 DEFAULT_FPS = 60
+MIN_WINDOW_WIDTH = 1200
+MIN_WINDOW_HEIGHT = 800
 
 
 class GameEngine:
@@ -37,15 +39,15 @@ class GameEngine:
     def __init__(
         self,
         title: str = "Game",
-        width: int = 1200,
-        height: int = 800,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         fps: int = DEFAULT_FPS,
     ):
         """Initialize the game engine."""
         if hasattr(self, "_initialized"):
             # Already built for this process. Only FPS is re-pinnable, because
-            # real-time AP/MP recovery is defined per frame; window geometry and
-            # headless mode cannot change after SDL is up.
+            # real-time AP/MP recovery is defined per frame. Headless mode
+            # cannot change after SDL is up; a live window can still resize.
             if fps != self.fps:
                 self.fps = fps
             return
@@ -101,12 +103,34 @@ class GameEngine:
 
         if self.headless:
             # Minimal surface: render systems still need a blit target.
+            self.width = self.width or MIN_WINDOW_WIDTH
+            self.height = self.height or MIN_WINDOW_HEIGHT
             self.screen = pygame.display.set_mode((1, 1))
         else:
-            self.screen = pygame.display.set_mode((self.width, self.height))
+            self.width, self.height = self._choose_window_size(self.width, self.height)
+            self.screen = pygame.display.set_mode(
+                (self.width, self.height), pygame.RESIZABLE
+            )
             pygame.display.set_caption(self.title)
 
         self.clock = pygame.time.Clock()
+
+    def _choose_window_size(
+        self, width: Optional[int], height: Optional[int]
+    ) -> tuple[int, int]:
+        """Grow to the desktop when the caller does not pin a size."""
+        min_w, min_h = MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
+        if width and height:
+            return width, height
+        info = pygame.display.Info()
+        desktop_w = int(getattr(info, "current_w", 0) or 0)
+        desktop_h = int(getattr(info, "current_h", 0) or 0)
+        auto_w = min_w
+        auto_h = min_h
+        if desktop_w >= min_w and desktop_h >= min_h:
+            auto_w = max(min_w, desktop_w - 80)
+            auto_h = max(min_h, desktop_h - 100)
+        return width or auto_w, height or auto_h
 
     def _init_managers(self) -> None:
         """Initialize manager singletons and wire them up."""
@@ -150,6 +174,28 @@ class GameEngine:
         """Subscribe event handlers."""
 
         self.event_manager.subscribe(QuitEvent, self.stop)
+        self.event_manager.subscribe(WindowResizeEvent, self._on_window_resize)
+
+    def _on_window_resize(self, event: WindowResizeEvent) -> None:
+        if self.headless:
+            return
+        requested_w = int(event.width)
+        requested_h = int(event.height)
+        width = max(MIN_WINDOW_WIDTH, requested_w)
+        height = max(MIN_WINDOW_HEIGHT, requested_h)
+        self.width = width
+        self.height = height
+        # pygame 2 already resized the window; calling set_mode again can
+        # emit a second VIDEORESIZE and recurse. Only snap back when the
+        # user dragged below the 1200×800 floor.
+        if requested_w < MIN_WINDOW_WIDTH or requested_h < MIN_WINDOW_HEIGHT:
+            self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+        else:
+            surface = pygame.display.get_surface()
+            if surface is not None:
+                self.screen = surface
+        if self.render_manager is not None:
+            self.render_manager.screen = self.screen
 
     def _update(self) -> None:
         """Update one frame of game logic and rendering."""
