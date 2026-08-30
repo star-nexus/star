@@ -48,6 +48,7 @@ class MapRenderSystem(System):
         self.visible_tiles_cache: Set[Tuple[int, int]] = set()
         self.last_camera_pos = (0, 0)
         self.last_zoom = 1.0
+        self.last_viewport_size = (0, 0)
         self.cache_tolerance = 50  # camera movement tolerance
 
         # Fog of war surfaces / hashing
@@ -194,8 +195,12 @@ class MapRenderSystem(System):
         """Set hex orientation and clear caches if changed."""
         if self.hex_converter.orientation != orientation:
             self.hex_converter = HexConverter(GameConfig.HEX_SIZE, orientation)
-            # Clear cached textures as shape changed
+            # Shape and screen-space positions both changed.
             self.tile_texture_cache.clear()
+            self.visible_tiles_cache.clear()
+            self.last_camera_pos = (float("inf"), float("inf"))
+            self.last_zoom = float("inf")
+            self.last_viewport_size = (0, 0)
             print(f"Hex orientation switched to: {orientation.value}")
 
     def toggle_hex_orientation(self) -> None:
@@ -239,22 +244,38 @@ class MapRenderSystem(System):
     def _get_visible_tiles_smart(
         self, camera_offset: List[float], zoom: float
     ) -> Set[Tuple[int, int]]:
-        """Smart visible-region calculation with caching."""
-        current_camera_pos = (camera_offset[0], camera_offset[1])
+        """Return tiles whose centers fall inside the padded viewport.
 
-        # Reuse cache if camera/zoom hasn't meaningfully changed
+        The previous implementation first guessed a rectangular q/r search area
+        from the camera offset. That estimate used screen-origin coordinates as a
+        map center and an incorrect flat-top row spacing/sign, so panning into the
+        upper half of a large map and then zooming in could exclude every actually
+        visible terrain tile before the screen-bounds test even ran.
+
+        Map sizes supported by STAR are small enough that scanning MapData.tiles
+        only when the camera cache invalidates is both cheap and exact. This also
+        keeps culling independent of offset-grid orientation details.
+        """
+        current_camera_pos = (camera_offset[0], camera_offset[1])
+        viewport_size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+
+        # Reuse cache if camera, zoom, and viewport haven't meaningfully changed.
         if (
-            abs(current_camera_pos[0] - self.last_camera_pos[0]) < self.cache_tolerance
+            viewport_size == self.last_viewport_size
+            and abs(current_camera_pos[0] - self.last_camera_pos[0])
+            < self.cache_tolerance
             and abs(current_camera_pos[1] - self.last_camera_pos[1])
             < self.cache_tolerance
             and abs(zoom - self.last_zoom) < 0.05
         ):
             return self.visible_tiles_cache
 
-        # Recompute visible region
-        visible_tiles = set()
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return set()
 
-        # Screen bounds in world coordinates (with margin)
+        # Bounds are expressed in world pixels. The margin is specified in
+        # screen pixels, so divide it by zoom together with the viewport.
         margin = GameConfig.HEX_SIZE * 2
         screen_bounds = {
             "left": (-camera_offset[0] - margin) / zoom,
@@ -263,38 +284,20 @@ class MapRenderSystem(System):
             "bottom": (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom,
         }
 
-        # Estimate hex coordinate ranges near screen center
-        center_q = int(-camera_offset[0] / zoom / (GameConfig.HEX_SIZE * 1.5))
-        center_r = int(-camera_offset[1] / zoom / (GameConfig.HEX_SIZE * 0.866))
+        visible_tiles: Set[Tuple[int, int]] = set()
+        for q, r in map_data.tiles:
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            if (
+                screen_bounds["left"] <= world_x <= screen_bounds["right"]
+                and screen_bounds["top"] <= world_y <= screen_bounds["bottom"]
+            ):
+                visible_tiles.add((q, r))
 
-        search_radius = max(
-            int(GameConfig.WINDOW_WIDTH / zoom / GameConfig.HEX_SIZE) + 3,
-            int(GameConfig.WINDOW_HEIGHT / zoom / GameConfig.HEX_SIZE) + 3,
-        )
-
-        map_data = self.world.get_singleton_component(MapData)
-        if not map_data:
-            return visible_tiles
-
-        # Search visible tiles within the estimated range
-        for q in range(center_q - search_radius, center_q + search_radius + 1):
-            for r in range(center_r - search_radius, center_r + search_radius + 1):
-                if (q, r) not in map_data.tiles:
-                    continue
-
-                # Check if tile is on screen
-                world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
-
-                if (
-                    screen_bounds["left"] <= world_x <= screen_bounds["right"]
-                    and screen_bounds["top"] <= world_y <= screen_bounds["bottom"]
-                ):
-                    visible_tiles.add((q, r))
-
-        # Update caches
+        # Update caches. Viewport size matters because the window is resizable.
         self.visible_tiles_cache = visible_tiles
         self.last_camera_pos = current_camera_pos
         self.last_zoom = zoom
+        self.last_viewport_size = viewport_size
 
         return visible_tiles
 
