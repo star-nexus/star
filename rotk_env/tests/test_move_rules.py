@@ -350,6 +350,94 @@ def test_a_hex_holding_two_factions_blocks_and_is_not_a_destination():
     assert (1, 0) in occupied_cells(world, exclude_entity=mover)
 
 
+def test_second_mover_still_arrives_after_the_first_has_landed():
+    """Check once at acceptance: A landing on X does not cancel B's accepted order."""
+    world = _realtime_world()
+    _corridor(world, 5)
+    movement = MovementSystem()
+    world.add_system(movement)
+    anim = AnimationSystem()
+    world.add_system(anim)
+    first = _spawn(world, 0, 0, mp=4, faction=Faction.WEI)
+    second = _spawn(world, 4, 0, mp=4, faction=Faction.SHU)
+
+    assert movement.move_unit(first, (2, 0))["success"] is True
+    assert movement.move_unit(second, (2, 0))["success"] is True
+
+    for step in anim.jobs[0][1][1:]:
+        movement.commit_hex_position(
+            first, step[0], step[1], arrived=step == anim.jobs[0][1][-1]
+        )
+    assert _hex_of(world, first) == (2, 0)
+    assert _hex_of(world, second) == (4, 0)
+
+    for step in anim.jobs[1][1][1:]:
+        movement.commit_hex_position(
+            second, step[0], step[1], arrived=step == anim.jobs[1][1][-1]
+        )
+    assert _hex_of(world, first) == (2, 0)
+    assert _hex_of(world, second) == (2, 0)
+
+
+def test_without_animation_the_second_order_sees_the_updated_board():
+    """No animation: acceptance and arrival are the same instant, so the
+    second order is judged against a world that already holds the first unit."""
+    world = _realtime_world()
+    _corridor(world, 5)
+    movement = MovementSystem()
+    world.add_system(movement)
+    first = _spawn(world, 0, 0, mp=4, faction=Faction.WEI)
+    second = _spawn(world, 4, 0, mp=4, faction=Faction.SHU)
+
+    assert movement.move_unit(first, (2, 0))["success"] is True
+    assert _hex_of(world, first) == (2, 0)
+    result = movement.move_unit(second, (2, 0))
+    assert result["success"] is False
+    assert result["reason"] == "destination_occupied"
+    assert _hex_of(world, second) == (4, 0)
+
+
+def test_unit_can_leave_a_hex_shared_with_an_enemy():
+    """Start hex in the enemy blocker set must not trap the occupant."""
+    world = _realtime_world()
+    _corridor(world, 4)
+    movement = MovementSystem()
+    world.add_system(movement)
+    mover = _spawn(world, 1, 0, mp=4, faction=Faction.WEI)
+    _spawn(world, 1, 0, faction=Faction.SHU)
+
+    result = movement.move_unit(mover, (3, 0))
+    assert result["success"] is True
+    assert _hex_of(world, mover) == (3, 0)
+
+
+def test_third_unit_cannot_land_on_a_shared_hex():
+    world = _realtime_world()
+    _corridor(world, 5)
+    movement = MovementSystem()
+    world.add_system(movement)
+    _spawn(world, 2, 0, faction=Faction.WEI)
+    _spawn(world, 2, 0, faction=Faction.SHU)
+    third = _spawn(world, 0, 0, mp=4, faction=Faction.WEI)
+
+    result = movement.move_unit(third, (2, 0))
+    assert result["success"] is False
+    assert result["reason"] == "destination_occupied"
+
+
+def test_standing_still_is_not_a_legal_move():
+    world = _realtime_world()
+    _corridor(world, 3)
+    movement = MovementSystem()
+    world.add_system(movement)
+    mover = _spawn(world, 0, 0, mp=4)
+
+    result = movement.move_unit(mover, (0, 0))
+    assert result["success"] is False
+    assert result["reason"] == "no_path"
+    assert {"col": 0, "row": 0} not in LLMActionHandler(world)._unit_reachable(mover)
+
+
 # ------------------------------------------------------------ mask == execute
 
 
