@@ -119,7 +119,30 @@ class GameEngine:
             )
             pygame.display.set_caption(self.title)
 
+        # STAR gameplay uses physical key state / KEYDOWN / KEYUP rather than
+        # editable text. Pygame enables SDL text input by default; on macOS this
+        # activates the InputMethodKit/IME path inside SDL_PumpEvents and can
+        # make pygame.event.get() block for tens of milliseconds during heavy
+        # keyboard use. Keep text input off unless a future focused text widget
+        # explicitly opts in through set_text_input_enabled().
+        self.set_text_input_enabled(False)
+
         self.clock = pygame.time.Clock()
+
+    def set_text_input_enabled(self, enabled: bool) -> None:
+        """Explicitly control SDL text/IME input for focused text widgets.
+
+        Normal gameplay keeps this disabled. A future chat box, console, or
+        name field may enable it while focused and must disable it again when
+        focus leaves the text field.
+        """
+        enabled = bool(enabled)
+        if enabled:
+            pygame.key.start_text_input()
+        else:
+            pygame.key.stop_text_input()
+        self.text_input_enabled = enabled
+        profiling.profiler.set_metadata(text_input=enabled)
 
     def _choose_window_size(
         self, width: Optional[int], height: Optional[int]
