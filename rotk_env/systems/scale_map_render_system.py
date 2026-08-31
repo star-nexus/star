@@ -2,16 +2,22 @@
 
 At 1000 units the remaining sustained interactive cost is no longer map command
 construction: ``RenderEngine`` spends roughly 6-7 ms executing hundreds of
-terrain blits in a typical 51x51 viewport.  ``FastMapRenderSystem`` already
+terrain blits in a typical 51x51 viewport. ``FastMapRenderSystem`` already
 collapses a stationary view to one cached raster, but deliberately falls back to
 per-tile blits whenever the camera moves.
 
-This compatibility renderer adds an overscan raster around the viewport.  After
+This compatibility renderer adds an overscan raster around the viewport. After
 one stable-zoom frame it rasterizes the visible terrain plus a screen-space
-margin.  Subsequent pans within that margin are a single cropped blit; only when
-the camera leaves the margin is the overscan surface rebuilt.  Continuous zoom
+margin. Subsequent pans within that margin are a single cropped blit; only when
+the camera leaves the margin is the overscan surface rebuilt. Continuous zoom
 still uses the proven direct-tile path so we do not trade RenderEngine time for a
 full raster rebuild on every zoom step.
+
+Overscan rebuilds reuse the existing SDL Surface when the viewport size is
+unchanged. The old implementation allocated and zero-filled a ~5M-pixel surface
+for every rebuild; at 2000 units that one-off allocation can add an ~12 ms frame
+tail. Reuse clears only the previous terrain content rectangle before drawing the
+new cache.
 
 The cache contains terrain/city markers only. Territory, fog, coordinates,
 units, effects and UI retain their existing dynamic rendering semantics.
@@ -48,6 +54,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         self._overscan_zoom_candidate = None
         self._overscan_zoom_stable_frames = 0
         self._overscan_build_count = 0
+        self._overscan_surface_reuses = 0
 
     def _invalidate_fast_caches(self) -> None:
         super()._invalidate_fast_caches()
@@ -125,13 +132,27 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             source.x - viewport_source.x,
             source.y - viewport_source.y,
         )
-        # An area blit is intentionally not part of Surface.blits batching: it
-        # replaces hundreds of terrain commands with one bounded pixel copy.
         RMS.draw(self._overscan_surface, destination, area=source)
         pixels = source.width * source.height
         profiling.profiler.set_frame_metric("map_terrain_blits", 1)
         profiling.profiler.set_frame_metric("map_overscan_source_pixels", pixels)
         return pixels
+
+    def _acquire_overscan_surface(self, size: Tuple[int, int]) -> tuple[pygame.Surface, int]:
+        """Reuse the previous surface and clear only its last drawn content."""
+        if self._overscan_surface is not None and self._overscan_surface.get_size() == size:
+            cleared_pixels = 0
+            if self._overscan_content_rect.width > 0 and self._overscan_content_rect.height > 0:
+                clear_rect = self._overscan_content_rect.clip(
+                    self._overscan_surface.get_rect()
+                )
+                if clear_rect.width > 0 and clear_rect.height > 0:
+                    self._overscan_surface.fill((0, 0, 0, 0), clear_rect)
+                    cleared_pixels = clear_rect.width * clear_rect.height
+            self._overscan_surface_reuses += 1
+            return self._overscan_surface, cleared_pixels
+
+        return pygame.Surface(size, pygame.SRCALPHA), 0
 
     def _build_overscan_surface(
         self,
@@ -142,8 +163,14 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         """Rasterize terrain for the viewport plus a reusable pan margin."""
         width, height = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
         margin = self.OVERSCAN_MARGIN_PX
-        surface = pygame.Surface(
-            (width + margin * 2, height + margin * 2), pygame.SRCALPHA
+        surface, cleared_pixels = self._acquire_overscan_surface(
+            (width + margin * 2, height + margin * 2)
+        )
+        profiling.profiler.set_frame_metric(
+            "map_overscan_cleared_pixels", cleared_pixels
+        )
+        profiling.profiler.set_frame_metric(
+            "map_overscan_surface_reuses", self._overscan_surface_reuses
         )
 
         surface_bounds = surface.get_rect()
@@ -293,9 +320,6 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             self._draw_overscan(camera_offset)
             return
 
-        # A new zoom value gets one direct frame. If the next frame keeps the
-        # same zoom we build the overscan cache; if zooming continues, stay on
-        # the already-proven direct path instead of rebuilding a large Surface.
         profiling.profiler.set_frame_metric("map_render_mode", "direct_zoom")
         profiling.profiler.set_frame_metric(
             "map_terrain_blits", len(visible_tiles)
