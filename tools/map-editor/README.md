@@ -8,7 +8,7 @@ A dependency-free browser map editor for STAR / StarBench.
 - Typed unit painting: paint **Infantry / Archer / Cavalry** directly into Wei / Shu / Wu formations.
 - Native typed export: formation slots are exported as `[col, row, type]`, which is accepted by `rotk_env.maps.map_file`.
 - Legacy map compatibility: untyped `[col, row]` slots are inferred from `unit_mix` exactly like the runtime loader; without a mix they become Infantry.
-- Faction colors are explicitly aligned to STAR: **Wei blue, Shu green, Wu red**.
+- Faction colors are explicitly aligned to STAR: **Wei blue, Shu red, Wu green**.
 - Real map zoom and pan: wheel / trackpad to zoom, Space+drag or middle-drag to pan, plus Fit / +/- controls.
 - Resize preserves terrain and unit slots that remain inside the new bounds.
 - Large-map coordinate labels are automatically suppressed while zoomed out when the map has more than 3000 cells.
