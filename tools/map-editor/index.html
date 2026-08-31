@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>STAR Map Editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">★</div>
+      <div>
+        <h1>STAR Map Editor <span>v1.5</span></h1>
+        <p>Design STAR hex maps directly in your browser.</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="newMapBtn">New</button>
+      <button id="importJsonBtn">Import JSON</button>
+      <button id="saveLocalBtn">Save Local</button>
+      <button id="loadLocalBtn">Load Local</button>
+      <button id="exportJsonBtn" class="primary">Export JSON</button>
+      <input id="jsonFileInput" type="file" accept="application/json,.json" hidden />
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="sidebar left-panel">
+      <section>
+        <h2>Map</h2>
+        <label>Name <input id="mapName" value="Untitled Map" /></label>
+        <label>ID <input id="mapId" value="untitled" /></label>
+        <div class="grid-2">
+          <label>Width <input id="mapWidth" type="number" min="5" max="51" step="2" value="15" /></label>
+          <label>Height <input id="mapHeight" type="number" min="5" max="51" step="2" value="15" /></label>
+        </div>
+        <button id="applySizeBtn" class="wide">Create / Resize</button>
+      </section>
+
+      <section>
+        <h2>Terrain</h2>
+        <div id="terrainPalette" class="palette"></div>
+      </section>
+
+      <section>
+        <h2>Formation</h2>
+        <div class="formation-buttons">
+          <button data-faction="wei"><span class="dot wei"></span>Wei</button>
+          <button data-faction="shu"><span class="dot shu"></span>Shu</button>
+          <button data-faction="wu"><span class="dot wu"></span>Wu</button>
+          <button data-faction="erase">Erase</button>
+        </div>
+        <p class="hint">Select a faction, then click hexes to add/remove spawn cells.</p>
+      </section>
+
+      <section>
+        <h2>History</h2>
+        <div class="grid-2">
+          <button id="undoBtn">Undo</button>
+          <button id="redoBtn">Redo</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="workspace-toolbar">
+        <div class="segmented">
+          <button id="editModeBtn" class="active">Edit</button>
+          <button id="previewModeBtn">Preview</button>
+        </div>
+        <label class="inline-check"><input id="showCoords" type="checkbox" checked /> Coordinates</label>
+        <label class="inline-check"><input id="showFormations" type="checkbox" checked /> Formations</label>
+        <label class="inline-check"><input id="showGrid" type="checkbox" checked /> Grid</label>
+        <span id="cursorInfo" class="cursor-info">col=0 row=0</span>
+      </div>
+      <div id="mapViewport" class="map-viewport">
+        <svg id="mapSvg" role="img" aria-label="STAR hex map editor"></svg>
+      </div>
+      <div class="legend-bar">
+        <span><strong>Paint:</strong> click + drag</span>
+        <span><strong>Formation:</strong> choose faction then click</span>
+        <span><strong>Zoom:</strong> browser zoom or trackpad</span>
+      </div>
+    </section>
+
+    <aside class="sidebar right-panel">
+      <section>
+        <h2>Image → Map</h2>
+        <button id="imageImportBtn" class="wide">Import PNG / JPG</button>
+        <input id="imageFileInput" type="file" accept="image/png,image/jpeg" hidden />
+        <div id="imageControls" class="image-controls disabled">
+          <label>Reference opacity <input id="imageOpacity" type="range" min="0" max="100" value="38" /></label>
+          <label class="inline-check"><input id="showReference" type="checkbox" checked /> Show reference</label>
+          <button id="generateFromImageBtn" class="wide primary">Generate Terrain</button>
+          <button id="clearImageBtn" class="wide">Remove Image</button>
+        </div>
+        <p class="hint">Generation uses the same terrain heuristics as <code>rotk_env.maps.hex_sample</code>, then lets you edit the result manually.</p>
+      </section>
+
+      <section>
+        <h2>Validation</h2>
+        <div id="validationSummary" class="validation-summary"></div>
+        <div id="validationList" class="validation-list"></div>
+        <button id="validateBtn" class="wide">Run Validation</button>
+      </section>
+
+      <section>
+        <h2>Stats</h2>
+        <div id="mapStats" class="stats-grid"></div>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="newMapDialog">
+    <form method="dialog">
+      <h2>New map?</h2>
+      <p>This clears the current canvas. Export first if you want to keep it.</p>
+      <div class="dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button id="confirmNewMap" value="default" class="danger">Create New</button>
+      </div>
+    </form>
+  </dialog>
+
+  <canvas id="sampleCanvas" hidden></canvas>
+  <script src="editor.js"></script>
+</body>
+</html>
