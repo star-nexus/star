@@ -16,8 +16,8 @@
 
   const FACTIONS = {
     wei: { label: "Wei", color: "#4f79ff" },
-    shu: { label: "Shu", color: "#ff5f5f" },
-    wu: { label: "Wu", color: "#46c878" },
+    shu: { label: "Shu", color: "#46c878" },
+    wu: { label: "Wu", color: "#ff5f5f" },
   };
 
   const state = {
@@ -272,6 +272,44 @@
     validate(false);
   }
 
+  function appendFormationMarker(group, faction, col, row) {
+    const c = hexToPixel(col, row);
+    const cellKey = key(col, row);
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("cx", c.x);
+    circle.setAttribute("cy", c.y);
+    circle.setAttribute("r", HEX_SIZE * 0.33);
+    circle.setAttribute("fill", FACTIONS[faction].color);
+    circle.setAttribute("class", "formation-marker");
+    circle.dataset.cell = cellKey;
+    group.appendChild(circle);
+
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", c.x);
+    text.setAttribute("y", c.y + 1);
+    text.setAttribute("class", "formation-label");
+    text.dataset.cell = cellKey;
+    text.textContent = faction[0].toUpperCase();
+    group.appendChild(text);
+  }
+
+  function formationFactionAt(col, row) {
+    for (const faction of Object.keys(FACTIONS)) {
+      if (state.formations[faction].some(([c, r]) => c === col && r === row)) return faction;
+    }
+    return null;
+  }
+
+  function refreshFormationMarker(col, row) {
+    if (!els.showFormations.checked) return;
+    const group = els.svg.querySelector("#formationLayer");
+    if (!group) return;
+    const cellKey = key(col, row);
+    group.querySelectorAll(`[data-cell="${cellKey}"]`).forEach((node) => node.remove());
+    const faction = formationFactionAt(col, row);
+    if (faction) appendFormationMarker(group, faction, col, row);
+  }
+
   function renderFormations() {
     const group = document.createElementNS(SVG_NS, "g");
     group.id = "formationLayer";
@@ -279,20 +317,7 @@
     for (const [faction, cells] of Object.entries(state.formations)) {
       for (const [col, row] of cells) {
         if (!inBounds(col, row)) continue;
-        const c = hexToPixel(col, row);
-        const circle = document.createElementNS(SVG_NS, "circle");
-        circle.setAttribute("cx", c.x);
-        circle.setAttribute("cy", c.y);
-        circle.setAttribute("r", HEX_SIZE * 0.33);
-        circle.setAttribute("fill", FACTIONS[faction].color);
-        circle.setAttribute("class", "formation-marker");
-        group.appendChild(circle);
-        const text = document.createElementNS(SVG_NS, "text");
-        text.setAttribute("x", c.x);
-        text.setAttribute("y", c.y + 1);
-        text.setAttribute("class", "formation-label");
-        text.textContent = faction[0].toUpperCase();
-        group.appendChild(text);
+        appendFormationMarker(group, faction, col, row);
       }
     }
   }
@@ -308,9 +333,7 @@
 
   function onHexPointerEnter(evt) {
     if (!state.strokeActive || state.mode !== "edit") return;
-    if (state.tool.kind === "terrain") {
-      applyTool(Number(evt.currentTarget.dataset.col), Number(evt.currentTarget.dataset.row), false);
-    }
+    applyTool(Number(evt.currentTarget.dataset.col), Number(evt.currentTarget.dataset.row), false);
   }
 
   function endStroke() {
@@ -337,18 +360,13 @@
         for (const faction of Object.keys(FACTIONS)) {
           state.formations[faction] = state.formations[faction].filter(([c,r]) => c !== col || r !== row);
         }
-      } else {
-        const cells = state.formations[target];
-        const exists = cells.some(([c,r]) => c === col && r === row);
-        if (exists) {
-          state.formations[target] = cells.filter(([c,r]) => c !== col || r !== row);
-        } else {
-          for (const faction of Object.keys(FACTIONS)) {
-            state.formations[faction] = state.formations[faction].filter(([c,r]) => c !== col || r !== row);
-          }
-          state.formations[target].push([col, row]);
+      } else if (formationFactionAt(col, row) !== target) {
+        for (const faction of Object.keys(FACTIONS)) {
+          state.formations[faction] = state.formations[faction].filter(([c,r]) => c !== col || r !== row);
         }
+        state.formations[target].push([col, row]);
       }
+      refreshFormationMarker(col, row);
     }
     if (rerender) render();
   }

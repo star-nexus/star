@@ -94,8 +94,8 @@ label input { margin-top: 5px; }
 .formation-buttons button { display: flex; align-items: center; justify-content: center; gap: 7px; }
 .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 .dot.wei { background: #4f79ff; }
-.dot.shu { background: #ff5f5f; }
-.dot.wu { background: #46c878; }
+.dot.shu { background: #46c878; }
+.dot.wu { background: #ff5f5f; }
 
 .workspace { display: flex; flex-direction: column; min-width: 0; }
 .workspace-toolbar {
