@@ -7,6 +7,7 @@ Goals:
 - use monotonic high-resolution timing;
 - provide frame-time percentiles for scale-up experiments;
 - capture exceptional p99-style slow frames with per-section diagnostics;
+- retain the worst slow-frame diagnosis so rare spikes are visible in periodic stats;
 - keep the old ``time_system(name)`` API compatible with existing call sites;
 - add effectively zero profiling overhead when profiling is disabled.
 """
@@ -61,12 +62,14 @@ class PerformanceProfiler:
     zero for that frame. This makes percentages meaningful even for systems
     that do not execute every frame.
 
-    Slow-frame capture is deliberately based on the frame *before* its samples
-    are folded into the rolling window. A spike therefore cannot raise its own
-    detection threshold. The threshold is the larger of an absolute floor
-    (30ms by default) and 1.5x the previous rolling p99 once enough history is
-    available. This catches rare tail stalls without logging every frame when a
-    deliberately overloaded experiment runs below 60 FPS.
+    Slow-frame capture is based on the frame *before* its samples are folded
+    into the rolling window. A spike therefore cannot raise its own detection
+    threshold. The threshold is the larger of an absolute floor (30ms by
+    default) and 1.5x the previous rolling p99 once enough history exists.
+
+    ``reset()`` intentionally preserves run metadata and the enabled/console
+    switches. GameScene uses that behavior to drop menu/map-initialization
+    samples and begin a clean gameplay measurement epoch.
     """
 
     def __init__(self, sample_window: int = DEFAULT_SAMPLE_WINDOW):
@@ -95,18 +98,13 @@ class PerformanceProfiler:
             maxlen=DEFAULT_SLOW_FRAME_HISTORY
         )
         self.slow_frame_count = 0
+        self.worst_slow_frame: Optional[Dict[str, object]] = None
         self.slow_frame_log_cooldown_s = 0.5
         self._last_slow_frame_log_time = 0.0
 
     @property
     def enable_profiler(self) -> bool:
-        """Back-compatible console switch.
-
-        Historically setting ``enable_profiler=True`` was how profiling was
-        enabled. Keep that behaviour: enabling console output also turns on
-        collection. Collection can also be enabled without console output by
-        assigning ``profiler.enabled = True`` (used by --profile-json).
-        """
+        """Back-compatible console switch."""
         return self._console_output
 
     @enable_profiler.setter
@@ -119,12 +117,7 @@ class PerformanceProfiler:
     # Frame lifecycle
     # ------------------------------------------------------------------
     def start_frame(self) -> None:
-        """Begin timing a frame.
-
-        ``end_frame`` should be called after the FPS limiter. For backwards
-        compatibility, starting another frame closes a still-open frame at the
-        current instant.
-        """
+        """Begin timing a frame."""
         if not self.enabled:
             return
         now = time.perf_counter_ns()
@@ -156,8 +149,8 @@ class PerformanceProfiler:
         frame_ns = max(0, end_ns - self._frame_start_ns)
         frame_ms = frame_ns / 1_000_000.0
 
-        # Detect the spike against the *previous* window, before this frame can
-        # influence p99. This is important for isolated 50-100ms stalls.
+        # Detect against the previous window so a spike cannot raise its own
+        # threshold before it is evaluated.
         previous_frame_ms = [ns / 1_000_000.0 for ns in self.frame_times_ns]
         p99_reference_ms = (
             self._percentile(previous_frame_ms, 0.99)
@@ -204,12 +197,7 @@ class PerformanceProfiler:
     # Timers
     # ------------------------------------------------------------------
     def time_system(self, system_name: str, *, category: str = "work"):
-        """Return a hierarchical timer context manager.
-
-        Existing code may keep calling ``time_system(name)``. Engine-level
-        phases can additionally tag sections as ``render``, ``present`` or
-        ``wait``. When profiling is disabled this returns a shared no-op timer.
-        """
+        """Return a hierarchical timer context manager."""
         if not self.enabled:
             return _NOOP_TIMER
         return SystemTimer(self, system_name, category)
@@ -226,8 +214,8 @@ class PerformanceProfiler:
 
         current = self._timer_stack.pop()
         if current is not timer:
-            # Recover safely from a malformed nesting pattern instead of
-            # attributing child time to the wrong parent.
+            # Recover safely from malformed nesting instead of attributing child
+            # time to the wrong parent.
             self._timer_stack.clear()
             current = timer
 
@@ -276,12 +264,7 @@ class PerformanceProfiler:
         self._metadata.update(values)
 
     def set_frame_metric(self, name: str, value: object) -> None:
-        """Attach a cheap diagnostic value to the current frame.
-
-        Render systems use this for values such as visible/animated unit counts.
-        Metrics are only retained when a slow frame is captured, so they do not
-        grow with the experiment duration.
-        """
+        """Attach a cheap diagnostic value to the current frame."""
         if self.enabled and self._frame_open:
             self._frame_metrics[name] = value
 
@@ -311,9 +294,11 @@ class PerformanceProfiler:
         top_sections.sort(key=lambda item: item["self_ms"], reverse=True)
         present_ms = category_self_ns.get("present", 0) / 1_000_000.0
         wait_ms = category_self_ns.get("wait", 0) / 1_000_000.0
+        measured_self_ms = sum(category_self_ns.values()) / 1_000_000.0
         active_ms = max(0.0, frame_ms - present_ms - wait_ms)
+        uninstrumented_ms = max(0.0, frame_ms - measured_self_ms)
 
-        snapshot = {
+        snapshot: Dict[str, object] = {
             "frame_index": self._frame_index,
             "frame_ms": frame_ms,
             "threshold_ms": threshold_ms,
@@ -321,11 +306,18 @@ class PerformanceProfiler:
             "active_ms": active_ms,
             "present_ms": present_ms,
             "fps_limiter_wait_ms": wait_ms,
+            "measured_self_ms": measured_self_ms,
+            "uninstrumented_ms": uninstrumented_ms,
             "frame_metrics": dict(self._frame_metrics),
             "top_sections": top_sections[:10],
         }
         self.slow_frames.append(snapshot)
         self.slow_frame_count += 1
+        if (
+            self.worst_slow_frame is None
+            or frame_ms > float(self.worst_slow_frame.get("frame_ms", 0.0))
+        ):
+            self.worst_slow_frame = snapshot
 
         if not self._console_output:
             return
@@ -349,7 +341,8 @@ class PerformanceProfiler:
             "  budget: "
             f"active={snapshot['active_ms']:.2f}ms  "
             f"present={snapshot['present_ms']:.2f}ms  "
-            f"fps_wait={snapshot['fps_limiter_wait_ms']:.2f}ms"
+            f"fps_wait={snapshot['fps_limiter_wait_ms']:.2f}ms  "
+            f"uninstrumented={snapshot['uninstrumented_ms']:.2f}ms"
         )
         metrics = snapshot.get("frame_metrics", {})
         if metrics:
@@ -366,6 +359,7 @@ class PerformanceProfiler:
         print("!" * 76)
 
     def reset(self) -> None:
+        """Start a fresh measurement epoch while preserving configuration/context."""
         self.frame_times_ns.clear()
         self.section_inclusive_ns.clear()
         self.section_self_ns.clear()
@@ -379,6 +373,7 @@ class PerformanceProfiler:
         self._frame_index = 0
         self.slow_frames.clear()
         self.slow_frame_count = 0
+        self.worst_slow_frame = None
         self._last_slow_frame_log_time = 0.0
 
     @staticmethod
@@ -400,8 +395,6 @@ class PerformanceProfiler:
     def _avg_ms(samples: Deque[int], frame_count: int) -> float:
         if not samples or frame_count <= 0:
             return 0.0
-        # Normally len(samples) == frame_count. min() also keeps legacy direct
-        # recordings safe and avoids dividing an older short series by zero.
         return sum(samples) / max(1, min(len(samples), frame_count)) / 1_000_000.0
 
     def get_stats(self) -> Dict:
@@ -441,8 +434,6 @@ class PerformanceProfiler:
 
         return {
             "sample_count": frame_count,
-            # Total frames / total sampled wall time is the meaningful average
-            # frame rate; averaging instantaneous 1/dt values can overstate it.
             "avg_fps": (1000.0 / avg_frame_ms) if avg_frame_ms > 0 else 0.0,
             "min_fps": min(fps_samples) if fps_samples else 0.0,
             "max_fps": max(fps_samples) if fps_samples else 0.0,
@@ -460,7 +451,21 @@ class PerformanceProfiler:
             "slow_frame_count": self.slow_frame_count,
             "slow_frame_threshold_ms": self.slow_frame_threshold_ms,
             "slow_frames": list(self.slow_frames),
+            "worst_slow_frame": self.worst_slow_frame,
         }
+
+    @staticmethod
+    def _format_slow_frame_summary(snapshot: Dict[str, object]) -> str:
+        top = snapshot.get("top_sections", [])[:3]
+        top_text = "; ".join(
+            f"{item['name']}={item['self_ms']:.2f}ms" for item in top
+        ) or "no timed section"
+        return (
+            f"frame={snapshot['frame_index']}  frame_ms={snapshot['frame_ms']:.2f}  "
+            f"active={snapshot['active_ms']:.2f}ms  "
+            f"uninstrumented={snapshot['uninstrumented_ms']:.2f}ms  "
+            f"top: {top_text}"
+        )
 
     def print_stats(self) -> None:
         if not self._console_output:
@@ -494,6 +499,11 @@ class PerformanceProfiler:
             f"absolute_floor={stats['slow_frame_threshold_ms']:.1f}ms  "
             f"rule=max(floor, prior_p99×{self.slow_frame_p99_factor:.2f})"
         )
+        if stats.get("worst_slow_frame"):
+            print(
+                "Worst slow frame this gameplay epoch: "
+                + self._format_slow_frame_summary(stats["worst_slow_frame"])
+            )
         if stats["metadata"]:
             meta = "  ".join(f"{k}={v}" for k, v in sorted(stats["metadata"].items()))
             print(f"Context: {meta}")
