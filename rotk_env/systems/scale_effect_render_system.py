@@ -1,138 +1,61 @@
 """Compatibility-named EffectRenderSystem for 1000+ unit interactive scale tests.
 
 The renderer keeps the visual semantics of ``FastEffectRenderSystem`` while
-removing its per-frame full spatial-index rebuild.  A persistent unit position
-index is synchronized in place and only mutates when units actually move,
-spawn, disappear, or change faction.  The same spatial revision also replaces
-the previous O(units) occupancy tuple in the movement-range cache key.
+sharing the same event-driven ``UnitSpatialIndex`` as movement, culling and
+realtime game-over checks.  It no longer owns a second per-frame unit index.
 
-Second-level profiler sections remain in place so scale runs can attribute any
-remaining EffectRender cost precisely.
+Movement-range overlays also use a local spatial revision: movement elsewhere
+on a large map no longer invalidates the selected unit's reachable mask.  On an
+actual cache miss, occupancy is read from the shared index only inside the
+selected unit's movement radius, then the canonical terrain/pathfinding rules
+compute the same legal destinations as ``reachable_hexes``.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import List, Optional, Tuple
 
 from framework.ecs import profiling
 from framework.engine import RMS
 
-from ..components import (
-    Camera,
-    HexPosition,
-    MapData,
-    MovementPoints,
-    Unit,
-    UnitCount,
-)
+from ..components import Camera, HexPosition, MapData, MovementPoints, Unit, UnitCount
 from ..prefabs.config import GameConfig
+from ..utils.hex_utils import PathFinding
+from ..utils.map_query import board_hexes, impassable_terrain, movement_costs
+from ..utils.unit_spatial_index import get_unit_spatial_index
 from .fast_render_systems import FastEffectRenderSystem
 
 
 class EffectRenderSystem(FastEffectRenderSystem):
-    """Fast effect renderer with a persistent low-allocation spatial index."""
+    """Fast effect renderer backed by the shared scale spatial index."""
 
     def __init__(self):
         super().__init__()
-        # entity -> [col, row, faction, last_seen_generation]
-        # Lists are mutated in place so unchanged units allocate nothing here.
-        self._spatial_state: Dict[int, List[object]] = {}
-        self._spatial_generation = 0
-        self._spatial_revision = 0
+        self._last_shared_revision: Optional[int] = None
 
     def initialize(self, world) -> None:
+        # Do not build a private index here.  WorldBuilder installs the shared
+        # UnitSpatialIndex after unit creation and before gameplay profiling.
         super().initialize(world)
-        # Build once during world initialization, before the gameplay profiling
-        # epoch.  The first measured frame therefore pays only the cheap sync.
-        self._sync_position_index()
 
-    def _remove_index_entry(self, entity: int, col: int, row: int) -> None:
-        key = (col, row)
-        bucket = self._unit_position_index.get(key)
-        if not bucket:
-            return
-        for index, entry in enumerate(bucket):
-            if entry[0] == entity:
-                bucket.pop(index)
-                break
-        if not bucket:
-            self._unit_position_index.pop(key, None)
+    def _get_enemy_unit_at_position(self, position, friendly_faction):
+        index = get_unit_spatial_index(self.world)
+        if index is not None:
+            return index.enemy_at_cell(position, friendly_faction)
 
-    def _add_index_entry(self, entity: int, col: int, row: int, faction) -> None:
-        self._unit_position_index.setdefault((col, row), []).append(
-            (entity, faction)
-        )
-
-    def _sync_position_index(self) -> Tuple[int, int]:
-        """Synchronize the persistent spatial index without rebuilding it.
-
-        We still scan Unit/HexPosition components once per frame so direct ECS
-        position mutations remain visible, but unchanged units only perform
-        dictionary lookups and integer/object comparisons.  Tuple/list churn is
-        limited to units whose spatial state actually changes.
-        """
-        self._spatial_generation += 1
-        generation = self._spatial_generation
-        indexed_units = 0
-        changes = 0
-        added = False
-
+        # Compatibility fallback for isolated tests/worlds that deliberately do
+        # not install the window scale index.
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
-            if pos is None or unit is None:
-                continue
-
-            indexed_units += 1
-            state = self._spatial_state.get(entity)
-            if state is None:
-                self._spatial_state[entity] = [
-                    pos.col,
-                    pos.row,
-                    unit.faction,
-                    generation,
-                ]
-                self._add_index_entry(
-                    entity, pos.col, pos.row, unit.faction
-                )
-                changes += 1
-                added = True
-                continue
-
-            state[3] = generation
             if (
-                state[0] == pos.col
-                and state[1] == pos.row
-                and state[2] == unit.faction
+                pos is not None
+                and unit is not None
+                and (pos.col, pos.row) == position
+                and unit.faction != friendly_faction
             ):
-                continue
-
-            self._remove_index_entry(entity, int(state[0]), int(state[1]))
-            self._add_index_entry(entity, pos.col, pos.row, unit.faction)
-            state[0] = pos.col
-            state[1] = pos.row
-            state[2] = unit.faction
-            changes += 1
-
-        # Entity destruction is rare.  Only allocate a stale-id list when the
-        # population changed (or a new entity appeared), not on steady frames.
-        if added or len(self._spatial_state) != indexed_units:
-            stale_entities = [
-                entity
-                for entity, state in self._spatial_state.items()
-                if state[3] != generation
-            ]
-            for entity in stale_entities:
-                state = self._spatial_state.pop(entity)
-                self._remove_index_entry(entity, int(state[0]), int(state[1]))
-                changes += 1
-
-        if changes:
-            # One revision per frame is sufficient: movement reachability only
-            # needs to know whether occupancy changed since the cached result.
-            self._spatial_revision += 1
-
-        return indexed_units, changes
+                return entity
+        return None
 
     def _movement_state_key(
         self,
@@ -141,8 +64,19 @@ class EffectRenderSystem(FastEffectRenderSystem):
         movement: MovementPoints,
         unit_count: UnitCount | None,
     ):
-        """Movement cache key using the already-maintained spatial revision."""
+        index = get_unit_spatial_index(self.world)
+        if index is None:
+            # Preserve legacy correctness when this scale renderer is exercised
+            # without WorldBuilder's shared index.
+            return super()._movement_state_key(
+                unit_entity, position, movement, unit_count
+            )
+
         map_data = self.world.get_singleton_component(MapData)
+        spendable = max(0, int(movement.spendable(unit_count)))
+        local_revision = index.local_revision_signature(
+            (position.col, position.row), spendable
+        )
         return (
             unit_entity,
             position.col,
@@ -150,27 +84,99 @@ class EffectRenderSystem(FastEffectRenderSystem):
             movement.current_mp,
             movement.max_mp,
             unit_count.current_count if unit_count else None,
+            spendable,
             id(map_data),
-            self._spatial_revision,
+            local_revision,
         )
+
+    def _indexed_reachable_hexes(
+        self,
+        unit_entity: int,
+        position: HexPosition,
+        movement: MovementPoints,
+        unit: Unit,
+        unit_count: UnitCount | None,
+    ):
+        """Canonical movement range using local occupancy from the shared index."""
+        index = get_unit_spatial_index(self.world)
+        if index is None:
+            from ..utils.map_query import reachable_hexes
+
+            return reachable_hexes(
+                self.world,
+                (position.col, position.row),
+                movement.spendable(unit_count),
+                mover=unit_entity,
+            )
+
+        start = (position.col, position.row)
+        spendable = max(0, int(movement.spendable(unit_count)))
+        with profiling.profiler.time_system(
+            "effect_reachable_occupancy", category="render"
+        ):
+            occupied, enemy_held = index.occupancy_for_mover_local(
+                unit_entity,
+                unit.faction,
+                start,
+                spendable,
+            )
+
+        profiling.profiler.set_frame_metric(
+            "effect_reachable_occupied_cells", len(occupied)
+        )
+        profiling.profiler.set_frame_metric(
+            "effect_reachable_enemy_blockers", len(enemy_held)
+        )
+        profiling.profiler.set_frame_metric(
+            "effect_reachable_local_buckets",
+            len(index.local_revision_signature(start, spendable)),
+        )
+
+        blocked = set(impassable_terrain(self.world))
+        blocked.update(enemy_held)
+        costs = movement_costs(self.world)
+        within_budget = PathFinding.get_movement_range(
+            start,
+            spendable,
+            blocked,
+            walkable=board_hexes(self.world),
+            step_cost=lambda pos: costs.get(pos, 999),
+        )
+        return within_budget - occupied
 
     def update(self, delta_time: float) -> None:
         camera = self.world.get_singleton_component(Camera)
         if not camera:
             return
 
+        # The shared index is already maintained by movement/death commits.
+        # Keep the old profiler field names so existing stress-log tooling can
+        # compare before/after without treating a missing metric as zero work.
         with profiling.profiler.time_system(
             "effect_position_index", category="render"
         ):
-            indexed_units, index_changes = self._sync_position_index()
+            index = get_unit_spatial_index(self.world)
+            if index is not None:
+                indexed_units = len(index.by_entity)
+                revision = index.revision
+                if self._last_shared_revision is None:
+                    revision_delta = 0
+                else:
+                    revision_delta = max(0, revision - self._last_shared_revision)
+                self._last_shared_revision = revision
+            else:
+                indexed_units = 0
+                revision = 0
+                revision_delta = 0
+
         profiling.profiler.set_frame_metric(
             "effect_position_index_units", indexed_units
         )
         profiling.profiler.set_frame_metric(
-            "effect_position_index_changes", index_changes
+            "effect_position_index_changes", revision_delta
         )
         profiling.profiler.set_frame_metric(
-            "effect_spatial_revision", self._spatial_revision
+            "effect_spatial_revision", revision
         )
 
         camera_offset = [camera.offset_x, camera.offset_y]
@@ -188,9 +194,7 @@ class EffectRenderSystem(FastEffectRenderSystem):
             "effect_attack_indicators", category="render"
         ):
             self._render_attack_indicators(camera_offset, zoom)
-        with profiling.profiler.time_system(
-            "effect_projectiles", category="render"
-        ):
+        with profiling.profiler.time_system("effect_projectiles", category="render"):
             self._render_projectiles(camera_offset, zoom)
         with profiling.profiler.time_system("effect_hover", category="render"):
             self._render_tile_hover(camera_offset, zoom)
@@ -221,16 +225,15 @@ class EffectRenderSystem(FastEffectRenderSystem):
         )
 
         if cache_miss:
-            from ..utils.map_query import reachable_hexes
-
             with profiling.profiler.time_system(
                 "effect_reachable_recompute", category="render"
             ):
-                self._movement_cache = reachable_hexes(
-                    self.world,
-                    (position.col, position.row),
-                    movement.spendable(unit_count),
-                    mover=unit_entity,
+                self._movement_cache = self._indexed_reachable_hexes(
+                    unit_entity,
+                    position,
+                    movement,
+                    unit,
+                    unit_count,
                 )
             self._movement_cache_key = key
 
