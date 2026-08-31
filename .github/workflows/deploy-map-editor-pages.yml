@@ -3,7 +3,7 @@ name: Deploy STAR Map Editor to GitHub Pages
 on:
   push:
     branches:
-      - feature/star-map-editor-v1.5
+      - main
     paths:
       - 'tools/map-editor/**'
       - '.github/workflows/deploy-map-editor-pages.yml'
