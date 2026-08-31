@@ -33,12 +33,15 @@ class _ActiveTimer:
 
 
 class PerformanceProfiler:
-    """Low-overhead hierarchical frame profiler.
+    """Low-overhead hierarchical rolling-window frame profiler.
 
-    Timers are hierarchical.  ``inclusive`` time includes nested timers while
-    ``self`` / ``exclusive`` time subtracts them.  Percentages are based on
-    exclusive time, so nested sections no longer make the table add up to more
-    than 100% merely because both a parent and its children were measured.
+    Timers are hierarchical. ``inclusive`` time contains nested timers while
+    ``self`` / ``exclusive`` time subtracts them. Percentages use self time, so
+    a parent and its children no longer double-count the same milliseconds.
+
+    Section samples are aggregated *per frame* and missing sections receive a
+    zero for that frame. This makes percentages meaningful even for systems
+    that do not execute every frame.
     """
 
     def __init__(self, sample_window: int = DEFAULT_SAMPLE_WINDOW):
@@ -46,18 +49,15 @@ class PerformanceProfiler:
         self.enable_profiler = False
 
         self.frame_times_ns: Deque[int] = deque(maxlen=self.sample_window)
-        self.section_inclusive_ns: Dict[str, Deque[int]] = defaultdict(
-            lambda: deque(maxlen=self.sample_window)
-        )
-        self.section_self_ns: Dict[str, Deque[int]] = defaultdict(
-            lambda: deque(maxlen=self.sample_window)
-        )
+        self.section_inclusive_ns: Dict[str, Deque[int]] = {}
+        self.section_self_ns: Dict[str, Deque[int]] = {}
         self.section_categories: Dict[str, str] = {}
 
         self._timer_stack: List[_ActiveTimer] = []
         self._frame_start_ns: Optional[int] = None
-        self._last_frame_end_ns: Optional[int] = None
         self._frame_open = False
+        self._frame_inclusive_ns: Dict[str, int] = defaultdict(int)
+        self._frame_self_ns: Dict[str, int] = defaultdict(int)
         self._metadata: Dict[str, object] = {}
 
     # ------------------------------------------------------------------
@@ -66,32 +66,54 @@ class PerformanceProfiler:
     def start_frame(self) -> None:
         """Begin timing a frame.
 
-        ``end_frame`` should be called after the FPS limiter.  If an old call
-        site forgets to end the previous frame, starting the next one closes it
-        at this instant so profiling remains usable rather than silently dying.
+        ``end_frame`` should be called after the FPS limiter. For backwards
+        compatibility, starting another frame closes a still-open frame at the
+        current instant.
         """
         now = time.perf_counter_ns()
         if self._frame_open and self._frame_start_ns is not None:
             self._finish_frame_at(now)
+
         self._frame_start_ns = now
         self._frame_open = True
         self._timer_stack.clear()
+        self._frame_inclusive_ns.clear()
+        self._frame_self_ns.clear()
 
     def end_frame(self) -> None:
-        """Finish the current frame and record its wall-clock duration."""
+        """Finish the current frame and record its total wall-clock duration."""
         if not self._frame_open or self._frame_start_ns is None:
             return
         self._finish_frame_at(time.perf_counter_ns())
 
+    def _new_section_series(self) -> Deque[int]:
+        # A section first observed now was absent in previous retained frames.
+        history_len = max(0, len(self.frame_times_ns) - 1)
+        return deque([0] * history_len, maxlen=self.sample_window)
+
     def _finish_frame_at(self, end_ns: int) -> None:
         if self._frame_start_ns is None:
             return
-        duration = max(0, end_ns - self._frame_start_ns)
-        self.frame_times_ns.append(duration)
-        self._last_frame_end_ns = end_ns
+
+        self.frame_times_ns.append(max(0, end_ns - self._frame_start_ns))
+
+        names = (
+            set(self.section_inclusive_ns)
+            | set(self._frame_inclusive_ns)
+            | set(self._frame_self_ns)
+        )
+        for name in names:
+            if name not in self.section_inclusive_ns:
+                self.section_inclusive_ns[name] = self._new_section_series()
+                self.section_self_ns[name] = self._new_section_series()
+            self.section_inclusive_ns[name].append(self._frame_inclusive_ns.get(name, 0))
+            self.section_self_ns[name].append(self._frame_self_ns.get(name, 0))
+
         self._frame_open = False
         self._frame_start_ns = None
         self._timer_stack.clear()
+        self._frame_inclusive_ns.clear()
+        self._frame_self_ns.clear()
 
     # ------------------------------------------------------------------
     # Timers
@@ -99,8 +121,9 @@ class PerformanceProfiler:
     def time_system(self, system_name: str, *, category: str = "work"):
         """Return a hierarchical timer context manager.
 
-        Existing code may keep calling ``time_system(name)``.  Engine-level
-        phases can additionally tag timers as ``present`` or ``wait``.
+        Existing code may keep calling ``time_system(name)``. Engine-level
+        phases can additionally tag sections as ``render``, ``present`` or
+        ``wait``.
         """
         return SystemTimer(self, system_name, category)
 
@@ -115,22 +138,22 @@ class PerformanceProfiler:
             return
 
         current = self._timer_stack.pop()
-        # Defensive recovery for exceptional / mismatched context-manager use.
         if current is not timer:
+            # Recover safely from a malformed nesting pattern instead of
+            # attributing child time to the wrong parent.
             self._timer_stack.clear()
             current = timer
 
         inclusive = max(0, end_ns - current.start_ns)
         exclusive = max(0, inclusive - current.child_ns)
-
         self.section_categories[current.name] = current.category
-        self.section_inclusive_ns[current.name].append(inclusive)
-        self.section_self_ns[current.name].append(exclusive)
+        self._frame_inclusive_ns[current.name] += inclusive
+        self._frame_self_ns[current.name] += exclusive
 
         if self._timer_stack:
             self._timer_stack[-1].child_ns += inclusive
 
-    # Back-compat with v1 callers/tests that recorded an already-measured span.
+    # Backwards compatibility for older tests/callers.
     def add_system_time(
         self,
         system_name: str,
@@ -140,8 +163,21 @@ class PerformanceProfiler:
     ) -> None:
         elapsed_ns = max(0, int(elapsed_time * 1_000_000_000))
         self.section_categories[system_name] = category
-        self.section_inclusive_ns[system_name].append(elapsed_ns)
-        self.section_self_ns[system_name].append(elapsed_ns)
+        if self._frame_open:
+            self._frame_inclusive_ns[system_name] += elapsed_ns
+            self._frame_self_ns[system_name] += elapsed_ns
+            return
+
+        # Legacy out-of-frame recording. Keep it visible without pretending it
+        # has a frame percentage until a frame sample exists.
+        series = self.section_inclusive_ns.setdefault(
+            system_name, deque(maxlen=self.sample_window)
+        )
+        self_series = self.section_self_ns.setdefault(
+            system_name, deque(maxlen=self.sample_window)
+        )
+        series.append(elapsed_ns)
+        self_series.append(elapsed_ns)
 
     # ------------------------------------------------------------------
     # Metadata / output
@@ -156,8 +192,9 @@ class PerformanceProfiler:
         self.section_categories.clear()
         self._timer_stack.clear()
         self._frame_start_ns = None
-        self._last_frame_end_ns = None
         self._frame_open = False
+        self._frame_inclusive_ns.clear()
+        self._frame_self_ns.clear()
 
     @staticmethod
     def _percentile(values: List[float], q: float) -> float:
@@ -175,23 +212,28 @@ class PerformanceProfiler:
         return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
 
     @staticmethod
-    def _avg_ms(samples: Deque[int]) -> float:
-        return (sum(samples) / len(samples) / 1_000_000.0) if samples else 0.0
+    def _avg_ms(samples: Deque[int], frame_count: int) -> float:
+        if not samples or frame_count <= 0:
+            return 0.0
+        # Normally len(samples) == frame_count. min() also keeps legacy direct
+        # recordings safe and avoids dividing an older short series by zero.
+        return sum(samples) / max(1, min(len(samples), frame_count)) / 1_000_000.0
 
     def get_stats(self) -> Dict:
         if not self.frame_times_ns:
             return {}
 
+        frame_count = len(self.frame_times_ns)
         frame_ms = [ns / 1_000_000.0 for ns in self.frame_times_ns]
-        avg_frame_ms = sum(frame_ms) / len(frame_ms)
+        avg_frame_ms = sum(frame_ms) / frame_count
         fps_samples = [1000.0 / ms for ms in frame_ms if ms > 0]
 
         sections = {}
         category_self_ms: Dict[str, float] = defaultdict(float)
         for name, inclusive_samples in self.section_inclusive_ns.items():
             self_samples = self.section_self_ns[name]
-            inclusive_ms = self._avg_ms(inclusive_samples)
-            self_ms = self._avg_ms(self_samples)
+            inclusive_ms = self._avg_ms(inclusive_samples, frame_count)
+            self_ms = self._avg_ms(self_samples, frame_count)
             category = self.section_categories.get(name, "work")
             category_self_ms[category] += self_ms
             sections[name] = {
@@ -203,7 +245,7 @@ class PerformanceProfiler:
                 ),
                 "max_self_ms": max(self_samples) / 1_000_000.0 if self_samples else 0.0,
                 "frame_share_pct": (self_ms / avg_frame_ms * 100.0) if avg_frame_ms else 0.0,
-                "samples": len(inclusive_samples),
+                "samples": frame_count,
             }
 
         present_ms = category_self_ms.get("present", 0.0)
@@ -213,7 +255,7 @@ class PerformanceProfiler:
         active_ms = max(0.0, avg_frame_ms - present_ms - limiter_ms)
 
         return {
-            "sample_count": len(frame_ms),
+            "sample_count": frame_count,
             "avg_fps": (sum(fps_samples) / len(fps_samples)) if fps_samples else 0.0,
             "min_fps": min(fps_samples) if fps_samples else 0.0,
             "max_fps": max(fps_samples) if fps_samples else 0.0,
@@ -237,9 +279,9 @@ class PerformanceProfiler:
         if not stats:
             return
 
-        print("\n" + "=" * 72)
+        print("\n" + "=" * 76)
         print("STAR Performance Profiler v2")
-        print("=" * 72)
+        print("=" * 76)
         print(
             f"FPS avg/min/max: {stats['avg_fps']:.1f} / "
             f"{stats['min_fps']:.1f} / {stats['max_fps']:.1f}"
@@ -260,7 +302,7 @@ class PerformanceProfiler:
             meta = "  ".join(f"{k}={v}" for k, v in sorted(stats["metadata"].items()))
             print(f"Context: {meta}")
 
-        print("\nTimed sections (exclusive/self time drives %; inclusive shown for nesting):")
+        print("\nTimed sections (self/exclusive drives %, inclusive shows nesting):")
         section_stats = sorted(
             stats["sections"].items(),
             key=lambda item: item[1]["self_ms"],
@@ -277,8 +319,10 @@ class PerformanceProfiler:
 
     def write_json(self, path: str | Path) -> None:
         """Persist the current rolling-window snapshot for experiment logs."""
-        stats = self.get_stats()
-        Path(path).write_text(json.dumps(stats, indent=2, sort_keys=True), encoding="utf-8")
+        Path(path).write_text(
+            json.dumps(self.get_stats(), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
 
 class SystemTimer(AbstractContextManager):
