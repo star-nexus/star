@@ -50,6 +50,7 @@ class GameEngine:
             # cannot change after SDL is up; a live window can still resize.
             if fps != self.fps:
                 self.fps = fps
+                profiling.profiler.set_metadata(fps_cap=self.fps)
             return
 
         # Load config to check for headless mode
@@ -87,6 +88,11 @@ class GameEngine:
         # Initialize managers
         self._init_managers()
 
+        profiling.profiler.set_metadata(
+            fps_cap=self.fps,
+            headless=self.headless,
+            window=f"{self.width}x{self.height}",
+        )
         self._initialized = True
 
     def _init_pygame(self) -> None:
@@ -155,20 +161,43 @@ class GameEngine:
         jitter. ``clock.tick`` caps the loop at FPS so one wall-clock
         second of LLM think time is about FPS sim frames (and thus the
         intended AP/MP recovery) as long as the machine keeps up.
+
+        Profiler v2 deliberately wraps ``clock.tick`` and ends the frame *after*
+        the limiter, so active work, presentation blocking, and intentional FPS
+        cap waiting are reported separately.
         """
         self.running = True
         frame_dt = 1.0 / float(self.fps)
+        profiler = profiling.profiler
 
         try:
             while self.running:
+                profiler.start_frame()
                 self.delta_time = frame_dt
                 self._update()
-                self.clock.tick(self.fps)
+
+                with profiler.time_system("fps_limiter_wait", category="wait"):
+                    self.clock.tick(self.fps)
+
+                profiler.end_frame()
+                self._maybe_print_profiler(profiler)
 
         except KeyboardInterrupt:
             print("Game interrupted by user")
         finally:
+            # Safe no-op if the frame was already closed.
+            profiler.end_frame()
             self.quit()
+
+    def _maybe_print_profiler(self, profiler) -> None:
+        """Print the rolling profiler window every ~5 seconds when enabled."""
+        now = time.monotonic()
+        if hasattr(self, "_last_stats_time"):
+            if now - self._last_stats_time > 5.0:
+                profiler.print_stats()
+                self._last_stats_time = now
+        else:
+            self._last_stats_time = now
 
     def subscribe_events(self) -> None:
         """Subscribe event handlers."""
@@ -196,36 +225,31 @@ class GameEngine:
                 self.screen = surface
         if self.render_manager is not None:
             self.render_manager.screen = self.screen
+        profiling.profiler.set_metadata(window=f"{self.width}x{self.height}")
 
     def _update(self) -> None:
         """Update one frame of game logic and rendering."""
         profiler = profiling.profiler
-        profiler.start_frame()
 
         if not self.headless:
-            with profiler.time_system("screen_fill"):
+            with profiler.time_system("screen_fill", category="render"):
                 self.screen.fill((135, 141, 106))  # clear screen
 
-        with profiler.time_system("input_system"):
+        with profiler.time_system("input_system", category="input"):
             self.input_manager.update()
 
-        with profiler.time_system("scene_update"):
+        with profiler.time_system("scene_update", category="update"):
             self.scene_manager.update(self.delta_time)
 
         if not self.headless:
-            with profiler.time_system("render_engine"):
+            with profiler.time_system("render_engine", category="render"):
                 self.render_manager.update()
 
-            with profiler.time_system("display_flip"):
+            # This is presentation-call wall time. On some SDL/display stacks it
+            # includes VSync/compositor blocking; profiler v2 reports it
+            # separately rather than calling it CPU rendering time.
+            with profiler.time_system("display_present", category="present"):
                 pygame.display.flip()
-
-        # Print profiling stats every ~5 seconds
-        if hasattr(self, '_last_stats_time'):
-            if time.time() - self._last_stats_time > 5.0:
-                profiler.print_stats()
-                self._last_stats_time = time.time()
-        else:
-            self._last_stats_time = time.time()
 
     def stop(self, event: Any) -> None:
         """Stop the main loop."""
