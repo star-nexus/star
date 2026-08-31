@@ -12,6 +12,7 @@ from ..components.start_menu import (
     StartMenuConfig,
     StartMenuButtons,
     StartMenuOptions,
+    START_PLAYER_OPTIONS,
     start_panel_layout,
     clamp_scenario_scroll,
 )
@@ -154,8 +155,8 @@ class StartScene(Scene):
         # # Player configuration options
         # if not hover_option:
         #     player_y = panel_y + 170
-        #     for i in range(3):  # Three player configuration options
-        #         option_rect = pygame.Rect(panel_x + 50, player_y + i * 30, 200, 30)
+        #     for i in range(len(START_PLAYER_OPTIONS)):
+        #         option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
         #         if option_rect.collidepoint(self.mouse_pos):
         #             hover_option = f"player_{i}"
         #             break
@@ -163,7 +164,7 @@ class StartScene(Scene):
         # # Scenario options
         # if not hover_option:
         #     scenario_y = panel_y + 270
-        #     for i in range(3):  # Three scenario options
+        #     for i in range(3):
         #         option_rect = pygame.Rect(panel_x + 50, scenario_y + i * 30, 200, 30)
         #         if option_rect.collidepoint(self.mouse_pos):
         #             hover_option = f"scenario_{i}"
@@ -205,24 +206,13 @@ class StartScene(Scene):
                 return
 
         player_y = geom["player_y"] + 60
-        player_configs = [
-            {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
-            {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
-            {
-                Faction.WEI: PlayerType.AI,
-                Faction.SHU: PlayerType.AI,
-                Faction.WU: PlayerType.AI,
-            },
-        ]
-
-        for i, player_config in enumerate(player_configs):
+        for i, (player_config, _label, mock_ai_enabled) in enumerate(
+            START_PLAYER_OPTIONS
+        ):
             option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
             if option_rect.collidepoint(pos):
                 config.selected_players = player_config.copy()
-                # The first two menu choices are explicit local rule-BOT modes.
-                # Three Kingdoms Epic is the external-agent benchmark setup;
-                # never let MockLLMAISystem race agents before they connect.
-                config.mock_ai_enabled = i < 2
+                config.mock_ai_enabled = bool(mock_ai_enabled)
                 return
 
         catalog = config.scenario_catalog or []
