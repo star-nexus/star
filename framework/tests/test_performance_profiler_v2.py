@@ -13,6 +13,12 @@ def _clock(monkeypatch, values_ns):
     monkeypatch.setattr(profiler_module.time, "perf_counter_ns", lambda: next(values))
 
 
+def _enabled_profiler() -> PerformanceProfiler:
+    profiler = PerformanceProfiler(sample_window=10)
+    profiler.enabled = True
+    return profiler
+
+
 def test_nested_timers_report_exclusive_time_without_double_count(monkeypatch):
     # Frame: 16ms total.
     # outer: 1..8 = 7ms inclusive, containing inner 3..5 = 2ms,
@@ -30,7 +36,7 @@ def test_nested_timers_report_exclusive_time_without_double_count(monkeypatch):
             16_000_000,
         ],
     )
-    profiler = PerformanceProfiler(sample_window=10)
+    profiler = _enabled_profiler()
 
     profiler.start_frame()
     with profiler.time_system("outer", category="update"):
@@ -63,7 +69,7 @@ def test_sections_are_averaged_per_frame_including_zero_frames(monkeypatch):
         monkeypatch,
         [0, 1_000_000, 5_000_000, 10_000_000, 10_000_000, 20_000_000],
     )
-    profiler = PerformanceProfiler(sample_window=10)
+    profiler = _enabled_profiler()
 
     profiler.start_frame()
     with profiler.time_system("sometimes"):
@@ -94,7 +100,7 @@ def test_wait_and_present_are_separated_from_active_budget(monkeypatch):
             16_000_000,
         ],
     )
-    profiler = PerformanceProfiler(sample_window=10)
+    profiler = _enabled_profiler()
 
     profiler.start_frame()
     with profiler.time_system("scene_update", category="update"):
@@ -114,7 +120,7 @@ def test_wait_and_present_are_separated_from_active_budget(monkeypatch):
 
 def test_json_snapshot_is_serializable(monkeypatch, tmp_path):
     _clock(monkeypatch, [0, 10_000_000])
-    profiler = PerformanceProfiler(sample_window=10)
+    profiler = _enabled_profiler()
     profiler.set_metadata(scenario="chibi", units=20)
     profiler.start_frame()
     profiler.end_frame()
@@ -126,3 +132,21 @@ def test_json_snapshot_is_serializable(monkeypatch, tmp_path):
     assert data["metadata"]["scenario"] == "chibi"
     assert data["metadata"]["units"] == 20
     assert data["avg_frame_ms"] == pytest.approx(10.0)
+
+
+def test_disabled_profiler_is_a_noop(monkeypatch):
+    # Disabled profiling must not even read the high-resolution clock from hot
+    # timer call sites.
+    monkeypatch.setattr(
+        profiler_module.time,
+        "perf_counter_ns",
+        lambda: pytest.fail("disabled profiler touched the clock"),
+    )
+    profiler = PerformanceProfiler(sample_window=10)
+
+    profiler.start_frame()
+    with profiler.time_system("hot_path"):
+        pass
+    profiler.end_frame()
+
+    assert profiler.get_stats() == {}
