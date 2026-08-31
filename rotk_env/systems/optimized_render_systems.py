@@ -40,11 +40,9 @@ class UnitRenderSystem(FastUnitRenderSystem):
     def initialize(self, world) -> None:
         super().initialize(world)
 
-        # Deterministic 500-unit profiling isolated two ~82 ms gameplay stalls
-        # to the first pygame.font.Font.render() on combat floating text: once
-        # for the already-created 24 px damage font and once for the newly-used
-        # 28 px CRIT! font. Prewarm the exact runtime font sizes and glyphs while
-        # the world is still initializing, before the gameplay profiling epoch.
+        # 500-unit profiling isolated ~82 ms combat-text stalls to the first
+        # Font.render() for 24 px damage text and 28 px CRIT! text. Prewarm the
+        # runtime font sizes/glyphs before the gameplay profiling epoch.
         animation_system = self._get_animation_system()
         if animation_system:
             self._prewarm_combat_fonts(animation_system)
