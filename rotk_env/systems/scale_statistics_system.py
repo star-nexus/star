@@ -1,10 +1,15 @@
 """Window-only statistics sampler for large interactive scenarios.
 
 The legacy StatisticsSystem intentionally keeps the benchmark/eval behaviour
-unchanged.  This compatibility-named subclass is mounted only for
+unchanged. This compatibility-named subclass is mounted only for
 ``display='window'`` and spreads the once-per-second O(units) bookkeeping over
 small frame batches so 1000+ unit visualization does not pay three full scans
 in a single frame.
+
+The observation history keeps ordinary ``list`` semantics for compatibility,
+but trims only the small overflow beyond the cap. The previous implementation
+periodically copied the newest 5000 records and released ~5000 dicts in one
+frame, which can create a 20 ms allocator/refcount tail at 2000 units.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ class StatisticsSystem(_BaseStatisticsSystem):
     """Compatibility-named, frame-amortized StatisticsSystem for window mode."""
 
     DEFAULT_BATCH_SIZE = 128
+    OBSERVATION_HISTORY_LIMIT = 10000
 
     def __init__(self, batch_size: int = DEFAULT_BATCH_SIZE):
         super().__init__()
@@ -82,8 +88,6 @@ class StatisticsSystem(_BaseStatisticsSystem):
             "faction_counts": {},
             "visibility_cleared": False,
         }
-        # Cadence is measured from cycle start.  The cycle itself is designed to
-        # finish well inside the one-second interval, so cycles never overlap.
         self.last_update_time = current_time
         profiling.profiler.set_frame_metric(
             "statistics_cycle_units", len(observation_entities)
@@ -113,11 +117,21 @@ class StatisticsSystem(_BaseStatisticsSystem):
         end = min(index + self.batch_size, len(entities))
         return entities[index:end], end
 
+    def _trim_observation_history(self, stats: GameStats) -> int:
+        """Drop only this batch's overflow, never half the history at once."""
+        history = stats.unit_observation_history
+        overflow = len(history) - self.OBSERVATION_HISTORY_LIMIT
+        if overflow <= 0:
+            return 0
+        del history[:overflow]
+        return overflow
+
     def _process_observation_batch(self, cycle: dict) -> int:
         entities = cycle["observation_entities"]
         batch, end = self._batch_slice(entities, cycle["index"])
         stats = self.world.get_singleton_component(GameStats)
 
+        trimmed = 0
         if stats:
             with profiling.profiler.time_system(
                 "statistics_observations", category="work"
@@ -169,10 +183,15 @@ class StatisticsSystem(_BaseStatisticsSystem):
                         }
                     )
 
-                # Preserve the legacy bounded-history policy, but trim once per
-                # batch instead of testing/slicing after every unit append.
-                if len(stats.unit_observation_history) > 10000:
-                    stats.unit_observation_history = stats.unit_observation_history[-5000:]
+                # Keep list compatibility while spreading eviction over the same
+                # 128-record batches that spread insertion work.
+                trimmed = self._trim_observation_history(stats)
+
+        profiling.profiler.set_frame_metric("statistics_history_trimmed", trimmed)
+        if stats:
+            profiling.profiler.set_frame_metric(
+                "statistics_history_size", len(stats.unit_observation_history)
+            )
 
         cycle["index"] = end
         if end >= len(entities):
