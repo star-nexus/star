@@ -6,7 +6,7 @@ from typing import Dict, Any
 from framework.engine.scenes import Scene, SMS
 from framework import World
 from ..components.settlement_report import SettlementReport
-from ..components import GameState, Unit, UnitCount
+from ..components import GameState, MapData, Unit, UnitCount
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from performance_profiler import profiler
@@ -77,13 +77,29 @@ class GameScene(Scene):
             world=self.world,
         )
 
+        # Scale-up experiments need the workload attached to every profiler
+        # snapshot; otherwise an FPS number is meaningless without map/unit size.
+        map_data = self.world.get_singleton_component(MapData)
+        initial_units = len(self.world.query().with_component(Unit).entities())
+        metadata = {
+            "initial_units": initial_units,
+            "display": display,
+        }
+        if map_data is not None:
+            metadata.update(
+                map_id=map_data.map_id or self.scenario,
+                map_size=f"{map_data.width}x{map_data.height}",
+                map_tiles=len(map_data.tiles),
+            )
+        profiler.set_metadata(**metadata)
+
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
             GameConfig.sync_from_display()
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
-            with profiler.time_system("world_update"):
+            with profiler.time_system("world_update", category="update"):
                 self.world.update(delta_time)
 
             game_state = self.world.get_singleton_component(GameState)
