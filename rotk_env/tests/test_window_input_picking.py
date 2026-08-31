@@ -47,6 +47,8 @@ class _World:
             102: SimpleNamespace(faction=Faction.SHU, player_type=PlayerType.AI),
             103: SimpleNamespace(faction=Faction.WU, player_type=PlayerType.AI),
         }
+        # AI first in ECS/query order, HUMAN second on the same committed hex.
+        # The interactive picker must still recover the HUMAN token.
         self.units = {
             1: SimpleNamespace(faction=Faction.SHU, unit_type=UnitType.INFANTRY),
             2: SimpleNamespace(faction=Faction.WEI, unit_type=UnitType.INFANTRY),
