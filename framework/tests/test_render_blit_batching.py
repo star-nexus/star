@@ -19,6 +19,8 @@ def teardown_module():
 
 
 def _bare_renderer() -> RenderEngine:
+    # Bypass the singleton constructor: this test must not mutate the global RMS
+    # queue/screen used by other renderer tests in the same process.
     renderer = object.__new__(RenderEngine)
     renderer._screen = pygame.Surface((16, 8), pygame.SRCALPHA)
     renderer.current_layer = 0
