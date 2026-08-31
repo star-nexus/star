@@ -74,6 +74,9 @@ class StartMenuConfig(SingletonComponent):
             Faction.SHU: PlayerType.AI,
         }
     )
+    # MockLLMAISystem is a built-in rule BOT, not an automatic fallback for
+    # external LLM agents. Menu choices set this explicitly.
+    mock_ai_enabled: bool = True
     selected_scenario: str = "default"
     scenario_catalog: List[Dict[str, Any]] = field(default_factory=map_catalog)
     scenario_scroll: int = 0
