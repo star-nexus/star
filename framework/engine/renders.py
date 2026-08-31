@@ -23,6 +23,8 @@ class RenderCommand(ABC):
 class DrawCommand(RenderCommand):
     """通用绘制命令"""
 
+    __slots__ = ("draw_func", "args", "kwargs")
+
     def __init__(self, draw_func: Callable, *args, **kwargs):
         self.draw_func = draw_func
         self.args = args
@@ -30,6 +32,37 @@ class DrawCommand(RenderCommand):
 
     def execute(self, screen: pygame.Surface) -> None:
         self.draw_func(screen, *self.args, **self.kwargs)
+
+
+class BlitCommand(RenderCommand):
+    """Surface blit command with a batchable fast path.
+
+    Most terrain/unit rendering is a plain ``screen.blit(surface, dest)``. Keeping
+    that operation typed lets ``RenderEngine.update`` submit long consecutive runs
+    through ``Surface.blits`` instead of crossing Python once per tile/unit.
+    Commands with an ``area`` or special flags retain the exact single-blit path.
+    """
+
+    __slots__ = ("surface", "dest", "area", "special_flags")
+
+    def __init__(
+        self,
+        surface: pygame.Surface,
+        dest: PositionType,
+        area: Optional[pygame.Rect] = None,
+        special_flags: int = 0,
+    ):
+        self.surface = surface
+        self.dest = dest
+        self.area = area
+        self.special_flags = special_flags
+
+    @property
+    def batchable(self) -> bool:
+        return self.area is None and self.special_flags == 0
+
+    def execute(self, screen: pygame.Surface) -> None:
+        screen.blit(self.surface, self.dest, self.area, self.special_flags)
 
 
 class RenderEngine:
@@ -98,17 +131,9 @@ class RenderEngine:
         layer: Optional[int] = None,
     ) -> "RenderEngine":
         """绘制表面到指定位置"""
-        command = DrawCommand(
-            lambda screen, surface, dest, area, special: screen.blit(
-                surface, dest, area, special
-            ),
-            surface,
-            dest,
-            area,
-            special_flags,
+        return self._add_command(
+            BlitCommand(surface, dest, area=area, special_flags=special_flags), layer
         )
-        # command = BlitCommand(surface, dest, area, special_flags)
-        return self._add_command(command, layer)
 
     # 几何图形绘制方法
     def rect(
@@ -225,11 +250,38 @@ class RenderEngine:
         profiling.profiler.set_frame_metric("render_commands", command_count)
         profiling.profiler.set_frame_metric("render_layers", len(self._render_queue))
 
-        # 按层级顺序渲染
-        for layer in sorted(self._render_queue.keys()):
-            for command in self._render_queue[layer]:
-                command.execute(self.screen)
+        simple_blits = 0
+        blit_batches = 0
 
+        # Preserve layer and command order exactly. Only consecutive plain blits
+        # are collapsed; any geometry/custom command is an ordering barrier.
+        for layer in sorted(self._render_queue.keys()):
+            commands = self._render_queue[layer]
+            index = 0
+            while index < len(commands):
+                command = commands[index]
+                if isinstance(command, BlitCommand) and command.batchable:
+                    batch = []
+                    while index < len(commands):
+                        candidate = commands[index]
+                        if not isinstance(candidate, BlitCommand) or not candidate.batchable:
+                            break
+                        batch.append((candidate.surface, candidate.dest))
+                        index += 1
+
+                    simple_blits += len(batch)
+                    if len(batch) >= 2:
+                        self.screen.blits(batch, False)
+                        blit_batches += 1
+                    else:
+                        command.execute(self.screen)
+                    continue
+
+                command.execute(self.screen)
+                index += 1
+
+        profiling.profiler.set_frame_metric("render_simple_blits", simple_blits)
+        profiling.profiler.set_frame_metric("render_blit_batches", blit_batches)
         self.clear()
 
     def clear(self) -> None:
