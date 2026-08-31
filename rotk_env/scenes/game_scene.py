@@ -27,6 +27,7 @@ class GameScene(Scene):
 
         # Initialization flag
         self.initialized = False
+        self._profile_warmup_pending = False
 
         # Game end waiting state
         self.game_end_wait_start = None
@@ -109,17 +110,24 @@ class GameScene(Scene):
             )
         profiler.set_metadata(**metadata)
 
-        # Drop menu/scene-switch/map-initialization frames. reset() preserves
-        # metadata and profiling switches, so subsequent samples describe only
-        # steady gameplay. If this is called during an engine frame, that
-        # transition frame is intentionally discarded and timing resumes on the
-        # next start_frame().
+        # Drop menu/scene-switch/map-initialization frames. The first complete
+        # gameplay render still performs lazy UI/font/surface initialization, so
+        # mark one current engine frame for exclusion as well. The deferred reset
+        # in update() closes the profiler for that whole frame; timing resumes on
+        # the following start_frame(). This keeps frame-1 warmup from permanently
+        # occupying the "worst slow frame" slot in long scale tests.
         if profiler.enabled:
             profiler.reset()
+            self._profile_warmup_pending = True
 
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
+            if self._profile_warmup_pending:
+                self._profile_warmup_pending = False
+                if profiler.enabled:
+                    profiler.reset()
+
             GameConfig.sync_from_display()
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
