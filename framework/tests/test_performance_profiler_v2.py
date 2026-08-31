@@ -184,3 +184,42 @@ def test_slow_frame_capture_keeps_frame_metrics_and_top_sections(monkeypatch):
     assert spike["frame_metrics"]["animated_visible_units"] == 37
     assert spike["top_sections"][0]["name"] == "render_engine"
     assert spike["top_sections"][0]["self_ms"] == pytest.approx(22.0)
+    assert spike["uninstrumented_ms"] == pytest.approx(18.0)
+
+    worst = stats["worst_slow_frame"]
+    assert worst is not None
+    assert worst["frame_index"] == spike["frame_index"]
+    assert worst["frame_ms"] == pytest.approx(40.0)
+
+
+def test_reset_starts_clean_gameplay_epoch_but_preserves_metadata(monkeypatch):
+    # First create a startup/menu spike, then reset as GameScene does. The next
+    # stats must contain only gameplay samples while retaining run context.
+    _clock(
+        monkeypatch,
+        [
+            0,
+            40_000_000,
+            100_000_000,
+            110_000_000,
+        ],
+    )
+    profiler = _enabled_profiler()
+    profiler.set_metadata(scenario="chibi", initial_units=200)
+
+    profiler.start_frame()
+    profiler.end_frame()
+    assert profiler.get_stats()["slow_frame_count"] == 1
+
+    profiler.reset()
+    assert profiler.get_stats() == {}
+    assert profiler.slow_frame_count == 0
+    assert profiler.worst_slow_frame is None
+
+    profiler.start_frame()
+    profiler.end_frame()
+    stats = profiler.get_stats()
+    assert stats["avg_frame_ms"] == pytest.approx(10.0)
+    assert stats["slow_frame_count"] == 0
+    assert stats["metadata"]["scenario"] == "chibi"
+    assert stats["metadata"]["initial_units"] == 200
