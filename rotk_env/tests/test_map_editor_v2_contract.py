@@ -34,18 +34,19 @@ def test_map_editor_v2_exposes_typed_unit_painting():
 
 
 def test_map_editor_v2_uses_star_faction_colors_and_navigation_controls():
-    js = _read("editor-v2.js")
     css = _read("style-v2.css")
+    color_fix = _read("faction-colors-v2.js")
     html = _read("index.html")
 
-    assert 'wei: { label: "Wei", color: "#4f79ff" }' in js
-    assert 'shu: { label: "Shu", color: "#46c878" }' in js
-    assert 'wu: { label: "Wu", color: "#ff5f5f" }' in js
+    assert 'src="faction-colors-v2.js"' in html
+    assert 'Wei: "#4f79ff"' in color_fix
+    assert 'Shu: "#ff5f5f"' in color_fix
+    assert 'Wu: "#46c878"' in color_fix
     assert ".dot.wei { background: #4f79ff; }" in css
-    assert ".dot.shu { background: #46c878; }" in css
-    assert ".dot.wu { background: #ff5f5f; }" in css
+    assert ".dot.shu { background: #ff5f5f; }" in css
+    assert ".dot.wu { background: #46c878; }" in css
 
     for control in ("zoomOutBtn", "zoomFitBtn", "zoomInBtn"):
         assert f'id="{control}"' in html
-    assert 'els.svg.addEventListener("wheel"' in js
-    assert "state.spaceDown" in js
+    assert 'els.svg.addEventListener("wheel"' in _read("editor-v2.js")
+    assert "state.spaceDown" in _read("editor-v2.js")
