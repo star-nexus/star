@@ -81,7 +81,19 @@ class GameScene(Scene):
         # snapshot; otherwise an FPS number is meaningless without map/unit size.
         map_data = self.world.get_singleton_component(MapData)
         initial_units = len(self.world.query().with_component(Unit).entities())
+        mode_label = (
+            self.game_mode.value if hasattr(self.game_mode, "value") else str(self.game_mode)
+        )
+        players_label = ",".join(
+            f"{getattr(faction, 'value', faction)}:{getattr(player_type, 'value', player_type)}"
+            for faction, player_type in sorted(
+                self.players.items(), key=lambda item: str(getattr(item[0], "value", item[0]))
+            )
+        )
         metadata = {
+            "mode": mode_label,
+            "scenario": self.scenario,
+            "players": players_label,
             "initial_units": initial_units,
             "display": display,
         }
