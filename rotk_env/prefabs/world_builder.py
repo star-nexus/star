@@ -162,6 +162,7 @@ class _SkirmishAssembler:
         self._initialize_systems()
         self._initialize_players()
         self._initialize_units()
+        self._initialize_scale_spatial_index()
         self._initialize_stats()
         self._refresh_opening_vision()
 
@@ -208,18 +209,30 @@ class _SkirmishAssembler:
 
     def _initialize_systems(self) -> None:
         vision_system = BaseVisionSystem()
+        movement_system = MovementSystem()
+        combat_system = CombatSystem()
+        recovery_system = ResourceRecoverySystem()
+
         if self.display == "window":
             from ..systems.scale_vision_system import VisionSystem as WindowVisionSystem
+            from ..systems.scale_movement_system import MovementSystem as WindowMovementSystem
+            from ..systems.scale_combat_system import CombatSystem as WindowCombatSystem
+            from ..systems.scale_resource_recovery_system import (
+                ResourceRecoverySystem as WindowResourceRecoverySystem,
+            )
 
             vision_system = WindowVisionSystem()
+            movement_system = WindowMovementSystem()
+            combat_system = WindowCombatSystem()
+            recovery_system = WindowResourceRecoverySystem()
 
         systems = [
             GameTimeSystem(),
             MapSystem(scenario=self.scenario),
             vision_system,
-            MovementSystem(),
-            CombatSystem(),
-            ResourceRecoverySystem(),
+            movement_system,
+            combat_system,
+            recovery_system,
         ]
 
         if self.enable_mock_ai:
@@ -254,10 +267,8 @@ class _SkirmishAssembler:
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
-            from ..systems.optimized_render_systems import (
-                MapRenderSystem,
-                UnitRenderSystem,
-            )
+            from ..systems.optimized_render_systems import MapRenderSystem
+            from ..systems.scale_unit_render_system import UnitRenderSystem
             from ..systems.scale_minimap_system import MiniMapSystem
             from ..systems.scale_effect_render_system import EffectRenderSystem
             from ..systems.panel_render_system import PanelRenderSystem
@@ -278,7 +289,12 @@ class _SkirmishAssembler:
                 ]
             )
         if self.game_mode == GameMode.REAL_TIME:
-            systems.append(RealtimeSystem())
+            realtime_system = RealtimeSystem()
+            if self.display == "window":
+                from ..systems.scale_realtime_system import RealtimeSystem as WindowRealtimeSystem
+
+                realtime_system = WindowRealtimeSystem()
+            systems.append(realtime_system)
         else:
             systems.append(TurnSystem())
         for system in systems:
@@ -332,6 +348,14 @@ class _SkirmishAssembler:
                     name=f"{faction.value}_{unit_type.value}_{i+1}",
                 )
                 player.units.add(unit_entity)
+
+    def _initialize_scale_spatial_index(self) -> None:
+        """Build the window-only derived unit index before profiling begins."""
+        if self.display != "window":
+            return
+        from ..utils.unit_spatial_index import rebuild_unit_spatial_index
+
+        rebuild_unit_spatial_index(self.world)
 
     def _create_unit(
         self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
