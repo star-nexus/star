@@ -12,6 +12,7 @@ from ..components.start_menu import (
     StartMenuConfig,
     StartMenuButtons,
     StartMenuOptions,
+    START_PLAYER_OPTIONS,
     start_panel_layout,
     clamp_scenario_scroll,
     START_SCENARIO_COLS,
@@ -286,7 +287,7 @@ class StartSceneRenderSystem(System):
             RMS.draw(option_surface, (option_x, option_y + i * 45))
 
     def _render_player_config(self, config: StartMenuConfig, x: int, y: int) -> None:
-        """Render player config"""
+        """Render player config from the shared start-menu control presets."""
         self._render_text_with_style(
             "Player Configuration", 
             self.font_medium, 
@@ -296,29 +297,12 @@ class StartSceneRenderSystem(System):
             shadow=True
         )
 
-        # Player config options
-        player_configs = [
-            ({Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}, "Human Commander vs AI Strategist"),
-            ({Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI}, "AI vs AI Battle"),
-            (
-                {
-                    Faction.WEI: PlayerType.AI,
-                    Faction.SHU: PlayerType.AI,
-                    Faction.WU: PlayerType.AI,
-                },
-                "Three Kingdoms Epic",
-            ),
-        ]
-
         option_y = y + 60
-        for i, (players, name) in enumerate(player_configs):
+        for i, (players, name, _mock_ai_enabled) in enumerate(START_PLAYER_OPTIONS):
             is_selected = self._compare_player_configs(config.selected_players, players)
             color = self.selected_color if is_selected else self.text_color
-            option_surface = self.font_small.render(f"○ {name}", True, color)
-            if is_selected:
-                option_surface = self.font_small.render(f"● {name}", True, color)
-
-            # Use the same line spacing as the game mode
+            marker = "●" if is_selected else "○"
+            option_surface = self.font_small.render(f"{marker} {name}", True, color)
             RMS.draw(option_surface, (x + 50, option_y + i * 45))
 
     def _render_scenario_config(self, config: StartMenuConfig, geom: Dict[str, int]) -> None:
