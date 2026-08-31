@@ -5,7 +5,6 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
 
-from framework.engine import RMS
 from rotk_env.components import MapData
 from rotk_env.systems.fast_render_systems import FastMapRenderSystem
 
@@ -30,7 +29,15 @@ def teardown_module():
     pygame.quit()
 
 
-def test_camera_motion_stays_direct_then_stationary_view_rasterizes(monkeypatch):
+def test_base_fast_renderer_still_keeps_direct_then_stationary_raster_contract(monkeypatch):
+    """Keep coverage for FastMapRenderSystem itself.
+
+    Window mode now layers ScaleMapRenderSystem's overscan policy on top of this
+    base class, but the original adaptive direct/stationary implementation stays
+    valid and available to subclasses.
+    """
+    from framework.engine import RMS
+
     renderer = FastMapRenderSystem()
     renderer.world = _World(SimpleNamespace(map_id="test", tiles={}))
 
@@ -51,7 +58,6 @@ def test_camera_motion_stays_direct_then_stationary_view_rasterizes(monkeypatch)
     monkeypatch.setattr(renderer, "_build_terrain_surface", fake_build)
     monkeypatch.setattr(RMS, "draw", lambda *args, **kwargs: draw_calls.append(args) or RMS)
 
-    # Continuously changing camera state: never build a full-window raster.
     renderer._render_map_optimized(set(), [0.0, 0.0], 1.0)
     renderer._render_map_optimized(set(), [10.0, 0.0], 1.0)
     renderer._render_map_optimized(set(), [20.0, 0.0], 1.0)
@@ -59,8 +65,6 @@ def test_camera_motion_stays_direct_then_stationary_view_rasterizes(monkeypatch)
     assert len(direct_calls) == 3
     assert build_calls == []
 
-    # Second frame at the exact same camera state builds once; following frames
-    # reuse that raster rather than rebuilding it.
     renderer._render_map_optimized(set(), [20.0, 0.0], 1.0)
     assert len(build_calls) == 1
 
