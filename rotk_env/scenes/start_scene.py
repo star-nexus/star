@@ -219,6 +219,10 @@ class StartScene(Scene):
             option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
             if option_rect.collidepoint(pos):
                 config.selected_players = player_config.copy()
+                # The first two menu choices are explicit local rule-BOT modes.
+                # Three Kingdoms Epic is the external-agent benchmark setup;
+                # never let MockLLMAISystem race agents before they connect.
+                config.mock_ai_enabled = i < 2
                 return
 
         catalog = config.scenario_catalog or []
@@ -269,6 +273,7 @@ class StartScene(Scene):
             "mode": config.selected_mode,
             "players": config.selected_players.copy(),
             "scenario": config.selected_scenario,
+            "enable_mock_ai": config.mock_ai_enabled,
         }
 
         # Switch to game scene via the engine
