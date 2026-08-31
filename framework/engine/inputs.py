@@ -38,12 +38,17 @@ class InputSystem:
     def update(self):
         profiler = profiling.profiler
 
-        # A rare long frame was traced to the engine-level input_system timer.
-        # Split SDL queue retrieval from synchronous EventBus dispatch so the
-        # next spike tells us whether we are draining a large OS/SDL backlog or
-        # spending the time in one of the input callbacks.
-        with profiler.time_system("input_event_get", category="input"):
-            events = pygame.event.get()
+        # pygame.event.get() normally performs two jobs: it first pumps SDL's
+        # platform event loop, then drains the already queued Pygame events.
+        # A 200-unit macOS stress run showed rare 30-70 ms stalls inside that
+        # combined call even when only 1-5 events were returned. Keep the exact
+        # input semantics, but time the two phases independently so we can tell
+        # a Cocoa/SDL pump stall from Python-side queue retrieval/dispatch.
+        with profiler.time_system("input_event_pump", category="input"):
+            pygame.event.pump()
+
+        with profiler.time_system("input_event_get_queue", category="input"):
+            events = pygame.event.get(pump=False)
 
         collect_metrics = bool(getattr(profiler, "enabled", False))
         counts = None
