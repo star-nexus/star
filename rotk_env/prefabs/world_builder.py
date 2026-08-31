@@ -236,14 +236,14 @@ class _SkirmishAssembler:
         )
 
         if self.display in ("dummy", "window"):
-            from ..systems.animation_system import AnimationSystem
-
             if self.display == "window":
-                # Window mode needs render-consistent sprite hit-testing and
-                # action-menu targeting. Keep dummy/headless on the legacy
-                # input path so evaluation semantics remain untouched.
+                # All visible launches share the same window-specific input and
+                # animation semantics. Dummy/headless keeps legacy non-rendering
+                # systems so evaluation behavior is unchanged.
+                from ..systems.window_animation_system import AnimationSystem
                 from ..systems.scale_input_system import InputHandlingSystem
             else:
+                from ..systems.animation_system import AnimationSystem
                 from ..systems.input_system import InputHandlingSystem
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
