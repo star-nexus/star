@@ -11,8 +11,15 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
+
+# Support both `python -m tools.generate_scale_map` and direct execution such as
+# `uv run tools/generate_scale_map.py` from the repository root.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from rotk_env.maps.map_file import MapDocument, load_map, resolve_map_path
 from rotk_env.prefabs.config import Faction, TerrainType
