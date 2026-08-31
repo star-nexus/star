@@ -20,6 +20,7 @@ class Profiler(Protocol):
     def end_frame(self) -> None: ...
     def print_stats(self) -> None: ...
     def set_metadata(self, **values: object) -> None: ...
+    def set_frame_metric(self, name: str, value: object) -> None: ...
 
 
 class NullProfiler:
@@ -39,6 +40,9 @@ class NullProfiler:
         pass
 
     def set_metadata(self, **values: object) -> None:
+        pass
+
+    def set_frame_metric(self, name: str, value: object) -> None:
         pass
 
 
