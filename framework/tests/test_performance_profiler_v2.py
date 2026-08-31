@@ -150,3 +150,37 @@ def test_disabled_profiler_is_a_noop(monkeypatch):
     profiler.end_frame()
 
     assert profiler.get_stats() == {}
+
+
+def test_slow_frame_capture_keeps_frame_metrics_and_top_sections(monkeypatch):
+    # 40ms frame with 22ms in render_engine. The absolute 30ms floor should
+    # capture it even before enough history exists to derive a rolling p99.
+    _clock(
+        monkeypatch,
+        [
+            0,
+            1_000_000,
+            23_000_000,
+            40_000_000,
+        ],
+    )
+    profiler = _enabled_profiler()
+
+    profiler.start_frame()
+    profiler.set_frame_metric("visible_units", 200)
+    profiler.set_frame_metric("animated_visible_units", 37)
+    with profiler.time_system("render_engine", category="render"):
+        pass
+    profiler.end_frame()
+
+    stats = profiler.get_stats()
+    assert stats["slow_frame_count"] == 1
+    assert len(stats["slow_frames"]) == 1
+
+    spike = stats["slow_frames"][0]
+    assert spike["frame_ms"] == pytest.approx(40.0)
+    assert spike["threshold_ms"] == pytest.approx(30.0)
+    assert spike["frame_metrics"]["visible_units"] == 200
+    assert spike["frame_metrics"]["animated_visible_units"] == 37
+    assert spike["top_sections"][0]["name"] == "render_engine"
+    assert spike["top_sections"][0]["self_ms"] == pytest.approx(22.0)
