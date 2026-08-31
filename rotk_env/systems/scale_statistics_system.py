@@ -10,6 +10,12 @@ The observation history keeps ordinary ``list`` semantics for compatibility,
 but trims only the small overflow beyond the cap. The previous implementation
 periodically copied the newest 5000 records and released ~5000 dicts in one
 frame, which can create a 20 ms allocator/refcount tail at 2000 units.
+
+Visibility history is change-oriented rather than snapshot-oriented. The live
+``faction_visible_units`` and ``UnitObservation.is_visible_to`` state is still
+refreshed by the sampler, but an immutable history record is allocated only
+when a unit's visibility relation actually changes. Stable visibility therefore
+does not create thousands of duplicate dict/list objects every second.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from ..components import (
     VisibilityTracker,
 )
 from ..prefabs.config import Faction
+from ..utils.unit_spatial_index import get_unit_spatial_index
 from .statistics_system import StatisticsSystem as _BaseStatisticsSystem
 
 
@@ -38,6 +45,7 @@ class StatisticsSystem(_BaseStatisticsSystem):
 
     DEFAULT_BATCH_SIZE = 128
     OBSERVATION_HISTORY_LIMIT = 10000
+    VISIBILITY_HISTORY_LIMIT = 100
 
     def __init__(self, batch_size: int = DEFAULT_BATCH_SIZE):
         super().__init__()
@@ -87,6 +95,7 @@ class StatisticsSystem(_BaseStatisticsSystem):
             "visibility_entities": visibility_entities,
             "faction_counts": {},
             "visibility_cleared": False,
+            "fog_disabled_visible_to": None,
         }
         self.last_update_time = current_time
         profiling.profiler.set_frame_metric(
@@ -199,6 +208,85 @@ class StatisticsSystem(_BaseStatisticsSystem):
             cycle["index"] = 0
         return len(batch)
 
+    def _fog_disabled_visible_factions(self, cycle: dict, fog_of_war: FogOfWar):
+        """Return one shared immutable visibility set for fog-disabled batches."""
+        cached = cycle.get("fog_disabled_visible_to")
+        if cached is not None:
+            return cached
+
+        factions = set(fog_of_war.faction_vision.keys())
+        spatial_index = get_unit_spatial_index(self.world)
+        if spatial_index is not None:
+            factions.update(spatial_index.living_factions())
+        cached = frozenset(factions)
+        cycle["fog_disabled_visible_to"] = cached
+        return cached
+
+    def _record_visibility_change(
+        self,
+        entity: int,
+        current_visible,
+        visibility_tracker: VisibilityTracker,
+        observation: UnitObservation | None,
+        current_time: float,
+    ) -> tuple[int, int]:
+        """Update live visibility and append history only when the relation changes.
+
+        Returns ``(records_appended, records_trimmed)``.  The first record is a
+        baseline snapshot; later records are true change events with
+        ``newly_spotted`` / ``lost_sight`` derived from the previous state.
+        """
+        previous_visible = observation.is_visible_to if observation else set()
+        changed = previous_visible != current_visible
+
+        if observation is not None:
+            # Keep the live state fresh without replacing its set object every
+            # statistics cycle.  ``last_seen_time`` retains the legacy sampler's
+            # semantics: the own faction always sees the unit.
+            observation.last_seen_time = current_time
+
+        if not changed:
+            return 0, 0
+
+        history = visibility_tracker.visibility_history.setdefault(entity, [])
+        baseline = not history and not previous_visible
+        newly_spotted = (
+            False
+            if baseline
+            else any(faction not in previous_visible for faction in current_visible)
+        )
+        lost_sight = (
+            False
+            if baseline
+            else any(faction not in current_visible for faction in previous_visible)
+        )
+
+        history.append(
+            {
+                "timestamp": current_time,
+                "visible_to": sorted(
+                    current_visible,
+                    key=lambda faction: getattr(faction, "value", str(faction)),
+                ),
+                "newly_spotted": newly_spotted,
+                "lost_sight": lost_sight,
+            }
+        )
+
+        overflow = len(history) - self.VISIBILITY_HISTORY_LIMIT
+        trimmed = 0
+        if overflow > 0:
+            # Change events are rare; bound the compatibility list in place and
+            # never allocate a replacement 100-item list.
+            del history[:overflow]
+            trimmed = overflow
+
+        if observation is not None:
+            observation.is_visible_to.clear()
+            observation.is_visible_to.update(current_visible)
+
+        return 1, trimmed
+
     def _process_visibility_batch(self, cycle: dict) -> int:
         entities = cycle["visibility_entities"]
         visibility_tracker = self.world.get_singleton_component(VisibilityTracker)
@@ -215,6 +303,16 @@ class StatisticsSystem(_BaseStatisticsSystem):
             cycle["visibility_cleared"] = True
 
         batch, end = self._batch_slice(entities, cycle["index"])
+        current_time = time.time()
+        fog_disabled_visible_to = (
+            self._fog_disabled_visible_factions(cycle, fog_of_war)
+            if not fog_of_war.enabled
+            else None
+        )
+        changes = 0
+        records = 0
+        trimmed = 0
+
         with profiling.profiler.time_system(
             "statistics_visibility", category="work"
         ):
@@ -224,16 +322,51 @@ class StatisticsSystem(_BaseStatisticsSystem):
                 if not unit or not position:
                     continue
 
-                unit_pos = (position.col, position.row)
-                visible_to = {
-                    faction
-                    for faction, vision_tiles in fog_of_war.faction_vision.items()
-                    if faction != unit.faction and unit_pos in vision_tiles
-                }
-                visible_to.add(unit.faction)
-                self._update_unit_visibility(
-                    entity, visible_to, visibility_tracker
+                if fog_disabled_visible_to is not None:
+                    # Fog-off is one stable all-visible relation. Reuse one
+                    # frozenset for the whole batch instead of allocating one
+                    # temporary set per unit.
+                    if unit.faction in fog_disabled_visible_to:
+                        visible_to = fog_disabled_visible_to
+                    else:
+                        visible_to = frozenset((*fog_disabled_visible_to, unit.faction))
+                else:
+                    unit_pos = (position.col, position.row)
+                    visible_to = {
+                        faction
+                        for faction, vision_tiles in fog_of_war.faction_vision.items()
+                        if faction != unit.faction and unit_pos in vision_tiles
+                    }
+                    visible_to.add(unit.faction)
+
+                # Maintain the live faction -> visible-unit view every cycle.
+                for faction in visible_to:
+                    visibility_tracker.faction_visible_units.setdefault(
+                        faction, set()
+                    ).add(entity)
+
+                observation = self.world.get_component(entity, UnitObservation)
+                appended, dropped = self._record_visibility_change(
+                    entity,
+                    visible_to,
+                    visibility_tracker,
+                    observation,
+                    current_time,
                 )
+                records += appended
+                trimmed += dropped
+                changes += int(bool(appended))
+
+        profiling.profiler.set_frame_metric("statistics_visibility_changes", changes)
+        profiling.profiler.set_frame_metric(
+            "statistics_visibility_history_records", records
+        )
+        profiling.profiler.set_frame_metric(
+            "statistics_visibility_history_trimmed", trimmed
+        )
+        profiling.profiler.set_frame_metric(
+            "statistics_visibility_fog_disabled", int(not fog_of_war.enabled)
+        )
 
         cycle["index"] = end
         if end >= len(entities):
