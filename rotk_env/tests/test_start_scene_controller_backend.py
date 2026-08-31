@@ -43,6 +43,8 @@ def _scene(backend):
     scene.engine = SimpleNamespace(scene_manager=_SceneManager())
     scene.game_config = None
     scene._pending_game_config = None
+    # Unit-test the handoff contract without requiring an SDL display window.
+    scene._focus_display_window = lambda: None
     return scene
 
 
@@ -50,8 +52,6 @@ def _queue_and_flush(backend):
     scene = _scene(backend)
     scene._start_game()
 
-    # Menu clicks only queue. GameScene construction happens later from the
-    # StartScene update phase, never from inside MouseButtonDown dispatch.
     assert scene.engine.scene_manager.calls == []
     assert scene._pending_game_config is not None
     assert scene._flush_pending_game_start() is True
