@@ -4,6 +4,10 @@ GameScene, pytest, and ``--headless --no-hub`` share this builder so the
 system list and opening setup stay one copy. ``hub_url=None`` installs an
 offline ``LLMSystem`` that never opens a websocket.
 
+The built-in ``MockLLMAISystem`` is an explicit rule-BOT controller, not an
+automatic fallback for missing external agents. It is mounted only when
+``enable_mock_ai=True``.
+
 This assembler is the current eval match: annihilate the enemy on one map.
 TerritorySystem, RandomEventSystem, ConstructionPoints, and SkillPoints stay
 in ENV for other scenes; they are not mounted here. Map tiles are terrain
@@ -83,6 +87,7 @@ def build_skirmish_world(
     hub_url: Optional[str] = None,
     env_id: Optional[str] = None,
     display: DisplayKind = "none",
+    enable_mock_ai: bool = False,
     world: Optional[World] = None,
 ) -> World:
     """Build a match World.
@@ -95,6 +100,10 @@ def build_skirmish_world(
 
     ``hub_url=None`` keeps ``LLMSystem`` offline. Pass ``DEFAULT_HUB_URL``
     (or another websocket URL) to attach to a Hub.
+
+    ``enable_mock_ai`` explicitly mounts the built-in rule BOT. Leaving it
+    false guarantees that no MockLLMAISystem runs in the background, even if
+    player slots are marked ``PlayerType.AI`` for external-agent evaluation.
     """
     if isinstance(mode, str):
         try:
@@ -114,6 +123,7 @@ def build_skirmish_world(
         hub_url=hub_url,
         env_id=env_id,
         display=display,
+        enable_mock_ai=enable_mock_ai,
     )
     assembler.assemble()
     return assembler.world
@@ -131,6 +141,7 @@ class _SkirmishAssembler:
         hub_url: Optional[str],
         env_id: Optional[str],
         display: DisplayKind,
+        enable_mock_ai: bool,
     ):
         self.world = world
         self.players = players
@@ -141,6 +152,7 @@ class _SkirmishAssembler:
         self.hub_url = hub_url
         self.env_id = env_id
         self.display = display
+        self.enable_mock_ai = bool(enable_mock_ai)
         self._temp_initial_unit_counts: Dict[Faction, int] = {}
 
     def assemble(self) -> None:
@@ -202,11 +214,22 @@ class _SkirmishAssembler:
             MovementSystem(),
             CombatSystem(),
             ResourceRecoverySystem(),
-            MockLLMAISystem(),
-            LLMSystem(server_url=self.hub_url, env_id=self.env_id),
-            StatisticsSystem(),
-            SettlementReportSystem(),
         ]
+
+        # Rule BOT is opt-in. In particular, an AI/AI/AI benchmark should not
+        # let a local heuristic controller take actions while external agents
+        # are still connecting to the Hub.
+        if self.enable_mock_ai:
+            systems.append(MockLLMAISystem())
+
+        systems.extend(
+            [
+                LLMSystem(server_url=self.hub_url, env_id=self.env_id),
+                StatisticsSystem(),
+                SettlementReportSystem(),
+            ]
+        )
+
         # Display-dependent systems are imported here, not at module scope:
         # they pull in pygame, and `display="none"` (the eval path) mounts none
         # of them. A module-level import would put SDL in every headless run.
