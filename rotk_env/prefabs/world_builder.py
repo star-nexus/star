@@ -222,10 +222,21 @@ class _SkirmishAssembler:
         if self.enable_mock_ai:
             systems.append(MockLLMAISystem())
 
+        # Preserve the legacy one-shot sampler for headless/dummy evaluation.
+        # Only the visible interactive path amortizes its periodic O(units)
+        # statistics work over small batches to avoid 1000-unit frame spikes.
+        statistics_system = StatisticsSystem()
+        if self.display == "window":
+            from ..systems.scale_statistics_system import (
+                StatisticsSystem as WindowStatisticsSystem,
+            )
+
+            statistics_system = WindowStatisticsSystem()
+
         systems.extend(
             [
                 LLMSystem(server_url=self.hub_url, env_id=self.env_id),
-                StatisticsSystem(),
+                statistics_system,
                 SettlementReportSystem(),
             ]
         )
@@ -242,11 +253,11 @@ class _SkirmishAssembler:
             # Compatibility-named optimized renderers preserve legacy UI helpers
             # that discover systems by class name.
             from ..systems.optimized_render_systems import (
-                EffectRenderSystem,
                 MapRenderSystem,
                 MiniMapSystem,
                 UnitRenderSystem,
             )
+            from ..systems.scale_effect_render_system import EffectRenderSystem
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
             from ..systems.ui_render_system import UIRenderSystem
