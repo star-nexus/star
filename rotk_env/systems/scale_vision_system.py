@@ -10,9 +10,10 @@ reference-counted faction aggregate. Unchanged units keep their cached LOS and
 perform no set union. Spawn/move/range/faction changes update only the affected
 unit contribution; removed units subtract their previous contribution.
 
-When fog is disabled, no visibility aggregate is needed by the visible window,
-so the system suspends entirely. Re-enabling fog triggers a one-pass aggregate
-rebuild from the existing per-unit LOS caches before gameplay continues.
+When fog is disabled, the visible window publishes one shared whole-map tile
+set for every active faction and then suspends per-unit vision work entirely.
+Re-enabling fog triggers a one-pass aggregate rebuild from the existing per-unit
+LOS caches before gameplay continues.
 
 The canonical/headless VisionSystem remains untouched; this class is installed
 only for display='window'.
@@ -25,7 +26,7 @@ from typing import Dict, Set, Tuple
 
 from framework.ecs import profiling
 
-from ..components import FogOfWar, HexPosition, Unit, Vision
+from ..components import FogOfWar, HexPosition, MapData, Unit, Vision
 from ..prefabs.config import Faction
 from .vision_system import VisionSystem as _BaseVisionSystem
 
@@ -99,6 +100,21 @@ class VisionSystem(_BaseVisionSystem):
             # every frame. Consumers treat faction_vision as read-only state.
             fog.faction_vision[faction] = tiles
 
+    def _publish_fog_disabled_visibility(self, fog: FogOfWar) -> None:
+        """Publish whole-map visibility once without scanning units every frame."""
+        map_data = self.world.get_singleton_component(MapData)
+        all_tiles = set(map_data.tiles) if map_data is not None else set()
+        factions = {state[0] for state in self._unit_state.values()}
+        if not factions:
+            for entity in self.world.query().with_component(Unit).entities():
+                unit = self.world.get_component(entity, Unit)
+                if unit is not None:
+                    factions.add(unit.faction)
+        fog.faction_vision.clear()
+        for faction in factions:
+            fog.faction_vision[faction] = all_tiles
+            fog.explored_tiles.setdefault(faction, set()).update(all_tiles)
+
     def _update_fog_of_war(self):
         fog = self.world.get_singleton_component(FogOfWar)
         if not fog:
@@ -106,9 +122,11 @@ class VisionSystem(_BaseVisionSystem):
             self.world.add_singleton_component(fog)
 
         if not fog.enabled:
-            # Fog-off semantics are "whole map visible"; rebuilding faction LOS
-            # every frame is pure work. Preserve explored history and rebuild the
-            # live aggregate once if fog is enabled again.
+            # Fog-off semantics are whole-map visibility for humans, BOTs and
+            # agents. Publish that state once on transition, then do zero per-unit
+            # vision work until fog is re-enabled.
+            if self._fog_was_enabled:
+                self._publish_fog_disabled_visibility(fog)
             self._fog_was_enabled = False
             self._force_aggregate_rebuild = True
             profiling.profiler.set_frame_metric("vision_mode", "fog_disabled")
