@@ -18,7 +18,17 @@ import pygame
 
 from framework.engine import RMS
 from framework.ecs import profiling
-from ..components import Camera, DamageNumber, HexPosition
+from ..components import (
+    Camera,
+    DamageNumber,
+    FogOfWar,
+    GameState,
+    HexPosition,
+    UIState,
+    Unit,
+    UnitCount,
+)
+from ..prefabs.config import Faction, GameConfig, UnitType
 from .fast_render_systems import (
     FastEffectRenderSystem,
     FastMiniMapSystem,
@@ -32,10 +42,38 @@ class MapRenderSystem(ScaleMapRenderSystem):
 
 
 class UnitRenderSystem(FastUnitRenderSystem):
-    """Scale renderer plus second-level diagnostics for rare UnitRender tails."""
+    """Scale renderer plus diagnostics for rare UnitRender tails.
+
+    The <=20-visible-unit path intentionally preserves richer unit labels and
+    status visuals, but its legacy implementation was not scale-safe: every
+    visible unit could rescan the whole world to count same-hex occupants, and
+    arbitrary zoom values could cold-start a new pygame Font.render() path.
+
+    Keep the rich visuals while making the path bounded:
+    * build one visibility-correct occupancy snapshot when entering full mode;
+    * use O(1) same-hex lookups from that snapshot;
+    * quantize label sizes and pre-render all label/faction surfaces at startup.
+    """
 
     COMBAT_FONT_SIZES = (20, 24, 28)
     COMBAT_FONT_PREWARM_TEXT = "0123456789MISSCRIT!+-"
+
+    # Full-featured mode only appears when <=20 units are visible, typically at
+    # high zoom or near the board edge. A finite size ladder avoids arbitrary
+    # SDL_ttf/FreeType cold paths while keeping label size visually close to the
+    # legacy int(14 * zoom * scale) behavior over the supported 0.15..3.0 zoom.
+    UNIT_LABEL_FONT_SIZES = (8, 10, 12, 14, 16, 20, 24, 28, 34, 42)
+    UNIT_LABELS = {
+        UnitType.INFANTRY: "Infantry",
+        UnitType.CAVALRY: "Cavalry",
+        UnitType.ARCHER: "Archer",
+    }
+
+    def __init__(self):
+        super().__init__()
+        self._full_featured_occupancy_index = None
+        self._unit_label_surface_cache = {}
+        self._frame_unit_label_cache_misses = 0
 
     def initialize(self, world) -> None:
         super().initialize(world)
@@ -46,6 +84,11 @@ class UnitRenderSystem(FastUnitRenderSystem):
         animation_system = self._get_animation_system()
         if animation_system:
             self._prewarm_combat_fonts(animation_system)
+
+        # The legacy rich-unit label path used arbitrary zoom-derived font
+        # sizes, so the first visit to a new size could hit the same native font
+        # cold path. Pre-render the finite label ladder once before gameplay.
+        self._prewarm_unit_label_surfaces()
 
     def _prewarm_combat_fonts(self, animation_system) -> None:
         """Prime SDL_ttf/FreeType combat glyphs outside the gameplay hot path."""
@@ -79,6 +122,38 @@ class UnitRenderSystem(FastUnitRenderSystem):
             + " px"
         )
 
+    def _prewarm_unit_label_surfaces(self) -> None:
+        """Pre-render all rich-unit labels so gameplay never cold-renders them."""
+        self._unit_label_surface_cache.clear()
+        built = 0
+        try:
+            for font_size in self.UNIT_LABEL_FONT_SIZES:
+                font = self._get_font(font_size)
+                if font is None:
+                    continue
+                for faction in Faction:
+                    color = GameConfig.FACTION_COLORS.get(
+                        faction, (255, 255, 255)
+                    )
+                    for unit_type, label in self.UNIT_LABELS.items():
+                        surface = font.render(label, True, color)
+                        self._unit_label_surface_cache[
+                            (unit_type, faction, font_size)
+                        ] = surface
+                        built += 1
+        except (pygame.error, FileNotFoundError) as exc:
+            print(f"[UnitRenderSystem] Unit label prewarm skipped: {exc}")
+            return
+
+        print(f"[UnitRenderSystem] Unit label surfaces prewarmed: {built} variants")
+
+    def _quantize_unit_label_font_size(self, requested_size: int) -> int:
+        """Return the nearest prewarmed label size; ties prefer the smaller size."""
+        return min(
+            self.UNIT_LABEL_FONT_SIZES,
+            key=lambda size: (abs(size - requested_size), size),
+        )
+
     def _reset_texture_cache_frame_stats(self) -> None:
         # The parent base renderer owns these aggregate counters. The fast
         # renderer has a separate dynamic LRU tier, so reset both views here.
@@ -87,6 +162,7 @@ class UnitRenderSystem(FastUnitRenderSystem):
         self._frame_fast_cache_misses = 0
         self._frame_fast_texture_scales = 0
         self._frame_fast_cache_evictions = 0
+        self._frame_unit_label_cache_misses = 0
 
     def _publish_texture_cache_frame_stats(self) -> None:
         # Report the cache that is actually used by FastUnitRenderSystem:
@@ -123,6 +199,9 @@ class UnitRenderSystem(FastUnitRenderSystem):
         )
         profiling.profiler.set_frame_metric(
             "fast_unit_texture_evictions", self._frame_fast_cache_evictions
+        )
+        profiling.profiler.set_frame_metric(
+            "unit_full_icon_cache_misses", self._frame_unit_label_cache_misses
         )
 
     def _get_cached_texture(self, faction, unit_type, size: int):
@@ -200,13 +279,33 @@ class UnitRenderSystem(FastUnitRenderSystem):
 
         if render_strategy == "full_featured":
             step3_start = time.time() if self.enable_profiler else None
-            with profiling.profiler.time_system(
-                "unit_full_featured_draw", category="render"
-            ):
-                self._render_units_full_featured(visible_units, camera_offset, zoom)
+            if visible_units:
+                with profiling.profiler.time_system(
+                    "unit_full_occupancy_snapshot", category="render"
+                ):
+                    self._full_featured_occupancy_index = (
+                        self._build_full_featured_occupancy_snapshot()
+                    )
+            else:
+                self._full_featured_occupancy_index = {}
+                profiling.profiler.set_frame_metric("unit_full_occupancy_units", 0)
+                profiling.profiler.set_frame_metric("unit_full_occupancy_hexes", 0)
+
+            try:
+                with profiling.profiler.time_system(
+                    "unit_full_featured_draw", category="render"
+                ):
+                    self._render_units_full_featured(
+                        visible_units, camera_offset, zoom
+                    )
+            finally:
+                self._full_featured_occupancy_index = None
+
             if self.enable_profiler:
                 self._add_step_time("full_featured_render", time.time() - step3_start)
         else:
+            profiling.profiler.set_frame_metric("unit_full_occupancy_units", 0)
+            profiling.profiler.set_frame_metric("unit_full_occupancy_hexes", 0)
             step3_start = time.time() if self.enable_profiler else None
             self._render_units_batch(visible_units, camera_offset, zoom)
             if self.enable_profiler:
@@ -231,6 +330,105 @@ class UnitRenderSystem(FastUnitRenderSystem):
                 self._print_detailed_performance_stats(
                     len(visible_units), render_strategy, total_time
                 )
+
+    def _build_full_featured_occupancy_snapshot(self):
+        """Build one visibility-correct same-hex index for the rich render pass.
+
+        Legacy ``_get_units_in_same_hex`` rescanned every world unit for every
+        visible rich-render unit, making the path O(V*N). Full mode has V<=20,
+        so one O(N) snapshot plus O(1) lookups is both simpler and scale-safe.
+        """
+        game_state = self.world.get_singleton_component(GameState)
+        fog = self.world.get_singleton_component(FogOfWar)
+        ui_state = self.world.get_singleton_component(UIState)
+        fog_filter = bool(game_state and fog and fog.enabled and ui_state)
+        view_faction = (
+            (ui_state.view_faction or game_state.current_player)
+            if fog_filter
+            else None
+        )
+        current_vision = (
+            fog.faction_vision.get(view_faction, set()) if fog_filter else None
+        )
+
+        index = {}
+        indexed_units = 0
+        entities = self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+        for entity in entities:
+            position = self.world.get_component(entity, HexPosition)
+            unit = self.world.get_component(entity, Unit)
+            if position is None or unit is None:
+                continue
+
+            if fog_filter and unit.faction != view_faction:
+                if (position.col, position.row) not in current_vision:
+                    continue
+
+            index.setdefault((position.col, position.row), []).append(entity)
+            indexed_units += 1
+
+        profiling.profiler.set_frame_metric(
+            "unit_full_occupancy_units", indexed_units
+        )
+        profiling.profiler.set_frame_metric(
+            "unit_full_occupancy_hexes", len(index)
+        )
+        return index
+
+    def _get_units_in_same_hex(self, target_entity):
+        """Use the current rich-render occupancy snapshot for O(1) lookup."""
+        if self._full_featured_occupancy_index is None:
+            return super()._get_units_in_same_hex(target_entity)
+
+        with profiling.profiler.time_system(
+            "unit_full_same_hex_lookup", category="render"
+        ):
+            target_position = self.world.get_component(target_entity, HexPosition)
+            if not target_position:
+                return [target_entity]
+            return self._full_featured_occupancy_index.get(
+                (target_position.col, target_position.row), [target_entity]
+            )
+
+    def _render_unit_group_full(
+        self, pos_key, units, camera_offset, zoom, animation_system
+    ):
+        """Keep rich group semantics while attributing its total cost."""
+        with profiling.profiler.time_system("unit_full_group", category="render"):
+            return super()._render_unit_group_full(
+                pos_key, units, camera_offset, zoom, animation_system
+            )
+
+    def _render_unit_icon(self, screen_x, screen_y, unit, zoom, scale=1.0):
+        """Draw a pre-rendered label surface from the finite size ladder."""
+        requested_size = int(14 * zoom * scale)
+        if requested_size < 8:
+            return
+
+        font_size = self._quantize_unit_label_font_size(requested_size)
+        cache_key = (unit.unit_type, unit.faction, font_size)
+        surface = self._unit_label_surface_cache.get(cache_key)
+
+        # Defensive fallback for incomplete assets/config. Normal gameplay must
+        # hit the prewarmed surface cache and therefore never call Font.render.
+        if surface is None:
+            self._frame_unit_label_cache_misses += 1
+            label = self.UNIT_LABELS.get(unit.unit_type, "?")
+            font = self._get_font(font_size)
+            if font is None:
+                return
+            color = GameConfig.FACTION_COLORS.get(
+                unit.faction, (255, 255, 255)
+            )
+            with profiling.profiler.time_system(
+                "unit_full_icon_font_render", category="render"
+            ):
+                surface = font.render(label, True, color)
+            self._unit_label_surface_cache[cache_key] = surface
+
+        with profiling.profiler.time_system("unit_full_icon_draw", category="render"):
+            rect = surface.get_rect(center=(int(screen_x), int(screen_y)))
+            RMS.draw(surface, rect)
 
     def _render_units_batch(self, visible_units, camera_offset, zoom):
         """Animation-aware batch path with prepare/static/animated timers."""
