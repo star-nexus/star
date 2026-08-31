@@ -192,6 +192,10 @@ def main():
     try:
         args = parse_arguments()
 
+        # Collection is opt-in so normal runs do not pay profiler timing/deque
+        # overhead. JSON-only runs collect silently; --profile additionally
+        # enables periodic console output.
+        profiler.enabled = args.profile or bool(args.profile_json)
         profiler.enable_profiler = args.profile
         profiler.set_metadata(
             mode=args.mode,
