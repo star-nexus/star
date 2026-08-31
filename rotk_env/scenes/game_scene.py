@@ -23,6 +23,7 @@ class GameScene(Scene):
         # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         self.game_mode = GameMode.TURN_BASED  # Default game mode
+        self.enable_mock_ai = False
 
         # Initialization flag
         self.initialized = False
@@ -57,6 +58,7 @@ class GameScene(Scene):
         # still attaches to the default local Hub.
         self.hub_url = kwargs["hub_url"] if "hub_url" in kwargs else DEFAULT_HUB_URL
         self.env_id = kwargs.get("env_id")
+        self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
 
         if not self.initialized:
             self._initialize_game()
@@ -74,6 +76,7 @@ class GameScene(Scene):
             hub_url=self.hub_url,
             env_id=self.env_id,
             display=display,
+            enable_mock_ai=self.enable_mock_ai,
             world=self.world,
         )
 
@@ -96,6 +99,7 @@ class GameScene(Scene):
             "players": players_label,
             "initial_units": initial_units,
             "display": display,
+            "mock_ai": self.enable_mock_ai,
         }
         if map_data is not None:
             metadata.update(
