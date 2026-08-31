@@ -23,7 +23,7 @@ from ..components import (
     MapData,
     set_fog_enabled,
 )
-from ..prefabs.config import GameConfig, HexOrientation, Faction
+from ..prefabs.config import GameConfig, HexOrientation, Faction, GameMode
 from ..prefabs.controls import binding_for_key
 from ..utils.hex_utils import HexConverter
 from ..utils.env_events import TileClickedEvent, UnitSelectedEvent
@@ -179,27 +179,51 @@ class InputHandlingSystem(System):
 
     def _handle_tile_click(self, hex_pos: Tuple[int, int], ui_state: UIState):
         """Handle tile click: select/move/attack depending on context."""
-        # Unit on tile?
         clicked_unit = self._get_unit_at_position(hex_pos)
 
         if clicked_unit:
-            # If current player's unit → select
-            if self._is_current_player_unit(clicked_unit):
-                # Select
+            if self._should_select_unit(clicked_unit, ui_state):
                 ui_state.selected_unit = clicked_unit
                 EBS.publish(UnitSelectedEvent(clicked_unit))
-            else:
-                # If a unit is selected, try attack
-                if ui_state.selected_unit:
-                    self._try_attack_target(ui_state.selected_unit, clicked_unit)
-        else:
-            # Empty tile
-            if ui_state.selected_unit:
-                # Try move selected unit
-                self._try_move_unit(ui_state.selected_unit, hex_pos)
+            elif ui_state.selected_unit:
+                self._try_attack_target(ui_state.selected_unit, clicked_unit)
+        elif ui_state.selected_unit:
+            self._try_move_unit(ui_state.selected_unit, hex_pos)
 
-        # Publish tile click event
         EBS.publish(TileClickedEvent(hex_pos, 1))
+
+    def _should_select_unit(self, unit_entity: int, ui_state: UIState) -> bool:
+        """Return whether a left click should select this unit.
+
+        Turn-based interaction keeps the historical current-player restriction.
+        Real-time has no meaningful single current turn, so using
+        ``GameState.current_player`` there made only the first configured faction
+        selectable forever. That is especially confusing in three-faction
+        scale tests: zooming into a Wei/Wu cluster made mouse selection appear
+        completely broken when the first configured faction was Shu.
+
+        In real-time mode:
+        * with no current selection, any clicked unit can become the manual
+          focus;
+        * with a unit selected, clicking the same faction changes selection;
+        * clicking another faction remains an attack attempt, preserving the
+          existing click-to-attack interaction;
+        * right click still clears selection, so switching factions is explicit.
+        """
+        game_state = self.world.get_singleton_component(GameState)
+        unit = self.world.get_component(unit_entity, Unit)
+        if not game_state or not unit:
+            return False
+
+        if game_state.game_mode == GameMode.REAL_TIME:
+            if not ui_state.selected_unit:
+                return True
+            selected = self.world.get_component(ui_state.selected_unit, Unit)
+            if selected is None:
+                return True
+            return selected.faction == unit.faction
+
+        return unit.faction == game_state.current_player
 
     def _handle_key_down(self, event: KeyDownEvent):
         """Handle key down (edge-triggered actions from the shared keymap)."""
