@@ -38,6 +38,9 @@ except ImportError:
         def time_system(self, name):
             return self
 
+        def set_frame_metric(self, name, value):
+            pass
+
         def __enter__(self):
             return self
 
@@ -253,6 +256,7 @@ class UnitRenderSystem(System):
         # Step 1: compute visible units
         step1_start = time.time() if self.enable_profiler else None
         visible_units = self._get_visible_units(camera_offset, zoom)
+        profiler.set_frame_metric("visible_units", len(visible_units))
         if self.enable_profiler:
             step1_time = time.time() - step1_start
             self._add_step_time("get_visible_units", step1_time)
@@ -260,6 +264,7 @@ class UnitRenderSystem(System):
         # Step 2: choose rendering strategy
         step2_start = time.time() if self.enable_profiler else None
         render_strategy = "full_featured" if len(visible_units) <= 20 else "batch"
+        profiler.set_frame_metric("unit_render_strategy", render_strategy)
         if self.enable_profiler:
             step2_time = time.time() - step2_start
             self._add_step_time("render_decision", step2_time)
@@ -386,13 +391,31 @@ class UnitRenderSystem(System):
     def _render_units_batch(
         self, visible_units: List[int], camera_offset: List[float], zoom: float
     ):
-        """High-performance batch rendering for large visible sets."""
+        """High-performance batch rendering with animation-aware positions.
+
+        The old fast path grouped every unit solely by authoritative
+        ``HexPosition``. MovementAnimation intentionally commits HexPosition only
+        when a hex is reached, so >20 visible units appeared to jump one whole
+        tile at a time even while the game was sustaining 60 FPS. Keep the cheap
+        batch visuals, but peel actively interpolated units out of the static
+        groups and draw them at the same render position used by the full path.
+        """
         if not visible_units:
+            profiler.set_frame_metric("animated_visible_units", 0)
             return
 
-        # Group by tile position
+        animation_system = self._get_animation_system()
         units_by_position = {}
+        animated_units = []
+
         for entity in visible_units:
+            animated_screen_pos = self._get_fast_animation_screen_position(
+                entity, animation_system, camera_offset, zoom
+            )
+            if animated_screen_pos is not None:
+                animated_units.append((entity, animated_screen_pos))
+                continue
+
             position = self.world.get_component(entity, HexPosition)
             if position:
                 pos_key = (position.col, position.row)
@@ -400,9 +423,50 @@ class UnitRenderSystem(System):
                     units_by_position[pos_key] = []
                 units_by_position[pos_key].append(entity)
 
-        # Render per tile
+        profiler.set_frame_metric("animated_visible_units", len(animated_units))
+
+        # Static units keep the cheap grouped layout.
         for pos_key, units in units_by_position.items():
             self._render_unit_group_optimized(pos_key, units, camera_offset, zoom)
+
+        # Animated units must preserve continuous visual motion even in the
+        # large-unit fast path. Only their position is upgraded; the renderer
+        # still uses the lightweight texture + optional health bar path.
+        for entity, (screen_x, screen_y) in animated_units:
+            self._render_single_unit_fast(entity, screen_x, screen_y, zoom)
+
+    def _get_fast_animation_screen_position(
+        self,
+        entity: int,
+        animation_system,
+        camera_offset: List[float],
+        zoom: float,
+    ) -> Optional[Tuple[float, float]]:
+        """Return interpolated screen position when an animation moves the token.
+
+        ``AnimationSystem.get_unit_render_position`` handles both movement and
+        attack offsets. Static units return their authoritative hex centre, so a
+        tiny epsilon lets them stay in the grouped batch path rather than paying
+        the per-unit animated draw path.
+        """
+        if animation_system is None:
+            return None
+
+        render_pos = animation_system.get_unit_render_position(entity)
+        position = self.world.get_component(entity, HexPosition)
+        if render_pos is None or position is None:
+            return None
+
+        base_x, base_y = self.hex_converter.hex_to_pixel(position.col, position.row)
+        dx = render_pos[0] - base_x
+        dy = render_pos[1] - base_y
+        if dx * dx + dy * dy <= 1.0:
+            return None
+
+        return (
+            render_pos[0] * zoom + camera_offset[0],
+            render_pos[1] * zoom + camera_offset[1],
+        )
 
     def _render_unit_group_full(
         self, pos_key, units, camera_offset, zoom, animation_system
