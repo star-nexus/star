@@ -18,7 +18,7 @@ from typing import Dict, Iterable, Optional, Set, Tuple
 
 from ..components import HexPosition, Unit, UnitCount
 from ..prefabs.config import Faction, GameConfig
-from .hex_utils import HexConverter
+from .hex_utils import HexConverter, HexMath
 
 Hex = Tuple[int, int]
 Bucket = Tuple[int, int]
@@ -45,7 +45,13 @@ class UnitSpatialIndex:
         )
         self.by_entity: Dict[int, UnitSpatialRecord] = {}
         self.by_cell: Dict[Hex, Dict[Faction, int]] = {}
+        self.by_cell_entities: Dict[Hex, Set[int]] = {}
         self.by_bucket: Dict[Bucket, Set[int]] = {}
+        # Bucket revisions let local consumers invalidate only when occupancy
+        # changed near the region they actually depend on.  Revisions remain
+        # even after a bucket becomes empty so an empty -> occupied transition
+        # is observable by an existing cache key.
+        self.bucket_revisions: Dict[Bucket, int] = {}
         self.living_counts: Dict[Faction, int] = {}
         self.revision = 0
 
@@ -56,15 +62,21 @@ class UnitSpatialIndex:
             floor(world_y / self.bucket_size),
         )
 
+    def _bump_bucket(self, bucket: Bucket) -> None:
+        self.bucket_revisions[bucket] = self.bucket_revisions.get(bucket, 0) + 1
+
     def _add_record(self, entity: int, col: int, row: int, faction: Faction) -> None:
         bucket = self._bucket_for_hex(col, row)
         record = UnitSpatialRecord(col, row, faction, bucket)
         self.by_entity[entity] = record
 
-        cell = self.by_cell.setdefault((col, row), {})
+        cell_key = (col, row)
+        cell = self.by_cell.setdefault(cell_key, {})
         cell[faction] = cell.get(faction, 0) + 1
+        self.by_cell_entities.setdefault(cell_key, set()).add(entity)
         self.by_bucket.setdefault(bucket, set()).add(entity)
         self.living_counts[faction] = self.living_counts.get(faction, 0) + 1
+        self._bump_bucket(bucket)
 
     def _drop_record(self, entity: int, record: UnitSpatialRecord) -> None:
         cell_key = (record.col, record.row)
@@ -78,6 +90,12 @@ class UnitSpatialIndex:
             if not cell:
                 self.by_cell.pop(cell_key, None)
 
+        cell_entities = self.by_cell_entities.get(cell_key)
+        if cell_entities is not None:
+            cell_entities.discard(entity)
+            if not cell_entities:
+                self.by_cell_entities.pop(cell_key, None)
+
         bucket = self.by_bucket.get(record.bucket)
         if bucket is not None:
             bucket.discard(entity)
@@ -89,11 +107,14 @@ class UnitSpatialIndex:
             self.living_counts[record.faction] = remaining
         else:
             self.living_counts.pop(record.faction, None)
+        self._bump_bucket(record.bucket)
 
     def rebuild(self, world) -> None:
         self.by_entity.clear()
         self.by_cell.clear()
+        self.by_cell_entities.clear()
         self.by_bucket.clear()
+        self.bucket_revisions.clear()
         self.living_counts.clear()
 
         for entity in world.query().with_all(Unit, HexPosition, UnitCount).entities():
@@ -142,6 +163,20 @@ class UnitSpatialIndex:
     def living_factions(self) -> Set[Faction]:
         return {faction for faction, count in self.living_counts.items() if count > 0}
 
+    def entities_at_cell(self, cell: Hex) -> Set[int]:
+        """Snapshot of living entity ids currently committed to ``cell``."""
+        return set(self.by_cell_entities.get(cell, ()))
+
+    def enemy_at_cell(
+        self, cell: Hex, friendly_faction: Optional[Faction]
+    ) -> Optional[int]:
+        """Return one enemy entity at ``cell`` without an ECS/world scan."""
+        for entity in self.by_cell_entities.get(cell, ()):
+            record = self.by_entity.get(entity)
+            if record is not None and record.faction != friendly_faction:
+                return entity
+        return None
+
     def occupancy_for_mover(
         self, mover: Optional[int], mover_faction: Optional[Faction]
     ) -> tuple[Set[Hex], Set[Hex]]:
@@ -176,6 +211,68 @@ class UnitSpatialIndex:
                 enemy_held.add(cell)
 
         return occupied, enemy_held
+
+    def occupancy_for_mover_local(
+        self,
+        mover: Optional[int],
+        mover_faction: Optional[Faction],
+        center: Hex,
+        hex_radius: int,
+    ) -> tuple[Set[Hex], Set[Hex]]:
+        """Movement occupancy restricted to the only cells a budget can reach.
+
+        With a minimum terrain enter-cost of one, a route costing at most ``R``
+        can never depend on occupancy farther than hex distance ``R`` from its
+        start.  Effect overlays use this bounded view so their recomputation is
+        O(R^2), not O(total units).
+        """
+        radius = max(0, int(hex_radius))
+        excluded = self.by_entity.get(mover) if mover is not None else None
+        occupied: Set[Hex] = set()
+        enemy_held: Set[Hex] = set()
+
+        for cell in HexMath.hex_in_range(center[0], center[1], radius):
+            faction_counts = self.by_cell.get(cell)
+            if not faction_counts:
+                continue
+            has_any = False
+            has_enemy = False
+            for faction, count in faction_counts.items():
+                effective = count
+                if (
+                    excluded is not None
+                    and cell == (excluded.col, excluded.row)
+                    and faction == excluded.faction
+                ):
+                    effective -= 1
+                if effective <= 0:
+                    continue
+                has_any = True
+                if faction != mover_faction:
+                    has_enemy = True
+            if has_any:
+                occupied.add(cell)
+            if has_enemy:
+                enemy_held.add(cell)
+        return occupied, enemy_held
+
+    def local_revision_signature(self, center: Hex, hex_radius: int) -> tuple:
+        """Revision signature for buckets intersecting a local hex-radius.
+
+        This is deliberately conservative: movement anywhere in one of the
+        buckets touched by the radius invalidates the local cache, even if that
+        changed unit is just outside the exact reachable cells.  Crucially,
+        movement elsewhere on a 2000+ unit map no longer invalidates it.
+        """
+        radius = max(0, int(hex_radius))
+        buckets = {
+            self._bucket_for_hex(col, row)
+            for col, row in HexMath.hex_in_range(center[0], center[1], radius)
+        }
+        return tuple(
+            (bx, by, self.bucket_revisions.get((bx, by), 0))
+            for bx, by in sorted(buckets)
+        )
 
     def cells_snapshot(
         self, *, exclude_entity: Optional[int] = None
