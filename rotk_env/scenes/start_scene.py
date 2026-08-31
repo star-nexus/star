@@ -96,12 +96,29 @@ class StartScene(Scene):
         self.game_config = dict(game_config)
         self._pending_game_config = dict(game_config)
 
+    def _focus_display_window(self) -> None:
+        """Best-effort SDL focus normalization shared by UI and visible CLI.
+
+        On macOS a freshly created window launched from Terminal can otherwise
+        consume the first click as an activation click. The menu path naturally
+        has focus because the user just clicked Start; --skip-start did not.
+        Pygame 2 exposes SDL_Window::focus through the experimental _sdl2 view.
+        If a platform/backend does not support it, gameplay still proceeds.
+        """
+        try:
+            from pygame._sdl2.video import Window
+
+            Window.from_display_module().focus()
+        except (ImportError, AttributeError, pygame.error):
+            pass
+
     def _flush_pending_game_start(self) -> bool:
         """Switch to GameScene outside input-event dispatch; return if switched."""
         if self._pending_game_config is None:
             return False
         game_config = self._pending_game_config
         self._pending_game_config = None
+        self._focus_display_window()
         self.engine.scene_manager.switch_to("game", **game_config)
         return True
 
@@ -177,7 +194,6 @@ class StartScene(Scene):
         for i, (player_config, _label) in enumerate(START_PLAYER_OPTIONS):
             option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
             if option_rect.collidepoint(pos):
-                # Topology only.  Do not silently change controller backend.
                 config.selected_players = player_config.copy()
                 return
 
@@ -245,8 +261,6 @@ class StartScene(Scene):
             "players": config.selected_players.copy(),
             "scenario": config.selected_scenario,
             "enable_mock_ai": enable_mock_ai,
-            # Passing None explicitly matters: GameScene otherwise treats a
-            # missing key as "attach the default Hub".
             "hub_url": DEFAULT_HUB_URL if use_hub else None,
         }
         self._queue_game_start(game_config)
