@@ -40,11 +40,11 @@ class UnitRenderSystem(FastUnitRenderSystem):
     def initialize(self, world) -> None:
         super().initialize(world)
 
-        # A 500-unit stress run isolated two ~82 ms gameplay stalls to the
-        # first pygame.font.Font.render() on combat floating text: once for the
-        # already-created 24 px damage font and once for the newly-used 28 px
-        # CRIT! font. Prewarm the exact combat font sizes/glyph set while the
-        # world is still initializing, before the gameplay profiling epoch.
+        # Deterministic 500-unit profiling isolated two ~82 ms gameplay stalls
+        # to the first pygame.font.Font.render() on combat floating text: once
+        # for the already-created 24 px damage font and once for the newly-used
+        # 28 px CRIT! font. Prewarm the exact runtime font sizes and glyphs while
+        # the world is still initializing, before the gameplay profiling epoch.
         animation_system = self._get_animation_system()
         if animation_system:
             self._prewarm_combat_fonts(animation_system)
@@ -67,9 +67,8 @@ class UnitRenderSystem(FastUnitRenderSystem):
                         )
                         animation_system.font_dict[font_size] = font
 
-                # We do not retain the returned Surface. The purpose is to make
-                # SDL_ttf/FreeType load/rasterize the glyphs that combat text
-                # can request later (damage digits, MISS, CRIT!, +/-).
+                # Do not retain the returned Surface. This only forces
+                # SDL_ttf/FreeType through the one-time font/glyph cold path.
                 font.render(self.COMBAT_FONT_PREWARM_TEXT, True, (255, 255, 255))
                 warmed_sizes.append(font_size)
         except (pygame.error, FileNotFoundError) as exc:
