@@ -87,6 +87,9 @@ def _bare_renderer():
     renderer._frame_fast_cache_misses = 0
     renderer._frame_fast_texture_scales = 0
     renderer._frame_fast_cache_evictions = 0
+    # __new__ intentionally bypasses UnitRenderSystem.__init__ in this fixture.
+    # Keep newly added per-frame diagnostics in sync with production state.
+    renderer._frame_unit_label_cache_misses = 0
     return renderer
 
 
@@ -119,6 +122,7 @@ def test_fast_unit_texture_metrics_cover_the_actual_dynamic_cache(monkeypatch):
     assert profiler.metrics["unit_texture_cache_misses"] == 1
     assert profiler.metrics["unit_texture_scales"] == 1
     assert profiler.metrics["unit_texture_cache_hits"] == 1
+    assert profiler.metrics["unit_full_icon_cache_misses"] == 0
 
 
 def test_damage_number_profile_splits_font_create_render_and_submit(monkeypatch, tmp_path):
