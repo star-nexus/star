@@ -31,6 +31,7 @@ _EXPORTS: Dict[str, str] = {
     "MouseButtonUpEvent": "engine_event",
     "MouseMotionEvent": "engine_event",
     "MouseWheelEvent": "engine_event",
+    "WindowResizeEvent": "engine_event",
     # --- require pygame ---
     "RenderEngine": "renders",
     "RMS": "renders",

@@ -56,9 +56,20 @@ class MapSystem(System):
             map_id=doc.id,
         )
         self._create_tiles(map_data, doc.terrain)
-        map_data.formations = {
-            Faction(name): list(cells) for name, cells in doc.formations.items()
-        }
+        map_data.formations = {}
+        map_data.formation_unit_types = {}
+        for name, cells in doc.formations.items():
+            try:
+                faction = Faction(name)
+            except ValueError as exc:
+                known = ", ".join(item.value for item in Faction)
+                raise ValueError(
+                    f"unknown faction {name!r} in map; expected one of: {known}"
+                ) from exc
+            map_data.formations[faction] = list(cells)
+            map_data.formation_unit_types[faction] = list(
+                doc.formation_types.get(name) or []
+            )
         map_data.home_bases = {
             faction: formation_center(cells)
             for faction, cells in map_data.formations.items()

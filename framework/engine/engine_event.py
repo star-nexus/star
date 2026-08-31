@@ -61,6 +61,16 @@ class MouseMotionEvent(Event):
 
 
 @dataclass
+class WindowResizeEvent(Event):
+    """窗口尺寸变化"""
+
+    width: int
+    height: int
+    sender: str
+    timestamp: int
+
+
+@dataclass
 class MouseWheelEvent(Event):
     """鼠标滚轮事件"""
 

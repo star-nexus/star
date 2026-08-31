@@ -98,7 +98,7 @@ Victory Conditions:
         default="default",
         help=(
             "Map to load from rotk_env/maps/. "
-            "default/three_kingdoms → river_split.json; chibi → chibi.json; "
+            "default/three_kingdoms → river_split.json; "
             "any other name loads <name>.json in that folder."
         ),
     )
@@ -186,10 +186,11 @@ def main():
         # Create game engine
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
-            width=1200,
-            height=800,
             fps=GameConfig.FPS,
         )
+        if not args.headless:
+            GameConfig.WINDOW_WIDTH = engine.width
+            GameConfig.WINDOW_HEIGHT = engine.height
 
         # Register game scenes
         engine.scene_manager.register_scene("start", StartScene)

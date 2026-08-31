@@ -5,7 +5,7 @@ Game-state related singleton components.
 from dataclasses import dataclass, field
 from typing import Any, Dict, Set, Tuple, Optional, List
 from framework import SingletonComponent
-from ..prefabs.config import Faction, GameMode
+from ..prefabs.config import Faction, GameMode, UnitType
 
 
 @dataclass
@@ -35,6 +35,8 @@ class MapData(SingletonComponent):
     map_id: str = ""
     # Opening deployment cells from the map file, keyed by faction.
     formations: Dict[Faction, List[Tuple[int, int]]] = field(default_factory=dict)
+    # Unit type per formation cell (same order as formations[faction]).
+    formation_unit_types: Dict[Faction, List[UnitType]] = field(default_factory=dict)
     # One hex per faction: that side's home base (opening formation center).
     home_bases: Dict[Faction, Tuple[int, int]] = field(default_factory=dict)
 

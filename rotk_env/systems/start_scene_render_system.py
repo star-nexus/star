@@ -8,7 +8,16 @@ from typing import Dict, Any
 from framework import World, System
 from framework.engine import RMS
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
-from ..components.start_menu import StartMenuConfig, StartMenuButtons, StartMenuOptions
+from ..components.start_menu import (
+    StartMenuConfig,
+    StartMenuButtons,
+    StartMenuOptions,
+    start_panel_layout,
+    clamp_scenario_scroll,
+    START_SCENARIO_COLS,
+    START_SCENARIO_COL_W,
+    START_SCENARIO_ROW_H,
+)
 
 
 class StartSceneRenderSystem(System):
@@ -224,11 +233,11 @@ class StartSceneRenderSystem(System):
         if not config:
             return
 
-        # Panel position and size
-        panel_width = 600
-        panel_height = 400
-        panel_x = (screen_width - panel_width) // 2
-        panel_y = 200
+        geom = start_panel_layout(len(config.scenario_catalog or []))
+        panel_width = geom["panel_width"]
+        panel_height = geom["panel_height"]
+        panel_x = geom["panel_x"]
+        panel_y = geom["panel_y"]
 
         # Render panel background
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -243,14 +252,9 @@ class StartSceneRenderSystem(System):
         RMS.draw(border_surface, (panel_x, panel_y))
 
         # Render config options
-        y_offset = panel_y + 30
-        self._render_mode_config(config, panel_x, y_offset)
-
-        y_offset += 160  # Increase spacing to fit new line spacing
-        self._render_player_config(config, panel_x, y_offset)
-
-        # y_offset += 150
-        # self._render_scenario_config(config, panel_x, y_offset)
+        self._render_mode_config(config, panel_x, geom["mode_y"])
+        self._render_player_config(config, panel_x, geom["player_y"])
+        self._render_scenario_config(config, geom)
 
     def _render_mode_config(self, config: StartMenuConfig, x: int, y: int) -> None:
         """Render game mode config"""
@@ -317,27 +321,41 @@ class StartSceneRenderSystem(System):
             # Use the same line spacing as the game mode
             RMS.draw(option_surface, (x + 50, option_y + i * 45))
 
-    def _render_scenario_config(self, config: StartMenuConfig, x: int, y: int) -> None:
-        """Render scenario config"""
-        title_surface = self.font_large.render("Map Scenario", True, self.text_color)
-        RMS.draw(title_surface, (x + 30, y))
+    def _render_scenario_config(self, config: StartMenuConfig, geom: Dict[str, int]) -> None:
+        """Render scenario config from maps/*.json."""
+        x = geom["panel_x"]
+        y = geom["scenario_y"]
+        self._render_text_with_style(
+            "Map Scenario",
+            self.font_medium,
+            self.text_color,
+            x + 30,
+            y,
+            shadow=True,
+        )
 
-        # Scenario options
-        scenarios = [
-            ("default", "Default Map"),
-            ("plains", "Plains Campaign"),
-            ("mountains", "Mountains Campaign"),
-        ]
-
-        option_y = y + 40
-        for i, (scenario_id, name) in enumerate(scenarios):
-            is_selected = config.selected_scenario == scenario_id
+        option_y = geom["scenario_option_y"]
+        visible_rows = geom["scenario_visible_rows"]
+        catalog = config.scenario_catalog or []
+        scroll = clamp_scenario_scroll(config.scenario_scroll, len(catalog), geom)
+        for i, item in enumerate(catalog):
+            vis_row = i // START_SCENARIO_COLS - scroll
+            if vis_row < 0 or vis_row >= visible_rows:
+                continue
+            scenario_id = item["scenario"]
+            label = f"{item['name']} {item['width']}×{item['height']}"
+            is_selected = config.selected_scenario == scenario_id or (
+                config.selected_scenario in ("default", "three_kingdoms")
+                and scenario_id == "river_split"
+            )
             color = self.selected_color if is_selected else self.text_color
-            option_surface = self.font_small.render(f"○ {name}", True, color)
-            if is_selected:
-                option_surface = self.font_small.render(f"● {name}", True, color)
-
-            RMS.draw(option_surface, (x + 50, option_y + i * 30))
+            marker = "●" if is_selected else "○"
+            option_surface = self.font_small.render(f"{marker} {label}", True, color)
+            col = i % START_SCENARIO_COLS
+            RMS.draw(
+                option_surface,
+                (x + 50 + col * START_SCENARIO_COL_W, option_y + vis_row * START_SCENARIO_ROW_H),
+            )
 
     def _compare_player_configs(
         self, config1: Dict[Faction, PlayerType], config2: Dict[Faction, PlayerType]
@@ -358,7 +376,7 @@ class StartSceneRenderSystem(System):
 
         for button_name, button in button_component.buttons.items():
             # Button background
-            is_hover = button_name == self.hover_button
+            is_hover = bool(button.get("hover"))
             button_color = self.button_hover_color if is_hover else self.button_color
 
             # Create button background surface

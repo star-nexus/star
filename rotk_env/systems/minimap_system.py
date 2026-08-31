@@ -51,6 +51,9 @@ class MiniMapSystem(System):
         """Subscribe to events."""
         EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
 
+    def cleanup(self) -> None:
+        EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_click)
+
     def update(self, delta_time: float) -> None:
         """Update minimap."""
         minimap = self.world.get_singleton_component(MiniMap)

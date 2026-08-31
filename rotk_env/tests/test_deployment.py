@@ -2,7 +2,7 @@
 
 from rotk_env.components import formation_center
 from rotk_env.maps.map_file import MAPS_DIR, load_map
-from rotk_env.prefabs.config import Faction, PlayerType, PLAYER_PRESETS, GameConfig
+from rotk_env.prefabs.config import Faction, PlayerType, PLAYER_PRESETS, UnitType
 from rotk_env.utils.hex_utils import HexConverter
 
 
@@ -49,11 +49,18 @@ def test_human_vs_two_ai_keeps_wei_human():
     assert preset[Faction.WU] is PlayerType.AI
 
 
-def test_default_unit_mix_matches_formation_slots():
-    assert sum(GameConfig.UNIT_MIX) == 5
-    assert GameConfig.UNIT_MIX == [1, 3, 1]
-    wei = _river_split().formations["wei"]
-    assert len(wei) == 5
+def test_river_split_unit_mix_lives_in_the_map_file():
+    doc = _river_split()
+    assert doc.unit_mix == [1, 3, 1]
+    wei_types = doc.formation_types["wei"]
+    assert wei_types == [
+        UnitType.INFANTRY,
+        UnitType.ARCHER,
+        UnitType.ARCHER,
+        UnitType.ARCHER,
+        UnitType.CAVALRY,
+    ]
+    assert len(doc.formations["wei"]) == 5
 
 
 def test_wei_formation_center_is_inside_the_blob():

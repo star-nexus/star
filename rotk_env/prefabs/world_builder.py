@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Dict, List, Literal, Optional
+from typing import Dict, Literal, Optional
 
 from framework import World
 
@@ -149,9 +149,7 @@ class _SkirmishAssembler:
         self._initialize_agent_registry()
         self._initialize_systems()
         self._initialize_players()
-        self._initialize_units(
-            [GameConfig.UNIT_MIX, GameConfig.UNIT_MIX, GameConfig.UNIT_MIX]
-        )
+        self._initialize_units()
         self._initialize_stats()
         self._refresh_opening_vision()
 
@@ -218,14 +216,18 @@ class _SkirmishAssembler:
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
-            from ..systems.effect_render_system import EffectRenderSystem
-            from ..systems.map_render_system import MapRenderSystem
-            from ..systems.minimap_system import MiniMapSystem
+            # Compatibility-named optimized renderers preserve legacy UI helpers
+            # that discover systems by class name.
+            from ..systems.optimized_render_systems import (
+                EffectRenderSystem,
+                MapRenderSystem,
+                MiniMapSystem,
+                UnitRenderSystem,
+            )
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
             from ..systems.ui_render_system import UIRenderSystem
             from ..systems.unit_action_button_system import UnitActionButtonSystem
-            from ..systems.unit_render_system import UnitRenderSystem
 
             systems.extend(
                 [
@@ -264,38 +266,29 @@ class _SkirmishAssembler:
                 self.world.add_component(player_entity, AIControlled())
             turn_manager.add_player(player_entity)
 
-    def _initialize_units(self, unit_assignments: List[List[int]]) -> None:
-        unit_counts = {}
-        for faction in self.players.keys():
-            if faction == Faction.WEI:
-                unit_counts[faction] = unit_assignments[0]
-            elif faction == Faction.SHU:
-                unit_counts[faction] = unit_assignments[1]
-            elif faction == Faction.WU:
-                unit_counts[faction] = unit_assignments[2]
+    def _initialize_units(self) -> None:
+        map_data = self.world.get_singleton_component(MapData)
+        formations = map_data.formations if map_data else {}
+        loadout = map_data.formation_unit_types if map_data else {}
 
         self._temp_initial_unit_counts = {}
-        for faction, count in unit_counts.items():
-            self._temp_initial_unit_counts[faction] = sum(count)
+        for faction in self.players.keys():
+            cells = list(formations.get(faction) or [])
+            types = list(loadout.get(faction) or [])
+            if len(types) < len(cells):
+                types = types + [UnitType.INFANTRY] * (len(cells) - len(types))
+            self._temp_initial_unit_counts[faction] = len(cells)
 
-        positions_by_faction = self._formation_positions(unit_counts)
-        map_data = self.world.get_singleton_component(MapData)
-        if map_data is not None:
-            map_data.home_bases = {
-                faction: formation_center(cells)
-                for faction, cells in positions_by_faction.items()
-            }
+            if map_data is not None and cells:
+                map_data.home_bases[faction] = formation_center(cells)
 
-        for faction, count in unit_counts.items():
-            if sum(count) == 0:
+            if not cells:
                 continue
             player_entity = self._get_player_entity(faction)
             if not player_entity:
                 continue
             player = self.world.get_component(player_entity, Player)
-            positions = positions_by_faction.get(faction, [])
-            unit_types = self._generate_unit_types(count)
-            for i, ((q, r), unit_type) in enumerate(zip(positions, unit_types)):
+            for i, ((q, r), unit_type) in enumerate(zip(cells, types)):
                 unit_entity = self._create_unit(
                     faction=faction,
                     unit_type=unit_type,
@@ -303,50 +296,6 @@ class _SkirmishAssembler:
                     name=f"{faction.value}_{unit_type.value}_{i+1}",
                 )
                 player.units.add(unit_entity)
-
-    def _formation_positions(self, unit_counts: Dict) -> Dict:
-        map_data = self.world.get_singleton_component(MapData)
-        formations = map_data.formations if map_data else {}
-        map_id = map_data.map_id if map_data else ""
-        positions = {}
-        for faction, count in unit_counts.items():
-            n = sum(count) if isinstance(count, list) else int(count)
-            cells = list(formations.get(faction) or [])
-            if n and len(cells) < n:
-                raise ValueError(
-                    f"map {map_id!r} has {len(cells)} {faction.value} "
-                    f"formation slots, need {n}"
-                )
-            positions[faction] = cells[:n]
-        return positions
-
-    def _generate_unit_types(self, count: int | list) -> list:
-        unit_types = []
-        if isinstance(count, list) and len(count) == 3:
-            infantry_count, archer_count, cavalry_count = count
-            unit_types.extend([UnitType.INFANTRY] * infantry_count)
-            unit_types.extend([UnitType.ARCHER] * archer_count)
-            unit_types.extend([UnitType.CAVALRY] * cavalry_count)
-            return unit_types
-
-        base_ratios = {
-            UnitType.INFANTRY: 0.50,
-            UnitType.CAVALRY: 0.30,
-            UnitType.ARCHER: 0.20,
-        }
-        for unit_type, ratio in base_ratios.items():
-            type_count = max(1, int(count * ratio)) if count >= 4 else 1
-            unit_types.extend([unit_type] * type_count)
-        while len(unit_types) < count:
-            unit_types.append(UnitType.INFANTRY)
-        while len(unit_types) > count:
-            for remove_type in [UnitType.ARCHER, UnitType.CAVALRY]:
-                if remove_type in unit_types:
-                    unit_types.remove(remove_type)
-                    break
-            else:
-                unit_types.pop()
-        return unit_types
 
     def _create_unit(
         self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
