@@ -109,6 +109,14 @@ class GameScene(Scene):
             )
         profiler.set_metadata(**metadata)
 
+        # Drop menu/scene-switch/map-initialization frames. reset() preserves
+        # metadata and profiling switches, so subsequent samples describe only
+        # steady gameplay. If this is called during an engine frame, that
+        # transition frame is intentionally discarded and timing resumes on the
+        # next start_frame().
+        if profiler.enabled:
+            profiler.reset()
+
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
