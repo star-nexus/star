@@ -216,15 +216,9 @@ class _SkirmishAssembler:
             ResourceRecoverySystem(),
         ]
 
-        # Rule BOT is opt-in. In particular, an AI/AI/AI benchmark should not
-        # let a local heuristic controller take actions while external agents
-        # are still connecting to the Hub.
         if self.enable_mock_ai:
             systems.append(MockLLMAISystem())
 
-        # Preserve the legacy one-shot sampler for headless/dummy evaluation.
-        # Only the visible interactive path amortizes its periodic O(units)
-        # statistics work over small batches to avoid 1000-unit frame spikes.
         statistics_system = StatisticsSystem()
         if self.display == "window":
             from ..systems.scale_statistics_system import (
@@ -241,17 +235,19 @@ class _SkirmishAssembler:
             ]
         )
 
-        # Display-dependent systems are imported here, not at module scope:
-        # they pull in pygame, and `display="none"` (the eval path) mounts none
-        # of them. A module-level import would put SDL in every headless run.
         if self.display in ("dummy", "window"):
             from ..systems.animation_system import AnimationSystem
-            from ..systems.input_system import InputHandlingSystem
+
+            if self.display == "window":
+                # Window mode needs render-consistent sprite hit-testing and
+                # action-menu targeting. Keep dummy/headless on the legacy
+                # input path so evaluation semantics remain untouched.
+                from ..systems.scale_input_system import InputHandlingSystem
+            else:
+                from ..systems.input_system import InputHandlingSystem
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
-            # Compatibility-named optimized renderers preserve legacy UI helpers
-            # that discover systems by class name.
             from ..systems.optimized_render_systems import (
                 MapRenderSystem,
                 MiniMapSystem,
