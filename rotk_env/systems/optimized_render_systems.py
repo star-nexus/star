@@ -34,6 +34,54 @@ class MapRenderSystem(FastMapRenderSystem):
 class UnitRenderSystem(FastUnitRenderSystem):
     """Scale renderer plus second-level diagnostics for rare UnitRender tails."""
 
+    COMBAT_FONT_SIZES = (20, 24, 28)
+    COMBAT_FONT_PREWARM_TEXT = "0123456789MISSCRIT!+-"
+
+    def initialize(self, world) -> None:
+        super().initialize(world)
+
+        # A 500-unit stress run isolated two ~82 ms gameplay stalls to the
+        # first pygame.font.Font.render() on combat floating text: once for the
+        # already-created 24 px damage font and once for the newly-used 28 px
+        # CRIT! font. Prewarm the exact combat font sizes/glyph set while the
+        # world is still initializing, before the gameplay profiling epoch.
+        animation_system = self._get_animation_system()
+        if animation_system:
+            self._prewarm_combat_fonts(animation_system)
+
+    def _prewarm_combat_fonts(self, animation_system) -> None:
+        """Prime SDL_ttf/FreeType combat glyphs outside the gameplay hot path."""
+        if not animation_system.damage_font:
+            return
+
+        warmed_sizes = []
+        try:
+            for font_size in self.COMBAT_FONT_SIZES:
+                if font_size == 24:
+                    font = animation_system.damage_font
+                else:
+                    font = animation_system.font_dict.get(font_size)
+                    if font is None:
+                        font = pygame.font.Font(
+                            animation_system.font_file_path, font_size
+                        )
+                        animation_system.font_dict[font_size] = font
+
+                # We do not retain the returned Surface. The purpose is to make
+                # SDL_ttf/FreeType load/rasterize the glyphs that combat text
+                # can request later (damage digits, MISS, CRIT!, +/-).
+                font.render(self.COMBAT_FONT_PREWARM_TEXT, True, (255, 255, 255))
+                warmed_sizes.append(font_size)
+        except (pygame.error, FileNotFoundError) as exc:
+            print(f"[UnitRenderSystem] Combat font prewarm skipped: {exc}")
+            return
+
+        print(
+            "[UnitRenderSystem] Combat fonts prewarmed: "
+            + ",".join(str(size) for size in warmed_sizes)
+            + " px"
+        )
+
     def _reset_texture_cache_frame_stats(self) -> None:
         # The parent base renderer owns these aggregate counters. The fast
         # renderer has a separate dynamic LRU tier, so reset both views here.
