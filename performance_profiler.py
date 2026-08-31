@@ -6,6 +6,7 @@ Goals:
 - report inclusive and exclusive (self) time so nested timers do not double-count;
 - use monotonic high-resolution timing;
 - provide frame-time percentiles for scale-up experiments;
+- capture exceptional p99-style slow frames with per-section diagnostics;
 - keep the old ``time_system(name)`` API compatible with existing call sites;
 - add effectively zero profiling overhead when profiling is disabled.
 """
@@ -23,6 +24,9 @@ from typing import Deque, Dict, List, Optional
 
 
 DEFAULT_SAMPLE_WINDOW = 300
+DEFAULT_SLOW_FRAME_THRESHOLD_MS = 30.0
+DEFAULT_SLOW_FRAME_P99_FACTOR = 1.5
+DEFAULT_SLOW_FRAME_HISTORY = 20
 
 
 @dataclass(slots=True)
@@ -56,6 +60,13 @@ class PerformanceProfiler:
     Section samples are aggregated *per frame* and missing sections receive a
     zero for that frame. This makes percentages meaningful even for systems
     that do not execute every frame.
+
+    Slow-frame capture is deliberately based on the frame *before* its samples
+    are folded into the rolling window. A spike therefore cannot raise its own
+    detection threshold. The threshold is the larger of an absolute floor
+    (30ms by default) and 1.5x the previous rolling p99 once enough history is
+    available. This catches rare tail stalls without logging every frame when a
+    deliberately overloaded experiment runs below 60 FPS.
     """
 
     def __init__(self, sample_window: int = DEFAULT_SAMPLE_WINDOW):
@@ -74,6 +85,18 @@ class PerformanceProfiler:
         self._frame_inclusive_ns: Dict[str, int] = defaultdict(int)
         self._frame_self_ns: Dict[str, int] = defaultdict(int)
         self._metadata: Dict[str, object] = {}
+        self._frame_metrics: Dict[str, object] = {}
+        self._frame_index = 0
+
+        self.slow_frame_threshold_ms = DEFAULT_SLOW_FRAME_THRESHOLD_MS
+        self.slow_frame_p99_factor = DEFAULT_SLOW_FRAME_P99_FACTOR
+        self.slow_frame_min_history = 30
+        self.slow_frames: Deque[Dict[str, object]] = deque(
+            maxlen=DEFAULT_SLOW_FRAME_HISTORY
+        )
+        self.slow_frame_count = 0
+        self.slow_frame_log_cooldown_s = 0.5
+        self._last_slow_frame_log_time = 0.0
 
     @property
     def enable_profiler(self) -> bool:
@@ -113,6 +136,7 @@ class PerformanceProfiler:
         self._timer_stack.clear()
         self._frame_inclusive_ns.clear()
         self._frame_self_ns.clear()
+        self._frame_metrics.clear()
 
     def end_frame(self) -> None:
         """Finish the current frame and record its total wall-clock duration."""
@@ -129,7 +153,33 @@ class PerformanceProfiler:
         if self._frame_start_ns is None:
             return
 
-        self.frame_times_ns.append(max(0, end_ns - self._frame_start_ns))
+        frame_ns = max(0, end_ns - self._frame_start_ns)
+        frame_ms = frame_ns / 1_000_000.0
+
+        # Detect the spike against the *previous* window, before this frame can
+        # influence p99. This is important for isolated 50-100ms stalls.
+        previous_frame_ms = [ns / 1_000_000.0 for ns in self.frame_times_ns]
+        p99_reference_ms = (
+            self._percentile(previous_frame_ms, 0.99)
+            if len(previous_frame_ms) >= self.slow_frame_min_history
+            else 0.0
+        )
+        dynamic_threshold_ms = self.slow_frame_threshold_ms
+        if p99_reference_ms > 0.0:
+            dynamic_threshold_ms = max(
+                dynamic_threshold_ms,
+                p99_reference_ms * self.slow_frame_p99_factor,
+            )
+
+        self._frame_index += 1
+        if frame_ms >= dynamic_threshold_ms:
+            self._capture_slow_frame(
+                frame_ms=frame_ms,
+                threshold_ms=dynamic_threshold_ms,
+                p99_reference_ms=p99_reference_ms,
+            )
+
+        self.frame_times_ns.append(frame_ns)
 
         names = (
             set(self.section_inclusive_ns)
@@ -148,6 +198,7 @@ class PerformanceProfiler:
         self._timer_stack.clear()
         self._frame_inclusive_ns.clear()
         self._frame_self_ns.clear()
+        self._frame_metrics.clear()
 
     # ------------------------------------------------------------------
     # Timers
@@ -218,10 +269,101 @@ class PerformanceProfiler:
         self_series.append(elapsed_ns)
 
     # ------------------------------------------------------------------
-    # Metadata / output
+    # Metadata / slow-frame diagnostics
     # ------------------------------------------------------------------
     def set_metadata(self, **values: object) -> None:
+        """Set run-level context that is copied into summary output."""
         self._metadata.update(values)
+
+    def set_frame_metric(self, name: str, value: object) -> None:
+        """Attach a cheap diagnostic value to the current frame.
+
+        Render systems use this for values such as visible/animated unit counts.
+        Metrics are only retained when a slow frame is captured, so they do not
+        grow with the experiment duration.
+        """
+        if self.enabled and self._frame_open:
+            self._frame_metrics[name] = value
+
+    def _capture_slow_frame(
+        self,
+        *,
+        frame_ms: float,
+        threshold_ms: float,
+        p99_reference_ms: float,
+    ) -> None:
+        category_self_ns: Dict[str, int] = defaultdict(int)
+        top_sections = []
+        for name in set(self._frame_self_ns) | set(self._frame_inclusive_ns):
+            self_ns = self._frame_self_ns.get(name, 0)
+            inclusive_ns = self._frame_inclusive_ns.get(name, 0)
+            category = self.section_categories.get(name, "work")
+            category_self_ns[category] += self_ns
+            top_sections.append(
+                {
+                    "name": name,
+                    "category": category,
+                    "self_ms": self_ns / 1_000_000.0,
+                    "inclusive_ms": inclusive_ns / 1_000_000.0,
+                }
+            )
+
+        top_sections.sort(key=lambda item: item["self_ms"], reverse=True)
+        present_ms = category_self_ns.get("present", 0) / 1_000_000.0
+        wait_ms = category_self_ns.get("wait", 0) / 1_000_000.0
+        active_ms = max(0.0, frame_ms - present_ms - wait_ms)
+
+        snapshot = {
+            "frame_index": self._frame_index,
+            "frame_ms": frame_ms,
+            "threshold_ms": threshold_ms,
+            "p99_reference_ms": p99_reference_ms,
+            "active_ms": active_ms,
+            "present_ms": present_ms,
+            "fps_limiter_wait_ms": wait_ms,
+            "frame_metrics": dict(self._frame_metrics),
+            "top_sections": top_sections[:10],
+        }
+        self.slow_frames.append(snapshot)
+        self.slow_frame_count += 1
+
+        if not self._console_output:
+            return
+        now = time.monotonic()
+        if now - self._last_slow_frame_log_time < self.slow_frame_log_cooldown_s:
+            return
+        self._last_slow_frame_log_time = now
+        self._print_slow_frame(snapshot)
+
+    @staticmethod
+    def _print_slow_frame(snapshot: Dict[str, object]) -> None:
+        print("\n" + "!" * 76)
+        print(
+            "[SLOW FRAME] "
+            f"frame={snapshot['frame_index']}  "
+            f"frame_ms={snapshot['frame_ms']:.2f}  "
+            f"threshold={snapshot['threshold_ms']:.2f}  "
+            f"prior_p99={snapshot['p99_reference_ms']:.2f}"
+        )
+        print(
+            "  budget: "
+            f"active={snapshot['active_ms']:.2f}ms  "
+            f"present={snapshot['present_ms']:.2f}ms  "
+            f"fps_wait={snapshot['fps_limiter_wait_ms']:.2f}ms"
+        )
+        metrics = snapshot.get("frame_metrics", {})
+        if metrics:
+            metric_text = "  ".join(f"{k}={v}" for k, v in sorted(metrics.items()))
+            print(f"  frame metrics: {metric_text}")
+        print("  top sections:")
+        for section in snapshot.get("top_sections", [])[:8]:
+            print(
+                f"    {section['name']:26} "
+                f"self={section['self_ms']:7.2f}ms "
+                f"incl={section['inclusive_ms']:7.2f}ms "
+                f"[{section['category']}]"
+            )
+        print("!" * 76)
 
     def reset(self) -> None:
         self.frame_times_ns.clear()
@@ -233,6 +375,11 @@ class PerformanceProfiler:
         self._frame_open = False
         self._frame_inclusive_ns.clear()
         self._frame_self_ns.clear()
+        self._frame_metrics.clear()
+        self._frame_index = 0
+        self.slow_frames.clear()
+        self.slow_frame_count = 0
+        self._last_slow_frame_log_time = 0.0
 
     @staticmethod
     def _percentile(values: List[float], q: float) -> float:
@@ -310,6 +457,9 @@ class PerformanceProfiler:
             "category_self_ms": dict(category_self_ms),
             "sections": sections,
             "metadata": dict(self._metadata),
+            "slow_frame_count": self.slow_frame_count,
+            "slow_frame_threshold_ms": self.slow_frame_threshold_ms,
+            "slow_frames": list(self.slow_frames),
         }
 
     def print_stats(self) -> None:
@@ -337,6 +487,12 @@ class PerformanceProfiler:
             f"present={stats['present_ms']:.2f}ms  "
             f"fps_cap_wait={stats['fps_limiter_wait_ms']:.2f}ms  "
             f"uninstrumented={stats['uninstrumented_ms']:.2f}ms"
+        )
+        print(
+            "Slow-frame capture: "
+            f"count={stats['slow_frame_count']}  "
+            f"absolute_floor={stats['slow_frame_threshold_ms']:.1f}ms  "
+            f"rule=max(floor, prior_p99×{self.slow_frame_p99_factor:.2f})"
         )
         if stats["metadata"]:
             meta = "  ".join(f"{k}={v}" for k, v in sorted(stats["metadata"].items()))
