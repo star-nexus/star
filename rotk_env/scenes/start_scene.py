@@ -22,13 +22,20 @@ from ..systems.start_scene_render_system import StartSceneRenderSystem
 
 
 class StartScene(Scene):
-    """Start scene."""
+    """Start scene and the single visible-window handoff into GameScene.
+
+    Both menu launches and ``--skip-start`` visible launches queue the same
+    GameScene kwargs here.  The actual scene switch happens from ``update()``,
+    after the engine's input-dispatch phase, so GameScene is never constructed
+    from two different lifecycle points (pre-loop CLI vs in-event UI callback).
+    """
 
     def __init__(self, engine):
         super().__init__(engine)
         self.name = "start"
         self.world = World()
         self.game_config = None
+        self._pending_game_config = None
 
     def enter(self, **kwargs) -> None:
         """Called when entering the scene."""
@@ -66,17 +73,37 @@ class StartScene(Scene):
         self.world.add_system(StartSceneRenderSystem())
         self.subscribe_events()
 
+        auto_start_config = kwargs.get("auto_start_config")
+        if auto_start_config is not None:
+            self._queue_game_start(auto_start_config)
+
     def subscribe_events(self) -> None:
         EBS.subscribe(MouseMotionEvent, self._update_hover_state)
         EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
         EBS.subscribe(MouseWheelEvent, self._handle_mouse_wheel)
 
     def update(self, dt: float) -> None:
-        """Update the scene."""
+        """Update the scene and perform any queued launch at a frame boundary."""
         GameConfig.sync_from_display()
+        if self._flush_pending_game_start():
+            return
         self._layout_buttons()
         self._clamp_scenario_scroll()
         self.world.update(dt)
+
+    def _queue_game_start(self, game_config: Dict[str, Any]) -> None:
+        """Queue one visible GameScene launch using an immutable kwargs snapshot."""
+        self.game_config = dict(game_config)
+        self._pending_game_config = dict(game_config)
+
+    def _flush_pending_game_start(self) -> bool:
+        """Switch to GameScene outside input-event dispatch; return if switched."""
+        if self._pending_game_config is None:
+            return False
+        game_config = self._pending_game_config
+        self._pending_game_config = None
+        self.engine.scene_manager.switch_to("game", **game_config)
+        return True
 
     def _clamp_scenario_scroll(self) -> None:
         config = self.world.get_singleton_component(StartMenuConfig)
@@ -205,7 +232,7 @@ class StartScene(Scene):
         )
 
     def _start_game(self) -> None:
-        """Start the game with topology and controller backend kept separate."""
+        """Queue the menu-selected game using the shared visible launch path."""
         config = self.world.get_singleton_component(StartMenuConfig)
         if not config:
             return
@@ -213,7 +240,7 @@ class StartScene(Scene):
         enable_mock_ai, use_hub = controller_backend_flags(
             config.selected_controller_backend
         )
-        self.game_config = {
+        game_config = {
             "mode": config.selected_mode,
             "players": config.selected_players.copy(),
             "scenario": config.selected_scenario,
@@ -222,8 +249,7 @@ class StartScene(Scene):
             # missing key as "attach the default Hub".
             "hub_url": DEFAULT_HUB_URL if use_hub else None,
         }
-
-        self.engine.scene_manager.switch_to("game", **self.game_config)
+        self._queue_game_start(game_config)
 
     def _quit_game(self) -> None:
         """Quit the game."""
