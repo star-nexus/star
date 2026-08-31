@@ -44,7 +44,7 @@ START_PLAYER_OPTIONS = (
             Faction.SHU: PlayerType.AI,
             Faction.WU: PlayerType.AI,
         },
-        "Three Kingdoms - AI/Agent vs AI/Agent vs AI/Agent",
+        "Three Kingdoms - All AI/Agent (Benchmark)",
         False,
     ),
 )
