@@ -25,7 +25,6 @@ from ..components import (
     FogOfWar,
     GameState,
     HexPosition,
-    MapData,
     UIState,
     Unit,
     UnitCount,
@@ -148,9 +147,12 @@ class InputHandlingSystem(BaseInputHandlingSystem):
                 and clicked_unit != targeting_unit
             ):
                 with profiler.time_system("input_click_attack", category="input"):
-                    result = self._try_attack_target(targeting_unit, clicked_unit)
-                if self._action_succeeded(result):
-                    self.cancel_targeting(refresh_panel=True)
+                    self._try_attack_target(targeting_unit, clicked_unit)
+                # CombatSystem.attack returns False for both an invalid order and
+                # a legitimate miss after consuming AP. Either way, one target
+                # click completes this interaction; refresh the menu from the
+                # resulting world state instead of trapping the user in target mode.
+                self.cancel_targeting(refresh_panel=True)
             elif clicked_unit is not None and self._should_select_unit(clicked_unit):
                 # Selecting another local unit cancels the old target mode.
                 self.cancel_targeting(refresh_panel=False)
