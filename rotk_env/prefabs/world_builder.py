@@ -70,7 +70,7 @@ from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
 from ..systems.statistics_system import StatisticsSystem
 from ..systems.turn_system import TurnSystem
-from ..systems.vision_system import VisionSystem
+from ..systems.vision_system import VisionSystem as BaseVisionSystem
 
 DEFAULT_HUB_URL = "ws://localhost:8000/ws/metaverse"
 
@@ -207,10 +207,16 @@ class _SkirmishAssembler:
         self.world.add_singleton_component(AgentInfoRegistry())
 
     def _initialize_systems(self) -> None:
+        vision_system = BaseVisionSystem()
+        if self.display == "window":
+            from ..systems.scale_vision_system import VisionSystem as WindowVisionSystem
+
+            vision_system = WindowVisionSystem()
+
         systems = [
             GameTimeSystem(),
             MapSystem(scenario=self.scenario),
-            VisionSystem(),
+            vision_system,
             MovementSystem(),
             CombatSystem(),
             ResourceRecoverySystem(),
@@ -250,9 +256,9 @@ class _SkirmishAssembler:
         if self.display == "window":
             from ..systems.optimized_render_systems import (
                 MapRenderSystem,
-                MiniMapSystem,
                 UnitRenderSystem,
             )
+            from ..systems.scale_minimap_system import MiniMapSystem
             from ..systems.scale_effect_render_system import EffectRenderSystem
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
@@ -420,6 +426,6 @@ class _SkirmishAssembler:
     def _refresh_opening_vision(self) -> None:
         """Compute FogOfWar before the first tick so get_faction_state is not empty."""
         for system in self.world.systems:
-            if isinstance(system, VisionSystem):
+            if isinstance(system, BaseVisionSystem):
                 system.update(0.0)
                 break
