@@ -162,6 +162,33 @@ def test_move_target_mode_executes_empty_tile_and_refreshes_panel(monkeypatch):
     assert world.action_panel.selected_unit is None
 
 
+def test_attack_target_click_completes_mode_even_when_combat_returns_false(monkeypatch):
+    world = _World()
+    system = _system(world)
+    world.ui_state.selected_unit = 2
+    world.action_panel.selected_unit = 2
+    world.action_panel.visible = False
+
+    system._should_select_unit = lambda entity: entity == 2
+    attacks = []
+    # CombatSystem.attack returns False for a legitimate miss too. Target mode
+    # must still finish so the user is not stuck after spending that click/AP.
+    system._try_attack_target = lambda attacker, target: (
+        attacks.append((attacker, target)) or False
+    )
+    monkeypatch.setattr(
+        "rotk_env.systems.scale_input_system.EBS.publish", lambda event: None
+    )
+
+    assert system.begin_targeting("attack", 2) is True
+    system._handle_tile_click((3, 4), world.ui_state, clicked_unit=1)
+
+    assert attacks == [(2, 1)]
+    assert system._targeting_action is None
+    assert system._targeting_unit is None
+    assert world.action_panel.selected_unit is None
+
+
 def test_hex_to_screen_includes_zoom():
     world = _World()
     system = _system(world)
