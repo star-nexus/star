@@ -25,9 +25,10 @@ from .fast_render_systems import (
     FastMiniMapSystem,
     FastUnitRenderSystem,
 )
+from .scale_map_render_system import ScaleMapRenderSystem
 
 
-class MapRenderSystem(FastMapRenderSystem):
+class MapRenderSystem(ScaleMapRenderSystem):
     pass
 
 
