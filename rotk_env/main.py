@@ -11,7 +11,8 @@ Options:
     --skip-start  Skip the start UI and apply --players/--mode/--scenario
     --headless  Skip start UI, dummy display, auto end (eval / CI)
     --hub-url URL  Hub websocket (default: ws://localhost:8000/ws/metaverse)
-    --no-hub  Do not connect to a Hub (offline BOT / rules tests)
+    --no-hub  Do not connect to a Hub
+    --mock-ai  Explicitly enable the built-in rule BOT controller
     --profile  Print Performance Profiler v2 stats every ~5 seconds
     --profile-json PATH  Write the final rolling profiler snapshot as JSON
     --help  Show help information
@@ -80,7 +81,16 @@ Victory Conditions:
         "--no-hub",
         action="store_true",
         default=False,
-        help="Do not open a Hub websocket. Rule BOT still plays; LLM agents cannot join.",
+        help="Do not open a Hub websocket. External LLM agents cannot join.",
+    )
+    parser.add_argument(
+        "--mock-ai",
+        action="store_true",
+        default=False,
+        help=(
+            "Explicitly mount the built-in rule BOT (MockLLMAISystem). "
+            "It is never used as an automatic fallback for missing LLM agents."
+        ),
     )
     parser.add_argument(
         "--skip-start",
@@ -109,7 +119,10 @@ Victory Conditions:
         "--players",
         choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms", "human_vs_two_ai"],
         default="human_vs_ai",
-        help="Player configuration (default: human_vs_ai). three_kingdoms is AI/AI/AI for eval.",
+        help=(
+            "Player slot configuration (default: human_vs_ai). "
+            "Use --mock-ai only when those AI slots should be driven by the local rule BOT."
+        ),
     )
 
     parser.add_argument(
@@ -201,6 +214,7 @@ def main():
             mode=args.mode,
             scenario=args.scenario,
             players=args.players,
+            mock_ai=args.mock_ai,
         )
 
         # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
@@ -242,11 +256,13 @@ def main():
                 seed_source="cli" if args.seed is not None else "default",
                 hub_url=hub_url,
                 env_id=args.env_id,
+                enable_mock_ai=args.mock_ai,
             )
 
             print(f"Game mode: {args.mode}")
             print(f"Player configuration: {args.players}")
             print(f"Game scenario: {args.scenario}")
+            print(f"Rule BOT: {'enabled' if args.mock_ai else 'disabled'}")
             if hub_url is None:
                 print("Hub: offline (--no-hub)")
             else:
