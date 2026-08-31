@@ -47,9 +47,7 @@ def _system(world):
 def test_move_button_enters_target_mode_and_hides_panel():
     world = _World()
     system = _system(world)
-
     system._execute_action(ActionType.MOVE, 77)
-
     assert world.input_system.calls == [("move", 77)]
     assert world.panel.visible is False
     assert world.panel.selected_unit == 77
@@ -58,9 +56,7 @@ def test_move_button_enters_target_mode_and_hides_panel():
 def test_attack_button_enters_target_mode_and_hides_panel():
     world = _World()
     system = _system(world)
-
     system._execute_action(ActionType.ATTACK, 77)
-
     assert world.input_system.calls == [("attack", 77)]
     assert world.panel.visible is False
     assert world.panel.selected_unit == 77
@@ -70,9 +66,7 @@ def test_action_panel_tracks_live_right_edge(monkeypatch):
     world = _World()
     world.panel.visible = False
     system = _system(world)
-
     monkeypatch.setattr(GameConfig, "WINDOW_WIDTH", 2480)
     system.update(0.0)
-
     assert world.panel.x == 2480 - world.panel.width - 20
     assert world.panel.x > 2000
