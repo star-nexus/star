@@ -183,6 +183,21 @@ def create_game_from_args(args):
     )
 
 
+def game_scene_kwargs_from_args(args) -> dict:
+    """Build the one GameScene configuration used by CLI launch paths."""
+    return {
+        "players": create_game_from_args(args),
+        "mode": args.mode,
+        "headless": args.headless,
+        "scenario": args.scenario,
+        "seed": args.seed,
+        "seed_source": "cli" if args.seed is not None else "default",
+        "hub_url": resolve_hub_url(args),
+        "env_id": args.env_id,
+        "enable_mock_ai": args.mock_ai,
+    }
+
+
 def print_welcome():
     """Display welcome message"""
     print("\n" + "=" * 60)
@@ -221,14 +236,12 @@ def main():
         if args.env_id is not None:
             os.environ["ENV_ID"] = args.env_id
 
-        # Display welcome message
         print_welcome()
 
         if args.headless:
             os.environ["SDL_VIDEODRIVER"] = "dummy"
             os.environ["HEADLESS"] = "1"
 
-        # Create game engine
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
             fps=GameConfig.FPS,
@@ -237,28 +250,28 @@ def main():
             GameConfig.WINDOW_WIDTH = engine.width
             GameConfig.WINDOW_HEIGHT = engine.height
 
-        # Register game scenes
         engine.scene_manager.register_scene("start", StartScene)
         engine.scene_manager.register_scene("game", GameScene)
         engine.scene_manager.register_scene("game_over", GameOverScene)
 
-        # Determine initial scene based on command line arguments
-        if args.headless or args.skip_start:
-            players_config = create_game_from_args(args)
-            hub_url = resolve_hub_url(args)
+        if args.headless:
+            # Headless evaluation has no human input lifecycle to unify and can
+            # still enter GameScene directly before the loop starts.
+            engine.scene_manager.switch_to("game", **game_scene_kwargs_from_args(args))
+        elif args.skip_start:
+            # Visible CLI and visible menu launches must enter GameScene from the
+            # same frame-boundary handoff.  StartScene consumes this config on
+            # its first update without requiring any menu interaction.
             engine.scene_manager.switch_to(
-                "game",
-                players=players_config,
-                mode=args.mode,
-                headless=args.headless,
-                scenario=args.scenario,
-                seed=args.seed,
-                seed_source="cli" if args.seed is not None else "default",
-                hub_url=hub_url,
-                env_id=args.env_id,
-                enable_mock_ai=args.mock_ai,
+                "start",
+                auto_start_config=game_scene_kwargs_from_args(args),
             )
+        else:
+            engine.scene_manager.switch_to("start")
+            print("Enter game configuration interface...")
 
+        if args.headless or args.skip_start:
+            hub_url = resolve_hub_url(args)
             print(f"Game mode: {args.mode}")
             print(f"Player configuration: {args.players}")
             print(f"Game scenario: {args.scenario}")
@@ -274,14 +287,7 @@ def main():
             if args.profile:
                 print("Performance Profiler v2: enabled")
 
-        else:
-            # Default to start scene
-            engine.scene_manager.switch_to("start")
-            print("Enter game configuration interface...")
-
         print("Game started! Configure the game in the start interface, then click start game.")
-
-        # Start game
         engine.start()
 
     except KeyboardInterrupt:
