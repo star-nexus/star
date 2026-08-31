@@ -17,7 +17,7 @@ from ..prefabs.config import GameConfig, PlayerType
 
 
 class UnitActionButtonSystem(System):
-    """Unit action button system with gameplay-safe font/text caching."""
+    """Unit action system with cached text and explicit map-target actions."""
 
     FONT_PREWARM_TEXT = (
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -70,10 +70,6 @@ class UnitActionButtonSystem(System):
         }
         self._text_surface_cache = {}
         self._frame_text_cache_misses = 0
-
-        # Pygame/SDL_ttf can spend tens of milliseconds on the first render for
-        # each Font instance.  Do all native/glyph warmup before the gameplay
-        # profiler epoch and retain common menu strings as ready-to-blit surfaces.
         self._prewarm_action_text()
 
     def _render_text_cached(self, font_key: str, text: str, color: tuple):
@@ -98,7 +94,6 @@ class UnitActionButtonSystem(System):
         for text in self.STATIC_TITLE_TEXTS:
             self._render_text_cached("title", text, self.text_color)
 
-        # Startup/prewarm misses are not gameplay misses.
         self._frame_text_cache_misses = 0
         print(
             f"[UnitActionButtonSystem] Text surfaces prewarmed: "
@@ -119,6 +114,13 @@ class UnitActionButtonSystem(System):
         action_panel = self.world.get_singleton_component(UnitActionPanel)
         if not ui_state or not action_panel:
             return
+
+        # This panel used to be hard-coded at x=850, which was the right side
+        # of the old 1200px window but sits over the playable map on a 2480px
+        # desktop. Anchor it to the live right edge so it does not swallow map
+        # clicks after the first unit selection.
+        action_panel.x = max(20, GameConfig.WINDOW_WIDTH - action_panel.width - 20)
+        action_panel.y = 100
 
         if ui_state.selected_unit != action_panel.selected_unit:
             with profiling.profiler.time_system(
@@ -154,7 +156,6 @@ class UnitActionButtonSystem(System):
         )
 
     def _is_player_unit(self, unit_entity: int) -> bool:
-        """Check whether the selected unit belongs to a local HUMAN slot."""
         unit = self.world.get_component(unit_entity, Unit)
         if not unit:
             return False
@@ -363,6 +364,20 @@ class UnitActionButtonSystem(System):
 
     def _execute_action(self, action_type, unit_entity):
         print(f"Executing action: {action_type.value} on unit {unit_entity}")
+        action_panel = self.world.get_singleton_component(UnitActionPanel)
+
+        if action_type in (ActionType.MOVE, ActionType.ATTACK):
+            input_system = self._get_input_handling_system()
+            if input_system and input_system.begin_targeting(
+                action_type.value, unit_entity
+            ):
+                # Target is chosen on the map. Hide the menu so it cannot
+                # intercept that click; InputHandlingSystem reopens/refreshed it
+                # after a successful action.
+                if action_panel is not None:
+                    action_panel.visible = False
+                return
+
         if action_type == ActionType.WAIT:
             self._execute_wait_action(unit_entity)
         elif action_type == ActionType.GARRISON:
@@ -371,6 +386,9 @@ class UnitActionButtonSystem(System):
             self._execute_capture_action(unit_entity)
         elif action_type == ActionType.FORTIFY:
             self._execute_fortify_action(unit_entity)
+
+        if action_panel is not None:
+            action_panel.selected_unit = None
 
     def _execute_wait_action(self, unit_entity):
         from ..components import ActionPoints
@@ -409,6 +427,12 @@ class UnitActionButtonSystem(System):
                 territory_system.build_fortification(
                     unit_entity, (position.col, position.row)
                 )
+
+    def _get_input_handling_system(self):
+        for system in self.world.systems:
+            if system.__class__.__name__ == "InputHandlingSystem":
+                return system
+        return None
 
     def _get_territory_system(self):
         for system in self.world.systems:
