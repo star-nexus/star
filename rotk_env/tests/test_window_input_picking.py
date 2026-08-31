@@ -47,16 +47,11 @@ class _World:
             102: SimpleNamespace(faction=Faction.SHU, player_type=PlayerType.AI),
             103: SimpleNamespace(faction=Faction.WU, player_type=PlayerType.AI),
         }
-        # AI first in ECS/query order, HUMAN second on the same committed hex.
-        # The interactive picker must still recover the HUMAN token.
         self.units = {
             1: SimpleNamespace(faction=Faction.SHU, unit_type=UnitType.INFANTRY),
             2: SimpleNamespace(faction=Faction.WEI, unit_type=UnitType.INFANTRY),
         }
-        self.positions = {
-            1: HexPosition(3, 4),
-            2: HexPosition(3, 4),
-        }
+        self.positions = {1: HexPosition(3, 4), 2: HexPosition(3, 4)}
         self.counts = {
             1: SimpleNamespace(current_count=100),
             2: SimpleNamespace(current_count=100),
@@ -116,7 +111,6 @@ def test_fog_then_zoom_keeps_human_unit_pickable():
     world.fog.enabled = False
     world.camera.zoom = 2.25
     screen_pos = _screen_center(system, world, (3, 4))
-
     assert system._screen_to_hex(screen_pos) == (3, 4)
     assert system._get_visible_unit_at_screen_position(screen_pos) == 2
     assert system._get_unit_at_position((3, 4)) == 2
@@ -128,7 +122,6 @@ def test_zoom_then_fog_keeps_human_unit_pickable():
     world.camera.zoom = 2.4
     world.fog.enabled = False
     screen_pos = _screen_center(system, world, (3, 4))
-
     assert system._get_visible_unit_at_screen_position(screen_pos) == 2
 
 
@@ -138,7 +131,6 @@ def test_move_target_mode_executes_empty_tile_and_refreshes_panel(monkeypatch):
     world.ui_state.selected_unit = 2
     world.action_panel.selected_unit = 2
     world.action_panel.visible = False
-
     system._should_select_unit = lambda entity: entity == 2
     system._get_unit_at_position = lambda pos: None
     moves = []
@@ -148,10 +140,8 @@ def test_move_target_mode_executes_empty_tile_and_refreshes_panel(monkeypatch):
     monkeypatch.setattr(
         "rotk_env.systems.scale_input_system.EBS.publish", lambda event: None
     )
-
     assert system.begin_targeting("move", 2) is True
     system._handle_tile_click((5, 6), world.ui_state, clicked_unit=None)
-
     assert moves == [(2, (5, 6))]
     assert system._targeting_action is None
     assert system._targeting_unit is None
@@ -164,7 +154,6 @@ def test_attack_target_click_completes_mode_even_when_combat_returns_false(monke
     world.ui_state.selected_unit = 2
     world.action_panel.selected_unit = 2
     world.action_panel.visible = False
-
     system._should_select_unit = lambda entity: entity == 2
     attacks = []
     system._try_attack_target = lambda attacker, target: (
@@ -173,10 +162,8 @@ def test_attack_target_click_completes_mode_even_when_combat_returns_false(monke
     monkeypatch.setattr(
         "rotk_env.systems.scale_input_system.EBS.publish", lambda event: None
     )
-
     assert system.begin_targeting("attack", 2) is True
     system._handle_tile_click((3, 4), world.ui_state, clicked_unit=1)
-
     assert attacks == [(2, 1)]
     assert system._targeting_action is None
     assert system._targeting_unit is None
@@ -187,7 +174,6 @@ def test_hex_to_screen_includes_zoom():
     world = _World()
     system = _system(world)
     world.camera.zoom = 2.0
-
     world_x, world_y = system.hex_converter.hex_to_pixel(2, -1)
     expected = (
         world_x * 2.0 + world.camera.offset_x,
