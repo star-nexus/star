@@ -40,6 +40,15 @@ def _run_one_unit_statistics_cycle(world: World) -> None:
     world.update(0.0)
 
 
+def _only_unit(world: World) -> int:
+    """Return the single unit entity from this test fixture.
+
+    ECS query ``entities()`` intentionally returns a set, so make the iterator
+    conversion explicit instead of assuming iterator semantics.
+    """
+    return next(iter(world.query().with_all(Unit, HexPosition).entities()))
+
+
 def test_observation_sampling_is_limited_to_one_batch_per_frame():
     world, _system = _world_with_units(5, batch_size=2)
     stats = world.get_singleton_component(GameStats)
@@ -72,7 +81,7 @@ def test_cycle_advances_without_restarting_while_work_is_pending():
 
 def test_visibility_history_records_baseline_then_only_real_changes():
     world, system = _world_with_units(1, batch_size=2)
-    entity = next(world.query().with_all(Unit, HexPosition).entities())
+    entity = _only_unit(world)
     fog = FogOfWar(
         faction_vision={Faction.WEI: {(0, 0)}, Faction.SHU: set()},
         explored_tiles={Faction.WEI: {(0, 0)}, Faction.SHU: set()},
@@ -107,7 +116,7 @@ def test_visibility_history_records_baseline_then_only_real_changes():
 def test_visibility_history_is_bounded_in_place_on_changes():
     world, system = _world_with_units(1, batch_size=2)
     system.VISIBILITY_HISTORY_LIMIT = 2
-    entity = next(world.query().with_all(Unit, HexPosition).entities())
+    entity = _only_unit(world)
     fog = FogOfWar(
         faction_vision={Faction.WEI: {(0, 0)}, Faction.SHU: set()},
         explored_tiles={Faction.WEI: {(0, 0)}, Faction.SHU: set()},
@@ -132,7 +141,7 @@ def test_visibility_history_is_bounded_in_place_on_changes():
 
 def test_fog_disabled_reuses_all_visible_relation_without_duplicate_history():
     world, _system = _world_with_units(1, batch_size=2)
-    entity = next(world.query().with_all(Unit, HexPosition).entities())
+    entity = _only_unit(world)
     fog = FogOfWar(
         faction_vision={
             Faction.WEI: set(),
