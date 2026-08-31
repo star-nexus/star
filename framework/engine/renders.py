@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Optional, Union, Callable
 from collections import defaultdict
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
+from ..ecs import profiling
 
 # 类型别名
 ColorType = Union[pygame.Color, Tuple[int, int, int], Tuple[int, int, int, int]]
@@ -219,6 +220,10 @@ class RenderEngine:
         """渲染所有图层到屏幕"""
         if not self.screen:
             raise RuntimeError("屏幕表面未设置，请先调用 set_screen()")
+
+        command_count = sum(len(commands) for commands in self._render_queue.values())
+        profiling.profiler.set_frame_metric("render_commands", command_count)
+        profiling.profiler.set_frame_metric("render_layers", len(self._render_queue))
 
         # 按层级顺序渲染
         for layer in sorted(self._render_queue.keys()):
