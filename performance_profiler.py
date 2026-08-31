@@ -6,7 +6,8 @@ Goals:
 - report inclusive and exclusive (self) time so nested timers do not double-count;
 - use monotonic high-resolution timing;
 - provide frame-time percentiles for scale-up experiments;
-- keep the old ``time_system(name)`` API compatible with existing call sites.
+- keep the old ``time_system(name)`` API compatible with existing call sites;
+- add effectively zero profiling overhead when profiling is disabled.
 """
 
 from __future__ import annotations
@@ -32,6 +33,19 @@ class _ActiveTimer:
     child_ns: int = 0
 
 
+class _NoopTimer(AbstractContextManager):
+    __slots__ = ()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+
+_NOOP_TIMER = _NoopTimer()
+
+
 class PerformanceProfiler:
     """Low-overhead hierarchical rolling-window frame profiler.
 
@@ -46,7 +60,8 @@ class PerformanceProfiler:
 
     def __init__(self, sample_window: int = DEFAULT_SAMPLE_WINDOW):
         self.sample_window = max(10, int(sample_window))
-        self.enable_profiler = False
+        self.enabled = False
+        self._console_output = False
 
         self.frame_times_ns: Deque[int] = deque(maxlen=self.sample_window)
         self.section_inclusive_ns: Dict[str, Deque[int]] = {}
@@ -60,6 +75,23 @@ class PerformanceProfiler:
         self._frame_self_ns: Dict[str, int] = defaultdict(int)
         self._metadata: Dict[str, object] = {}
 
+    @property
+    def enable_profiler(self) -> bool:
+        """Back-compatible console switch.
+
+        Historically setting ``enable_profiler=True`` was how profiling was
+        enabled. Keep that behaviour: enabling console output also turns on
+        collection. Collection can also be enabled without console output by
+        assigning ``profiler.enabled = True`` (used by --profile-json).
+        """
+        return self._console_output
+
+    @enable_profiler.setter
+    def enable_profiler(self, value: bool) -> None:
+        self._console_output = bool(value)
+        if value:
+            self.enabled = True
+
     # ------------------------------------------------------------------
     # Frame lifecycle
     # ------------------------------------------------------------------
@@ -70,6 +102,8 @@ class PerformanceProfiler:
         compatibility, starting another frame closes a still-open frame at the
         current instant.
         """
+        if not self.enabled:
+            return
         now = time.perf_counter_ns()
         if self._frame_open and self._frame_start_ns is not None:
             self._finish_frame_at(now)
@@ -82,7 +116,7 @@ class PerformanceProfiler:
 
     def end_frame(self) -> None:
         """Finish the current frame and record its total wall-clock duration."""
-        if not self._frame_open or self._frame_start_ns is None:
+        if not self.enabled or not self._frame_open or self._frame_start_ns is None:
             return
         self._finish_frame_at(time.perf_counter_ns())
 
@@ -123,8 +157,10 @@ class PerformanceProfiler:
 
         Existing code may keep calling ``time_system(name)``. Engine-level
         phases can additionally tag sections as ``render``, ``present`` or
-        ``wait``.
+        ``wait``. When profiling is disabled this returns a shared no-op timer.
         """
+        if not self.enabled:
+            return _NOOP_TIMER
         return SystemTimer(self, system_name, category)
 
     def _push_timer(self, name: str, category: str) -> _ActiveTimer:
@@ -161,6 +197,8 @@ class PerformanceProfiler:
         *,
         category: str = "work",
     ) -> None:
+        if not self.enabled:
+            return
         elapsed_ns = max(0, int(elapsed_time * 1_000_000_000))
         self.section_categories[system_name] = category
         if self._frame_open:
@@ -256,7 +294,9 @@ class PerformanceProfiler:
 
         return {
             "sample_count": frame_count,
-            "avg_fps": (sum(fps_samples) / len(fps_samples)) if fps_samples else 0.0,
+            # Total frames / total sampled wall time is the meaningful average
+            # frame rate; averaging instantaneous 1/dt values can overstate it.
+            "avg_fps": (1000.0 / avg_frame_ms) if avg_frame_ms > 0 else 0.0,
             "min_fps": min(fps_samples) if fps_samples else 0.0,
             "max_fps": max(fps_samples) if fps_samples else 0.0,
             "avg_frame_ms": avg_frame_ms,
@@ -273,7 +313,7 @@ class PerformanceProfiler:
         }
 
     def print_stats(self) -> None:
-        if not self.enable_profiler:
+        if not self._console_output:
             return
         stats = self.get_stats()
         if not stats:
