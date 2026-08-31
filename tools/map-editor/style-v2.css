@@ -92,10 +92,10 @@ label input { margin-top: 5px; }
 .unit-type-buttons { grid-template-columns: 1fr 1fr; }
 .formation-buttons button, .unit-type-buttons button { display: flex; align-items: center; justify-content: center; gap: 7px; }
 .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
-/* STAR faction convention: Wei blue, Shu green, Wu red. */
+/* STAR faction convention: Wei blue, Shu red, Wu green. */
 .dot.wei { background: #4f79ff; }
-.dot.shu { background: #46c878; }
-.dot.wu { background: #ff5f5f; }
+.dot.shu { background: #ff5f5f; }
+.dot.wu { background: #46c878; }
 .unit-letter {
   display: inline-grid;
   place-items: center;
