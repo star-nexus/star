@@ -18,7 +18,7 @@ import pygame
 
 from framework.engine import RMS
 from framework.ecs import profiling
-from ..components import Camera, DamageNumber
+from ..components import Camera, DamageNumber, HexPosition
 from .fast_render_systems import (
     FastEffectRenderSystem,
     FastMapRenderSystem,
@@ -206,7 +206,7 @@ class UnitRenderSystem(FastUnitRenderSystem):
                     animated_units.append((entity, animated_screen_pos))
                     continue
 
-                position = self.world.get_component(entity, self._hex_position_type())
+                position = self.world.get_component(entity, HexPosition)
                 if position:
                     pos_key = (position.col, position.row)
                     units_by_position.setdefault(pos_key, []).append(entity)
@@ -224,13 +224,6 @@ class UnitRenderSystem(FastUnitRenderSystem):
         with profiling.profiler.time_system("unit_animated_draw", category="render"):
             for entity, (screen_x, screen_y) in animated_units:
                 self._render_single_unit_fast(entity, screen_x, screen_y, zoom)
-
-    @staticmethod
-    def _hex_position_type():
-        # Local import keeps this compatibility module's public surface small.
-        from ..components import HexPosition
-
-        return HexPosition
 
     def _render_damage_numbers_profiled(self, animation_system) -> None:
         """Render combat floating text with font/query/submit attribution.
