@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, List
-from enum import Enum
 from rotk_env.maps.map_file import map_catalog
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from framework import SingletonComponent
@@ -12,22 +11,18 @@ START_SCENARIO_COLS = 2
 START_SCENARIO_ROW_H = 32
 START_SCENARIO_COL_W = 270
 
-# Keep the start-scene labels, PlayerType assignments and Mock BOT policy in
-# one place so rendering and click hit-testing cannot silently drift apart.
-# ``three_kingdoms`` is the external-agent benchmark shape: no local HUMAN
-# slot and no built-in rule BOT.  ``human_vs_two_ai`` is the explicit manual
-# three-faction play/stress-test shape: Wei is HUMAN and the two opponents use
-# the local rule BOT when launched from the menu.
+# Player topology and controller backend are deliberately orthogonal.
+# A PlayerType.AI slot describes who may control that faction; it does not
+# imply that the built-in MockLLMAISystem should run.  This mirrors the CLI,
+# where --players and --mock-ai/Hub selection are separate switches.
 START_PLAYER_OPTIONS = (
     (
         {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
         "Human Commander vs AI Strategist",
-        True,
     ),
     (
         {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
-        "Local AI vs AI Battle",
-        True,
+        "AI vs AI Slots",
     ),
     (
         {
@@ -36,7 +31,6 @@ START_PLAYER_OPTIONS = (
             Faction.WU: PlayerType.AI,
         },
         "Human Wei vs Shu & Wu AI",
-        True,
     ),
     (
         {
@@ -45,9 +39,27 @@ START_PLAYER_OPTIONS = (
             Faction.WU: PlayerType.AI,
         },
         "Three Kingdoms - All AI/Agent (Benchmark)",
-        False,
     ),
 )
+
+CONTROLLER_NONE = "none"
+CONTROLLER_MOCK_AI = "mock_ai"
+CONTROLLER_HUB = "hub"
+
+START_CONTROLLER_OPTIONS = (
+    (CONTROLLER_NONE, "No Controller (Static AI Slots)"),
+    (CONTROLLER_MOCK_AI, "Local Rule BOT (MockLLMAISystem)"),
+    (CONTROLLER_HUB, "External Agent / Hub"),
+)
+
+
+def controller_backend_flags(backend: str) -> tuple[bool, bool]:
+    """Return (enable_mock_ai, use_hub) for a start-menu backend choice."""
+    if backend == CONTROLLER_MOCK_AI:
+        return True, False
+    if backend == CONTROLLER_HUB:
+        return False, True
+    return False, False
 
 
 def start_panel_layout(
@@ -68,10 +80,21 @@ def start_panel_layout(
     panel_y = 170
     player_y = panel_y + 145
     player_option_y = player_y + 60
-    # The scenario section begins immediately after the last player option.
-    # Deriving this from START_PLAYER_OPTIONS prevents a fourth mode from
-    # overlapping the map catalog as happened with the old fixed +325 offset.
-    scenario_y = player_option_y + (len(START_PLAYER_OPTIONS) - 1) * 45 + 30
+
+    # Controller backend is a separate section below the topology choices.
+    last_player_bottom = (
+        player_option_y + (len(START_PLAYER_OPTIONS) - 1) * 45 + 30
+    )
+    controller_y = last_player_bottom + 18
+    controller_option_y = controller_y + 45
+    controller_spacing = 34
+    last_controller_bottom = (
+        controller_option_y
+        + (len(START_CONTROLLER_OPTIONS) - 1) * controller_spacing
+        + 28
+    )
+
+    scenario_y = last_controller_bottom + 18
     scenario_option_y = scenario_y + 40
     content_h = (
         scenario_option_y
@@ -90,6 +113,9 @@ def start_panel_layout(
         "panel_height": panel_height,
         "mode_y": panel_y + 24,
         "player_y": player_y,
+        "controller_y": controller_y,
+        "controller_option_y": controller_option_y,
+        "controller_spacing": controller_spacing,
         "scenario_y": scenario_y,
         "scenario_option_y": scenario_option_y,
         "scenario_clip_bottom": clip_bottom,
@@ -119,9 +145,9 @@ class StartMenuConfig(SingletonComponent):
             Faction.SHU: PlayerType.AI,
         }
     )
-    # MockLLMAISystem is a built-in rule BOT, not an automatic fallback for
-    # external LLM agents. Menu choices set this explicitly.
-    mock_ai_enabled: bool = True
+    # Match CLI semantics by default: AI slots exist but have no implicit
+    # local controller.  The user must explicitly choose Rule BOT or Hub.
+    selected_controller_backend: str = CONTROLLER_NONE
     selected_scenario: str = "default"
     scenario_catalog: List[Dict[str, Any]] = field(default_factory=map_catalog)
     scenario_scroll: int = 0
@@ -141,4 +167,5 @@ class StartMenuOptions(SingletonComponent):
 
     mode_options: List[Dict[str, Any]] = field(default_factory=list)
     player_options: List[Dict[str, Any]] = field(default_factory=list)
+    controller_options: List[Dict[str, Any]] = field(default_factory=list)
     scenario_options: List[Dict[str, Any]] = field(default_factory=list)
