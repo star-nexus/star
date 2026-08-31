@@ -60,3 +60,39 @@ def test_turn_based_keeps_current_player_restriction():
 
     assert system._should_select_unit(1, ui_state) is True
     assert system._should_select_unit(2, ui_state) is False
+
+
+def test_realtime_tile_click_selects_any_faction_then_attacks_cross_faction(monkeypatch):
+    world = _World()
+    system = _system(world)
+    ui_state = SimpleNamespace(selected_unit=None)
+
+    clicked = {"entity": 2}
+    system._get_unit_at_position = lambda hex_pos: clicked["entity"]
+
+    selected_events = []
+    monkeypatch.setattr(
+        "rotk_env.systems.input_system.EBS.publish",
+        lambda event: selected_events.append(event),
+    )
+
+    attacks = []
+    system._try_attack_target = lambda attacker, target: attacks.append((attacker, target))
+    system._try_move_unit = lambda unit, pos: None
+
+    # No selected unit: Wei is selectable even though GameState.current_player is Shu.
+    system._handle_tile_click((2, 3), ui_state)
+    assert ui_state.selected_unit == 2
+    assert attacks == []
+
+    # Same-faction click changes focus rather than attacking.
+    clicked["entity"] = 3
+    system._handle_tile_click((2, 4), ui_state)
+    assert ui_state.selected_unit == 3
+    assert attacks == []
+
+    # Cross-faction click preserves the old click-to-attack behavior.
+    clicked["entity"] = 1
+    system._handle_tile_click((2, 5), ui_state)
+    assert ui_state.selected_unit == 3
+    assert attacks == [(3, 1)]
