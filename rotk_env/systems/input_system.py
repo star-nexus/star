@@ -7,6 +7,7 @@ tile hover/selection, and dispatches domain events.
 import pygame
 from typing import Tuple, Optional
 from framework import System, World
+from framework.ecs import profiling
 from framework.engine import QuitEvent, KeyDownEvent, MouseButtonDownEvent, MouseMotionEvent
 from framework.engine.events import EBS
 
@@ -23,7 +24,7 @@ from ..components import (
     MapData,
     set_fog_enabled,
 )
-from ..prefabs.config import GameConfig, HexOrientation, Faction, GameMode
+from ..prefabs.config import GameConfig, HexOrientation, Faction, GameMode, PlayerType
 from ..prefabs.controls import binding_for_key
 from ..utils.hex_utils import HexConverter
 from ..utils.env_events import TileClickedEvent, UnitSelectedEvent
@@ -140,28 +141,35 @@ class InputHandlingSystem(System):
         self._handle_keyboard(keys, input_state, delta_time)
 
     def _handle_mouse_click(self, event: MouseButtonDownEvent):
-        """Handle mouse click."""
+        """Handle mouse click with second-level dispatch attribution."""
         ui_state = self.world.get_singleton_component(UIState)
         if not ui_state:
             return
 
-        # First, check if clicking on UI
-        # if ui_layer_manager.should_block_map_interaction(event.pos):
-        #     # Do not process map interaction when over UI
-        #     return
+        profiler = profiling.profiler
 
-        # Action button panel first
-        action_button_system = self._get_action_button_system()
-        if action_button_system and action_button_system.handle_panel_click(event.pos):
+        # Action button panel first.
+        with profiler.time_system("input_click_ui", category="input"):
+            action_button_system = self._get_action_button_system()
+            consumed_by_ui = bool(
+                action_button_system
+                and action_button_system.handle_panel_click(event.pos)
+            )
+        if consumed_by_ui:
             return
 
-        # Minimap click handling
-        minimap_system = self._get_minimap_system()
-        if minimap_system and minimap_system.handle_click(event.pos):
+        # Then minimap interaction.
+        with profiler.time_system("input_click_minimap", category="input"):
+            minimap_system = self._get_minimap_system()
+            consumed_by_minimap = bool(
+                minimap_system and minimap_system.handle_click(event.pos)
+            )
+        if consumed_by_minimap:
             return
 
         if event.button == 1:  # left
-            hex_pos = self._screen_to_hex(event.pos)
+            with profiler.time_system("input_click_screen_to_hex", category="input"):
+                hex_pos = self._screen_to_hex(event.pos)
 
             if hex_pos and self._hex_on_board(hex_pos):
                 self._handle_tile_click(hex_pos, ui_state)
@@ -179,51 +187,50 @@ class InputHandlingSystem(System):
 
     def _handle_tile_click(self, hex_pos: Tuple[int, int], ui_state: UIState):
         """Handle tile click: select/move/attack depending on context."""
-        clicked_unit = self._get_unit_at_position(hex_pos)
+        profiler = profiling.profiler
+        with profiler.time_system("input_click_unit_lookup", category="input"):
+            clicked_unit = self._get_unit_at_position(hex_pos)
 
         if clicked_unit:
-            if self._should_select_unit(clicked_unit, ui_state):
+            if self._should_select_unit(clicked_unit):
                 ui_state.selected_unit = clicked_unit
                 EBS.publish(UnitSelectedEvent(clicked_unit))
             elif ui_state.selected_unit:
-                self._try_attack_target(ui_state.selected_unit, clicked_unit)
+                with profiler.time_system("input_click_attack", category="input"):
+                    self._try_attack_target(ui_state.selected_unit, clicked_unit)
         elif ui_state.selected_unit:
-            self._try_move_unit(ui_state.selected_unit, hex_pos)
+            with profiler.time_system("input_click_move", category="input"):
+                self._try_move_unit(ui_state.selected_unit, hex_pos)
 
         EBS.publish(TileClickedEvent(hex_pos, 1))
 
-    def _should_select_unit(self, unit_entity: int, ui_state: UIState) -> bool:
-        """Return whether a left click should select this unit.
+    def _should_select_unit(self, unit_entity: int) -> bool:
+        """Only HUMAN player slots are manually selectable.
 
-        Turn-based interaction keeps the historical current-player restriction.
-        Real-time has no meaningful single current turn, so using
-        ``GameState.current_player`` there made only the first configured faction
-        selectable forever. That is especially confusing in three-faction
-        scale tests: zooming into a Wei/Wu cluster made mouse selection appear
-        completely broken when the first configured faction was Shu.
+        Player presets are part of the control contract.  ``three_kingdoms`` is
+        an AI/agent-vs-AI/agent-vs-AI/agent benchmark preset, while
+        ``human_vs_two_ai`` explicitly gives Wei to the local human.  Manual
+        mouse control must follow those PlayerType assignments rather than
+        treating real-time mode as a spectator/debug free-control mode.
 
-        In real-time mode:
-        * with no current selection, any clicked unit can become the manual
-          focus;
-        * with a unit selected, clicking the same faction changes selection;
-        * clicking another faction remains an attack attempt, preserving the
-          existing click-to-attack interaction;
-        * right click still clears selection, so switching factions is explicit.
+        Turn-based mode additionally keeps the historical current-turn gate.
         """
         game_state = self.world.get_singleton_component(GameState)
         unit = self.world.get_component(unit_entity, Unit)
-        if not game_state or not unit:
+        if not unit or not self._is_human_controlled_faction(unit.faction):
             return False
 
-        if game_state.game_mode == GameMode.REAL_TIME:
-            if not ui_state.selected_unit:
-                return True
-            selected = self.world.get_component(ui_state.selected_unit, Unit)
-            if selected is None:
-                return True
-            return selected.faction == unit.faction
+        if game_state and game_state.game_mode == GameMode.TURN_BASED:
+            return unit.faction == game_state.current_player
+        return True
 
-        return unit.faction == game_state.current_player
+    def _is_human_controlled_faction(self, faction: Faction) -> bool:
+        """Return whether ``faction`` belongs to a local HUMAN player slot."""
+        for entity in self.world.query().with_component(Player).entities():
+            player = self.world.get_component(entity, Player)
+            if player and player.faction == faction:
+                return player.player_type == PlayerType.HUMAN
+        return False
 
     def _handle_key_down(self, event: KeyDownEvent):
         """Handle key down (edge-triggered actions from the shared keymap)."""
@@ -490,7 +497,7 @@ class InputHandlingSystem(System):
         print(f"Switch to {faction.value} view - only that faction's vision is visible")
 
     def _faction_exists(self, faction: Faction) -> bool:
-        """Check whether a faction exists in the current game."""
+        """Check whether a faction exists in current game."""
         for entity in self.world.query().with_component(Player).entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == faction:
