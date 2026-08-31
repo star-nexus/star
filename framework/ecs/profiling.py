@@ -1,11 +1,8 @@
 """Optional profiling hook for the ECS core.
 
-`framework` used to `from performance_profiler import profiler`, a module at the
-repository root. That made the ECS depend upwards on its own consumer's layout,
-so the package could not be tested or extracted on its own.
-
-The default is a no-op. The ENV entry point installs the real profiler with
-`set_profiler(...)` at startup.
+The framework stays independent from STAR's concrete profiler. The ENV entry
+point installs the real profiler at startup; tests and extracted framework use
+fall back to the no-op implementation below.
 """
 
 from __future__ import annotations
@@ -16,24 +13,32 @@ from typing import Any, Iterator, Protocol, runtime_checkable
 
 @runtime_checkable
 class Profiler(Protocol):
-    """The slice of the profiler API the framework actually calls."""
+    """Profiler API consumed by the framework / engine."""
 
-    def time_system(self, name: str) -> Any: ...
+    def time_system(self, name: str, *, category: str = "work") -> Any: ...
     def start_frame(self) -> None: ...
+    def end_frame(self) -> None: ...
     def print_stats(self) -> None: ...
+    def set_metadata(self, **values: object) -> None: ...
 
 
 class NullProfiler:
-    """Zero-cost default. Keeps call sites free of `if profiler is not None`."""
+    """Zero-cost default. Keeps call sites free of ``if profiler`` branches."""
 
     @contextmanager
-    def time_system(self, name: str) -> Iterator[None]:
+    def time_system(self, name: str, *, category: str = "work") -> Iterator[None]:
         yield
 
     def start_frame(self) -> None:
         pass
 
+    def end_frame(self) -> None:
+        pass
+
     def print_stats(self) -> None:
+        pass
+
+    def set_metadata(self, **values: object) -> None:
         pass
 
 
@@ -42,7 +47,7 @@ profiler: Profiler = _NULL
 
 
 def set_profiler(impl: Profiler | None) -> None:
-    """Install a profiler, or `None` to go back to the no-op."""
+    """Install a profiler, or ``None`` to restore the no-op implementation."""
     global profiler
     profiler = _NULL if impl is None else impl
 
