@@ -12,7 +12,9 @@ Options:
     --headless  Skip start UI, dummy display, auto end (eval / CI)
     --hub-url URL  Hub websocket (default: ws://localhost:8000/ws/metaverse)
     --no-hub  Do not connect to a Hub (offline BOT / rules tests)
-    --help  Show help information   
+    --profile  Print Performance Profiler v2 stats every ~5 seconds
+    --profile-json PATH  Write the final rolling profiler snapshot as JSON
+    --help  Show help information
 """
 
 import sys
@@ -128,6 +130,24 @@ Victory Conditions:
         ),
     )
 
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable STAR Performance Profiler v2 console output. Reports "
+            "exclusive/inclusive timings, frame percentiles, present time, "
+            "and FPS-cap waiting separately."
+        ),
+    )
+    parser.add_argument(
+        "--profile-json",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write the final rolling Performance Profiler v2 snapshot to PATH as JSON.",
+    )
+
     return parser.parse_args()
 
 
@@ -168,9 +188,16 @@ def print_welcome():
 
 def main():
     """Main game function"""
+    args = None
     try:
-        # Parse command line arguments
         args = parse_arguments()
+
+        profiler.enable_profiler = args.profile
+        profiler.set_metadata(
+            mode=args.mode,
+            scenario=args.scenario,
+            players=args.players,
+        )
 
         # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
         if args.env_id is not None:
@@ -224,6 +251,9 @@ def main():
                 print(f"Environment ID: {args.env_id}")
             if args.seed is not None:
                 print(f"Root seed: {args.seed}")
+            if args.profile:
+                print("Performance Profiler v2: enabled")
+
         else:
             # Default to start scene
             engine.scene_manager.switch_to("start")
@@ -242,6 +272,12 @@ def main():
 
         traceback.print_exc()
     finally:
+        if args is not None and args.profile_json:
+            try:
+                profiler.write_json(args.profile_json)
+                print(f"Performance profile written to: {args.profile_json}")
+            except Exception as e:
+                print(f"Warning: Failed to write performance profile: {e}")
         pygame.quit()
         print("Game Over")
 
