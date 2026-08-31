@@ -21,7 +21,6 @@ from framework.ecs import profiling
 from ..components import Camera, DamageNumber, HexPosition
 from .fast_render_systems import (
     FastEffectRenderSystem,
-    FastMapRenderSystem,
     FastMiniMapSystem,
     FastUnitRenderSystem,
 )
