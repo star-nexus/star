@@ -47,9 +47,6 @@ class _World:
             102: SimpleNamespace(faction=Faction.SHU, player_type=PlayerType.AI),
             103: SimpleNamespace(faction=Faction.WU, player_type=PlayerType.AI),
         }
-        # Two tokens on the same committed hex exercise the old query-order
-        # failure: the AI entity appears first, but the HUMAN token must remain
-        # recoverable by the interactive picker.
         self.units = {
             1: SimpleNamespace(faction=Faction.SHU, unit_type=UnitType.INFANTRY),
             2: SimpleNamespace(faction=Faction.WEI, unit_type=UnitType.INFANTRY),
@@ -114,8 +111,6 @@ def _screen_center(system, world, hex_pos):
 def test_fog_then_zoom_keeps_human_unit_pickable():
     world = _World()
     system = _system(world)
-
-    # Reproduce the reported ordering: key 1 disables fog, then + zooms in.
     world.fog.enabled = False
     world.camera.zoom = 2.25
     screen_pos = _screen_center(system, world, (3, 4))
@@ -128,7 +123,6 @@ def test_fog_then_zoom_keeps_human_unit_pickable():
 def test_zoom_then_fog_keeps_human_unit_pickable():
     world = _World()
     system = _system(world)
-
     world.camera.zoom = 2.4
     world.fog.enabled = False
     screen_pos = _screen_center(system, world, (3, 4))
@@ -171,8 +165,6 @@ def test_attack_target_click_completes_mode_even_when_combat_returns_false(monke
 
     system._should_select_unit = lambda entity: entity == 2
     attacks = []
-    # CombatSystem.attack returns False for a legitimate miss too. Target mode
-    # must still finish so the user is not stuck after spending that click/AP.
     system._try_attack_target = lambda attacker, target: (
         attacks.append((attacker, target)) or False
     )
