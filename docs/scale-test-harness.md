@@ -85,13 +85,15 @@ Profiler sections:
 
 ```text
 scale_planning_snapshot
-scale_batch_pathfinding
+scale_batch_planning
 move_pathfinding
 ```
 
-The UDS response reports total planning time and per-plan P50/P95/P99 timing.
-Planning is pure: it does not spend MP, move HexPosition, start animation, or
-record movement statistics.
+`scale_batch_planning` is total per-unit planning/admission/correction work.
+`move_pathfinding` is nested inside it and isolates the actual A* work. The UDS
+response also reports per-plan total P50/P95/P99 timing. Planning is pure: it
+does not spend MP, move HexPosition, start animation, or record movement
+statistics.
 
 ### 3. Prepared execution
 
@@ -143,7 +145,7 @@ uv run tools/scale_driver.py \
   clear
 ```
 
-For normal endpoint legality during a planning experiment:
+For the normal endpoint legality during a planning experiment, use:
 
 ```bash
 uv run tools/scale_driver.py --socket /tmp/star-scale.sock prepare \
@@ -165,5 +167,5 @@ failure_reasons / rejection_reasons
 ```
 
 Planning and execution are intentionally separate. A large
-`scale_batch_pathfinding` value is a Planning Plane result; movement-frame costs
+`scale_batch_planning` value is a Planning Plane result; movement-frame costs
 after `start` are Execution Plane / Dynamic World results.
