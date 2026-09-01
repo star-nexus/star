@@ -183,6 +183,28 @@ def _print_and_optionally_write(data: Dict[str, Any], output: str | None = None)
         path.write_text(text + "\n", encoding="utf-8")
 
 
+def _validate_snapshot(snapshot: Dict[str, Any], requested_density: float) -> Dict[str, Any]:
+    guards = snapshot.get("guards", {}) if isinstance(snapshot, dict) else {}
+    living = int(guards.get("living_units", 0) or 0)
+    actual_density = float(guards.get("actual_density", 0.0) or 0.0)
+    density_tolerance = max(1.0 / living, 1e-4) if living > 0 else 1e-4
+    density_matches = abs(actual_density - requested_density) <= density_tolerance
+    checks = {
+        "snapshot_ok": bool(snapshot.get("ok")),
+        "rolling_window_full": bool(snapshot.get("rolling_window_full")),
+        "fog_matches_required": bool(guards.get("fog_matches_required")),
+        "camera_unchanged": bool(guards.get("camera_unchanged")),
+        "density_matches_requested": density_matches,
+    }
+    return {
+        "valid": all(checks.values()),
+        "checks": checks,
+        "requested_density": requested_density,
+        "actual_density": actual_density,
+        "density_tolerance": density_tolerance,
+    }
+
+
 def _run_density_point(args) -> int:
     if not 0.0 <= args.density <= 1.0:
         _print_and_optionally_write(
@@ -227,9 +249,11 @@ def _run_density_point(args) -> int:
 
     time.sleep(args.sample_after)
     snapshot = request(args.socket, {"command": "profile_snapshot"})
+    validation = _validate_snapshot(snapshot, args.density)
     combined["snapshot"] = snapshot
+    combined["validation"] = validation
     combined["sample_after_seconds"] = args.sample_after
-    combined["ok"] = bool(snapshot.get("ok"))
+    combined["ok"] = bool(validation["valid"])
     _print_and_optionally_write(combined, args.output)
     return 0 if combined["ok"] else 1
 
