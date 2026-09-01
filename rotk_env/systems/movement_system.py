@@ -16,7 +16,7 @@ Movement invariants remain:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import AbstractSet, Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from framework import System, World
 from framework.ecs import profiling
@@ -32,6 +32,7 @@ from ..components import (
 from ..prefabs.config import Faction, TerrainType, UnitState
 from ..utils.hex_utils import HexMath, PathFinding
 from .movement_planning import (
+    EndpointUnblockedObstacles,
     MovePlan,
     MovementPlanResult,
     MovementPlanningPolicy,
@@ -58,8 +59,15 @@ class MovementSystem(System):
         """Movement is command driven; ongoing visual motion lives in AnimationSystem."""
         pass
 
+    # ------------------------------------------------------------------
+    # Public domain API
+    # ------------------------------------------------------------------
     def move_unit(self, entity: int, target_pos: Hex) -> Dict[str, Any]:
-        """Normal ENV facade: plan once, then execute immediately."""
+        """Normal ENV facade: plan once, then execute immediately.
+
+        This is intentionally the same API existing callers use. Stress/scale
+        tooling should use ``plan_move`` and ``execute_move_plan`` separately.
+        """
         planned = self.plan_move(entity, target_pos)
         if not planned.success or planned.plan is None:
             return planned.response
@@ -169,19 +177,23 @@ class MovementSystem(System):
         # blocked everywhere else; remove only the requested endpoint from the
         # blocker set so a planner may route *to* an enemy-held cell, never
         # through arbitrary enemy-held cells.
+        path_blockers = blockers
         if policy == MovementPlanningPolicy.STRESS_STACK_ENDPOINT:
-            blockers.discard(target_pos)
+            path_blockers = EndpointUnblockedObstacles(blockers, target_pos)
 
         with profiling.profiler.time_system("move_pathfinding", category="input"):
             path = PathFinding.find_path(
                 current_pos,
                 target_pos,
-                blockers,
+                path_blockers,
                 None,
                 walkable=walkable,
                 step_cost=lambda pos: costs.get(pos, 999),
             )
         if not path or len(path) < 2:
+            diagnostic_blockers = self._diagnostic_blockers(
+                blockers, target_pos, policy
+            )
             return MovementPlanResult.rejected(
                 self._no_path_result(
                     entity,
@@ -189,8 +201,8 @@ class MovementSystem(System):
                     target_pos,
                     effective_movement,
                     path,
-                    blockers=blockers,
-                    occupied=occupied,
+                    blockers=diagnostic_blockers,
+                    occupied=set(occupied),
                 )
             )
 
@@ -212,8 +224,10 @@ class MovementSystem(System):
                         total_cost,
                         current_mp,
                         spendable,
-                        blockers=blockers,
-                        occupied=occupied,
+                        blockers=self._diagnostic_blockers(
+                            blockers, target_pos, policy
+                        ),
+                        occupied=set(occupied),
                     )
                 )
 
@@ -235,8 +249,10 @@ class MovementSystem(System):
                         total_cost,
                         current_mp,
                         spendable,
-                        blockers=blockers,
-                        occupied=occupied,
+                        blockers=self._diagnostic_blockers(
+                            blockers, target_pos, policy
+                        ),
+                        occupied=set(occupied),
                     )
                 )
             resolved_path = corrected_path
@@ -264,7 +280,14 @@ class MovementSystem(System):
         *,
         emit_log: bool = True,
     ) -> Dict[str, Any]:
-        """Execute an already-approved plan without re-running pathfinding."""
+        """Execute an already-approved plan without re-running pathfinding.
+
+        The executor verifies only that the plan still belongs to this unit/start
+        and that the unit still has enough movement budget. It deliberately does
+        not re-run occupancy/path legality: normal immediate moves retain the old
+        admission-once semantics, while prepared scale batches remain separable
+        from planning cost.
+        """
         entity = plan.entity
         position = self.world.get_component(entity, HexPosition)
         movement_points = self.world.get_component(entity, MovementPoints)
@@ -352,7 +375,12 @@ class MovementSystem(System):
         }
 
     def build_planning_snapshot(self) -> MovementPlanningSnapshot:
-        """Capture shared planning inputs once for a batch."""
+        """Capture shared planning inputs once for a batch.
+
+        Window-scale MovementSystem overrides this with the maintained spatial
+        index; the base implementation still avoids N repeated occupancy scans
+        for headless/testing batch planners.
+        """
         from ..utils.map_query import (
             board_hexes,
             impassable_terrain,
@@ -362,35 +390,45 @@ class MovementSystem(System):
 
         cells = unit_cells(self.world)
         occupied = frozenset(cells)
-        enemy_blockers = {}
+        impassable = frozenset(impassable_terrain(self.world))
+        blockers_by_faction = {}
         for faction in (Faction.WEI, Faction.SHU, Faction.WU):
-            enemy_blockers[faction] = frozenset(
+            enemy = {
                 cell
                 for cell, factions in cells.items()
                 if any(other != faction for other in factions)
-            )
+            }
+            blockers_by_faction[faction] = frozenset(set(impassable) | enemy)
         board = board_hexes(self.world)
         return MovementPlanningSnapshot(
             walkable=frozenset(board) if board is not None else None,
             terrain_costs=movement_costs(self.world),
             occupied=occupied,
-            enemy_blockers_by_faction=enemy_blockers,
-            impassable=frozenset(impassable_terrain(self.world)),
+            blockers_by_faction=blockers_by_faction,
             revision=getattr(self.world, "revision", None),
         )
 
+    # ------------------------------------------------------------------
+    # Planning internals / override points
+    # ------------------------------------------------------------------
     def _planning_context(
         self,
         entity: int,
         faction: Optional[Faction],
         snapshot: Optional[MovementPlanningSnapshot],
-    ) -> tuple[Set[Hex], Set[Hex], Dict[Hex, int], Optional[Set[Hex]], Optional[int]]:
+    ) -> tuple[
+        AbstractSet[Hex],
+        AbstractSet[Hex],
+        Mapping[Hex, int],
+        Optional[AbstractSet[Hex]],
+        Optional[int],
+    ]:
         if snapshot is not None:
             return (
-                set(snapshot.occupied),
+                snapshot.occupied,
                 snapshot.blockers_for(faction),
-                dict(snapshot.terrain_costs),
-                set(snapshot.walkable) if snapshot.walkable is not None else None,
+                snapshot.terrain_costs,
+                snapshot.walkable,
                 snapshot.revision,
             )
 
@@ -415,7 +453,7 @@ class MovementSystem(System):
             getattr(self.world, "revision", None),
         )
 
-    def _path_cost(self, path: List[Hex], costs: Dict[Hex, int]) -> int:
+    def _path_cost(self, path: List[Hex], costs: Mapping[Hex, int]) -> int:
         total = 0
         for pos in path[1:]:
             if pos in costs:
@@ -429,9 +467,9 @@ class MovementSystem(System):
         path: List[Hex],
         spendable: int,
         *,
-        occupied: Set[Hex],
+        occupied: AbstractSet[Hex],
         policy: MovementPlanningPolicy,
-        costs: Dict[Hex, int],
+        costs: Mapping[Hex, int],
     ) -> tuple[Optional[List[Hex]], int]:
         """Return the farthest affordable legal endpoint on an existing path."""
         cumulative = 0
@@ -453,6 +491,20 @@ class MovementSystem(System):
         if best_index <= 0:
             return None, 0
         return list(path[: best_index + 1]), best_cost
+
+    # ------------------------------------------------------------------
+    # World mutation / diagnostics helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _diagnostic_blockers(
+        blockers: AbstractSet[Hex],
+        target_pos: Hex,
+        policy: MovementPlanningPolicy,
+    ) -> Set[Hex]:
+        materialized = set(blockers)
+        if policy == MovementPlanningPolicy.STRESS_STACK_ENDPOINT:
+            materialized.discard(target_pos)
+        return materialized
 
     def commit_hex_position(
         self, entity: int, col: int, row: int, *, arrived: bool = False
