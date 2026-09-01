@@ -73,6 +73,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sustained.add_argument("--batch-id", type=int, default=None)
     sustained.add_argument("--duration", type=float, default=20.0)
+    sustained.add_argument(
+        "--phase",
+        choices=["synchronized", "staggered"],
+        default="synchronized",
+        help=(
+            "Temporal phase of segment boundaries. synchronized is the burst "
+            "worst case; staggered spreads identical-speed units across one segment period."
+        ),
+    )
+    sustained.add_argument(
+        "--phase-seed",
+        type=int,
+        default=None,
+        help="Deterministic stagger seed (default: prepared batch seed)",
+    )
 
     sub.add_parser("stop-sustained", help="Cancel the current sustained motion workload")
     sub.add_parser("status", help="Show prepared batch and current moving density")
@@ -99,7 +114,10 @@ def main() -> int:
         payload = {
             "command": "start_sustained_batch",
             "duration_seconds": args.duration,
+            "phase": args.phase,
         }
+        if args.phase_seed is not None:
+            payload["phase_seed"] = args.phase_seed
         if args.batch_id is not None:
             payload["batch_id"] = args.batch_id
     elif args.command == "stop-sustained":
