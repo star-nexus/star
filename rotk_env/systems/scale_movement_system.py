@@ -41,12 +41,28 @@ class MovementSystem(_BaseMovementSystem):
         )
         # Wiring only: the movement domain never reads stress flags. The optional
         # harness receives this domain service and selects planning policies via
-        # its explicit control-plane commands.
+        # its explicit control-plane commands. Measurement concerns are installed
+        # as a separate test-only adapter around that harness.
+        from ..testing.scale_experiment_measurement import (
+            install_scale_experiment_measurement,
+        )
         from ..testing.scale_harness import ScaleHarnessSystem
         from ..testing.scale_harness_metrics import ScaleHarnessMetricsSystem
 
-        if not any(isinstance(system, ScaleHarnessSystem) for system in world.systems):
-            world.add_system(ScaleHarnessSystem(self, socket_path))
+        harness = next(
+            (
+                system
+                for system in world.systems
+                if isinstance(system, ScaleHarnessSystem)
+            ),
+            None,
+        )
+        if harness is None:
+            harness = ScaleHarnessSystem(self, socket_path)
+            world.add_system(harness)
+
+        install_scale_experiment_measurement(harness, world, profiling.profiler)
+
         if not any(
             isinstance(system, ScaleHarnessMetricsSystem) for system in world.systems
         ):
