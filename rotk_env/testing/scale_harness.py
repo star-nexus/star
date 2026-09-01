@@ -10,6 +10,7 @@ mutation.
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import socket
@@ -52,6 +53,7 @@ class PreparedMoveBatch:
     density: float
     target_radius: int
     policy: MovementPlanningPolicy
+    correct_unreachable: bool
     living_units_at_prepare: int
     requested_units: int
     requested_targets: Dict[int, Hex]
@@ -66,6 +68,14 @@ class PreparedMoveBatch:
     def corrected_units(self) -> int:
         return sum(1 for plan in self.plans if plan.corrected)
 
+    @property
+    def budget_corrected_units(self) -> int:
+        return sum(1 for plan in self.plans if plan.correction_reason == "budget")
+
+    @property
+    def unreachable_corrected_units(self) -> int:
+        return sum(1 for plan in self.plans if plan.correction_reason == "unreachable")
+
     def summary(self) -> Dict[str, Any]:
         samples = self.plan_samples_ms
         prepared = len(self.plans)
@@ -75,6 +85,7 @@ class PreparedMoveBatch:
             "density": self.density,
             "target_radius": self.target_radius,
             "policy": self.policy.value,
+            "correct_unreachable": self.correct_unreachable,
             "living_units_at_prepare": self.living_units_at_prepare,
             "requested_units": self.requested_units,
             "prepared_units": prepared,
@@ -87,6 +98,8 @@ class PreparedMoveBatch:
                 else 0.0
             ),
             "corrected_units": self.corrected_units,
+            "budget_corrected_units": self.budget_corrected_units,
+            "unreachable_corrected_units": self.unreachable_corrected_units,
             "failed_units": self.requested_units - prepared,
             "failure_reasons": dict(self.failures),
             "target_generation_ms": round(self.target_generation_ms, 3),
@@ -111,6 +124,9 @@ class ScaleHarnessSystem(System):
         self.clients: Dict[socket.socket, bytearray] = {}
         self.prepared: Optional[PreparedMoveBatch] = None
         self._next_batch_id = 1
+        self._sustained_entities: set[int] = set()
+        self._sustained_batch_id: Optional[int] = None
+        self._sustained_duration_seconds: float = 0.0
 
     def initialize(self, world) -> None:
         self.world = world
@@ -137,6 +153,7 @@ class ScaleHarnessSystem(System):
         pass
 
     def cleanup(self) -> None:
+        self._stop_sustained_motion()
         for client in list(self.clients):
             try:
                 client.close()
@@ -234,11 +251,17 @@ class ScaleHarnessSystem(System):
             return self._prepare_random_moves(command)
         if op == "start_prepared_batch":
             return self._start_prepared_batch(command)
+        if op == "start_sustained_batch":
+            return self._start_sustained_batch(command)
+        if op == "stop_sustained":
+            stopped = self._stop_sustained_motion()
+            return {"ok": True, "stopped_units": stopped}
         if op == "status":
             return {"ok": True, **self._status()}
         if op == "clear":
+            stopped = self._stop_sustained_motion()
             self.prepared = None
-            return {"ok": True, "cleared": True}
+            return {"ok": True, "cleared": True, "stopped_units": stopped}
         return {"ok": False, "error": "unknown_command", "command": op}
 
     # ------------------------------------------------------------------
@@ -248,6 +271,7 @@ class ScaleHarnessSystem(System):
         density = max(0.0, min(1.0, float(command.get("density", 1.0))))
         seed = int(command.get("seed", 42))
         target_radius = max(1, int(command.get("target_radius", 12)))
+        correct_unreachable = bool(command.get("correct_unreachable", True))
         policy = MovementPlanningPolicy.coerce(
             command.get("policy", MovementPlanningPolicy.STRESS_STACK_ENDPOINT.value)
         )
@@ -298,6 +322,7 @@ class ScaleHarnessSystem(System):
                     policy=policy,
                     snapshot=snapshot,
                     correct_to_budget=True,
+                    correct_unreachable=correct_unreachable,
                 )
                 plan_samples_ms.append(
                     (time.perf_counter_ns() - one_t0) / 1_000_000.0
@@ -316,6 +341,7 @@ class ScaleHarnessSystem(System):
             density=density,
             target_radius=target_radius,
             policy=policy,
+            correct_unreachable=correct_unreachable,
             living_units_at_prepare=len(living),
             requested_units=requested_count,
             requested_targets=targets,
@@ -333,6 +359,8 @@ class ScaleHarnessSystem(System):
             scale_last_batch=batch.batch_id,
             scale_requested_units=batch.requested_units,
             scale_prepared_units=len(batch.plans),
+            scale_budget_corrected_units=batch.budget_corrected_units,
+            scale_unreachable_corrected_units=batch.unreachable_corrected_units,
             scale_target_generation_ms=summary["target_generation_ms"],
             scale_planning_snapshot_ms=summary["planning_snapshot_ms"],
             scale_batch_planning_ms=summary["batch_planning_ms"],
@@ -342,6 +370,9 @@ class ScaleHarnessSystem(System):
         profiling.profiler.set_frame_metric("scale_requested_units", batch.requested_units)
         profiling.profiler.set_frame_metric("scale_prepared_units", len(batch.plans))
         profiling.profiler.set_frame_metric("scale_corrected_units", batch.corrected_units)
+        profiling.profiler.set_frame_metric(
+            "scale_unreachable_corrected_units", batch.unreachable_corrected_units
+        )
         return {"ok": True, "phase": "prepared", **summary}
 
     def _generate_targets(
@@ -367,7 +398,7 @@ class ScaleHarnessSystem(System):
         return targets
 
     # ------------------------------------------------------------------
-    # Phase 3: execute already-prepared plans, no pathfinding
+    # Phase 3A: normal one-shot execute, including normal move side effects
     # ------------------------------------------------------------------
     def _start_prepared_batch(self, command: Dict[str, Any]) -> Dict[str, Any]:
         batch = self.prepared
@@ -381,6 +412,7 @@ class ScaleHarnessSystem(System):
                 "prepared_batch_id": batch.batch_id,
             }
 
+        self._stop_sustained_motion()
         accepted = 0
         rejected: Counter = Counter()
         with profiling.profiler.time_system(
@@ -404,6 +436,7 @@ class ScaleHarnessSystem(System):
         actual_world_density = active / living_now if living_now else 0.0
         activation_ratio = active / batch.requested_units if batch.requested_units else 0.0
         profiling.profiler.set_metadata(
+            scale_execution_mode="one_shot",
             scale_last_execute_batch=batch.batch_id,
             scale_batch_execute_ms=round(execute_ms, 3),
             scale_execute_accepted=accepted,
@@ -418,6 +451,7 @@ class ScaleHarnessSystem(System):
         return {
             "ok": True,
             "phase": "started",
+            "execution_mode": "one_shot",
             "batch_id": batch.batch_id,
             "prepared_units": len(batch.plans),
             "accepted_units": accepted,
@@ -428,7 +462,144 @@ class ScaleHarnessSystem(System):
             "actual_density": actual_world_density,
             "activation_ratio": activation_ratio,
             "batch_execute_ms": round(execute_ms, 3),
+            "normal_move_side_effects": True,
         }
+
+    # ------------------------------------------------------------------
+    # Phase 3B: sustained pure-motion workload, no pathfinding/resources/stats
+    # ------------------------------------------------------------------
+    def _start_sustained_batch(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        batch = self.prepared
+        if batch is None:
+            return {"ok": False, "error": "no_prepared_batch"}
+        requested_batch_id = command.get("batch_id")
+        if requested_batch_id is not None and int(requested_batch_id) != batch.batch_id:
+            return {
+                "ok": False,
+                "error": "batch_id_mismatch",
+                "prepared_batch_id": batch.batch_id,
+            }
+
+        duration_seconds = max(0.5, float(command.get("duration_seconds", 20.0)))
+        self._stop_sustained_motion()
+        accepted = 0
+        rejected: Counter = Counter()
+        total_segments = 0
+        min_segments: Optional[int] = None
+        max_segments = 0
+
+        with profiling.profiler.time_system(
+            "scale_sustained_start", category="scale_execution"
+        ):
+            t0 = time.perf_counter_ns()
+            for plan in batch.plans:
+                sustained_path = self._build_sustained_path(
+                    plan.entity, plan.path, duration_seconds
+                )
+                if sustained_path is None:
+                    rejected["invalid_motion_path"] += 1
+                    continue
+                result = self.movement_system.start_prepared_motion(
+                    plan.entity,
+                    sustained_path,
+                    expected_start=plan.start,
+                )
+                if result.get("success"):
+                    accepted += 1
+                    self._sustained_entities.add(plan.entity)
+                    segments = len(sustained_path) - 1
+                    total_segments += segments
+                    min_segments = segments if min_segments is None else min(min_segments, segments)
+                    max_segments = max(max_segments, segments)
+                else:
+                    rejected[result.get("reason", "unknown")] += 1
+            start_ms = (time.perf_counter_ns() - t0) / 1_000_000.0
+
+        self._sustained_batch_id = batch.batch_id
+        self._sustained_duration_seconds = duration_seconds
+        active = self._active_moving_units()
+        living_now = len(self._living_units())
+        actual_world_density = active / living_now if living_now else 0.0
+        activation_ratio = active / batch.requested_units if batch.requested_units else 0.0
+
+        profiling.profiler.set_metadata(
+            scale_execution_mode="sustained",
+            scale_sustained_batch=batch.batch_id,
+            scale_sustained_duration_seconds=duration_seconds,
+            scale_sustained_start_ms=round(start_ms, 3),
+            scale_sustained_accepted=accepted,
+            scale_sustained_segments_total=total_segments,
+            scale_active_moving_units=active,
+            scale_actual_density=round(actual_world_density, 4),
+        )
+        profiling.profiler.set_frame_metric("scale_sustained_accepted", accepted)
+        profiling.profiler.set_frame_metric("scale_active_moving_units", active)
+        profiling.profiler.set_frame_metric(
+            "scale_actual_density", round(actual_world_density, 4)
+        )
+        return {
+            "ok": True,
+            "phase": "started",
+            "execution_mode": "sustained",
+            "batch_id": batch.batch_id,
+            "duration_seconds": duration_seconds,
+            "prepared_units": len(batch.plans),
+            "accepted_units": accepted,
+            "rejected_units": len(batch.plans) - accepted,
+            "rejection_reasons": dict(rejected),
+            "active_moving_units": active,
+            "actual_density": actual_world_density,
+            "activation_ratio": activation_ratio,
+            "sustained_start_ms": round(start_ms, 3),
+            "segments_total": total_segments,
+            "segments_min_per_unit": min_segments or 0,
+            "segments_max_per_unit": max_segments,
+            "pathfinding_during_execution": False,
+            "normal_move_side_effects": False,
+        }
+
+    def _build_sustained_path(
+        self,
+        entity: int,
+        base_path: Tuple[Hex, ...],
+        duration_seconds: float,
+    ) -> Optional[Tuple[Hex, ...]]:
+        """Expand one short prepared route into a forward/backward motion path.
+
+        The resulting animation is started once. No per-frame harness loop is
+        needed: AnimationSystem naturally consumes the long path while committing
+        HexPosition/spatial-index changes at each segment.
+        """
+        route = tuple(base_path)
+        if len(route) < 2:
+            return None
+        anim = self.world.get_component(entity, MovementAnimation)
+        speed = float(getattr(anim, "speed", 2.0)) if anim is not None else 2.0
+        speed = max(0.01, speed)
+        segment_count = max(1, int(math.ceil(duration_seconds * speed)))
+
+        cycle_targets = list(route[1:]) + list(reversed(route[:-1]))
+        if not cycle_targets:
+            return None
+        expanded = [route[0]]
+        for index in range(segment_count):
+            expanded.append(cycle_targets[index % len(cycle_targets)])
+        return tuple(expanded)
+
+    def _stop_sustained_motion(self) -> int:
+        stopped = 0
+        for entity in list(self._sustained_entities):
+            anim = self.world.get_component(entity, MovementAnimation) if hasattr(self, "world") else None
+            if anim is not None and anim.is_moving:
+                anim.is_moving = False
+                anim.progress = 0.0
+                anim.current_target_index = 0
+                anim.path.clear()
+                stopped += 1
+        self._sustained_entities.clear()
+        self._sustained_batch_id = None
+        self._sustained_duration_seconds = 0.0
+        return stopped
 
     def _living_units(self) -> List[int]:
         living = []
@@ -454,6 +625,11 @@ class ScaleHarnessSystem(System):
             "living_units": living,
             "active_moving_units": active,
             "world_density": active / living if living else 0.0,
+            "sustained": {
+                "batch_id": self._sustained_batch_id,
+                "duration_seconds": self._sustained_duration_seconds,
+                "configured_units": len(self._sustained_entities),
+            },
         }
         if self.prepared is not None:
             payload["prepared"] = self.prepared.summary()
