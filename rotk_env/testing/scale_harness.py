@@ -22,7 +22,10 @@ from framework import System
 from framework.ecs import profiling
 
 from ..components import HexPosition, MovementAnimation, Unit, UnitCount
-from ..systems.movement_planning import MovePlan, MovementPlanningPolicy
+from ..systems.movement_planning import (
+    MovePlan,
+    MovementPlanningPolicy,
+)
 from ..utils.hex_utils import HexMath
 from ..utils.map_query import board_hexes, impassable_terrain
 
@@ -49,6 +52,7 @@ class PreparedMoveBatch:
     density: float
     target_radius: int
     policy: MovementPlanningPolicy
+    living_units_at_prepare: int
     requested_units: int
     requested_targets: Dict[int, Hex]
     plans: List[MovePlan]
@@ -71,10 +75,16 @@ class PreparedMoveBatch:
             "density": self.density,
             "target_radius": self.target_radius,
             "policy": self.policy.value,
+            "living_units_at_prepare": self.living_units_at_prepare,
             "requested_units": self.requested_units,
             "prepared_units": prepared,
-            "prepared_density": (
+            "preparation_success_ratio": (
                 prepared / self.requested_units if self.requested_units else 0.0
+            ),
+            "prepared_world_density": (
+                prepared / self.living_units_at_prepare
+                if self.living_units_at_prepare
+                else 0.0
             ),
             "corrected_units": self.corrected_units,
             "failed_units": self.requested_units - prepared,
@@ -151,6 +161,9 @@ class ScaleHarnessSystem(System):
             "scale_prepared_units", len(self.prepared.plans) if self.prepared else 0
         )
 
+    # ------------------------------------------------------------------
+    # UDS control plane
+    # ------------------------------------------------------------------
     def _accept_clients(self) -> None:
         if self.server is None:
             return
@@ -212,6 +225,9 @@ class ScaleHarnessSystem(System):
         except OSError:
             pass
 
+    # ------------------------------------------------------------------
+    # Public command surface
+    # ------------------------------------------------------------------
     def handle_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
         op = str(command.get("command", "")).strip()
         if op == "prepare_random_moves":
@@ -225,6 +241,9 @@ class ScaleHarnessSystem(System):
             return {"ok": True, "cleared": True}
         return {"ok": False, "error": "unknown_command", "command": op}
 
+    # ------------------------------------------------------------------
+    # Phase 1/2: target generation + planning/correction
+    # ------------------------------------------------------------------
     def _prepare_random_moves(self, command: Dict[str, Any]) -> Dict[str, Any]:
         density = max(0.0, min(1.0, float(command.get("density", 1.0))))
         seed = int(command.get("seed", 42))
@@ -243,9 +262,9 @@ class ScaleHarnessSystem(System):
         )
         selected.sort()
 
-        # Phase 1 uses only static board geometry. Dynamic occupancy is captured
-        # later in one PlanningSnapshot so target generation and planning costs
-        # remain separately attributable.
+        # Phase 1 deliberately uses only static board geometry. Dynamic occupancy
+        # is captured later in one PlanningSnapshot so target generation and
+        # planning costs stay separately attributable.
         with profiling.profiler.time_system(
             "scale_target_generation", category="scale_planning"
         ):
@@ -297,6 +316,7 @@ class ScaleHarnessSystem(System):
             density=density,
             target_radius=target_radius,
             policy=policy,
+            living_units_at_prepare=len(living),
             requested_units=requested_count,
             requested_targets=targets,
             plans=plans,
@@ -346,6 +366,9 @@ class ScaleHarnessSystem(System):
                 targets[entity] = rng.choice(candidates)
         return targets
 
+    # ------------------------------------------------------------------
+    # Phase 3: execute already-prepared plans, no pathfinding
+    # ------------------------------------------------------------------
     def _start_prepared_batch(self, command: Dict[str, Any]) -> Dict[str, Any]:
         batch = self.prepared
         if batch is None:
@@ -377,17 +400,20 @@ class ScaleHarnessSystem(System):
         ):
             active = self._active_moving_units()
 
+        living_now = len(self._living_units())
+        actual_world_density = active / living_now if living_now else 0.0
+        activation_ratio = active / batch.requested_units if batch.requested_units else 0.0
         profiling.profiler.set_metadata(
             scale_last_execute_batch=batch.batch_id,
             scale_batch_execute_ms=round(execute_ms, 3),
             scale_execute_accepted=accepted,
             scale_active_moving_units=active,
+            scale_actual_density=round(actual_world_density, 4),
         )
         profiling.profiler.set_frame_metric("scale_execute_accepted", accepted)
         profiling.profiler.set_frame_metric("scale_active_moving_units", active)
         profiling.profiler.set_frame_metric(
-            "scale_actual_density",
-            round(active / batch.requested_units, 4) if batch.requested_units else 0.0,
+            "scale_actual_density", round(actual_world_density, 4)
         )
         return {
             "ok": True,
@@ -397,10 +423,10 @@ class ScaleHarnessSystem(System):
             "accepted_units": accepted,
             "rejected_units": len(batch.plans) - accepted,
             "rejection_reasons": dict(rejected),
+            "living_units": living_now,
             "active_moving_units": active,
-            "actual_density": (
-                active / batch.requested_units if batch.requested_units else 0.0
-            ),
+            "actual_density": actual_world_density,
+            "activation_ratio": activation_ratio,
             "batch_execute_ms": round(execute_ms, 3),
         }
 
