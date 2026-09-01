@@ -7,6 +7,8 @@ import argparse
 import json
 import socket
 import sys
+import time
+from pathlib import Path
 from typing import Any, Dict
 
 
@@ -27,6 +29,79 @@ def request(socket_path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         client.close()
 
 
+def _prepare_payload(args) -> Dict[str, Any]:
+    return {
+        "command": "prepare_random_moves",
+        "density": args.density,
+        "seed": args.seed,
+        "target_radius": args.target_radius,
+        "policy": args.policy,
+        "correct_unreachable": args.correct_unreachable,
+    }
+
+
+def _sustained_payload(args) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "command": "start_sustained_batch",
+        "duration_seconds": args.duration,
+        "phase": args.phase,
+        "require_fog": args.require_fog,
+    }
+    if args.phase_seed is not None:
+        payload["phase_seed"] = args.phase_seed
+    if getattr(args, "batch_id", None) is not None:
+        payload["batch_id"] = args.batch_id
+    return payload
+
+
+def _add_prepare_args(parser: argparse.ArgumentParser, *, require_density: bool = False) -> None:
+    parser.add_argument("--density", type=float, required=require_density, default=None if require_density else 1.0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--target-radius", type=int, default=12)
+    parser.add_argument(
+        "--policy",
+        choices=["normal", "stress_stack_endpoint"],
+        default="stress_stack_endpoint",
+    )
+    parser.add_argument(
+        "--correct-unreachable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Correct no-path targets to the nearest budget-reachable endpoint "
+            "(default: enabled; use --no-correct-unreachable for raw no-path measurement)"
+        ),
+    )
+
+
+def _add_sustained_args(parser: argparse.ArgumentParser, *, density_curve_defaults: bool = False) -> None:
+    parser.add_argument("--duration", type=float, default=20.0)
+    parser.add_argument(
+        "--phase",
+        choices=["synchronized", "staggered"],
+        default="staggered" if density_curve_defaults else "synchronized",
+        help=(
+            "Temporal phase of segment boundaries. synchronized is the burst "
+            "worst case; staggered is the steady-state density-curve workload."
+        ),
+    )
+    parser.add_argument(
+        "--phase-seed",
+        type=int,
+        default=None,
+        help="Deterministic stagger seed (default: prepared batch seed)",
+    )
+    parser.add_argument(
+        "--require-fog",
+        choices=["on", "off", "any"],
+        default="on" if density_curve_defaults else "any",
+        help=(
+            "Reject the run if the current FogOfWar state does not match. "
+            "Formal density-curve points default to 'on'."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="STAR Scale Test Harness control client"
@@ -41,23 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare = sub.add_parser(
         "prepare", help="Generate random targets and batch-plan/correct moves"
     )
-    prepare.add_argument("--density", type=float, default=1.0)
-    prepare.add_argument("--seed", type=int, default=42)
-    prepare.add_argument("--target-radius", type=int, default=12)
-    prepare.add_argument(
-        "--policy",
-        choices=["normal", "stress_stack_endpoint"],
-        default="stress_stack_endpoint",
-    )
-    prepare.add_argument(
-        "--correct-unreachable",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Correct no-path targets to the nearest budget-reachable endpoint "
-            "(default: enabled; use --no-correct-unreachable for raw no-path measurement)"
-        ),
-    )
+    _add_prepare_args(prepare)
 
     start = sub.add_parser(
         "start", help="Execute prepared MovePlans once with normal move side effects"
@@ -72,21 +131,32 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sustained.add_argument("--batch-id", type=int, default=None)
-    sustained.add_argument("--duration", type=float, default=20.0)
-    sustained.add_argument(
-        "--phase",
-        choices=["synchronized", "staggered"],
-        default="synchronized",
+    _add_sustained_args(sustained)
+
+    sub.add_parser(
+        "profile-snapshot",
+        help="Read the current measurement-epoch profiler snapshot and guards",
+    )
+
+    density = sub.add_parser(
+        "density-point",
         help=(
-            "Temporal phase of segment boundaries. synchronized is the burst "
-            "worst case; staggered spreads identical-speed units across one segment period."
+            "Prepare, start, wait, and snapshot one formal Dynamic World density point. "
+            "Use a fresh ENV process for each point."
         ),
     )
-    sustained.add_argument(
-        "--phase-seed",
-        type=int,
+    _add_prepare_args(density, require_density=True)
+    _add_sustained_args(density, density_curve_defaults=True)
+    density.add_argument(
+        "--sample-after",
+        type=float,
+        default=10.0,
+        help="Seconds after kickoff before taking the profiler snapshot (default: 10)",
+    )
+    density.add_argument(
+        "--output",
         default=None,
-        help="Deterministic stagger seed (default: prepared batch seed)",
+        help="Optional JSON output path for the combined prepare/start/snapshot result",
     )
 
     sub.add_parser("stop-sustained", help="Cancel the current sustained motion workload")
@@ -95,38 +165,83 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _print_and_optionally_write(data: Dict[str, Any], output: str | None = None) -> None:
+    text = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
+    print(text)
+    if output:
+        path = Path(output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text + "\n", encoding="utf-8")
+
+
+def _run_density_point(args) -> int:
+    if not 0.0 <= args.density <= 1.0:
+        _print_and_optionally_write(
+            {"ok": False, "error": "density_out_of_range", "density": args.density},
+            args.output,
+        )
+        return 1
+    if args.sample_after <= 0.0 or args.sample_after >= args.duration:
+        _print_and_optionally_write(
+            {
+                "ok": False,
+                "error": "invalid_sample_window",
+                "message": "sample-after must be > 0 and < duration",
+                "sample_after": args.sample_after,
+                "duration": args.duration,
+            },
+            args.output,
+        )
+        return 1
+
+    prepare = request(args.socket, _prepare_payload(args))
+    combined: Dict[str, Any] = {
+        "ok": False,
+        "experiment": "dynamic_world_density_curve_v1",
+        "density": args.density,
+        "prepare": prepare,
+    }
+    if not prepare.get("ok"):
+        _print_and_optionally_write(combined, args.output)
+        return 1
+
+    start = request(args.socket, _sustained_payload(args))
+    combined["start"] = start
+    if not start.get("ok"):
+        _print_and_optionally_write(combined, args.output)
+        return 1
+
+    time.sleep(args.sample_after)
+    snapshot = request(args.socket, {"command": "profile_snapshot"})
+    combined["snapshot"] = snapshot
+    combined["sample_after_seconds"] = args.sample_after
+    combined["ok"] = bool(snapshot.get("ok"))
+    _print_and_optionally_write(combined, args.output)
+    return 0 if combined["ok"] else 1
+
+
 def main() -> int:
     args = build_parser().parse_args()
+    if args.command == "density-point":
+        return _run_density_point(args)
+
     if args.command == "prepare":
-        payload = {
-            "command": "prepare_random_moves",
-            "density": args.density,
-            "seed": args.seed,
-            "target_radius": args.target_radius,
-            "policy": args.policy,
-            "correct_unreachable": args.correct_unreachable,
-        }
+        payload = _prepare_payload(args)
     elif args.command == "start":
         payload = {"command": "start_prepared_batch"}
         if args.batch_id is not None:
             payload["batch_id"] = args.batch_id
     elif args.command == "start-sustained":
-        payload = {
-            "command": "start_sustained_batch",
-            "duration_seconds": args.duration,
-            "phase": args.phase,
-        }
-        if args.phase_seed is not None:
-            payload["phase_seed"] = args.phase_seed
-        if args.batch_id is not None:
-            payload["batch_id"] = args.batch_id
+        payload = _sustained_payload(args)
+    elif args.command == "profile-snapshot":
+        payload = {"command": "profile_snapshot"}
     elif args.command == "stop-sustained":
         payload = {"command": "stop_sustained"}
     else:
         payload = {"command": args.command}
 
     response = request(args.socket, payload)
-    print(json.dumps(response, indent=2, ensure_ascii=False, sort_keys=True))
+    _print_and_optionally_write(response)
     return 0 if response.get("ok") else 1
 
 
