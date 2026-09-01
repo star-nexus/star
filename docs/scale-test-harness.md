@@ -36,19 +36,22 @@ Normal benchmark/gameplay still calls:
 move_unit
   -> plan_move(policy=NORMAL)
   -> execute_move_plan
+       -> MP / recovery / statistics
+       -> prepared motion
 ```
 
-The harness can call the phases independently:
+Scale/debug tooling can compose lower-level phases independently:
 
 ```text
 generate targets
   -> build_planning_snapshot
-  -> 5k x plan_move
+  -> N x plan_move
   -> PreparedMoveBatch
 
 PreparedMoveBatch
-  -> 5k x execute_move_plan
-  -> no pathfinding
+  -> execute_move_plan          # normal one-shot side effects
+or
+  -> start_prepared_motion      # pure motion; no MP/recovery/stats
 ```
 
 `STRESS_STACK_ENDPOINT` changes only endpoint legality:
@@ -61,7 +64,7 @@ STRESS_STACK_ENDPOINT: occupied endpoint = allow;  enemy traversal = blocked
 The stress policy is an explicit planner policy. Normal movement code never
 reads a global "stress mode" boolean.
 
-## Three separable experiments
+## Separable experiments
 
 ### 1. Target generation
 
@@ -77,9 +80,22 @@ scale_target_generation
 ### 2. Planning / correction
 
 One `MovementPlanningSnapshot` captures shared board costs and occupancy. Every
-selected unit then runs pathfinding against that same snapshot. If the requested
-route exists but exceeds the current MP budget, the batch planner can resolve the
-plan to the farthest legal endpoint on that route within budget.
+selected unit then runs pathfinding against that same snapshot.
+
+Two correction types are reported separately:
+
+```text
+budget
+  requested route exists, but exceeds current spendable MP
+  -> trim to the farthest affordable endpoint on that route
+
+unreachable
+  requested target has no route under the planning snapshot
+  -> choose the budget-reachable endpoint nearest to the requested target
+```
+
+`prepare` enables unreachable correction by default. Use
+`--no-correct-unreachable` when the goal is to measure raw no-path tail cost.
 
 Profiler sections:
 
@@ -87,28 +103,113 @@ Profiler sections:
 scale_planning_snapshot
 scale_batch_planning
 move_pathfinding
+move_unreachable_correction
 ```
 
 `scale_batch_planning` is total per-unit planning/admission/correction work.
-`move_pathfinding` is nested inside it and isolates the actual A* work. The UDS
-response also reports per-plan total P50/P95/P99 timing. Planning is pure: it
-does not spend MP, move HexPosition, start animation, or record movement
-statistics.
+`move_pathfinding` isolates the original requested-target A* work.
+`move_unreachable_correction` isolates the optional nearest-reachable recovery.
+Planning remains pure: it does not spend MP, move HexPosition, start animation,
+or record movement statistics.
 
-### 3. Prepared execution
+The response reports:
 
-The prepared plans can later be started without re-running pathfinding:
+```text
+corrected_units
+budget_corrected_units
+unreachable_corrected_units
+failure_reasons
+plan_p50_ms / p95 / p99
+```
+
+### 3A. One-shot prepared execution
+
+```bash
+uv run tools/scale_driver.py --socket /tmp/star-scale.sock start
+```
+
+This calls `execute_move_plan` for the prepared plans without re-running
+pathfinding. It intentionally keeps normal move side effects:
+
+```text
+MP spend
+ResourceRecovery scheduling
+movement statistics
+motion/animation
+```
+
+Profiler sections:
 
 ```text
 scale_batch_execute
 scale_active_moving_count
 ```
 
-This is the primary dynamic-world test for simultaneous movement, animation,
-HexPosition commits, UnitSpatialIndex churn, Vision invalidation, minimap and
-rendering.
+Use this for a mass action-admission / one-shot movement burst.
 
-## Driver
+### 3B. Sustained Dynamic World execution
+
+For a stable active-density interval, start the same prepared batch as pure
+motion:
+
+```bash
+uv run tools/scale_driver.py \
+  --socket /tmp/star-scale.sock \
+  start-sustained \
+  --duration 20
+```
+
+The harness expands each short prepared path into a repeated forward/backward
+route (`A -> B -> ... -> B -> A -> ...`) long enough for the requested duration,
+then starts that route **once** through `start_prepared_motion`.
+
+During sustained execution there is:
+
+```text
+NO pathfinding
+NO MP spend
+NO ResourceRecovery scheduling
+NO normal movement-action statistics
+NO per-frame harness restart loop
+```
+
+The runtime work is therefore dominated by the Dynamic World data plane:
+
+```text
+MovementAnimation
+HexPosition commits
+UnitSpatialIndex churn
+Vision/minimap invalidation
+viewport culling
+unit rendering
+```
+
+Profiler section for the one-time kickoff:
+
+```text
+scale_sustained_start
+```
+
+Live density continues to be sampled by:
+
+```text
+scale_active_density_sample
+scale_active_moving_units
+scale_actual_density
+```
+
+The low-rate density observer records its own cost so measurement overhead is
+visible.
+
+Cancel a sustained run manually with:
+
+```bash
+uv run tools/scale_driver.py \
+  --socket /tmp/star-scale.sock \
+  stop-sustained
+```
+
+## Driver examples
 
 Prepare a 100% movement-density batch:
 
@@ -121,12 +222,33 @@ uv run tools/scale_driver.py \
   --target-radius 12
 ```
 
-Start the already-prepared batch:
+To preserve raw `no_path` failures instead of correcting them:
+
+```bash
+uv run tools/scale_driver.py \
+  --socket /tmp/star-scale.sock \
+  prepare \
+  --density 1.0 \
+  --seed 42 \
+  --target-radius 12 \
+  --no-correct-unreachable
+```
+
+Run a normal one-shot execution:
 
 ```bash
 uv run tools/scale_driver.py \
   --socket /tmp/star-scale.sock \
   start
+```
+
+Run a 20-second sustained Dynamic World workload:
+
+```bash
+uv run tools/scale_driver.py \
+  --socket /tmp/star-scale.sock \
+  start-sustained \
+  --duration 20
 ```
 
 Inspect actual moving density:
@@ -137,20 +259,34 @@ uv run tools/scale_driver.py \
   status
 ```
 
-Discard the prepared batch:
+Stop sustained motion and discard the prepared batch:
 
 ```bash
-uv run tools/scale_driver.py \
-  --socket /tmp/star-scale.sock \
-  clear
+uv run tools/scale_driver.py --socket /tmp/star-scale.sock clear
 ```
 
-For the normal endpoint legality during a planning experiment, use:
+For normal endpoint legality during a planning experiment:
 
 ```bash
 uv run tools/scale_driver.py --socket /tmp/star-scale.sock prepare \
   --density 1.0 --policy normal
 ```
+
+## Recommended density matrix
+
+Use a fresh world (or an equivalent deterministic reset) for each measured run:
+
+```text
+10%   density=0.10
+25%   density=0.25
+50%   density=0.50
+75%   density=0.75
+100%  density=1.00
+```
+
+For the Dynamic World curve, keep `seed`, map, target radius, sustained duration,
+viewport/camera state, FPS cap, and Fog setting fixed. A practical first pass is
+20 seconds per density.
 
 ## Interpretation
 
@@ -167,5 +303,5 @@ failure_reasons / rejection_reasons
 ```
 
 Planning and execution are intentionally separate. A large
-`scale_batch_planning` value is a Planning Plane result; movement-frame costs
-after `start` are Execution Plane / Dynamic World results.
+`scale_batch_planning` value is a Planning Plane result. Frame costs during
+`start-sustained` are Execution Plane / Dynamic World results.
