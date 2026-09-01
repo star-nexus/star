@@ -21,6 +21,7 @@ from ..utils.unit_spatial_index import (
 )
 from .movement_planning import MovementPlanningSnapshot
 from .movement_system import MovementSystem as _BaseMovementSystem
+from .vision_system import mark_vision_dirty
 
 Hex = Tuple[int, int]
 
@@ -115,7 +116,14 @@ class MovementSystem(_BaseMovementSystem):
     def commit_hex_position(
         self, entity: int, col: int, row: int, *, arrived: bool = False
     ) -> None:
+        position = self.world.get_component(entity, HexPosition)
+        old = (position.col, position.row) if position is not None else None
         super().commit_hex_position(entity, col, row, arrived=arrived)
+        changed = old is not None and old != (col, row)
+        if changed:
+            # Event-driven visibility invalidation: dynamic-world scale should
+            # pay for units that actually changed hex, not all resident units.
+            mark_vision_dirty(self.world, entity)
         update_unit_spatial_index(self.world, entity)
 
     def _get_obstacles(
