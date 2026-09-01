@@ -14,6 +14,7 @@ from ..components.unit_action_buttons import (
     ActionType,
 )
 from ..prefabs.config import GameConfig, PlayerType
+from .resource_recovery_system import mark_action_points_spent
 
 
 class UnitActionButtonSystem(System):
@@ -396,6 +397,7 @@ class UnitActionButtonSystem(System):
         action_points = self.world.get_component(unit_entity, ActionPoints)
         if action_points and action_points.can_perform_action(ActionType.WAIT):
             action_points.consume_ap(ActionType.WAIT)
+            mark_action_points_spent(self.world, unit_entity)
             print(f"Unit {unit_entity} ends turn")
 
     def _execute_garrison_action(self, unit_entity):
@@ -404,6 +406,7 @@ class UnitActionButtonSystem(System):
         action_points = self.world.get_component(unit_entity, ActionPoints)
         if action_points and action_points.can_perform_action(ActionType.GARRISON):
             action_points.consume_ap(ActionType.GARRISON)
+            mark_action_points_spent(self.world, unit_entity)
             print(f"Unit {unit_entity} begins garrisoning")
 
     def _execute_capture_action(self, unit_entity):

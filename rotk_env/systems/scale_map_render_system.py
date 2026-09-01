@@ -13,11 +13,11 @@ the camera leaves the margin is the overscan surface rebuilt. Continuous zoom
 still uses the proven direct-tile path so we do not trade RenderEngine time for a
 full raster rebuild on every zoom step.
 
-Overscan rebuilds reuse the existing SDL Surface when the viewport size is
-unchanged. The old implementation allocated and zero-filled a ~5M-pixel surface
-for every rebuild; at 2000 units that one-off allocation can add an ~12 ms frame
-tail. Reuse clears only the previous terrain content rectangle before drawing the
-new cache.
+Overscan rebuilds use a staging surface and split candidate scanning and terrain
+rasterization across frames under a small time budget. While a pan rebuild is in
+flight, the previous raster supplies the overlapping region and only newly
+exposed tiles use the direct path. The active cache is swapped atomically after
+the staging build completes.
 
 The cache contains terrain/city markers only. Territory, fog, coordinates,
 units, effects and UI retain their existing dynamic rendering semantics.
@@ -25,7 +25,9 @@ units, effects and UI retain their existing dynamic rendering semantics.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field
+import time
+from typing import Iterator, List, Optional, Tuple
 
 import pygame
 
@@ -37,11 +39,32 @@ from ..prefabs.config import GameConfig, TerrainType
 from .fast_render_systems import FastMapRenderSystem
 
 
+@dataclass
+class _OverscanBuildJob:
+    surface: pygame.Surface
+    camera_offset: Tuple[float, float]
+    zoom: float
+    zoom_key: float
+    map_key: tuple
+    viewport: Tuple[int, int]
+    tile_iterator: Iterator
+    reason: str
+    phase: str = "scan"
+    candidates: list = field(default_factory=list)
+    candidate_index: int = 0
+    content_rect: Optional[pygame.Rect] = None
+    tiles_examined: int = 0
+    tiles_built: int = 0
+
+
 class ScaleMapRenderSystem(FastMapRenderSystem):
     """Fast map renderer with a pan-friendly overscan terrain raster."""
 
     OVERSCAN_MARGIN_PX = 256
     OVERSCAN_ZOOM_STABLE_FRAMES = 2
+    OVERSCAN_BUILD_BUDGET_MS = 1.5
+    OVERSCAN_BUILD_MAX_ITEMS_PER_STEP = 2048
+    OVERSCAN_BUILD_CLOCK_CHECK_INTERVAL = 16
 
     def __init__(self):
         super().__init__()
@@ -55,6 +78,8 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         self._overscan_zoom_stable_frames = 0
         self._overscan_build_count = 0
         self._overscan_surface_reuses = 0
+        self._overscan_build_job: Optional[_OverscanBuildJob] = None
+        self._overscan_build_cancel_count = 0
 
     def _invalidate_fast_caches(self) -> None:
         super()._invalidate_fast_caches()
@@ -66,6 +91,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         self._overscan_viewport = None
         self._overscan_zoom_candidate = None
         self._overscan_zoom_stable_frames = 0
+        self._overscan_build_job = None
 
     def _scale_map_key(self, map_data: MapData):
         return (
@@ -137,6 +163,320 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         profiling.profiler.set_frame_metric("map_terrain_blits", 1)
         profiling.profiler.set_frame_metric("map_overscan_source_pixels", pixels)
         return pixels
+
+    def _active_overscan_geometry_matches(
+        self, map_data: MapData, zoom: float
+    ) -> bool:
+        return bool(
+            self._overscan_surface is not None
+            and self._overscan_camera_offset is not None
+            and self._overscan_viewport
+            == (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+            and self._overscan_map_key == self._scale_map_key(map_data)
+            and self._overscan_zoom_key == self._scale_zoom_key(zoom)
+        )
+
+    def _render_direct_outside_cached_overlap(
+        self,
+        map_data: MapData,
+        visible_tiles,
+        camera_offset: List[float],
+        zoom: float,
+    ) -> int:
+        """Use the old raster for overlap and direct-render only exposed tiles.
+
+        A pan beyond the overscan margin used to force either one synchronous
+        rebuild or a full direct fallback. During an incremental rebuild the old
+        surface still covers most of the new viewport, so retain that one blit
+        and submit direct commands only for tiles touching the exposed strips.
+        """
+        if not self._active_overscan_geometry_matches(map_data, zoom):
+            direct_tiles = set(visible_tiles)
+            self._render_terrain_direct(map_data, direct_tiles, camera_offset, zoom)
+            profiling.profiler.set_frame_metric(
+                "map_overscan_fallback_direct_tiles", len(direct_tiles)
+            )
+            profiling.profiler.set_frame_metric("map_terrain_blits", len(direct_tiles))
+            profiling.profiler.set_frame_metric("map_overscan_source_pixels", 0)
+            return len(direct_tiles)
+
+        width, height = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
+        margin = self.OVERSCAN_MARGIN_PX
+        dx = float(camera_offset[0]) - self._overscan_camera_offset[0]
+        dy = float(camera_offset[1]) - self._overscan_camera_offset[1]
+        viewport_source = pygame.Rect(
+            int(round(margin - dx)),
+            int(round(margin - dy)),
+            width,
+            height,
+        )
+        cached_source = viewport_source.clip(self._overscan_content_rect)
+        cached_source = cached_source.clip(self._overscan_surface.get_rect())
+        tile_extent = max(2, int(GameConfig.HEX_SIZE * zoom) + 2)
+        direct_tiles = set()
+
+        for q, r in visible_tiles:
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            old_local_x = world_x * zoom + self._overscan_camera_offset[0] + margin
+            old_local_y = world_y * zoom + self._overscan_camera_offset[1] + margin
+            tile_rect = pygame.Rect(
+                int(old_local_x - tile_extent),
+                int(old_local_y - tile_extent),
+                tile_extent * 2 + 1,
+                tile_extent * 2 + 1,
+            )
+            if not cached_source.contains(tile_rect):
+                direct_tiles.add((q, r))
+
+        overlap_pixels = self._draw_overscan(camera_offset)
+        if direct_tiles:
+            self._render_terrain_direct(map_data, direct_tiles, camera_offset, zoom)
+        profiling.profiler.set_frame_metric(
+            "map_overscan_fallback_direct_tiles", len(direct_tiles)
+        )
+        profiling.profiler.set_frame_metric(
+            "map_terrain_blits", (1 if overlap_pixels else 0) + len(direct_tiles)
+        )
+        return len(direct_tiles)
+
+    def _overscan_miss_reason(
+        self, map_data: MapData, camera_offset: List[float], zoom: float
+    ) -> str:
+        viewport = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+        if self._overscan_surface is None or self._overscan_camera_offset is None:
+            return "initial"
+        if self._overscan_viewport != viewport:
+            return "viewport_changed"
+        if self._overscan_map_key != self._scale_map_key(map_data):
+            return "map_changed"
+        if self._overscan_zoom_key != self._scale_zoom_key(zoom):
+            return "zoom_changed"
+        dx = float(camera_offset[0]) - self._overscan_camera_offset[0]
+        dy = float(camera_offset[1]) - self._overscan_camera_offset[1]
+        if abs(dx) > self.OVERSCAN_MARGIN_PX or abs(dy) > self.OVERSCAN_MARGIN_PX:
+            return "pan_margin_exceeded"
+        return "unknown"
+
+    def _build_job_matches_view(
+        self,
+        job: _OverscanBuildJob,
+        map_data: MapData,
+        camera_offset: List[float],
+        zoom: float,
+    ) -> bool:
+        if job.viewport != (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT):
+            return False
+        if job.map_key != self._scale_map_key(map_data):
+            return False
+        if job.zoom_key != self._scale_zoom_key(zoom):
+            return False
+        dx = float(camera_offset[0]) - job.camera_offset[0]
+        dy = float(camera_offset[1]) - job.camera_offset[1]
+        return abs(dx) <= self.OVERSCAN_MARGIN_PX and abs(dy) <= self.OVERSCAN_MARGIN_PX
+
+    def _cancel_overscan_build(self) -> None:
+        if self._overscan_build_job is not None:
+            self._overscan_build_job = None
+            self._overscan_build_cancel_count += 1
+
+    def _start_overscan_build(
+        self,
+        map_data: MapData,
+        camera_offset: List[float],
+        zoom: float,
+        reason: str,
+    ) -> None:
+        self._cancel_overscan_build()
+        width, height = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
+        margin = self.OVERSCAN_MARGIN_PX
+        with profiling.profiler.time_system(
+            "map_overscan_surface_allocate", category="render"
+        ):
+            staging_surface = pygame.Surface(
+                (width + margin * 2, height + margin * 2), pygame.SRCALPHA
+            )
+        self._overscan_build_job = _OverscanBuildJob(
+            surface=staging_surface,
+            camera_offset=(float(camera_offset[0]), float(camera_offset[1])),
+            zoom=float(zoom),
+            zoom_key=self._scale_zoom_key(zoom),
+            map_key=self._scale_map_key(map_data),
+            viewport=(width, height),
+            tile_iterator=iter(map_data.tiles.items()),
+            reason=reason,
+        )
+        profiling.profiler.set_frame_metric("map_overscan_rebuild_reason", reason)
+        profiling.profiler.set_frame_metric("map_overscan_cleared_pixels", 0)
+
+    def _scan_overscan_candidates(
+        self, job: _OverscanBuildJob, deadline: float, item_budget: int
+    ) -> int:
+        width, height = job.viewport
+        margin = self.OVERSCAN_MARGIN_PX
+        tile_extent = max(2, int(GameConfig.HEX_SIZE * job.zoom) + 2)
+        left = -margin - tile_extent
+        right = width + margin + tile_extent
+        top = -margin - tile_extent
+        bottom = height + margin + tile_extent
+        processed = 0
+
+        while processed < item_budget:
+            try:
+                (q, r), tile_entity = next(job.tile_iterator)
+            except StopIteration:
+                job.phase = "raster"
+                break
+
+            processed += 1
+            job.tiles_examined += 1
+            if tile_entity is not None:
+                terrain = self.world.get_component(tile_entity, Terrain)
+                if terrain is not None:
+                    world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+                    screen_x = world_x * job.zoom + job.camera_offset[0]
+                    screen_y = world_y * job.zoom + job.camera_offset[1]
+                    if left <= screen_x <= right and top <= screen_y <= bottom:
+                        job.candidates.append((q, r, terrain, screen_x, screen_y))
+
+            if (
+                processed % self.OVERSCAN_BUILD_CLOCK_CHECK_INTERVAL == 0
+                and time.perf_counter() >= deadline
+            ):
+                break
+        return processed
+
+    @staticmethod
+    def _include_job_rect(job: _OverscanBuildJob, rect: pygame.Rect) -> None:
+        clipped = rect.clip(job.surface.get_rect())
+        if clipped.width <= 0 or clipped.height <= 0:
+            return
+        if job.content_rect is None:
+            job.content_rect = clipped.copy()
+        else:
+            job.content_rect.union_ip(clipped)
+
+    def _raster_overscan_candidates(
+        self, job: _OverscanBuildJob, deadline: float, item_budget: int
+    ) -> int:
+        margin = self.OVERSCAN_MARGIN_PX
+        processed = 0
+        while job.candidate_index < len(job.candidates) and processed < item_budget:
+            q, r, terrain, screen_x, screen_y = job.candidates[job.candidate_index]
+            job.candidate_index += 1
+            processed += 1
+
+            local_x = screen_x + margin
+            local_y = screen_y + margin
+            texture = self._get_terrain_texture(terrain.terrain_type, (q, r))
+            if texture is not None and self.texture_loaded:
+                scaled = self._scaled_terrain_texture(texture, job.zoom)
+                rect = scaled.get_rect(center=(int(local_x), int(local_y)))
+                job.surface.blit(scaled, rect.topleft)
+                self._include_job_rect(job, rect)
+            else:
+                color = GameConfig.TERRAIN_COLORS.get(
+                    terrain.terrain_type, (128, 128, 128)
+                )
+                corners = self.hex_converter.get_hex_corners(q, r)
+                points = [
+                    (
+                        int(round(x * job.zoom + job.camera_offset[0] + margin)),
+                        int(round(y * job.zoom + job.camera_offset[1] + margin)),
+                    )
+                    for x, y in corners
+                ]
+                pygame.draw.polygon(job.surface, color, points)
+                pygame.draw.polygon(job.surface, (0, 0, 0), points, 1)
+                xs = [point[0] for point in points]
+                ys = [point[1] for point in points]
+                self._include_job_rect(
+                    job,
+                    pygame.Rect(
+                        min(xs),
+                        min(ys),
+                        max(xs) - min(xs) + 1,
+                        max(ys) - min(ys) + 1,
+                    ),
+                )
+
+            if terrain.terrain_type == TerrainType.CITY:
+                marker_size = max(1, int(12 * job.zoom))
+                center = (int(local_x), int(local_y))
+                pygame.draw.circle(job.surface, (211, 211, 211), center, marker_size)
+                pygame.draw.circle(job.surface, (0, 0, 0), center, marker_size, 2)
+                self._include_job_rect(
+                    job,
+                    pygame.Rect(
+                        center[0] - marker_size - 2,
+                        center[1] - marker_size - 2,
+                        marker_size * 2 + 4,
+                        marker_size * 2 + 4,
+                    ),
+                )
+
+            job.tiles_built += 1
+            if (
+                processed % self.OVERSCAN_BUILD_CLOCK_CHECK_INTERVAL == 0
+                and time.perf_counter() >= deadline
+            ):
+                break
+
+        if job.candidate_index >= len(job.candidates):
+            job.phase = "complete"
+        return processed
+
+    def _install_completed_job(self, job: _OverscanBuildJob) -> None:
+        self._overscan_surface = job.surface
+        self._overscan_content_rect = job.content_rect or pygame.Rect(0, 0, 0, 0)
+        self._overscan_camera_offset = job.camera_offset
+        self._overscan_zoom_key = job.zoom_key
+        self._overscan_map_key = job.map_key
+        self._overscan_viewport = job.viewport
+        self._overscan_build_count += 1
+        self._overscan_build_job = None
+        profiling.profiler.set_frame_metric("map_overscan_tiles", job.tiles_built)
+        profiling.profiler.set_frame_metric(
+            "map_overscan_builds", self._overscan_build_count
+        )
+
+    def _advance_overscan_build(self) -> bool:
+        job = self._overscan_build_job
+        if job is None:
+            return False
+
+        deadline = time.perf_counter() + self.OVERSCAN_BUILD_BUDGET_MS / 1000.0
+        remaining_budget = self.OVERSCAN_BUILD_MAX_ITEMS_PER_STEP
+        if job.phase == "scan":
+            with profiling.profiler.time_system(
+                "map_overscan_candidate_scan", category="render"
+            ):
+                used = self._scan_overscan_candidates(job, deadline, remaining_budget)
+            remaining_budget -= used
+
+        if job.phase == "raster" and remaining_budget > 0 and time.perf_counter() < deadline:
+            with profiling.profiler.time_system(
+                "map_overscan_tile_raster", category="render"
+            ):
+                self._raster_overscan_candidates(job, deadline, remaining_budget)
+
+        profiling.profiler.set_frame_metric("map_overscan_build_phase", job.phase)
+        profiling.profiler.set_frame_metric(
+            "map_overscan_tiles_examined", job.tiles_examined
+        )
+        profiling.profiler.set_frame_metric(
+            "map_overscan_candidates", len(job.candidates)
+        )
+        profiling.profiler.set_frame_metric(
+            "map_overscan_tiles_built_progress", job.tiles_built
+        )
+        profiling.profiler.set_frame_metric(
+            "map_overscan_build_cancels", self._overscan_build_cancel_count
+        )
+
+        if job.phase == "complete":
+            self._install_completed_job(job)
+            return True
+        return False
 
     def _acquire_overscan_surface(self, size: Tuple[int, int]) -> tuple[pygame.Surface, int]:
         """Reuse the previous surface and clear only its last drawn content."""
@@ -304,6 +644,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         zoom_key = self._scale_zoom_key(zoom)
 
         if self._overscan_matches_view(map_data, camera_offset, zoom):
+            self._cancel_overscan_build()
             profiling.profiler.set_frame_metric("map_render_mode", "overscan_cached")
             self._draw_overscan(camera_offset)
             return
@@ -315,11 +656,34 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             self._overscan_zoom_stable_frames = 1
 
         if self._overscan_zoom_stable_frames >= self.OVERSCAN_ZOOM_STABLE_FRAMES:
-            self._install_overscan(map_data, camera_offset, zoom)
-            profiling.profiler.set_frame_metric("map_render_mode", "overscan_build")
-            self._draw_overscan(camera_offset)
+            job = self._overscan_build_job
+            if job is None or not self._build_job_matches_view(
+                job, map_data, camera_offset, zoom
+            ):
+                self._start_overscan_build(
+                    map_data,
+                    camera_offset,
+                    zoom,
+                    self._overscan_miss_reason(map_data, camera_offset, zoom),
+                )
+            installed = self._advance_overscan_build()
+            if installed and self._overscan_matches_view(
+                map_data, camera_offset, zoom
+            ):
+                profiling.profiler.set_frame_metric(
+                    "map_render_mode", "overscan_build_complete"
+                )
+                self._draw_overscan(camera_offset)
+                return
+            profiling.profiler.set_frame_metric(
+                "map_render_mode", "overscan_building_fallback"
+            )
+            self._render_direct_outside_cached_overlap(
+                map_data, visible_tiles, camera_offset, zoom
+            )
             return
 
+        self._cancel_overscan_build()
         profiling.profiler.set_frame_metric("map_render_mode", "direct_zoom")
         profiling.profiler.set_frame_metric(
             "map_terrain_blits", len(visible_tiles)

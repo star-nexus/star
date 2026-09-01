@@ -28,6 +28,7 @@ from ..utils.unit_spatial_index import (
     get_unit_spatial_index,
     update_unit_spatial_index,
 )
+from .resource_recovery_system import mark_movement_points_spent
 from .movement_system import MovementSystem as _BaseMovementSystem
 
 
@@ -151,7 +152,10 @@ class MovementSystem(_BaseMovementSystem):
             )
 
         print(f"✓ Unit {entity} moves to {target_pos}")
+        # Preserve the existing move contract: spending a path budget did not
+        # toggle MovementPoints.has_moved in this system.
         movement_points.current_mp -= total_cost
+        mark_movement_points_spent(self.world, entity)
 
         statistics_system = self._get_statistics_system()
         if statistics_system:

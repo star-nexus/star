@@ -5,13 +5,19 @@ from rotk_env.components import (
     GameTime,
     HexPosition,
     MovementPoints,
+    SkillPoints,
     Unit,
     UnitCount,
 )
-from rotk_env.prefabs.config import Faction, GameMode, UnitType
+from rotk_env.prefabs.config import ActionType, Faction, GameMode, UnitType
 from rotk_env.systems.scale_movement_system import MovementSystem
 from rotk_env.systems.scale_realtime_system import _IndexedGameOverPolicy
 from rotk_env.systems.scale_resource_recovery_system import ResourceRecoverySystem
+from rotk_env.systems.resource_recovery_system import (
+    mark_action_points_spent,
+    mark_movement_points_spent,
+    mark_skill_cooldown_started,
+)
 from rotk_env.utils.unit_spatial_index import (
     rebuild_unit_spatial_index,
     remove_unit_from_spatial_index,
@@ -110,3 +116,91 @@ def test_scale_recovery_keeps_ap_and_mp_board_time_semantics():
     game_time.game_elapsed_time = 3.5
     recovery.update(2.5)
     assert world.get_component(entity, MovementPoints).current_mp == 3
+
+
+def test_scheduled_recovery_registers_spends_without_update_scans():
+    world = World()
+    entity = _add_unit(world, Faction.WEI, 0, 0, ap=1, mp=3)
+    action_points = world.get_component(entity, ActionPoints)
+    action_points.max_ap = 2
+    action_points.current_ap = 2
+    skill_points = SkillPoints(current_sp=3, max_sp=3)
+    world.add_component(entity, skill_points)
+    game_time = GameTime(current_mode=GameMode.REAL_TIME, game_elapsed_time=0.0)
+    world.add_singleton_component(game_time)
+
+    recovery = ResourceRecoverySystem()
+    recovery.initialize(world)
+
+    assert action_points.consume_ap(ActionType.ATTACK)
+    mark_action_points_spent(world, entity)
+    movement_points = world.get_component(entity, MovementPoints)
+    assert movement_points.consume_movement(1)
+    mark_movement_points_spent(world, entity)
+    assert skill_points.use_skill("test", cooldown=2)
+    mark_skill_cooldown_started(world, entity)
+
+    # The per-frame scheduler must not fall back to any ECS query.
+    world.query = lambda: (_ for _ in ()).throw(AssertionError("unexpected scan"))
+
+    game_time.game_elapsed_time = 0.5
+    recovery.update(0.5)
+    assert recovery.mp_elapsed[entity] == 0.0
+    assert action_points.current_ap == 1
+
+    game_time.game_elapsed_time = 1.0
+    recovery.update(0.5)
+    assert action_points.current_ap == 2
+
+    game_time.game_elapsed_time = 3.5
+    recovery.update(2.5)
+    assert movement_points.current_mp == 3
+
+    game_time.game_elapsed_time = 5.0
+    recovery.update(1.5)
+    assert skill_points.skill_cooldowns == {"test": 1}
+
+
+def test_mp_respend_invalidates_old_recovery_deadline():
+    world = World()
+    entity = _add_unit(world, Faction.WEI, 0, 0, ap=1, mp=3)
+    game_time = GameTime(current_mode=GameMode.REAL_TIME, game_elapsed_time=0.0)
+    world.add_singleton_component(game_time)
+    recovery = ResourceRecoverySystem()
+    recovery.initialize(world)
+    movement_points = world.get_component(entity, MovementPoints)
+
+    assert movement_points.consume_movement(1)
+    mark_movement_points_spent(world, entity)
+    game_time.game_elapsed_time = 0.5
+    recovery.update(0.5)  # first spend observed; old due time is 3.5
+
+    game_time.game_elapsed_time = 1.0
+    recovery.update(0.5)
+    assert movement_points.consume_movement(1)
+    mark_movement_points_spent(world, entity)
+    game_time.game_elapsed_time = 1.5
+    recovery.update(0.5)  # second spend observed; new due time is 4.5
+
+    game_time.game_elapsed_time = 3.5
+    recovery.update(2.0)
+    assert movement_points.current_mp == 1
+
+    game_time.game_elapsed_time = 4.5
+    recovery.update(1.0)
+    assert movement_points.current_mp == 3
+
+
+def test_destroyed_entity_leaves_only_stale_heap_entries():
+    world = World()
+    entity = _add_unit(world, Faction.WEI, 0, 0, ap=0, mp=3)
+    game_time = GameTime(current_mode=GameMode.REAL_TIME, game_elapsed_time=0.0)
+    world.add_singleton_component(game_time)
+    recovery = ResourceRecoverySystem()
+    recovery.initialize(world)
+
+    world.destroy_entity(entity)
+    game_time.game_elapsed_time = 1.0
+    recovery.update(1.0)
+
+    assert entity not in recovery._ap_due

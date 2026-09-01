@@ -51,6 +51,10 @@ from ..prefabs.config import (
 from ..prefabs.action_catalog import allowed_game_actions
 from ..utils.hex_utils import HexMath
 from .llm_observation_system import LLMObservationSystem, ObservationLevel
+from .resource_recovery_system import (
+    mark_action_points_spent,
+    mark_skill_cooldown_started,
+)
 
 
 class LLMActionHandler:
@@ -704,6 +708,7 @@ class LLMActionHandler:
         if success:
             # Consume action points
             action_points.consume_ap(ActionType.OCCUPY)
+            mark_action_points_spent(self.world, unit_id)
 
             # Terrain info (optional)
             terrain_type = self._get_terrain_at_position(target_pos)
@@ -889,9 +894,11 @@ class LLMActionHandler:
                 # Consume resources: multi-layer resource system
                 # 1) Action points (decision layer)
                 action_points.consume_ap(ActionType.SKILL)
+                mark_action_points_spent(self.world, unit_id)
 
                 # 2) Skill points (execution layer)
                 skill_points.use_skill(skill_name, 1, skill_result.get("cooldown", 0))
+                mark_skill_cooldown_started(self.world, unit_id)
 
                 # 3) Cooldown (via UnitSkills)
                 unit_skills.use_skill(skill_name, skill_result.get("cooldown", 0))

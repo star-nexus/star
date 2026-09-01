@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pygame
 
 from rotk_env.components import GameStats, MapData, MiniMap
@@ -74,3 +76,36 @@ def test_minimap_unit_layer_refreshes_at_15hz_not_every_frame(monkeypatch):
 
     assert len(refreshes) == 2
     assert system._unit_refresh_count == 2
+
+
+def test_minimap_caches_layout_and_gates_refresh_on_spatial_revision(monkeypatch):
+    map_data = MapData(width=2, height=1)
+    map_data.tiles[(0, 0)] = 1
+    map_data.tiles[(1, 0)] = 2
+
+    world = _World(map_data)
+    spatial_index = SimpleNamespace(revision=1)
+    world._unit_spatial_index = spatial_index
+    system = MiniMapSystem()
+    system.world = world
+    monkeypatch.setattr(system, "_get_screen_rect", lambda _m: (0, 0, 100, 60))
+    monkeypatch.setattr(system, "_calculate_world_bounds", lambda _m: None)
+    monkeypatch.setattr(scale_minimap_system.RMS, "draw", lambda *args, **kwargs: None)
+
+    refreshes = []
+    monkeypatch.setattr(
+        system,
+        "_render_units",
+        lambda *args, **kwargs: refreshes.append(spatial_index.revision),
+    )
+    clock = iter([0.0, 0.08, 0.16])
+    monkeypatch.setattr(scale_minimap_system.time, "perf_counter", lambda: next(clock))
+
+    minimap = MiniMap(show_terrain=False, show_camera_viewport=False)
+    system._render_minimap(minimap)
+    system._render_minimap(minimap)  # interval elapsed, but revision is unchanged
+    spatial_index.revision = 2
+    system._render_minimap(minimap)
+
+    assert refreshes == [1, 2]
+    assert system._layout_rebuild_count == 1

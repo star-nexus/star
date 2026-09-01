@@ -13,7 +13,6 @@ from ..components import (
     AttackAnimation,
     EffectAnimation,
     ProjectileAnimation,
-    UnitStatus,
     DamageNumber,
     Camera,
     Unit,
@@ -52,7 +51,6 @@ class AnimationSystem(System):
         self._update_attack_animations(delta_time)
         self._update_projectile_animations(delta_time)
         self._update_effect_animations(delta_time)
-        self._update_unit_status(delta_time)
         self._update_damage_numbers(delta_time)
 
     def _update_movement_animations(self, delta_time: float):
@@ -111,22 +109,6 @@ class AnimationSystem(System):
                 target_hex[0], target_hex[1]
             )
             anim.target_pixel_pos = (target_x, target_y)
-
-    def _update_unit_status(self, delta_time: float):
-        """Update unit status"""
-        for entity in self.world.query().with_all(UnitStatus).entities():
-            status = self.world.get_component(entity, UnitStatus)
-            if not status:
-                continue
-
-            status.status_duration += delta_time
-
-            # Check movement status
-            anim = self.world.get_component(entity, MovementAnimation)
-            if anim and anim.is_moving:
-                status.current_status = "moving"
-            elif status.current_status == "moving" and (not anim or not anim.is_moving):
-                status.current_status = "idle"
 
     def _update_damage_numbers(self, delta_time: float):
         """Update damage number display"""

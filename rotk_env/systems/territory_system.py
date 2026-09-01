@@ -20,6 +20,7 @@ from ..components import (
     GameTime,
 )
 from ..prefabs.config import GameConfig, Faction, TerrainType, ActionType, GameMode
+from .resource_recovery_system import mark_action_points_spent
 
 
 class TerritorySystem(System):
@@ -222,6 +223,7 @@ class TerritorySystem(System):
         # Consume action points in turn-based mode
         if game_mode == GameMode.TURN_BASED and action_points:
             action_points.consume_ap(ActionType.OCCUPY)
+            mark_action_points_spent(self.world, unit_entity)
 
         print(f"🏴 {unit.faction.value} begins capturing tile {target_position}")
         return True
@@ -325,6 +327,7 @@ class TerritorySystem(System):
 
             # Consume resources
             action_points.consume_ap(ActionType.FORTIFY)
+            mark_action_points_spent(self.world, unit_entity)
             construction_points.consume_construction(1)
 
         # Build fortification
