@@ -29,10 +29,10 @@ def request(socket_path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         client.close()
 
 
-def _prepare_payload(args) -> Dict[str, Any]:
+def _prepare_payload(args, *, density_override: float | None = None) -> Dict[str, Any]:
     return {
         "command": "prepare_random_moves",
-        "density": args.density,
+        "density": args.density if density_override is None else density_override,
         "seed": args.seed,
         "target_radius": args.target_radius,
         "policy": args.policy,
@@ -40,7 +40,12 @@ def _prepare_payload(args) -> Dict[str, Any]:
     }
 
 
-def _sustained_payload(args) -> Dict[str, Any]:
+def _sustained_payload(
+    args,
+    *,
+    execution_density: float | None = None,
+    execution_seed: int | None = None,
+) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "command": "start_sustained_batch",
         "duration_seconds": args.duration,
@@ -51,6 +56,10 @@ def _sustained_payload(args) -> Dict[str, Any]:
         payload["phase_seed"] = args.phase_seed
     if getattr(args, "batch_id", None) is not None:
         payload["batch_id"] = args.batch_id
+    if execution_density is not None:
+        payload["execution_density"] = execution_density
+    if execution_seed is not None:
+        payload["execution_seed"] = execution_seed
     return payload
 
 
@@ -150,8 +159,9 @@ def build_parser() -> argparse.ArgumentParser:
     density = sub.add_parser(
         "density-point",
         help=(
-            "Prepare, start, wait, and snapshot one formal Dynamic World density point. "
-            "Use a fresh ENV process for each point."
+            "Prepare one common 5000-plan pool, start a nested execution subset, "
+            "wait, and snapshot one formal Dynamic World point. Use a fresh ENV "
+            "process for each point."
         ),
     )
     _add_prepare_args(density, require_density=True)
@@ -230,7 +240,11 @@ def _run_density_point(args) -> int:
         if args.phase == "staggered"
         else "dynamic_world_burst_resilience_v1"
     )
-    prepare = request(args.socket, _prepare_payload(args))
+
+    # Formal execution points all use the same full 5000-unit plan pool. The
+    # measurement adapter then starts a deterministic nested prefix for the
+    # requested execution density. Planning/targets therefore do not vary with d.
+    prepare = request(args.socket, _prepare_payload(args, density_override=1.0))
     combined: Dict[str, Any] = {
         "ok": False,
         "experiment": experiment,
@@ -241,7 +255,14 @@ def _run_density_point(args) -> int:
         _print_and_optionally_write(combined, args.output)
         return 1
 
-    start = request(args.socket, _sustained_payload(args))
+    start = request(
+        args.socket,
+        _sustained_payload(
+            args,
+            execution_density=args.density,
+            execution_seed=args.seed,
+        ),
+    )
     combined["start"] = start
     if not start.get("ok"):
         _print_and_optionally_write(combined, args.output)
