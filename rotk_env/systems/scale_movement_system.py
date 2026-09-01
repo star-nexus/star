@@ -42,9 +42,14 @@ class MovementSystem(_BaseMovementSystem):
         # harness receives this domain service and selects planning policies via
         # its explicit control-plane commands.
         from ..testing.scale_harness import ScaleHarnessSystem
+        from ..testing.scale_harness_metrics import ScaleHarnessMetricsSystem
 
         if not any(isinstance(system, ScaleHarnessSystem) for system in world.systems):
             world.add_system(ScaleHarnessSystem(self, socket_path))
+        if not any(
+            isinstance(system, ScaleHarnessMetricsSystem) for system in world.systems
+        ):
+            world.add_system(ScaleHarnessMetricsSystem(sample_every_frames=10))
 
     def _planning_context(
         self,
