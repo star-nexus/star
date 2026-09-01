@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
+from typing import AbstractSet, Any, Dict, FrozenSet, Mapping, Optional, Tuple
 
 from ..prefabs.config import Faction
 
@@ -17,13 +17,7 @@ Hex = Tuple[int, int]
 
 
 class MovementPlanningPolicy(str, Enum):
-    """Explicit movement-legality policy selected by the caller.
-
-    NORMAL is the benchmark/game rule. STRESS_STACK_ENDPOINT exists only so the
-    scale harness can build dense dynamic-world workloads without changing the
-    normal action contract: an occupied destination is allowed, but enemy-held
-    traversal cells remain blocked.
-    """
+    """Explicit movement-legality policy selected by the caller."""
 
     NORMAL = "normal"
     STRESS_STACK_ENDPOINT = "stress_stack_endpoint"
@@ -35,25 +29,41 @@ class MovementPlanningPolicy(str, Enum):
         return cls(str(value))
 
 
+class EndpointUnblockedObstacles:
+    """Zero-copy membership view that exempts one endpoint from blockers.
+
+    PathFinding only asks ``neighbor in obstacles``. This view therefore lets a
+    stress planner enter one occupied target without copying a thousands-cell
+    blocker set for every plan and without making any other enemy cell traversable.
+    """
+
+    __slots__ = ("base", "endpoint")
+
+    def __init__(self, base: AbstractSet[Hex], endpoint: Hex):
+        self.base = base
+        self.endpoint = endpoint
+
+    def __contains__(self, cell: object) -> bool:
+        return cell != self.endpoint and cell in self.base
+
+
 @dataclass(frozen=True)
 class MovementPlanningSnapshot:
-    """Shared inputs for a batch of move planners.
+    """Shared read-only inputs for a batch of move planners.
 
-    Static map geometry and dynamic occupancy are captured once so a 5k-plan
-    batch does not rebuild the same board/blocker sets 5k times. ``HexPosition``
-    remains authoritative; the snapshot is only valid for the revision it names.
+    Dynamic occupancy/blockers and static map geometry are captured once. Batch
+    planners reuse these exact containers; they must not clone board-sized sets
+    or dictionaries per unit.
     """
 
     walkable: Optional[FrozenSet[Hex]]
     terrain_costs: Mapping[Hex, int]
     occupied: FrozenSet[Hex]
-    enemy_blockers_by_faction: Mapping[Faction, FrozenSet[Hex]]
-    impassable: FrozenSet[Hex]
+    blockers_by_faction: Mapping[Faction, FrozenSet[Hex]]
     revision: Optional[int] = None
 
-    def blockers_for(self, faction: Optional[Faction]) -> set[Hex]:
-        enemy = self.enemy_blockers_by_faction.get(faction, frozenset())
-        return set(self.impassable) | set(enemy)
+    def blockers_for(self, faction: Optional[Faction]) -> AbstractSet[Hex]:
+        return self.blockers_by_faction.get(faction, frozenset())
 
 
 @dataclass(frozen=True)
