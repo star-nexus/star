@@ -142,8 +142,9 @@ seed           42
 target radius  12
 phase          staggered
 phase seed     42
-sustained      20 s
-snapshot       t = 10 s after kickoff
+warmup         5 wall-clock seconds
+sustained      20 simulation seconds
+snapshot       t = 10 wall-clock seconds after kickoff
 FogOfWar       ON
 camera         unchanged during measurement
 zoom           unchanged during measurement
@@ -161,10 +162,42 @@ Density points:
 1.00  -> nominal 5000 moving units
 ```
 
+### Common Plan Pool invariant
+
+The execution curve must change **execution density only**. It must not silently
+change which targets were planned or how difficult the Planning Plane was.
+
+Therefore every formal point does this:
+
+```text
+fresh 5000-unit world
+        ↓
+prepare the SAME 5000 MovePlans
+  density=1.0, seed=42, radius=12
+        ↓
+fixed execution_seed creates one deterministic permutation
+        ↓
+start a nested prefix only
+
+10%  = first  500 plans
+25%  = first 1250 plans
+50%  = first 2500 plans
+75%  = first 3750 plans
+100% = all   5000 plans
+```
+
+Consequences:
+
+- all five points use the same full planning/target workload;
+- the 10% active set is contained in the 25% set, which is contained in 50%, etc.;
+- planning cost is excluded by the measurement epoch anyway;
+- changes in the curve can be attributed much more cleanly to execution density.
+
 Actual values must always be reported from:
 
 ```text
-prepared_units
+full_prepared_units
+execution_requested_units
 accepted_units
 active_moving_units
 actual_density
@@ -177,12 +210,16 @@ Do not substitute requested density for achieved density.
 A formal point has three separate phases:
 
 ```text
+Warmup
+    render / overscan / font caches settle
+
 Planning epoch
     target generation
     planning snapshot
-    N x planning/correction
+    5000 x planning/correction
 
 Kickoff frame
+    choose deterministic execution subset
     construct/start sustained animations
 
 Execution measurement epoch
@@ -192,6 +229,7 @@ Execution measurement epoch
 
 The deferred boundary reset means the execution P50/P95/P99/max do **not** include:
 
+- warmup;
 - the ~1 s planning burst;
 - target generation;
 - planning snapshot construction;
@@ -233,15 +271,16 @@ input_event_pump
 Experiment guards:
 
 ```text
+rolling profiler window full
 Fog remained ON
 camera unchanged
 zoom unchanged
 active_moving_units at snapshot
-actual_density at snapshot
-rolling profiler window full
+actual_density matches requested density
 ```
 
-A point with a failed guard is not a valid curve point and should be rerun.
+`density-point` marks the combined result `ok=false` if any formal guard fails.
+That point is not valid for the curve and should be rerun.
 
 ## One-command point runner
 
@@ -258,6 +297,7 @@ uv run tools/scale_driver.py \
   --phase staggered \
   --phase-seed 42 \
   --require-fog on \
+  --warmup 5 \
   --sample-after 10 \
   --output results/dynamic-world-v1/density-050.json
 ```
@@ -265,10 +305,13 @@ uv run tools/scale_driver.py \
 The driver performs:
 
 ```text
-prepare
-  -> start-sustained
+warmup
+  -> prepare common 5000-plan pool
+  -> start deterministic nested execution subset
+  -> deferred profiler epoch reset on next frame
   -> wait to steady state
   -> profile-snapshot
+  -> validate guards
   -> combined JSON
 ```
 
@@ -301,6 +344,7 @@ uv run tools/scale_driver.py \
   --duration 20 \
   --phase synchronized \
   --require-fog on \
+  --warmup 5 \
   --sample-after 10 \
   --output results/dynamic-world-v1/burst-100-synchronized.json
 ```
