@@ -19,8 +19,9 @@ flight, the previous raster supplies the overlapping region and only newly
 exposed tiles use the direct path. The active cache is swapped atomically after
 the staging build completes.
 
-The cache contains terrain/city markers only. Territory, fog, coordinates,
-units, effects and UI retain their existing dynamic rendering semantics.
+Terrain and fog are deliberately independent caches. Terrain uses the overscan
+raster below; fog presentation consumes the revisioned semantic visibility
+journal and patches only dirty hexes while view geometry is unchanged.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from framework.engine import RMS
 from ..components import MapData, Terrain
 from ..prefabs.config import GameConfig, TerrainType
 from .fast_render_systems import FastMapRenderSystem
+from .fog_surface_presenter import IncrementalFogSurfacePresenter
 
 
 @dataclass
@@ -58,7 +60,7 @@ class _OverscanBuildJob:
 
 
 class ScaleMapRenderSystem(FastMapRenderSystem):
-    """Fast map renderer with a pan-friendly overscan terrain raster."""
+    """Fast map renderer with pan-friendly terrain and incremental fog."""
 
     OVERSCAN_MARGIN_PX = 256
     OVERSCAN_ZOOM_STABLE_FRAMES = 2
@@ -80,6 +82,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         self._overscan_surface_reuses = 0
         self._overscan_build_job: Optional[_OverscanBuildJob] = None
         self._overscan_build_cancel_count = 0
+        self._fog_presenter = IncrementalFogSurfacePresenter(self)
 
     def _invalidate_fast_caches(self) -> None:
         super()._invalidate_fast_caches()
@@ -92,6 +95,8 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         self._overscan_zoom_candidate = None
         self._overscan_zoom_stable_frames = 0
         self._overscan_build_job = None
+        if hasattr(self, "_fog_presenter"):
+            self._fog_presenter.reset()
 
     def _scale_map_key(self, map_data: MapData):
         return (
@@ -628,6 +633,15 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         profiling.profiler.set_frame_metric(
             "map_overscan_builds", self._overscan_build_count
         )
+
+    def _render_fog_of_war_optimized(
+        self,
+        visible_tiles,
+        camera_offset: List[float],
+        zoom: float = 1.0,
+    ) -> None:
+        """Patch the cached fog surface from faction-level visibility deltas."""
+        self._fog_presenter.render(set(visible_tiles), camera_offset, zoom)
 
     def _render_map_optimized(
         self,
