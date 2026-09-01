@@ -155,7 +155,7 @@ class MovementSystem(_BaseMovementSystem):
             if exclude_entity is not None
             else None
         )
-        _occupied, enemy_held = index.occupancy_for_mover(entity=exclude_entity, faction=unit.faction if unit else None) if False else index.occupancy_for_mover(
+        _occupied, enemy_held = index.occupancy_for_mover(
             exclude_entity, unit.faction if unit else None
         )
         return set(impassable_terrain(self.world)) | enemy_held
