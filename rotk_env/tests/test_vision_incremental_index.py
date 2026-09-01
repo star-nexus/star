@@ -5,6 +5,7 @@ from framework.ecs.world import World
 from rotk_env.components import FogOfWar, HexPosition, Unit, Vision
 from rotk_env.prefabs.config import Faction, UnitType
 from rotk_env.systems.vision_system import VisionSystem, mark_vision_dirty
+from rotk_env.utils.fog_visibility_journal import get_fog_visibility_journal
 
 
 def _spawn(world, *, faction=Faction.WEI, col=0, row=0, vision_range=1):
@@ -90,6 +91,32 @@ def test_mark_dirty_updates_only_changed_unit_and_keeps_explored_history():
     assert system.get_stats()["recomputes"] == recomputes_before + 1
     assert world.get_component(static, Vision).visible_tiles == static_vision
     assert old_mover_vision <= fog.explored_tiles[Faction.WEI]
+
+
+def test_vision_publishes_only_faction_union_transitions_to_fog_journal():
+    world = World()
+    mover = _spawn(world, col=0, row=0, vision_range=1)
+    _overlap = _spawn(world, col=0, row=0, vision_range=1)
+    system, _fog = _system(world)
+
+    system.update(0.0)
+    journal = get_fog_visibility_journal(world)
+    bootstrap_revision = journal.revision
+    assert bootstrap_revision > 0
+
+    pos = world.get_component(mover, HexPosition)
+    pos.col, pos.row = 4, 0
+    mark_vision_dirty(world, mover)
+    system.update(0.0)
+
+    delta = journal.changes_since(bootstrap_revision, Faction.WEI)
+    # The overlapped old visibility disk remains faction-visible, so only the
+    # newly exposed frontier should be published; observer-private changes are
+    # deliberately absent from the presentation journal.
+    assert delta.history_lost is False
+    assert delta.dirty_tiles
+    assert (0, 0) not in delta.dirty_tiles
+    assert any(col >= 3 for col, _row in delta.dirty_tiles)
 
 
 def test_legacy_world_direct_position_write_is_detected_next_tick_without_mark():
