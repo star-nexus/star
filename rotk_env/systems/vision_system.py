@@ -6,10 +6,12 @@ Vision unit and rebuilt faction unions every frame. At large world scale that ma
 static cost proportional to resident units and synchronized movement produced
 large O(N) visibility bursts.
 
-This implementation separates three concerns:
+This implementation separates four concerns:
 - invalidation: movement/terrain changes enqueue only affected units;
 - geometry: (center, effective_range, terrain_revision) visibility is cached;
-- aggregation: per-faction tile reference counts incrementally maintain the union.
+- aggregation: per-faction tile reference counts incrementally maintain the union;
+- presentation delta: faction-level visibility transitions are published to a
+  revisioned journal without coupling renderers to VisionSystem internals.
 
 Normal FogOfWar semantics are unchanged. ``FogOfWar.enabled`` remains only a
 consumer-side switch; visibility/exploration continue to be maintained while fog
@@ -26,6 +28,7 @@ from framework.engine.events import EBS
 
 from ..components import HexPosition, Vision, Unit, FogOfWar, MapData, Terrain
 from ..prefabs.config import Faction
+from ..utils.fog_visibility_journal import publish_fog_visibility_delta
 from ..utils.hex_utils import HexMath
 from ..utils.env_events import UnitDeathEvent
 from ..utils.unit_spatial_index import get_unit_spatial_index
@@ -72,6 +75,7 @@ class VisionSystem(System):
         self._frames = 0
         self._bootstrapped = False
         self._last_fog_enabled: Optional[bool] = None
+        self._frame_fog_delta: Dict[Faction, Set[Hex]] = {}
 
         # Cumulative diagnostics retained for compatibility with get_stats().
         self._stat_recomputes = 0
@@ -96,6 +100,7 @@ class VisionSystem(System):
 
     def update(self, delta_time: float) -> None:
         self._frames += 1
+        self._frame_fog_delta = {}
         fog = self._ensure_fog()
         fog_toggled = (
             self._last_fog_enabled is not None
@@ -206,6 +211,10 @@ class VisionSystem(System):
             self._stat_recomputes += 1
             changed += 1
 
+        fog_delta_tiles = sum(len(tiles) for tiles in self._frame_fog_delta.values())
+        fog_journal_revision = publish_fog_visibility_delta(
+            self.world, self._frame_fog_delta
+        )
         self._publish_metrics(
             dirty_seen=len(dirty),
             changed=changed,
@@ -217,6 +226,8 @@ class VisionSystem(System):
             audit_scanned=audit_scanned,
             geometry_hits=self._stat_geometry_hits - geometry_hits_before,
             geometry_misses=self._stat_geometry_misses - geometry_misses_before,
+            fog_delta_tiles=fog_delta_tiles,
+            fog_journal_revision=fog_journal_revision,
         )
 
     def invalidate_all(self) -> None:
@@ -292,7 +303,7 @@ class VisionSystem(System):
         return union_removed
 
     # ------------------------------------------------------------------
-    # Incremental faction union
+    # Incremental faction union + presentation delta
     # ------------------------------------------------------------------
     def _counts_for(self, faction: Faction) -> Dict[Hex, int]:
         counts = self._faction_tile_counts.get(faction)
@@ -300,6 +311,9 @@ class VisionSystem(System):
             counts = {}
             self._faction_tile_counts[faction] = counts
         return counts
+
+    def _record_fog_delta(self, faction: Faction, tile: Hex) -> None:
+        self._frame_fog_delta.setdefault(faction, set()).add(tile)
 
     def _add_tiles(
         self, fog: FogOfWar, faction: Faction, tiles
@@ -313,6 +327,7 @@ class VisionSystem(System):
             counts[tile] = old + 1
             if old == 0:
                 visible.add(tile)
+                self._record_fog_delta(faction, tile)
                 union_added += 1
             added += 1
         return added, union_added
@@ -330,6 +345,7 @@ class VisionSystem(System):
                 if old:
                     counts.pop(tile, None)
                     visible.discard(tile)
+                    self._record_fog_delta(faction, tile)
                     union_removed += 1
             else:
                 counts[tile] = old - 1
@@ -422,6 +438,8 @@ class VisionSystem(System):
         audit_scanned: int,
         geometry_hits: int,
         geometry_misses: int,
+        fog_delta_tiles: int,
+        fog_journal_revision: int,
     ) -> None:
         metric = profiling.profiler.set_frame_metric
         metric("vision_mode", "dirty_refcount")
@@ -437,6 +455,8 @@ class VisionSystem(System):
         metric("vision_geometry_cache_misses", geometry_misses)
         metric("vision_geometry_cache_size", len(self._geometry_cache))
         metric("vision_audit_scanned", audit_scanned)
+        metric("vision_fog_delta_tiles", fog_delta_tiles)
+        metric("vision_fog_journal_revision", fog_journal_revision)
 
     def _ensure_fog(self) -> FogOfWar:
         fog = self.world.get_singleton_component(FogOfWar)
