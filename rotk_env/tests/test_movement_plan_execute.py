@@ -7,6 +7,7 @@ from rotk_env.systems.movement_planning import (
     MovementPlanningSnapshot,
 )
 from rotk_env.systems.movement_system import MovementSystem
+from rotk_env.testing.scale_harness import ScaleHarnessSystem
 
 
 def _world_with_unit(*, mp=3):
@@ -134,6 +135,72 @@ def test_batch_planning_can_correct_requested_target_to_budget(monkeypatch):
     assert corrected.plan.path == ((0, 0), (1, 0), (2, 0))
     assert corrected.plan.cost == 2
     assert corrected.plan.corrected is True
+    assert corrected.plan.correction_reason == "budget"
+
+
+def test_batch_planning_can_correct_no_path_to_nearest_reachable(monkeypatch):
+    _world, entity, movement = _world_with_unit(mp=2)
+    monkeypatch.setattr(
+        movement,
+        "_planning_context",
+        lambda *_args, **_kwargs: _context(
+            costs={(0, 0): 1, (1, 0): 1, (0, 1): 1, (3, 0): 1},
+            walkable={(0, 0), (1, 0), (0, 1), (3, 0)},
+        ),
+    )
+
+    raw = movement.plan_move(
+        entity,
+        (3, 0),
+        policy=MovementPlanningPolicy.STRESS_STACK_ENDPOINT,
+        correct_to_budget=True,
+    )
+    assert raw.success is False
+    assert raw.response["reason"] == "no_path"
+
+    corrected = movement.plan_move(
+        entity,
+        (3, 0),
+        policy=MovementPlanningPolicy.STRESS_STACK_ENDPOINT,
+        correct_to_budget=True,
+        correct_unreachable=True,
+    )
+    assert corrected.success is True
+    assert corrected.plan is not None
+    assert corrected.plan.requested_target == (3, 0)
+    assert corrected.plan.resolved_target == (1, 0)
+    assert corrected.plan.path == ((0, 0), (1, 0))
+    assert corrected.plan.cost == 1
+    assert corrected.plan.corrected is True
+    assert corrected.plan.correction_reason == "unreachable"
+
+
+def test_start_prepared_motion_has_no_resource_side_effects():
+    world, entity, movement = _world_with_unit(mp=3)
+    movement_points = world.get_component(entity, MovementPoints)
+
+    result = movement.start_prepared_motion(entity, ((0, 0), (1, 0), (2, 0)))
+
+    assert result["success"] is True
+    assert result["animated"] is False
+    assert movement_points.current_mp == 3
+    pos = world.get_component(entity, HexPosition)
+    assert (pos.col, pos.row) == (2, 0)
+
+
+def test_sustained_path_expands_forward_and_backward_without_replanning():
+    world, entity, movement = _world_with_unit(mp=3)
+    harness = ScaleHarnessSystem(movement, "/tmp/star-scale-test.sock")
+    harness.world = world
+
+    expanded = harness._build_sustained_path(
+        entity,
+        ((0, 0), (1, 0), (2, 0)),
+        duration_seconds=2.0,
+    )
+
+    # Default MovementAnimation speed is 2 tiles/s -> four scheduled segments.
+    assert expanded == ((0, 0), (1, 0), (2, 0), (1, 0), (0, 0))
 
 
 def test_execute_rejects_stale_prepared_plan(monkeypatch):
