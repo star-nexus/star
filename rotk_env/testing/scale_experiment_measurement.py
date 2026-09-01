@@ -2,11 +2,17 @@
 
 The workload harness owns *what the world does*. This adapter owns *how a run is
 measured*: experiment guards, deferred profiler epochs, and compact snapshots.
+For formal density curves it also selects a deterministic nested subset from one
+common full-world prepared plan pool, so execution density changes without
+changing the planning workload or target set.
+
 It is installed only by the optional window scale harness.
 """
 
 from __future__ import annotations
 
+import random
+from dataclasses import replace
 from typing import Any, Dict, Optional
 
 from ..components import Camera, FogOfWar
@@ -215,6 +221,9 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
                 "active_moving_units": active,
                 "living_units": living,
                 "actual_density": density_now,
+                "execution_selection_seed": state.get("execution_selection_seed"),
+                "full_prepared_units": state.get("full_prepared_units"),
+                "execution_requested_units": state.get("execution_requested_units"),
             },
             "context": context,
         }
@@ -245,23 +254,54 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
                     "fog_enabled": fog_now,
                 }
 
+        full_batch = harness.prepared
+        if full_batch is None:
+            return original_handle(command)
+
+        execution_density = float(command.get("execution_density", full_batch.density))
+        if not 0.0 <= execution_density <= 1.0:
+            return {
+                "ok": False,
+                "error": "execution_density_out_of_range",
+                "execution_density": execution_density,
+            }
+        execution_seed = int(command.get("execution_seed", full_batch.seed))
+        desired_count = min(
+            len(full_batch.plans),
+            int(round(full_batch.living_units_at_prepare * execution_density)),
+        )
+        ordered_plans = list(full_batch.plans)
+        random.Random(execution_seed).shuffle(ordered_plans)
+        selected_plans = ordered_plans[:desired_count]
+        execution_batch = replace(
+            full_batch,
+            density=execution_density,
+            requested_units=desired_count,
+            plans=selected_plans,
+        )
+
         camera_start = _camera_state(world)
-        result = original_handle(command)
+        harness.prepared = execution_batch
+        try:
+            result = original_handle(command)
+        finally:
+            # Keep the canonical full prepared pool available for status/debug.
+            harness.prepared = full_batch
         if not result.get("ok"):
             return result
 
-        batch = harness.prepared
-        density = float(batch.density) if batch is not None else 0.0
         phase = str(result.get("motion_phase", command.get("phase", "synchronized")))
         experiment_kind = (
             "dynamic_world_density_curve"
             if phase == "staggered"
             else "dynamic_world_burst_resilience"
         )
-        epoch_name = f"{experiment_kind}.density_{density:.2f}.{phase}"
+        epoch_name = (
+            f"{experiment_kind}.density_{execution_density:.2f}.{phase}"
+        )
         epoch_metadata = {
             "scale_experiment_kind": experiment_kind,
-            "scale_measurement_density": round(density, 4),
+            "scale_measurement_density": round(execution_density, 4),
             "scale_measurement_phase": phase,
             "scale_measurement_fog": fog_now,
             "scale_measurement_camera_x": (
@@ -276,6 +316,9 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             "scale_measurement_required_fog": required_fog,
             "scale_measurement_batch": result.get("batch_id"),
             "scale_measurement_duration_seconds": result.get("duration_seconds"),
+            "scale_execution_selection_seed": execution_seed,
+            "scale_full_prepared_units": len(full_batch.plans),
+            "scale_execution_requested_units": desired_count,
         }
         scheduled = request_measurement_epoch(
             profiler,
@@ -288,8 +331,11 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             "required_fog": required_fog,
             "camera_start": camera_start,
             "fog_start": fog_now,
-            "density": density,
+            "density": execution_density,
             "phase": phase,
+            "execution_selection_seed": execution_seed,
+            "full_prepared_units": len(full_batch.plans),
+            "execution_requested_units": desired_count,
         }
         result.update(
             measurement_epoch=epoch_name,
@@ -298,6 +344,10 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             required_fog=required_fog,
             fog_enabled=fog_now,
             camera_start=camera_start,
+            execution_density=execution_density,
+            execution_selection_seed=execution_seed,
+            full_prepared_units=len(full_batch.plans),
+            execution_requested_units=desired_count,
         )
         return result
 
