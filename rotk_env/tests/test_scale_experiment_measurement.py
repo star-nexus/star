@@ -64,6 +64,10 @@ class _FakeProfiler:
                     "scale_active_moving_units": 2500,
                     "scale_actual_density": 0.5,
                     "vision_dirty_units": 83,
+                    "fog_render_mode": "incremental_patch",
+                    "fog_delta_tiles": 17,
+                    "fog_patch_tiles": 79,
+                    "unit_texture_cache_misses": 0,
                 },
                 "top_sections": [
                     {
@@ -82,7 +86,15 @@ class _FakeProfiler:
                     "max_self_ms": 2.0,
                     "max_inclusive_ms": 2.0,
                     "frame_share_pct": 4.4,
-                }
+                },
+                "fog_surface_patch": {
+                    "category": "render",
+                    "self_ms": 0.3,
+                    "inclusive_ms": 0.3,
+                    "max_self_ms": 0.9,
+                    "max_inclusive_ms": 0.9,
+                    "frame_share_pct": 1.7,
+                },
             },
             "metadata": dict(self.metadata),
         }
@@ -183,12 +195,17 @@ def test_staggered_start_schedules_clean_density_curve_epoch_and_snapshot_guards
     assert snapshot["ok"] is True
     assert snapshot["rolling_window_full"] is True
     assert snapshot["max_frame_ms"] == 25.0
+    assert snapshot["rolling_max_frame_ms"] == 25.0
+    assert snapshot["epoch_worst_slow_frame_ms"] == 31.0
     assert snapshot["guards"]["fog_matches_required"] is True
     assert snapshot["guards"]["camera_unchanged"] is True
     assert snapshot["guards"]["actual_density"] == 0.5
     assert snapshot["guards"]["full_prepared_units"] == 5000
     assert snapshot["guards"]["execution_requested_units"] == 2500
     assert snapshot["sections"]["VisionSystem"]["self_ms"] == 0.8
+    assert snapshot["sections"]["fog_surface_patch"]["self_ms"] == 0.3
+    assert snapshot["worst_slow_frame"]["frame_metrics"]["fog_delta_tiles"] == 17
+    assert snapshot["worst_slow_frame"]["frame_metrics"]["unit_texture_cache_misses"] == 0
 
 
 def test_execution_density_subsets_are_nested_for_same_seed():
