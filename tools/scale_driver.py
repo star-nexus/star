@@ -55,7 +55,12 @@ def _sustained_payload(args) -> Dict[str, Any]:
 
 
 def _add_prepare_args(parser: argparse.ArgumentParser, *, require_density: bool = False) -> None:
-    parser.add_argument("--density", type=float, required=require_density, default=None if require_density else 1.0)
+    parser.add_argument(
+        "--density",
+        type=float,
+        required=require_density,
+        default=None if require_density else 1.0,
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--target-radius", type=int, default=12)
     parser.add_argument(
@@ -74,7 +79,11 @@ def _add_prepare_args(parser: argparse.ArgumentParser, *, require_density: bool 
     )
 
 
-def _add_sustained_args(parser: argparse.ArgumentParser, *, density_curve_defaults: bool = False) -> None:
+def _add_sustained_args(
+    parser: argparse.ArgumentParser,
+    *,
+    density_curve_defaults: bool = False,
+) -> None:
     parser.add_argument("--duration", type=float, default=20.0)
     parser.add_argument(
         "--phase",
@@ -194,10 +203,15 @@ def _run_density_point(args) -> int:
         )
         return 1
 
+    experiment = (
+        "dynamic_world_density_curve_v1"
+        if args.phase == "staggered"
+        else "dynamic_world_burst_resilience_v1"
+    )
     prepare = request(args.socket, _prepare_payload(args))
     combined: Dict[str, Any] = {
         "ok": False,
-        "experiment": "dynamic_world_density_curve_v1",
+        "experiment": experiment,
         "density": args.density,
         "prepare": prepare,
     }
