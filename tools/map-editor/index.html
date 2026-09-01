@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>STAR Map Editor</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style-v2.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark">★</div>
       <div>
-        <h1>STAR Map Editor <span>v1.5</span></h1>
-        <p>Design STAR hex maps directly in your browser.</p>
+        <h1>STAR Map Editor <span>v2.0</span></h1>
+        <p>Design large STAR maps and typed unit formations directly in your browser.</p>
       </div>
     </div>
     <div class="top-actions">
@@ -32,10 +32,11 @@
         <label>Name <input id="mapName" value="Untitled Map" /></label>
         <label>ID <input id="mapId" value="untitled" /></label>
         <div class="grid-2">
-          <label>Width <input id="mapWidth" type="number" min="5" max="51" step="2" value="15" /></label>
-          <label>Height <input id="mapHeight" type="number" min="5" max="51" step="2" value="15" /></label>
+          <label>Width <input id="mapWidth" type="number" min="5" max="101" step="2" value="15" /></label>
+          <label>Height <input id="mapHeight" type="number" min="5" max="101" step="2" value="15" /></label>
         </div>
         <button id="applySizeBtn" class="wide">Create / Resize</button>
+        <p class="hint">Odd dimensions from 5 to 101. Resize preserves terrain and unit slots that remain in bounds.</p>
       </section>
 
       <section>
@@ -44,14 +45,21 @@
       </section>
 
       <section>
-        <h2>Formation</h2>
-        <div class="formation-buttons">
+        <h2>Units / Formation</h2>
+        <p class="subhead">Faction</p>
+        <div class="formation-buttons faction-buttons">
           <button data-faction="wei"><span class="dot wei"></span>Wei</button>
           <button data-faction="shu"><span class="dot shu"></span>Shu</button>
           <button data-faction="wu"><span class="dot wu"></span>Wu</button>
-          <button data-faction="erase">Erase</button>
         </div>
-        <p class="hint">Select a faction, then click + drag to paint spawn cells. Use Erase and drag to remove them.</p>
+        <p class="subhead">Unit type</p>
+        <div class="unit-type-buttons">
+          <button data-unit-type="infantry"><span class="unit-letter">I</span>Infantry</button>
+          <button data-unit-type="archer"><span class="unit-letter">A</span>Archer</button>
+          <button data-unit-type="cavalry"><span class="unit-letter">C</span>Cavalry</button>
+          <button id="eraseUnitBtn" class="danger-soft">Erase Unit</button>
+        </div>
+        <p class="hint">Choose faction + unit type, then click + drag to paint typed spawn units. Painting over a slot replaces it.</p>
       </section>
 
       <section>
@@ -70,17 +78,23 @@
           <button id="previewModeBtn">Preview</button>
         </div>
         <label class="inline-check"><input id="showCoords" type="checkbox" checked /> Coordinates</label>
-        <label class="inline-check"><input id="showFormations" type="checkbox" checked /> Formations</label>
+        <label class="inline-check"><input id="showFormations" type="checkbox" checked /> Units</label>
         <label class="inline-check"><input id="showGrid" type="checkbox" checked /> Grid</label>
+        <div class="zoom-controls" aria-label="Map zoom controls">
+          <button id="zoomOutBtn" title="Zoom out">−</button>
+          <button id="zoomFitBtn" title="Fit map">Fit</button>
+          <button id="zoomInBtn" title="Zoom in">+</button>
+          <span id="zoomLabel">100%</span>
+        </div>
         <span id="cursorInfo" class="cursor-info">col=0 row=0</span>
       </div>
       <div id="mapViewport" class="map-viewport">
         <svg id="mapSvg" role="img" aria-label="STAR hex map editor"></svg>
       </div>
       <div class="legend-bar">
-        <span><strong>Terrain:</strong> click + drag</span>
-        <span><strong>Formation:</strong> choose faction / erase, then click + drag</span>
-        <span><strong>Zoom:</strong> browser zoom or trackpad</span>
+        <span><strong>Paint:</strong> left-click + drag</span>
+        <span><strong>Pan:</strong> Space + drag or middle-drag</span>
+        <span><strong>Zoom:</strong> wheel / trackpad or + / −</span>
       </div>
     </section>
 
@@ -124,6 +138,7 @@
   </dialog>
 
   <canvas id="sampleCanvas" hidden></canvas>
-  <script src="editor.js"></script>
+  <script src="editor-v2.js"></script>
+  <script src="faction-colors-v2.js"></script>
 </body>
 </html>
