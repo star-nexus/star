@@ -7,10 +7,13 @@ This overlay adds two orthogonal concerns:
 
 Normal behavior remains ``gc_policy=auto``. ``realtime_defer`` is opt-in until
 formal A/B results establish that it should become a production realtime policy.
+For fresh-process formal runs it can also be selected with
+``STAR_SCALE_GC_POLICY=realtime_defer`` without changing scale_driver commands.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
 from framework.utils.realtime_gc_policy import (
@@ -92,6 +95,13 @@ def _policy_matches(requested: str, state: Dict[str, Any]) -> bool:
     return False
 
 
+def _requested_policy(command: Dict[str, Any]) -> str:
+    value = command.get("gc_policy")
+    if value is None:
+        value = os.environ.get("STAR_SCALE_GC_POLICY", GC_POLICY_AUTO)
+    return normalize_gc_policy(value)
+
+
 def install_scale_experiment_measurement(harness, world, profiler) -> bool:
     """Install base measurement plus bounded realtime-GC A/B control."""
     if bool(getattr(harness, "_scale_gc_policy_installed", False)):
@@ -139,7 +149,7 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
 
         if op == "start_sustained_batch":
             try:
-                requested_policy = normalize_gc_policy(command.get("gc_policy", "auto"))
+                requested_policy = _requested_policy(command)
             except ValueError as exc:
                 return {
                     "ok": False,
@@ -157,7 +167,11 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             # measurement epoch reset is still deferred until the next safe frame
             # boundary. Collect now so kickoff allocation and this full collection
             # are both excluded from the formal realtime epoch.
-            duration = float(result.get("duration_seconds", command.get("duration_seconds", 20.0)))
+            duration = float(
+                result.get(
+                    "duration_seconds", command.get("duration_seconds", 20.0)
+                )
+            )
             gc_state = policy.activate(requested_policy, duration)
             measurement_state = getattr(harness, "_scale_measurement_state", None)
             if isinstance(measurement_state, dict):
@@ -188,15 +202,14 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             requested_policy = normalize_gc_policy(
                 measurement_state.get("gc_policy", GC_POLICY_AUTO)
             )
+            policy_matches = _policy_matches(requested_policy, gc_state)
             guards = result.setdefault("guards", {})
             guards.update(
                 gc_policy_requested=requested_policy,
                 gc_policy_mode=gc_state["mode"],
                 gc_policy_active=gc_state["active"],
                 gc_automatic_enabled=gc_state["automatic_gc_enabled"],
-                gc_policy_matches_requested=_policy_matches(
-                    requested_policy, gc_state
-                ),
+                gc_policy_matches_requested=policy_matches,
             )
             context = result.setdefault("context", {})
             context["scale_gc_policy"] = requested_policy
@@ -207,6 +220,9 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
                 "gc_full_collect_collected", gc_state["full_collect_collected"]
             )
             result["gc_policy"] = gc_state
+            if not policy_matches:
+                result["ok"] = False
+                result["error"] = "gc_policy_mismatch"
             return result
 
         if op in {"stop_sustained", "clear"}:
@@ -224,6 +240,7 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
     harness.handle_command = _handle
 
     if callable(original_update):
+
         def _update(delta_time: float) -> None:
             policy.tick()
             _publish_policy_frame_metrics()
@@ -232,6 +249,7 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
         harness.update = _update
 
     if callable(original_cleanup):
+
         def _cleanup() -> None:
             policy.restore("cleanup")
             original_cleanup()
