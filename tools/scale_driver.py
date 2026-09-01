@@ -159,13 +159,19 @@ def build_parser() -> argparse.ArgumentParser:
     density = sub.add_parser(
         "density-point",
         help=(
-            "Prepare one common 5000-plan pool, start a nested execution subset, "
-            "wait, and snapshot one formal Dynamic World point. Use a fresh ENV "
-            "process for each point."
+            "Warm up, prepare one common 5000-plan pool, start a nested execution "
+            "subset, wait, and snapshot one formal Dynamic World point. Use a fresh "
+            "ENV process for each point."
         ),
     )
     _add_prepare_args(density, require_density=True)
     _add_sustained_args(density, density_curve_defaults=True)
+    density.add_argument(
+        "--warmup",
+        type=float,
+        default=5.0,
+        help="Seconds to let render/overscan caches settle before planning (default: 5)",
+    )
     density.add_argument(
         "--sample-after",
         type=float,
@@ -222,6 +228,12 @@ def _run_density_point(args) -> int:
             args.output,
         )
         return 1
+    if args.warmup < 0.0:
+        _print_and_optionally_write(
+            {"ok": False, "error": "invalid_warmup", "warmup": args.warmup},
+            args.output,
+        )
+        return 1
     if args.sample_after <= 0.0 or args.sample_after >= args.duration:
         _print_and_optionally_write(
             {
@@ -241,6 +253,10 @@ def _run_density_point(args) -> int:
         else "dynamic_world_burst_resilience_v1"
     )
 
+    # Let one fresh window settle render/overscan/font caches before the common
+    # planning burst. The later execution epoch reset excludes all warmup/planning.
+    time.sleep(args.warmup)
+
     # Formal execution points all use the same full 5000-unit plan pool. The
     # measurement adapter then starts a deterministic nested prefix for the
     # requested execution density. Planning/targets therefore do not vary with d.
@@ -249,6 +265,7 @@ def _run_density_point(args) -> int:
         "ok": False,
         "experiment": experiment,
         "density": args.density,
+        "warmup_seconds": args.warmup,
         "prepare": prepare,
     }
     if not prepare.get("ok"):
