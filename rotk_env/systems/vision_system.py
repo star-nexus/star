@@ -18,7 +18,8 @@ is disabled so re-enabling it is immediate.
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Set, Tuple
+from collections import defaultdict
+from typing import Dict, FrozenSet, Optional, Set, Tuple
 
 from framework import System, World
 from framework.ecs import profiling
@@ -26,6 +27,7 @@ from framework.ecs import profiling
 from ..components import HexPosition, Vision, Unit, FogOfWar, MapData, Terrain
 from ..prefabs.config import Faction
 from ..utils.hex_utils import HexMath
+from ..utils.unit_spatial_index import get_unit_spatial_index
 
 Hex = Tuple[int, int]
 
@@ -90,11 +92,20 @@ class VisionSystem(System):
         if not self._bootstrapped:
             audit_scanned = self._audit_all_units(force_all=True)
             self._bootstrapped = True
-        elif self._frames % self._AUDIT_EVERY_FRAMES == 0:
-            with profiling.profiler.time_system(
-                "vision_audit_scan", category="vision"
-            ):
-                audit_scanned = self._audit_all_units(force_all=False)
+        else:
+            # Indexed scale worlds publish position invalidations explicitly and
+            # need only a low-rate safety audit. Legacy/base worlds keep the old
+            # immediate semantics by auditing every tick.
+            audit_interval = (
+                self._AUDIT_EVERY_FRAMES
+                if get_unit_spatial_index(self.world) is not None
+                else 1
+            )
+            if self._frames % audit_interval == 0:
+                with profiling.profiler.time_system(
+                    "vision_audit_scan", category="vision"
+                ):
+                    audit_scanned = self._audit_all_units(force_all=False)
 
         dirty = tuple(self._dirty)
         self._dirty.clear()
@@ -114,7 +125,8 @@ class VisionSystem(System):
             unit = self.world.get_component(entity, Unit)
 
             if position is None or vision is None or unit is None:
-                faction_tiles_removed += self._remove_unit_contribution(entity, fog)
+                removed = self._remove_unit_contribution(entity, fog)
+                faction_tiles_removed += removed
                 continue
 
             current_pos = (position.col, position.row)
