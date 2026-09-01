@@ -26,7 +26,10 @@ _RELEVANT_SECTIONS = (
     "world_update",
     "AnimationSystem",
     "VisionSystem",
+    "vision_audit_scan",
     "MapRenderSystem",
+    "fog_surface_full_build",
+    "fog_surface_patch",
     "UnitRenderSystem",
     "MiniMapSystem",
     "render_engine",
@@ -98,8 +101,27 @@ def _compact_slow_frame(snapshot: object) -> Optional[Dict[str, object]]:
             "vision_units_changed",
             "vision_geometry_cache_hits",
             "vision_geometry_cache_misses",
+            "vision_fog_delta_tiles",
+            "vision_fog_journal_revision",
+            "fog_render_mode",
+            "fog_delta_tiles",
+            "fog_patch_tiles",
+            "fog_journal_revision",
+            "fog_journal_events_scanned",
+            "fog_journal_history_lost",
+            "fog_full_rebuild_reason",
+            "fog_full_builds",
+            "fog_patch_updates",
             "visible_units",
             "animated_visible_units",
+            "unit_render_strategy",
+            "unit_texture_cache_misses",
+            "unit_texture_scales",
+            "unit_texture_cache_evictions",
+            "fast_unit_texture_misses",
+            "fast_unit_texture_scales",
+            "fast_unit_texture_evictions",
+            "unit_full_icon_cache_misses",
             "minimap_spatial_revision",
         ):
             if key in metrics:
@@ -174,6 +196,7 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
         living = len(harness._living_units())
         density_now = active / living if living else 0.0
         min_fps = float(stats.get("min_fps", 0.0) or 0.0)
+        rolling_max_frame_ms = 1000.0 / min_fps if min_fps > 0.0 else None
         sample_window = int(getattr(profiler, "sample_window", 0) or 0)
         metadata = stats.get("metadata", {})
         context = {}
@@ -186,6 +209,12 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
                 ):
                     context[key] = value
 
+        worst_slow_frame = _compact_slow_frame(stats.get("worst_slow_frame"))
+        epoch_worst_slow_frame_ms = (
+            worst_slow_frame.get("frame_ms")
+            if isinstance(worst_slow_frame, dict)
+            else None
+        )
         return {
             "ok": True,
             "measurement_epoch": context.get("measurement_epoch"),
@@ -204,12 +233,17 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
             "p50_frame_ms": stats.get("p50_frame_ms"),
             "p95_frame_ms": stats.get("p95_frame_ms"),
             "p99_frame_ms": stats.get("p99_frame_ms"),
-            "max_frame_ms": (1000.0 / min_fps if min_fps > 0.0 else None),
+            # Compatibility alias retained for existing result readers. This is
+            # the maximum of the current rolling profiler window, not necessarily
+            # the worst slow frame ever observed in the measurement epoch.
+            "max_frame_ms": rolling_max_frame_ms,
+            "rolling_max_frame_ms": rolling_max_frame_ms,
+            "epoch_worst_slow_frame_ms": epoch_worst_slow_frame_ms,
             "active_ms": stats.get("active_ms"),
             "present_ms": stats.get("present_ms"),
             "fps_limiter_wait_ms": stats.get("fps_limiter_wait_ms"),
             "slow_frame_count": stats.get("slow_frame_count", 0),
-            "worst_slow_frame": _compact_slow_frame(stats.get("worst_slow_frame")),
+            "worst_slow_frame": worst_slow_frame,
             "sections": _section_subset(stats),
             "guards": {
                 "required_fog": required_fog,
