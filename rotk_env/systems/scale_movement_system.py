@@ -8,11 +8,11 @@ when authoritative HexPosition commits occur.
 from __future__ import annotations
 
 import os
-from typing import Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from framework.ecs import profiling
 
-from ..components import Unit
+from ..components import HexPosition, Unit
 from ..prefabs.config import Faction
 from ..utils.map_query import board_hexes, impassable_terrain, movement_costs
 from ..utils.unit_spatial_index import (
@@ -85,24 +85,25 @@ class MovementSystem(_BaseMovementSystem):
             return super().build_planning_snapshot()
 
         occupied = frozenset(index.by_cell.keys())
-        enemy_blockers = {}
+        impassable = frozenset(impassable_terrain(self.world))
+        blockers_by_faction = {}
         for faction in (Faction.WEI, Faction.SHU, Faction.WU):
-            enemy_blockers[faction] = frozenset(
+            enemy = {
                 cell
                 for cell, faction_counts in index.by_cell.items()
                 if any(
                     other_faction != faction and count > 0
                     for other_faction, count in faction_counts.items()
                 )
-            )
+            }
+            blockers_by_faction[faction] = frozenset(set(impassable) | enemy)
 
         walkable = board_hexes(self.world)
         return MovementPlanningSnapshot(
             walkable=frozenset(walkable) if walkable is not None else None,
             terrain_costs=movement_costs(self.world),
             occupied=occupied,
-            enemy_blockers_by_faction=enemy_blockers,
-            impassable=frozenset(impassable_terrain(self.world)),
+            blockers_by_faction=blockers_by_faction,
             revision=index.revision,
         )
 
