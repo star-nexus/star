@@ -16,7 +16,7 @@ Movement invariants remain:
 
 from __future__ import annotations
 
-from typing import AbstractSet, Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import AbstractSet, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from framework import System, World
 from framework.ecs import profiling
@@ -81,6 +81,7 @@ class MovementSystem(System):
         policy: MovementPlanningPolicy | str = MovementPlanningPolicy.NORMAL,
         snapshot: Optional[MovementPlanningSnapshot] = None,
         correct_to_budget: bool = False,
+        correct_unreachable: bool = False,
     ) -> MovementPlanResult:
         """Pure movement planning: inspect state and return a MovePlan.
 
@@ -88,8 +89,10 @@ class MovementSystem(System):
         ``correct_to_budget`` is a planning-tool feature: when a requested target
         is reachable by route but exceeds the unit's current budget, resolve the
         plan to the farthest legal endpoint on that same route within budget.
-        Normal ``move_unit`` leaves it False, preserving the existing
-        ``insufficient_mp`` rejection contract.
+        ``correct_unreachable`` is likewise opt-in: when no route exists to the
+        requested target, choose the budget-reachable endpoint that is closest to
+        that requested target. Normal ``move_unit`` leaves both False, preserving
+        the benchmark/game rejection contract.
         """
         policy = MovementPlanningPolicy.coerce(policy)
 
@@ -191,6 +194,34 @@ class MovementSystem(System):
                 step_cost=lambda pos: costs.get(pos, 999),
             )
         if not path or len(path) < 2:
+            if correct_unreachable:
+                corrected_result = self._correct_unreachable_path(
+                    current_pos,
+                    target_pos,
+                    spendable,
+                    occupied=occupied,
+                    blockers=blockers,
+                    costs=costs,
+                    walkable=walkable,
+                    policy=policy,
+                )
+                if corrected_result is not None:
+                    corrected_path, corrected_cost = corrected_result
+                    plan = MovePlan(
+                        entity=entity,
+                        start=current_pos,
+                        requested_target=target_pos,
+                        resolved_target=corrected_path[-1],
+                        path=tuple(corrected_path),
+                        cost=corrected_cost,
+                        spendable_at_plan=spendable,
+                        policy=policy,
+                        corrected=True,
+                        correction_reason="unreachable",
+                        planning_revision=planning_revision,
+                    )
+                    return MovementPlanResult.accepted(plan)
+
             diagnostic_blockers = self._diagnostic_blockers(
                 blockers, target_pos, policy
             )
@@ -211,6 +242,7 @@ class MovementSystem(System):
         resolved_path = list(path)
         resolved_cost = total_cost
         corrected = False
+        correction_reason = None
 
         if total_cost > spendable:
             if not correct_to_budget:
@@ -259,6 +291,8 @@ class MovementSystem(System):
             resolved_target = corrected_path[-1]
             resolved_cost = corrected_cost
             corrected = resolved_target != target_pos
+            if corrected:
+                correction_reason = "budget"
 
         plan = MovePlan(
             entity=entity,
@@ -270,6 +304,7 @@ class MovementSystem(System):
             spendable_at_plan=spendable,
             policy=policy,
             corrected=corrected,
+            correction_reason=correction_reason,
             planning_revision=planning_revision,
         )
         return MovementPlanResult.accepted(plan)
@@ -351,28 +386,88 @@ class MovementSystem(System):
                 entity, plan.start, plan.resolved_target
             )
 
-        path = list(plan.path)
-        animation_system = self._get_animation_system()
-        animated = False
-        if animation_system:
-            animation_system.start_unit_movement(entity, path)
-            animated = True
-        else:
-            self.commit_hex_position(
-                entity,
-                plan.resolved_target[0],
-                plan.resolved_target[1],
-                arrived=True,
-            )
-
+        animated = self._start_prepared_motion_unchecked(entity, plan.path)
         return {
             "success": True,
-            "path": path,
+            "path": list(plan.path),
             "cost": plan.cost,
             "from": plan.start,
             "to": plan.resolved_target,
             "animated": animated,
         }
+
+    def start_prepared_motion(
+        self,
+        entity: int,
+        path: Sequence[Hex],
+        *,
+        expected_start: Optional[Hex] = None,
+    ) -> Dict[str, Any]:
+        """Start an already-approved path with no resource/statistics effects.
+
+        This is the motion primitive used by scale/debug workloads. It performs
+        no pathfinding, spends no MP, schedules no recovery, and records no normal
+        movement action. Normal benchmark/gameplay still calls ``execute_move_plan``.
+        """
+        route = tuple(path)
+        position = self.world.get_component(entity, HexPosition)
+        if position is None:
+            return {
+                "success": False,
+                "reason": "stale_motion_path",
+                "unit_id": entity,
+                "message": f"Unit {entity} no longer has HexPosition",
+            }
+        current_pos = (position.col, position.row)
+        if len(route) < 2 or route[0] != current_pos:
+            return {
+                "success": False,
+                "reason": "stale_motion_path",
+                "unit_id": entity,
+                "current_position": current_pos,
+                "path_start": route[0] if route else None,
+            }
+        if expected_start is not None and current_pos != expected_start:
+            return {
+                "success": False,
+                "reason": "stale_motion_path",
+                "unit_id": entity,
+                "expected_start": expected_start,
+                "current_position": current_pos,
+            }
+        anim = self.world.get_component(entity, MovementAnimation)
+        if anim is not None and anim.is_moving:
+            return {
+                "success": False,
+                "reason": "already_moving",
+                "unit_id": entity,
+            }
+
+        animated = self._start_prepared_motion_unchecked(entity, route)
+        return {
+            "success": True,
+            "unit_id": entity,
+            "from": current_pos,
+            "to": route[-1],
+            "path_length": len(route) - 1,
+            "animated": animated,
+        }
+
+    def _start_prepared_motion_unchecked(
+        self, entity: int, path: Sequence[Hex]
+    ) -> bool:
+        route = list(path)
+        animation_system = self._get_animation_system()
+        if animation_system:
+            animation_system.start_unit_movement(entity, route)
+            return True
+        self.commit_hex_position(
+            entity,
+            route[-1][0],
+            route[-1][1],
+            arrived=True,
+        )
+        return False
 
     def build_planning_snapshot(self) -> MovementPlanningSnapshot:
         """Capture shared planning inputs once for a batch.
@@ -491,6 +586,61 @@ class MovementSystem(System):
         if best_index <= 0:
             return None, 0
         return list(path[: best_index + 1]), best_cost
+
+    def _correct_unreachable_path(
+        self,
+        current_pos: Hex,
+        target_pos: Hex,
+        spendable: int,
+        *,
+        occupied: AbstractSet[Hex],
+        blockers: AbstractSet[Hex],
+        costs: Mapping[Hex, int],
+        walkable: Optional[AbstractSet[Hex]],
+        policy: MovementPlanningPolicy,
+    ) -> Optional[tuple[List[Hex], int]]:
+        """Resolve a no-path request to the nearest budget-reachable endpoint."""
+        if spendable <= 0:
+            return None
+
+        with profiling.profiler.time_system(
+            "move_unreachable_correction", category="scale_planning"
+        ):
+            reachable = PathFinding.get_movement_range(
+                current_pos,
+                spendable,
+                blockers,
+                walkable=walkable,
+                step_cost=lambda pos: costs.get(pos, 999),
+            )
+            reachable.discard(current_pos)
+            if policy == MovementPlanningPolicy.NORMAL:
+                candidates = [cell for cell in reachable if cell not in occupied]
+            else:
+                candidates = list(reachable)
+            if not candidates:
+                return None
+
+            candidates.sort(
+                key=lambda cell: (
+                    HexMath.hex_distance(cell, target_pos),
+                    -HexMath.hex_distance(current_pos, cell),
+                    cell[0],
+                    cell[1],
+                )
+            )
+            corrected_target = candidates[0]
+            corrected_path = PathFinding.find_path(
+                current_pos,
+                corrected_target,
+                blockers,
+                spendable,
+                walkable=walkable,
+                step_cost=lambda pos: costs.get(pos, 999),
+            )
+            if not corrected_path or len(corrected_path) < 2:
+                return None
+            return corrected_path, self._path_cost(corrected_path, costs)
 
     # ------------------------------------------------------------------
     # World mutation / diagnostics helpers
