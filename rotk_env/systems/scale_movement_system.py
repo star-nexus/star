@@ -42,12 +42,13 @@ class MovementSystem(_BaseMovementSystem):
         # Wiring only: the movement domain never reads stress flags. The optional
         # harness receives this domain service and selects planning policies via
         # its explicit control-plane commands. Measurement concerns are installed
-        # as a separate test-only adapter around that harness.
+        # as separate test-only adapters around that harness.
         from ..testing.scale_experiment_measurement import (
             install_scale_experiment_measurement,
         )
         from ..testing.scale_harness import ScaleHarnessSystem
         from ..testing.scale_harness_metrics import ScaleHarnessMetricsSystem
+        from ..testing.scale_memory_soak import install_scale_memory_soak
 
         harness = next(
             (
@@ -62,6 +63,7 @@ class MovementSystem(_BaseMovementSystem):
             world.add_system(harness)
 
         install_scale_experiment_measurement(harness, world, profiling.profiler)
+        install_scale_memory_soak(harness, world)
 
         if not any(
             isinstance(system, ScaleHarnessMetricsSystem) for system in world.systems
@@ -153,7 +155,7 @@ class MovementSystem(_BaseMovementSystem):
             if exclude_entity is not None
             else None
         )
-        _occupied, enemy_held = index.occupancy_for_mover(
+        _occupied, enemy_held = index.occupancy_for_mover(entity=exclude_entity, faction=unit.faction if unit else None) if False else index.occupancy_for_mover(
             exclude_entity, unit.faction if unit else None
         )
         return set(impassable_terrain(self.world)) | enemy_held
