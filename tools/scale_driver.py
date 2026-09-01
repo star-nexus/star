@@ -49,14 +49,34 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["normal", "stress_stack_endpoint"],
         default="stress_stack_endpoint",
     )
+    prepare.add_argument(
+        "--correct-unreachable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Correct no-path targets to the nearest budget-reachable endpoint "
+            "(default: enabled; use --no-correct-unreachable for raw no-path measurement)"
+        ),
+    )
 
     start = sub.add_parser(
-        "start", help="Execute the prepared MovePlans without pathfinding"
+        "start", help="Execute prepared MovePlans once with normal move side effects"
     )
     start.add_argument("--batch-id", type=int, default=None)
 
+    sustained = sub.add_parser(
+        "start-sustained",
+        help=(
+            "Run prepared paths as pure repeated motion for a fixed duration; "
+            "no pathfinding, MP spend, recovery scheduling, or normal action stats"
+        ),
+    )
+    sustained.add_argument("--batch-id", type=int, default=None)
+    sustained.add_argument("--duration", type=float, default=20.0)
+
+    sub.add_parser("stop-sustained", help="Cancel the current sustained motion workload")
     sub.add_parser("status", help="Show prepared batch and current moving density")
-    sub.add_parser("clear", help="Discard the prepared batch")
+    sub.add_parser("clear", help="Stop sustained motion and discard the prepared batch")
     return parser
 
 
@@ -69,11 +89,21 @@ def main() -> int:
             "seed": args.seed,
             "target_radius": args.target_radius,
             "policy": args.policy,
+            "correct_unreachable": args.correct_unreachable,
         }
     elif args.command == "start":
         payload = {"command": "start_prepared_batch"}
         if args.batch_id is not None:
             payload["batch_id"] = args.batch_id
+    elif args.command == "start-sustained":
+        payload = {
+            "command": "start_sustained_batch",
+            "duration_seconds": args.duration,
+        }
+        if args.batch_id is not None:
+            payload["batch_id"] = args.batch_id
+    elif args.command == "stop-sustained":
+        payload = {"command": "stop_sustained"}
     else:
         payload = {"command": args.command}
 
