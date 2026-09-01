@@ -59,15 +59,15 @@ class PreparedMoveBatch:
     failures: Counter = field(default_factory=Counter)
     target_generation_ms: float = 0.0
     planning_snapshot_ms: float = 0.0
-    batch_pathfinding_ms: float = 0.0
-    pathfinding_samples_ms: List[float] = field(default_factory=list)
+    batch_planning_ms: float = 0.0
+    plan_samples_ms: List[float] = field(default_factory=list)
 
     @property
     def corrected_units(self) -> int:
         return sum(1 for plan in self.plans if plan.corrected)
 
     def summary(self) -> Dict[str, Any]:
-        samples = self.pathfinding_samples_ms
+        samples = self.plan_samples_ms
         prepared = len(self.plans)
         return {
             "batch_id": self.batch_id,
@@ -91,10 +91,10 @@ class PreparedMoveBatch:
             "failure_reasons": dict(self.failures),
             "target_generation_ms": round(self.target_generation_ms, 3),
             "planning_snapshot_ms": round(self.planning_snapshot_ms, 3),
-            "batch_pathfinding_ms": round(self.batch_pathfinding_ms, 3),
-            "pathfinding_p50_ms": round(_percentile(samples, 0.50), 4),
-            "pathfinding_p95_ms": round(_percentile(samples, 0.95), 4),
-            "pathfinding_p99_ms": round(_percentile(samples, 0.99), 4),
+            "batch_planning_ms": round(self.batch_planning_ms, 3),
+            "plan_p50_ms": round(_percentile(samples, 0.50), 4),
+            "plan_p95_ms": round(_percentile(samples, 0.95), 4),
+            "plan_p99_ms": round(_percentile(samples, 0.99), 4),
         }
 
 
@@ -281,9 +281,9 @@ class ScaleHarnessSystem(System):
 
         plans: List[MovePlan] = []
         failures: Counter = Counter()
-        pathfinding_samples_ms: List[float] = []
+        plan_samples_ms: List[float] = []
         with profiling.profiler.time_system(
-            "scale_batch_pathfinding", category="scale_planning"
+            "scale_batch_planning", category="scale_planning"
         ):
             batch_t0 = time.perf_counter_ns()
             for entity in selected:
@@ -299,14 +299,14 @@ class ScaleHarnessSystem(System):
                     snapshot=snapshot,
                     correct_to_budget=True,
                 )
-                pathfinding_samples_ms.append(
+                plan_samples_ms.append(
                     (time.perf_counter_ns() - one_t0) / 1_000_000.0
                 )
                 if result.success and result.plan is not None:
                     plans.append(result.plan)
                 else:
                     failures[result.response.get("reason", "unknown")] += 1
-            batch_pathfinding_ms = (
+            batch_planning_ms = (
                 time.perf_counter_ns() - batch_t0
             ) / 1_000_000.0
 
@@ -323,8 +323,8 @@ class ScaleHarnessSystem(System):
             failures=failures,
             target_generation_ms=target_generation_ms,
             planning_snapshot_ms=planning_snapshot_ms,
-            batch_pathfinding_ms=batch_pathfinding_ms,
-            pathfinding_samples_ms=pathfinding_samples_ms,
+            batch_planning_ms=batch_planning_ms,
+            plan_samples_ms=plan_samples_ms,
         )
         self._next_batch_id += 1
         self.prepared = batch
@@ -335,9 +335,9 @@ class ScaleHarnessSystem(System):
             scale_prepared_units=len(batch.plans),
             scale_target_generation_ms=summary["target_generation_ms"],
             scale_planning_snapshot_ms=summary["planning_snapshot_ms"],
-            scale_batch_pathfinding_ms=summary["batch_pathfinding_ms"],
-            scale_pathfinding_p95_ms=summary["pathfinding_p95_ms"],
-            scale_pathfinding_p99_ms=summary["pathfinding_p99_ms"],
+            scale_batch_planning_ms=summary["batch_planning_ms"],
+            scale_plan_p95_ms=summary["plan_p95_ms"],
+            scale_plan_p99_ms=summary["plan_p99_ms"],
         )
         profiling.profiler.set_frame_metric("scale_requested_units", batch.requested_units)
         profiling.profiler.set_frame_metric("scale_prepared_units", len(batch.plans))
