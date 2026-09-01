@@ -56,6 +56,20 @@ def _world_stats(world) -> Dict[str, Any]:
     }
 
 
+def _workload_stats(harness) -> Dict[str, Any]:
+    try:
+        active = int(harness._active_moving_units())
+        living = len(harness._living_units())
+    except Exception:
+        active = 0
+        living = 0
+    return {
+        "active_moving_units": active,
+        "living_units": living,
+        "density": (active / living if living else 0.0),
+    }
+
+
 def _snapshot(harness, world) -> Dict[str, Any]:
     policy = getattr(harness, "_realtime_gc_policy", None)
     if policy is not None:
@@ -67,6 +81,7 @@ def _snapshot(harness, world) -> Dict[str, Any]:
         "memory": process_memory_snapshot(),
         "gc": _gc_stats(),
         "world": _world_stats(world),
+        "workload": _workload_stats(harness),
         "gc_policy": policy_state,
     }
 
