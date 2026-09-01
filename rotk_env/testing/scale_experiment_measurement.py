@@ -1,9 +1,10 @@
 """Scale measurement overlay for render-tail and realtime-GC diagnostics.
 
 The stable experiment mechanics remain in ``scale_experiment_measurement_base``.
-This overlay adds two orthogonal concerns:
+This overlay adds three orthogonal concerns:
 - retain UnitRender/GC tail metrics in compact slow-frame snapshots;
-- provide an explicit A/B realtime cyclic-GC policy for sustained runs.
+- provide an explicit A/B realtime cyclic-GC policy for sustained runs;
+- make large profiler-snapshot replies reliable on the harness' non-blocking UDS.
 
 Normal behavior remains ``gc_policy=auto``. ``realtime_defer`` is opt-in until
 formal A/B results establish that it should become a production realtime policy.
@@ -13,6 +14,7 @@ For fresh-process formal runs it can also be selected with
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict
 
@@ -102,12 +104,87 @@ def _requested_policy(command: Dict[str, Any]) -> str:
     return normalize_gc_policy(value)
 
 
+def _install_reliable_socket_output(harness) -> None:
+    """Replace fragile non-blocking ``sendall`` with buffered partial writes.
+
+    ``ScaleHarnessSystem`` accepts clients in non-blocking mode. Calling
+    ``sendall`` on such a socket is not guaranteed to finish a large profiler
+    snapshot; ``BlockingIOError`` means "try the remaining bytes later", not
+    "the peer disconnected". The legacy path treated it as disconnect and
+    closed the client, which surfaced in scale_driver as:
+
+        scale harness closed the socket before replying
+
+    Keep command reads non-blocking, but queue response bytes per client and
+    drain them with ``send`` across update ticks. Local small replies still
+    normally complete immediately in one call.
+    """
+    if bool(getattr(harness, "_scale_reliable_socket_output_installed", False)):
+        return
+
+    original_drop = getattr(harness, "_drop_client", None)
+    pending: Dict[object, bytearray] = {}
+    harness._scale_pending_output = pending
+
+    def _drop_client(client) -> None:
+        pending.pop(client, None)
+        if callable(original_drop):
+            original_drop(client)
+            return
+        try:
+            client.close()
+        except OSError:
+            pass
+
+    def _flush_client(client) -> None:
+        buffer = pending.get(client)
+        if not buffer:
+            pending.pop(client, None)
+            return
+
+        while buffer:
+            try:
+                sent = client.send(buffer)
+            except BlockingIOError:
+                # Socket back-pressure is expected for non-blocking clients.
+                # Retain the unsent suffix and continue on the next update tick.
+                return
+            except (BrokenPipeError, OSError):
+                _drop_client(client)
+                return
+
+            if sent <= 0:
+                _drop_client(client)
+                return
+            del buffer[:sent]
+
+        pending.pop(client, None)
+
+    def _flush_all() -> None:
+        for client in list(pending):
+            _flush_client(client)
+
+    def _send_response(client, response: Dict[str, Any]) -> None:
+        payload = (
+            json.dumps(response, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        pending.setdefault(client, bytearray()).extend(payload)
+        _flush_client(client)
+
+    harness._drop_client = _drop_client
+    harness._send_response = _send_response
+    harness._flush_scale_socket_output = _flush_all
+    harness._scale_reliable_socket_output_installed = True
+
+
 def install_scale_experiment_measurement(harness, world, profiler) -> bool:
     """Install base measurement plus bounded realtime-GC A/B control."""
     if bool(getattr(harness, "_scale_gc_policy_installed", False)):
         return True
     if not _base.install_scale_experiment_measurement(harness, world, profiler):
         return False
+
+    _install_reliable_socket_output(harness)
 
     policy = RealtimeGCPolicy()
     harness._realtime_gc_policy = policy
@@ -244,7 +321,12 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
         def _update(delta_time: float) -> None:
             policy.tick()
             _publish_policy_frame_metrics()
+            flush = getattr(harness, "_flush_scale_socket_output", None)
+            if callable(flush):
+                flush()
             original_update(delta_time)
+            if callable(flush):
+                flush()
 
         harness.update = _update
 
@@ -260,4 +342,7 @@ def install_scale_experiment_measurement(harness, world, profiler) -> bool:
     return True
 
 
-__all__ = ["install_scale_experiment_measurement"]
+__all__ = [
+    "_install_reliable_socket_output",
+    "install_scale_experiment_measurement",
+]
