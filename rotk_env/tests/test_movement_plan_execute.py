@@ -2,7 +2,10 @@ from framework.ecs.world import World
 
 from rotk_env.components import HexPosition, MovementPoints, Unit, UnitCount, UnitStatus
 from rotk_env.prefabs.config import Faction, UnitType
-from rotk_env.systems.movement_planning import MovementPlanningPolicy
+from rotk_env.systems.movement_planning import (
+    MovementPlanningPolicy,
+    MovementPlanningSnapshot,
+)
 from rotk_env.systems.movement_system import MovementSystem
 
 
@@ -44,16 +47,14 @@ def test_plan_is_pure_and_execute_mutates_without_replanning(monkeypatch):
     planned = movement.plan_move(entity, (2, 0))
     assert planned.success
     assert planned.plan is not None
-    pos = world.get_component(entity, HexPosition)
-    assert (pos.col, pos.row) == (0, 0)
+    assert (world.get_component(entity, HexPosition).col, world.get_component(entity, HexPosition).row) == (0, 0)
     assert world.get_component(entity, MovementPoints).current_mp == 3
 
     result = movement.execute_move_plan(planned.plan, emit_log=False)
     assert result["success"] is True
     assert result["to"] == (2, 0)
     assert world.get_component(entity, MovementPoints).current_mp == 1
-    pos = world.get_component(entity, HexPosition)
-    assert (pos.col, pos.row) == (2, 0)
+    assert (world.get_component(entity, HexPosition).col, world.get_component(entity, HexPosition).row) == (2, 0)
 
 
 def test_normal_policy_rejects_occupied_endpoint_but_stress_policy_allows_it(monkeypatch):
@@ -152,3 +153,28 @@ def test_execute_rejects_stale_prepared_plan(monkeypatch):
     result = movement.execute_move_plan(planned.plan, emit_log=False)
     assert result["success"] is False
     assert result["reason"] == "stale_move_plan"
+
+
+def test_planning_snapshot_reuses_shared_containers_without_copy():
+    _world, entity, movement = _world_with_unit(mp=3)
+    occupied = frozenset({(4, 4), (5, 5)})
+    blockers = frozenset({(8, 8)})
+    walkable = frozenset({(0, 0), (1, 0), (4, 4), (5, 5), (8, 8)})
+    costs = {(0, 0): 1, (1, 0): 1}
+    snapshot = MovementPlanningSnapshot(
+        walkable=walkable,
+        terrain_costs=costs,
+        occupied=occupied,
+        blockers_by_faction={Faction.WEI: blockers},
+        revision=11,
+    )
+
+    got_occupied, got_blockers, got_costs, got_walkable, revision = (
+        movement._planning_context(entity, Faction.WEI, snapshot)
+    )
+
+    assert got_occupied is occupied
+    assert got_blockers is blockers
+    assert got_costs is costs
+    assert got_walkable is walkable
+    assert revision == 11
