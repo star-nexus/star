@@ -1,6 +1,24 @@
-"""Compatibility wrapper adding UnitRender tail diagnostics to scale snapshots."""
+"""Scale measurement overlay for render-tail and realtime-GC diagnostics.
+
+The stable experiment mechanics remain in ``scale_experiment_measurement_base``.
+This overlay adds two orthogonal concerns:
+- retain UnitRender/GC tail metrics in compact slow-frame snapshots;
+- provide an explicit A/B realtime cyclic-GC policy for sustained runs.
+
+Normal behavior remains ``gc_policy=auto``. ``realtime_defer`` is opt-in until
+formal A/B results establish that it should become a production realtime policy.
+"""
 
 from __future__ import annotations
+
+from typing import Any, Dict
+
+from framework.utils.realtime_gc_policy import (
+    GC_POLICY_AUTO,
+    GC_POLICY_REALTIME_DEFER,
+    RealtimeGCPolicy,
+    normalize_gc_policy,
+)
 
 from . import scale_experiment_measurement_base as _base
 
@@ -38,6 +56,10 @@ _TAIL_METRICS = (
     "unit_gc_count1_end",
     "unit_gc_count2_start",
     "unit_gc_count2_end",
+    "gc_policy_mode",
+    "gc_policy_active",
+    "gc_automatic_enabled",
+    "gc_policy_deadline_remaining_seconds",
 )
 
 
@@ -57,6 +79,167 @@ def _compact_slow_frame(snapshot):
 
 _base._compact_slow_frame = _compact_slow_frame
 
-install_scale_experiment_measurement = _base.install_scale_experiment_measurement
+
+def _policy_matches(requested: str, state: Dict[str, Any]) -> bool:
+    if requested == GC_POLICY_AUTO:
+        return state.get("mode") == GC_POLICY_AUTO and not bool(state.get("active"))
+    if requested == GC_POLICY_REALTIME_DEFER:
+        return (
+            state.get("mode") == GC_POLICY_REALTIME_DEFER
+            and bool(state.get("active"))
+            and not bool(state.get("automatic_gc_enabled"))
+        )
+    return False
+
+
+def install_scale_experiment_measurement(harness, world, profiler) -> bool:
+    """Install base measurement plus bounded realtime-GC A/B control."""
+    if bool(getattr(harness, "_scale_gc_policy_installed", False)):
+        return True
+    if not _base.install_scale_experiment_measurement(harness, world, profiler):
+        return False
+
+    policy = RealtimeGCPolicy()
+    harness._realtime_gc_policy = policy
+    original_handle = harness.handle_command
+    original_update = getattr(harness, "update", None)
+    original_cleanup = getattr(harness, "cleanup", None)
+
+    def _publish_policy_frame_metrics() -> Dict[str, Any]:
+        state = policy.snapshot()
+        metric = getattr(profiler, "set_frame_metric", None)
+        if callable(metric):
+            metric("gc_policy_mode", state["mode"])
+            metric("gc_policy_active", int(bool(state["active"])))
+            metric(
+                "gc_automatic_enabled",
+                int(bool(state["automatic_gc_enabled"])),
+            )
+            remaining = state.get("deadline_remaining_seconds")
+            metric(
+                "gc_policy_deadline_remaining_seconds",
+                float(remaining) if remaining is not None else -1.0,
+            )
+        return state
+
+    def _record_policy_metadata(state: Dict[str, Any]) -> None:
+        setter = getattr(profiler, "set_metadata", None)
+        if not callable(setter):
+            return
+        setter(
+            scale_gc_policy=state["mode"],
+            scale_gc_policy_active=bool(state["active"]),
+            scale_gc_automatic_enabled=bool(state["automatic_gc_enabled"]),
+            scale_gc_full_collect_ms=state["full_collect_ms"],
+            scale_gc_full_collect_collected=state["full_collect_collected"],
+        )
+
+    def _handle(command: Dict[str, Any]) -> Dict[str, Any]:
+        op = str(command.get("command", "")).strip()
+
+        if op == "start_sustained_batch":
+            try:
+                requested_policy = normalize_gc_policy(command.get("gc_policy", "auto"))
+            except ValueError as exc:
+                return {
+                    "ok": False,
+                    "error": "invalid_gc_policy",
+                    "message": str(exc),
+                }
+
+            # A manual restart should never inherit a previous deferred-GC window.
+            policy.restore("restart")
+            result = original_handle(command)
+            if not result.get("ok"):
+                return result
+
+            # Base kickoff and plan selection are complete here, while its
+            # measurement epoch reset is still deferred until the next safe frame
+            # boundary. Collect now so kickoff allocation and this full collection
+            # are both excluded from the formal realtime epoch.
+            duration = float(result.get("duration_seconds", command.get("duration_seconds", 20.0)))
+            gc_state = policy.activate(requested_policy, duration)
+            measurement_state = getattr(harness, "_scale_measurement_state", None)
+            if isinstance(measurement_state, dict):
+                measurement_state["gc_policy"] = requested_policy
+                measurement_state["gc_full_collect_ms"] = gc_state["full_collect_ms"]
+                measurement_state["gc_full_collect_collected"] = gc_state[
+                    "full_collect_collected"
+                ]
+
+            _record_policy_metadata(gc_state)
+            _publish_policy_frame_metrics()
+            result.update(
+                gc_policy=requested_policy,
+                gc_policy_active=gc_state["active"],
+                gc_automatic_enabled=gc_state["automatic_gc_enabled"],
+                gc_full_collect_ms=gc_state["full_collect_ms"],
+                gc_full_collect_collected=gc_state["full_collect_collected"],
+            )
+            return result
+
+        if op == "profile_snapshot":
+            policy.tick()
+            result = original_handle(command)
+            if not result.get("ok"):
+                return result
+            gc_state = _publish_policy_frame_metrics()
+            measurement_state = getattr(harness, "_scale_measurement_state", None) or {}
+            requested_policy = normalize_gc_policy(
+                measurement_state.get("gc_policy", GC_POLICY_AUTO)
+            )
+            guards = result.setdefault("guards", {})
+            guards.update(
+                gc_policy_requested=requested_policy,
+                gc_policy_mode=gc_state["mode"],
+                gc_policy_active=gc_state["active"],
+                gc_automatic_enabled=gc_state["automatic_gc_enabled"],
+                gc_policy_matches_requested=_policy_matches(
+                    requested_policy, gc_state
+                ),
+            )
+            context = result.setdefault("context", {})
+            context["scale_gc_policy"] = requested_policy
+            context["scale_gc_full_collect_ms"] = measurement_state.get(
+                "gc_full_collect_ms", gc_state["full_collect_ms"]
+            )
+            context["scale_gc_full_collect_collected"] = measurement_state.get(
+                "gc_full_collect_collected", gc_state["full_collect_collected"]
+            )
+            result["gc_policy"] = gc_state
+            return result
+
+        if op in {"stop_sustained", "clear"}:
+            result = original_handle(command)
+            restored = policy.restore(op)
+            gc_state = _publish_policy_frame_metrics()
+            result.update(
+                gc_policy_restored=restored,
+                gc_automatic_enabled=gc_state["automatic_gc_enabled"],
+            )
+            return result
+
+        return original_handle(command)
+
+    harness.handle_command = _handle
+
+    if callable(original_update):
+        def _update(delta_time: float) -> None:
+            policy.tick()
+            _publish_policy_frame_metrics()
+            original_update(delta_time)
+
+        harness.update = _update
+
+    if callable(original_cleanup):
+        def _cleanup() -> None:
+            policy.restore("cleanup")
+            original_cleanup()
+
+        harness.cleanup = _cleanup
+
+    harness._scale_gc_policy_installed = True
+    return True
+
 
 __all__ = ["install_scale_experiment_measurement"]
