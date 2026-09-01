@@ -141,23 +141,24 @@ class HexMath:
     def hex_in_range(
         center_col: int, center_row: int, range_val: int
     ) -> Set[Tuple[int, int]]:
-        """Return all hexes within the given range (offset coordinates)."""
-        results = set()
-        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
+        """Return the translation-invariant hex disk around an offset cell.
 
-        for q in range(center_q - range_val, center_q + range_val + 1):
-            for r in range(
-                max(center_r - range_val, -q - range_val),
-                min(center_r + range_val, -q + range_val) + 1,
-            ):
-                if (
-                    HexMath.hex_distance(
-                        (center_col, center_row), HexMath.axial_to_offset(q, r)
-                    )
-                    <= range_val
-                ):
-                    col, row = HexMath.axial_to_offset(q, r)
-                    results.add((col, row))
+        Iterate *relative* axial deltas and translate them by the center. The
+        previous implementation mixed absolute ``q`` with the cube ``s`` bound,
+        which accidentally constrained the disk around the origin and could
+        return an empty set for centers far from ``(0, 0)``.
+        """
+        radius = max(0, int(range_val))
+        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
+        results: Set[Tuple[int, int]] = set()
+
+        for dq in range(-radius, radius + 1):
+            dr_min = max(-radius, -dq - radius)
+            dr_max = min(radius, -dq + radius)
+            for dr in range(dr_min, dr_max + 1):
+                results.add(
+                    HexMath.axial_to_offset(center_q + dq, center_r + dr)
+                )
         return results
 
     @staticmethod
