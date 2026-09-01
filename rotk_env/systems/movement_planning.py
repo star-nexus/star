@@ -79,6 +79,7 @@ class MovePlan:
     spendable_at_plan: int
     policy: MovementPlanningPolicy = MovementPlanningPolicy.NORMAL
     corrected: bool = False
+    correction_reason: Optional[str] = None
     planning_revision: Optional[int] = None
 
     def as_dict(self) -> Dict[str, Any]:
@@ -92,6 +93,7 @@ class MovePlan:
             "spendable_at_plan": self.spendable_at_plan,
             "policy": self.policy.value,
             "corrected": self.corrected,
+            "correction_reason": self.correction_reason,
             "planning_revision": self.planning_revision,
         }
 
