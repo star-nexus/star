@@ -18,15 +18,16 @@ is disabled so re-enabling it is immediate.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Dict, FrozenSet, Optional, Set, Tuple
 
 from framework import System, World
 from framework.ecs import profiling
+from framework.engine.events import EBS
 
 from ..components import HexPosition, Vision, Unit, FogOfWar, MapData, Terrain
 from ..prefabs.config import Faction
 from ..utils.hex_utils import HexMath
+from ..utils.env_events import UnitDeathEvent
 from ..utils.unit_spatial_index import get_unit_spatial_index
 
 Hex = Tuple[int, int]
@@ -70,6 +71,7 @@ class VisionSystem(System):
         self._terrain_revision = 0
         self._frames = 0
         self._bootstrapped = False
+        self._last_fog_enabled: Optional[bool] = None
 
         # Cumulative diagnostics retained for compatibility with get_stats().
         self._stat_recomputes = 0
@@ -82,11 +84,28 @@ class VisionSystem(System):
         self._dirty = _dirty_set(world)
 
     def subscribe_events(self):
-        pass
+        EBS.subscribe(UnitDeathEvent, self._handle_unit_death)
+
+    def cleanup(self) -> None:
+        EBS.unsubscribe(UnitDeathEvent, self._handle_unit_death)
+
+    def _handle_unit_death(self, event: UnitDeathEvent) -> None:
+        # Combat publishes before destroy_entity(), so defer ref-count cleanup to
+        # the next Vision tick when the entity has actually disappeared.
+        self._dirty.add(event.entity)
 
     def update(self, delta_time: float) -> None:
         self._frames += 1
         fog = self._ensure_fog()
+        fog_toggled = (
+            self._last_fog_enabled is not None
+            and self._last_fog_enabled != bool(fog.enabled)
+        )
+        self._last_fog_enabled = bool(fog.enabled)
+        profiling.profiler.set_frame_metric("fog_enabled", int(bool(fog.enabled)))
+        profiling.profiler.set_frame_metric(
+            "fog_toggle_this_frame", int(fog_toggled)
+        )
 
         audit_scanned = 0
         if not self._bootstrapped:
@@ -236,8 +255,9 @@ class VisionSystem(System):
     def _audit_all_units(self, *, force_all: bool) -> int:
         """Reconcile membership and catch direct component writes.
 
-        Normal movement is event-driven through ``mark_vision_dirty``. This audit
-        only exists as a semantic safety net and runs once per second at 60 FPS.
+        Normal scale movement is event-driven through ``mark_vision_dirty``. This
+        audit is a semantic safety net: low-rate in indexed scale worlds and
+        every tick in legacy/base worlds that may mutate HexPosition directly.
         """
         current_entities: Set[int] = set()
         for entity in self.world.query().with_all(HexPosition, Vision, Unit).entities():
