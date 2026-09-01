@@ -31,6 +31,7 @@ from ..utils.hex_utils import HexMath
 from ..utils.map_query import board_hexes, impassable_terrain
 
 Hex = Tuple[int, int]
+SUSTAINED_PHASES = {"synchronized", "staggered"}
 
 
 def _percentile(values: List[float], q: float) -> float:
@@ -127,6 +128,8 @@ class ScaleHarnessSystem(System):
         self._sustained_entities: set[int] = set()
         self._sustained_batch_id: Optional[int] = None
         self._sustained_duration_seconds: float = 0.0
+        self._sustained_phase: Optional[str] = None
+        self._sustained_phase_seed: Optional[int] = None
 
     def initialize(self, world) -> None:
         self.world = world
@@ -481,12 +484,25 @@ class ScaleHarnessSystem(System):
             }
 
         duration_seconds = max(0.5, float(command.get("duration_seconds", 20.0)))
+        phase = str(command.get("phase", "synchronized")).strip().lower()
+        if phase not in SUSTAINED_PHASES:
+            return {
+                "ok": False,
+                "error": "invalid_phase",
+                "phase": phase,
+                "allowed": sorted(SUSTAINED_PHASES),
+            }
+        phase_seed = int(command.get("phase_seed", batch.seed))
+        phase_rng = random.Random(phase_seed)
+
         self._stop_sustained_motion()
         accepted = 0
         rejected: Counter = Counter()
-        total_segments = 0
-        min_segments: Optional[int] = None
-        max_segments = 0
+        total_motion_segments = 0
+        total_animation_segments = 0
+        min_motion_segments: Optional[int] = None
+        max_motion_segments = 0
+        phase_offsets: List[float] = []
 
         with profiling.profiler.time_system(
             "scale_sustained_start", category="scale_execution"
@@ -499,40 +515,73 @@ class ScaleHarnessSystem(System):
                 if sustained_path is None:
                     rejected["invalid_motion_path"] += 1
                     continue
+
+                path_to_start = sustained_path
+                initial_progress = 0.0
+                if phase == "staggered":
+                    # Add a zero-distance hold segment. Varying progress within
+                    # that hold shifts only the time phase; speed, route and all
+                    # subsequent motion semantics remain identical.
+                    path_to_start = (sustained_path[0],) + sustained_path
+                    initial_progress = phase_rng.random()
+
                 result = self.movement_system.start_prepared_motion(
                     plan.entity,
-                    sustained_path,
+                    path_to_start,
                     expected_start=plan.start,
                 )
                 if result.get("success"):
                     accepted += 1
                     self._sustained_entities.add(plan.entity)
-                    segments = len(sustained_path) - 1
-                    total_segments += segments
-                    min_segments = segments if min_segments is None else min(min_segments, segments)
-                    max_segments = max(max_segments, segments)
+                    motion_segments = len(sustained_path) - 1
+                    animation_segments = len(path_to_start) - 1
+                    total_motion_segments += motion_segments
+                    total_animation_segments += animation_segments
+                    min_motion_segments = (
+                        motion_segments
+                        if min_motion_segments is None
+                        else min(min_motion_segments, motion_segments)
+                    )
+                    max_motion_segments = max(max_motion_segments, motion_segments)
+
+                    if phase == "staggered":
+                        anim = self.world.get_component(
+                            plan.entity, MovementAnimation
+                        )
+                        if anim is not None and anim.is_moving:
+                            anim.progress = initial_progress
+                            phase_offsets.append(initial_progress)
                 else:
                     rejected[result.get("reason", "unknown")] += 1
             start_ms = (time.perf_counter_ns() - t0) / 1_000_000.0
 
         self._sustained_batch_id = batch.batch_id
         self._sustained_duration_seconds = duration_seconds
+        self._sustained_phase = phase
+        self._sustained_phase_seed = phase_seed
         active = self._active_moving_units()
         living_now = len(self._living_units())
         actual_world_density = active / living_now if living_now else 0.0
         activation_ratio = active / batch.requested_units if batch.requested_units else 0.0
 
+        phase_p50 = _percentile(phase_offsets, 0.50)
+        phase_p95 = _percentile(phase_offsets, 0.95)
+
         profiling.profiler.set_metadata(
             scale_execution_mode="sustained",
+            scale_sustained_phase=phase,
+            scale_sustained_phase_seed=phase_seed,
             scale_sustained_batch=batch.batch_id,
             scale_sustained_duration_seconds=duration_seconds,
             scale_sustained_start_ms=round(start_ms, 3),
             scale_sustained_accepted=accepted,
-            scale_sustained_segments_total=total_segments,
+            scale_sustained_segments_total=total_motion_segments,
+            scale_sustained_animation_segments_total=total_animation_segments,
             scale_active_moving_units=active,
             scale_actual_density=round(actual_world_density, 4),
         )
         profiling.profiler.set_frame_metric("scale_sustained_accepted", accepted)
+        profiling.profiler.set_frame_metric("scale_sustained_phase", phase)
         profiling.profiler.set_frame_metric("scale_active_moving_units", active)
         profiling.profiler.set_frame_metric(
             "scale_actual_density", round(actual_world_density, 4)
@@ -541,6 +590,10 @@ class ScaleHarnessSystem(System):
             "ok": True,
             "phase": "started",
             "execution_mode": "sustained",
+            "motion_phase": phase,
+            "phase_seed": phase_seed,
+            "phase_progress_p50": round(phase_p50, 4),
+            "phase_progress_p95": round(phase_p95, 4),
             "batch_id": batch.batch_id,
             "duration_seconds": duration_seconds,
             "prepared_units": len(batch.plans),
@@ -551,9 +604,10 @@ class ScaleHarnessSystem(System):
             "actual_density": actual_world_density,
             "activation_ratio": activation_ratio,
             "sustained_start_ms": round(start_ms, 3),
-            "segments_total": total_segments,
-            "segments_min_per_unit": min_segments or 0,
-            "segments_max_per_unit": max_segments,
+            "segments_total": total_motion_segments,
+            "animation_segments_total": total_animation_segments,
+            "segments_min_per_unit": min_motion_segments or 0,
+            "segments_max_per_unit": max_motion_segments,
             "pathfinding_during_execution": False,
             "normal_move_side_effects": False,
         }
@@ -589,7 +643,11 @@ class ScaleHarnessSystem(System):
     def _stop_sustained_motion(self) -> int:
         stopped = 0
         for entity in list(self._sustained_entities):
-            anim = self.world.get_component(entity, MovementAnimation) if hasattr(self, "world") else None
+            anim = (
+                self.world.get_component(entity, MovementAnimation)
+                if hasattr(self, "world")
+                else None
+            )
             if anim is not None and anim.is_moving:
                 anim.is_moving = False
                 anim.progress = 0.0
@@ -599,6 +657,8 @@ class ScaleHarnessSystem(System):
         self._sustained_entities.clear()
         self._sustained_batch_id = None
         self._sustained_duration_seconds = 0.0
+        self._sustained_phase = None
+        self._sustained_phase_seed = None
         return stopped
 
     def _living_units(self) -> List[int]:
@@ -628,6 +688,8 @@ class ScaleHarnessSystem(System):
             "sustained": {
                 "batch_id": self._sustained_batch_id,
                 "duration_seconds": self._sustained_duration_seconds,
+                "phase": self._sustained_phase,
+                "phase_seed": self._sustained_phase_seed,
                 "configured_units": len(self._sustained_entities),
             },
         }
