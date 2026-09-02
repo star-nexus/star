@@ -2,6 +2,8 @@
 
 from framework.ecs.world import World
 
+from rotk_env.components import UnitObservation, VisibilityTracker
+from rotk_env.prefabs.config import Faction
 from rotk_env.testing import scale_memory_soak
 from rotk_env.testing.scale_memory_soak import install_scale_memory_soak
 
@@ -81,8 +83,44 @@ def test_memory_snapshot_reports_process_gc_world_workload_and_vision(monkeypatc
         "geometry_cache_misses": 20,
         "geometry_cache_evictions": 3,
     }
+    assert result["statistics"] == {
+        "unit_observation_history_records": 0,
+        "visibility_history_units": 0,
+        "visibility_history_records": 0,
+        "visibility_history_max_per_unit": 0,
+        "unit_observation_components": 0,
+        "movement_path_entries": 0,
+    }
     assert result["gc_policy"]["active"] is False
     assert harness.original_calls == []
+
+
+def test_memory_snapshot_reports_retained_statistics_history(monkeypatch):
+    monkeypatch.setattr(scale_memory_soak, "process_memory_snapshot", _fake_memory)
+    world = World()
+    tracker = VisibilityTracker(
+        visibility_history={
+            7: [
+                {"timestamp": 1.0, "visible_to": [Faction.WEI]},
+                {"timestamp": 2.0, "visible_to": [Faction.WEI, Faction.SHU]},
+            ],
+            8: [{"timestamp": 3.0, "visible_to": [Faction.SHU]}],
+        }
+    )
+    world.add_singleton_component(tracker)
+    entity = world.create_entity()
+    observation = UnitObservation(movement_path=[(0, 0), (1, 0), (2, 0)])
+    world.add_component(entity, observation)
+
+    harness = _Harness()
+    install_scale_memory_soak(harness, world)
+    result = harness.handle_command({"command": "memory_snapshot"})
+
+    assert result["statistics"]["visibility_history_units"] == 2
+    assert result["statistics"]["visibility_history_records"] == 3
+    assert result["statistics"]["visibility_history_max_per_unit"] == 2
+    assert result["statistics"]["unit_observation_components"] == 1
+    assert result["statistics"]["movement_path_entries"] == 3
 
 
 def test_memory_snapshot_without_vision_system_reports_empty_vision(monkeypatch):
