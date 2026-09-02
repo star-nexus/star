@@ -2,6 +2,7 @@
 
 The production rendering semantics live in ``optimized_render_systems_base``.
 This thin overlay keeps that verified implementation intact while adding:
+- a compact opaque terrain presentation cache over the verified SRCALPHA overscan;
 - a zero-copy fog presenter handoff for the already-set visible tile set;
 - frame-level UnitRender diagnostics for command allocation and Python GC pauses.
 
@@ -25,10 +26,11 @@ from .optimized_render_systems_base import (
     MiniMapSystem,
     UnitRenderSystem as _VerifiedUnitRenderSystem,
 )
+from .terrain_presentation_cache import OpaqueTerrainPresentationMixin
 
 
-class MapRenderSystem(_VerifiedMapRenderSystem):
-    """Verified map renderer with a zero-copy fog visible-tile handoff."""
+class MapRenderSystem(OpaqueTerrainPresentationMixin, _VerifiedMapRenderSystem):
+    """Verified map renderer with opaque terrain present + zero-copy fog."""
 
     def _render_fog_of_war_optimized(
         self,
