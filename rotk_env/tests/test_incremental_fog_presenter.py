@@ -7,7 +7,10 @@ from framework.engine import RMS
 
 from rotk_env.components import FogOfWar, GameState, UIState
 from rotk_env.prefabs.config import Faction, GameConfig
-from rotk_env.systems.fog_surface_presenter import IncrementalFogSurfacePresenter
+from rotk_env.systems.fog_surface_presenter import (
+    FOG_GEOMETRY_BITS,
+    IncrementalFogSurfacePresenter,
+)
 from rotk_env.utils.fog_visibility_journal import (
     FogVisibilityChangeJournal,
     publish_fog_visibility_delta,
@@ -90,6 +93,109 @@ def test_camera_change_forces_full_rebuild_not_incremental_patch():
 
     assert presenter.full_builds == 2
     assert presenter.patch_updates == 0
+
+
+def test_identical_geometry_reuses_surface_and_diagnostic_counter():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    visible_tiles = {(0, 0), (1, 0)}
+
+    surface = presenter.update_surface(visible_tiles, [120.0, 80.0], 1.0)
+    before = presenter.diagnostic_snapshot()
+    reused = presenter.update_surface(visible_tiles, [120.0, 80.0], 1.0)
+    after = presenter.diagnostic_snapshot()
+
+    assert reused is surface
+    assert before["full_builds"] == after["full_builds"] == 1
+    assert after["full_build_reason_counts"] == {"initial": 1}
+
+
+def test_offset_change_reports_offset_geometry_invalidation():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    presenter.set_full_build_attribution_enabled(True, clear_events=True)
+
+    presenter.update_surface({(0, 0)}, [120.0, 80.0], 1.0)
+    presenter.update_surface({(0, 0)}, [121.0, 82.0], 1.0)
+    snapshot = presenter.diagnostic_snapshot()
+    event = snapshot["attribution_events"][-1]
+
+    assert event["coarse_reason"] == "view_geometry_changed"
+    assert event["geometry_change_detail"] == ["offset_x", "offset_y"]
+    assert event["geometry_change_mask"] == (
+        FOG_GEOMETRY_BITS["offset_x"] | FOG_GEOMETRY_BITS["offset_y"]
+    )
+    assert event["camera_dx"] == 1.0
+    assert event["camera_dy"] == 2.0
+    assert event["zoom_delta"] == 0.0
+    assert snapshot["geometry_change_component_counts"] == {
+        "offset_x": 1,
+        "offset_y": 1,
+    }
+    assert snapshot["geometry_change_detail_counts"] == {"offset_x|offset_y": 1}
+
+
+def test_zoom_change_reports_zoom_geometry_invalidation():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    presenter.set_full_build_attribution_enabled(True, clear_events=True)
+
+    presenter.update_surface({(0, 0)}, [120.0, 80.0], 1.0)
+    presenter.update_surface({(0, 0)}, [120.0, 80.0], 1.25)
+    event = presenter.diagnostic_snapshot()["attribution_events"][-1]
+
+    assert event["geometry_change_detail"] == ["zoom"]
+    assert event["geometry_change_mask"] == FOG_GEOMETRY_BITS["zoom"]
+    assert event["camera_dx"] == 0.0
+    assert event["camera_dy"] == 0.0
+    assert event["zoom_delta"] == 0.25
+
+
+def test_geometry_key_rounding_uses_existing_safe_precision_thresholds():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    visible_tiles = {(0, 0)}
+
+    surface = presenter.update_surface(visible_tiles, [120.0, 80.0], 1.0)
+    same_rounded_key = presenter.update_surface(
+        visible_tiles, [120.0004, 80.0004], 1.000004
+    )
+    changed_rounded_key = presenter.update_surface(
+        visible_tiles, [120.0006, 80.0004], 1.000006
+    )
+
+    assert same_rounded_key is surface
+    assert changed_rounded_key is not surface
+    assert presenter.full_builds == 2
+
+
+def test_gated_polygon_attribution_preserves_pixels_and_counts_tiles():
+    visible_tiles = {(0, 0), (0, 1), (1, 0)}
+    camera = [160.0, 120.0]
+
+    baseline_world = _world()
+    baseline_presenter = IncrementalFogSurfacePresenter(_Renderer(baseline_world))
+    baseline_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    baseline = baseline_presenter.update_surface(visible_tiles, camera, 1.0)
+
+    attributed_world = _world()
+    attributed_presenter = IncrementalFogSurfacePresenter(_Renderer(attributed_world))
+    attributed_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    attributed_presenter.set_full_build_attribution_enabled(True, clear_events=True)
+    attributed = attributed_presenter.update_surface(visible_tiles, camera, 1.0)
+    snapshot = attributed_presenter.diagnostic_snapshot()
+
+    assert pygame.image.tostring(attributed, "RGBA") == pygame.image.tostring(
+        baseline, "RGBA"
+    )
+    assert snapshot["full_build_input_tiles"] == 3
+    assert snapshot["full_build_visible_no_fog_tiles"] == 1
+    assert snapshot["full_build_polygon_draw_tiles"] == 2
+    assert snapshot["full_build_polygon_time_ns"] >= 0
 
 
 def test_history_gap_falls_back_to_authoritative_full_rebuild():
