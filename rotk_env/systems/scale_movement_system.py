@@ -49,6 +49,9 @@ class MovementSystem(_BaseMovementSystem):
         from ..testing.scale_harness import ScaleHarnessSystem
         from ..testing.scale_harness_metrics import ScaleHarnessMetricsSystem
         from ..testing.scale_memory_soak import install_scale_memory_soak
+        from ..testing.scale_vision_cache_ablation import (
+            install_scale_vision_cache_ablation,
+        )
 
         harness = next(
             (
@@ -64,6 +67,7 @@ class MovementSystem(_BaseMovementSystem):
 
         install_scale_experiment_measurement(harness, world, profiling.profiler)
         install_scale_memory_soak(harness, world)
+        install_scale_vision_cache_ablation(harness, world)
 
         if not any(
             isinstance(system, ScaleHarnessMetricsSystem) for system in world.systems
