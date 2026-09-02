@@ -30,6 +30,8 @@ class UnitSpatialRecord:
     col: int
     row: int
     faction: Faction
+    world_x: float
+    world_y: float
     bucket: Bucket
 
 
@@ -55,6 +57,24 @@ class UnitSpatialIndex:
         self.living_counts: Dict[Faction, int] = {}
         self.revision = 0
 
+    def _record_for_hex(
+        self, col: int, row: int, faction: Faction
+    ) -> UnitSpatialRecord:
+        """Build one derived record, including the render-space center once."""
+        world_x, world_y = self.hex_converter.hex_to_pixel(col, row)
+        bucket = (
+            floor(world_x / self.bucket_size),
+            floor(world_y / self.bucket_size),
+        )
+        return UnitSpatialRecord(
+            col=col,
+            row=row,
+            faction=faction,
+            world_x=float(world_x),
+            world_y=float(world_y),
+            bucket=bucket,
+        )
+
     def _bucket_for_hex(self, col: int, row: int) -> Bucket:
         world_x, world_y = self.hex_converter.hex_to_pixel(col, row)
         return (
@@ -65,18 +85,19 @@ class UnitSpatialIndex:
     def _bump_bucket(self, bucket: Bucket) -> None:
         self.bucket_revisions[bucket] = self.bucket_revisions.get(bucket, 0) + 1
 
-    def _add_record(self, entity: int, col: int, row: int, faction: Faction) -> None:
-        bucket = self._bucket_for_hex(col, row)
-        record = UnitSpatialRecord(col, row, faction, bucket)
+    def _index_record(self, entity: int, record: UnitSpatialRecord) -> None:
         self.by_entity[entity] = record
 
-        cell_key = (col, row)
+        cell_key = (record.col, record.row)
         cell = self.by_cell.setdefault(cell_key, {})
-        cell[faction] = cell.get(faction, 0) + 1
+        cell[record.faction] = cell.get(record.faction, 0) + 1
         self.by_cell_entities.setdefault(cell_key, set()).add(entity)
-        self.by_bucket.setdefault(bucket, set()).add(entity)
-        self.living_counts[faction] = self.living_counts.get(faction, 0) + 1
-        self._bump_bucket(bucket)
+        self.by_bucket.setdefault(record.bucket, set()).add(entity)
+        self.living_counts[record.faction] = self.living_counts.get(record.faction, 0) + 1
+        self._bump_bucket(record.bucket)
+
+    def _add_record(self, entity: int, col: int, row: int, faction: Faction) -> None:
+        self._index_record(entity, self._record_for_hex(col, row, faction))
 
     def _drop_record(self, entity: int, record: UnitSpatialRecord) -> None:
         cell_key = (record.col, record.row)
@@ -136,19 +157,13 @@ class UnitSpatialIndex:
         if unit is None or pos is None or count is None or count.current_count <= 0:
             return self.remove(entity)
 
-        new_bucket = self._bucket_for_hex(pos.col, pos.row)
-        if (
-            old is not None
-            and old.col == pos.col
-            and old.row == pos.row
-            and old.faction == unit.faction
-            and old.bucket == new_bucket
-        ):
+        new_record = self._record_for_hex(pos.col, pos.row, unit.faction)
+        if old == new_record:
             return False
 
         if old is not None:
             self._drop_record(entity, old)
-        self._add_record(entity, pos.col, pos.row, unit.faction)
+        self._index_record(entity, new_record)
         self.revision += 1
         return True
 
@@ -296,25 +311,47 @@ class UnitSpatialIndex:
                 result[cell] = factions
         return result
 
-    def candidates_in_world_rect(
+    def _bucket_bounds_for_world_rect(
         self, left: float, right: float, top: float, bottom: float
-    ) -> Iterable[int]:
-        """Yield entities from coarse buckets intersecting a world-pixel rect."""
+    ) -> tuple[int, int, int, int]:
         if left > right:
             left, right = right, left
         if top > bottom:
             top, bottom = bottom, top
+        return (
+            floor(left / self.bucket_size),
+            floor(right / self.bucket_size),
+            floor(top / self.bucket_size),
+            floor(bottom / self.bucket_size),
+        )
 
-        min_bx = floor(left / self.bucket_size)
-        max_bx = floor(right / self.bucket_size)
-        min_by = floor(top / self.bucket_size)
-        max_by = floor(bottom / self.bucket_size)
+    def nonempty_buckets_in_world_rect(
+        self, left: float, right: float, top: float, bottom: float
+    ) -> Iterable[tuple[Bucket, Set[int]]]:
+        """Yield non-empty coarse buckets intersecting a world-pixel rect.
 
+        Callers may inspect the returned sets during their synchronous read
+        phase, but must not mutate them.  The world update loop is single-threaded,
+        so an index update cannot race a renderer iteration.
+        """
+        min_bx, max_bx, min_by, max_by = self._bucket_bounds_for_world_rect(
+            left, right, top, bottom
+        )
         for bx in range(min_bx, max_bx + 1):
             for by in range(min_by, max_by + 1):
-                bucket = self.by_bucket.get((bx, by))
+                bucket_key = (bx, by)
+                bucket = self.by_bucket.get(bucket_key)
                 if bucket:
-                    yield from bucket
+                    yield bucket_key, bucket
+
+    def candidates_in_world_rect(
+        self, left: float, right: float, top: float, bottom: float
+    ) -> Iterable[int]:
+        """Yield entities from coarse buckets intersecting a world-pixel rect."""
+        for _, bucket in self.nonempty_buckets_in_world_rect(
+            left, right, top, bottom
+        ):
+            yield from bucket
 
 
 def get_unit_spatial_index(world) -> Optional[UnitSpatialIndex]:
