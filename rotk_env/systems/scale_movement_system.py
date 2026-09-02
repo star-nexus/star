@@ -43,6 +43,7 @@ class MovementSystem(_BaseMovementSystem):
         # harness receives this domain service and selects planning policies via
         # its explicit control-plane commands. Measurement concerns are installed
         # as separate test-only adapters around that harness.
+        from ..testing.scale_camera_stress import install_scale_camera_stress
         from ..testing.scale_experiment_measurement import (
             install_scale_experiment_measurement,
         )
@@ -66,6 +67,7 @@ class MovementSystem(_BaseMovementSystem):
             world.add_system(harness)
 
         install_scale_experiment_measurement(harness, world, profiling.profiler)
+        install_scale_camera_stress(harness, world, profiling.profiler)
         install_scale_memory_soak(harness, world)
         install_scale_vision_cache_ablation(harness, world)
 

@@ -18,10 +18,14 @@ one representation boundary when an overscan cache becomes active:
 The compact cache is rebuilt only when the underlying overscan cache is installed.
 Camera motion inside the overscan margin only changes the source rectangle; it does
 not rebuild the compact surface.
+
+``STAR_TERRAIN_PRESENTATION_MODE=legacy_alpha`` is a scale-test A/B escape hatch.
+The production default is ``opaque_compact``.
 """
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Optional
 
@@ -31,6 +35,14 @@ from framework.ecs import profiling
 from framework.engine import RMS
 
 from ..prefabs.config import GameConfig
+
+_TERRAIN_PRESENTATION_ENV = "STAR_TERRAIN_PRESENTATION_MODE"
+_TERRAIN_PRESENTATION_OPAQUE = "opaque_compact"
+_TERRAIN_PRESENTATION_LEGACY = "legacy_alpha"
+_TERRAIN_PRESENTATION_MODES = {
+    _TERRAIN_PRESENTATION_OPAQUE,
+    _TERRAIN_PRESENTATION_LEGACY,
+}
 
 
 class OpaqueTerrainPresentationMixin:
@@ -42,6 +54,16 @@ class OpaqueTerrainPresentationMixin:
     TERRAIN_PRESENT_CLEAR_COLOR = (135, 141, 106)
 
     def __init__(self, *args, **kwargs):
+        mode = os.environ.get(
+            _TERRAIN_PRESENTATION_ENV,
+            _TERRAIN_PRESENTATION_OPAQUE,
+        ).strip().lower()
+        if mode not in _TERRAIN_PRESENTATION_MODES:
+            expected = ", ".join(sorted(_TERRAIN_PRESENTATION_MODES))
+            raise ValueError(
+                f"Unsupported {_TERRAIN_PRESENTATION_ENV}={mode!r}; expected one of: {expected}"
+            )
+        self._terrain_present_mode = mode
         self._terrain_present_surface: Optional[pygame.Surface] = None
         self._terrain_present_source_rect = pygame.Rect(0, 0, 0, 0)
         self._terrain_present_cache_build_count = 0
@@ -70,6 +92,16 @@ class OpaqueTerrainPresentationMixin:
         content_rect: pygame.Rect,
     ) -> None:
         """Build one compact opaque presentation copy from the semantic raster."""
+        if self._terrain_present_mode == _TERRAIN_PRESENTATION_LEGACY:
+            self._terrain_present_surface = None
+            self._terrain_present_source_rect = pygame.Rect(0, 0, 0, 0)
+            profiling.profiler.set_metadata(
+                scale_terrain_present_mode=_TERRAIN_PRESENTATION_LEGACY,
+                scale_terrain_present_cache_present=False,
+                scale_terrain_present_cache_pixels=0,
+            )
+            return
+
         if source is None:
             self._terrain_present_surface = None
             self._terrain_present_source_rect = pygame.Rect(0, 0, 0, 0)
@@ -80,7 +112,7 @@ class OpaqueTerrainPresentationMixin:
             self._terrain_present_surface = None
             self._terrain_present_source_rect = pygame.Rect(0, 0, 0, 0)
             profiling.profiler.set_metadata(
-                scale_terrain_present_mode="opaque_compact",
+                scale_terrain_present_mode=_TERRAIN_PRESENTATION_OPAQUE,
                 scale_terrain_present_cache_present=False,
                 scale_terrain_present_cache_pixels=0,
             )
@@ -114,7 +146,7 @@ class OpaqueTerrainPresentationMixin:
             "map_terrain_present_cache_pixels", content.width * content.height
         )
         profiling.profiler.set_metadata(
-            scale_terrain_present_mode="opaque_compact",
+            scale_terrain_present_mode=_TERRAIN_PRESENTATION_OPAQUE,
             scale_terrain_present_cache_present=True,
             scale_terrain_present_cache_build_count=self._terrain_present_cache_build_count,
             scale_terrain_present_cache_last_build_ms=build_ms,
@@ -169,7 +201,11 @@ class OpaqueTerrainPresentationMixin:
         return installed
 
     def _draw_overscan(self, camera_offset) -> int:
-        """Present cached terrain from the compact opaque RGB representation."""
+        """Present cached terrain from the selected production/A-B representation."""
+        if self._terrain_present_mode == _TERRAIN_PRESENTATION_LEGACY:
+            profiling.profiler.set_frame_metric("map_terrain_present_opaque", 0)
+            return super()._draw_overscan(camera_offset)
+
         if (
             self._terrain_present_surface is None
             or self._overscan_surface is None
