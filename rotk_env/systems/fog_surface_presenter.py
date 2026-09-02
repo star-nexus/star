@@ -4,6 +4,10 @@ The authoritative semantic state remains ``FogOfWar``. This presenter consumes
 ``FogVisibilityChangeJournal`` revisions and patches only the affected hexes while
 camera/view geometry is unchanged. It falls back to a full rebuild for first use,
 camera/zoom/viewport/faction changes, or journal history gaps.
+
+The semantic surface remains viewport-sized so dirty-tile patch coordinates stay
+stable. Presentation is content-bounded: only the screen-space rectangle covered
+by visible map hexes is composited into the final framebuffer.
 """
 
 from __future__ import annotations
@@ -24,11 +28,12 @@ Hex = Tuple[int, int]
 
 
 class IncrementalFogSurfacePresenter:
-    """Own one viewport-sized fog surface and update it by semantic tile delta."""
+    """Own one viewport-sized semantic fog surface with bounded presentation."""
 
     def __init__(self, renderer):
         self.renderer = renderer
         self.surface: Optional[pygame.Surface] = None
+        self.presentation_rect: Optional[pygame.Rect] = None
         self.geometry_key = None
         self.journal_revision: Optional[int] = None
         self.full_builds = 0
@@ -36,6 +41,7 @@ class IncrementalFogSurfacePresenter:
 
     def reset(self) -> None:
         self.surface = None
+        self.presentation_rect = None
         self.geometry_key = None
         self.journal_revision = None
 
@@ -46,8 +52,40 @@ class IncrementalFogSurfacePresenter:
         zoom: float,
     ) -> None:
         surface = self.update_surface(visible_tiles, camera_offset, zoom)
-        if surface is not None:
-            RMS.draw(surface, (0, 0))
+        metric = profiling.profiler.set_frame_metric
+
+        if surface is None or self.presentation_rect is None:
+            metric("fog_present_source_pixels", 0)
+            return
+
+        source = self.presentation_rect.clip(surface.get_rect())
+        if source.width <= 0 or source.height <= 0:
+            metric("fog_present_source_pixels", 0)
+            return
+
+        # ``surface`` remains viewport-sized for stable semantic patch coordinates,
+        # but transparent pixels outside the map content rectangle do not need to
+        # be alpha-composited every frame. Source and destination use the same
+        # screen-space coordinates, preserving the exact full-surface result.
+        RMS.draw(surface, source.topleft, area=source)
+
+        source_pixels = int(source.width) * int(source.height)
+        full_pixels = int(surface.get_width()) * int(surface.get_height())
+        saved_pixels = max(0, full_pixels - source_pixels)
+        metric("fog_present_source_pixels", source_pixels)
+        metric("fog_present_full_viewport_pixels", full_pixels)
+        metric("fog_present_saved_pixels", saved_pixels)
+        profiling.profiler.set_metadata(
+            scale_fog_present_last_source_pixels=source_pixels,
+            scale_fog_present_full_viewport_pixels=full_pixels,
+            scale_fog_present_last_saved_pixels=saved_pixels,
+            scale_fog_present_last_rect=[
+                int(source.x),
+                int(source.y),
+                int(source.width),
+                int(source.height),
+            ],
+        )
 
     def update_surface(
         self,
@@ -149,8 +187,11 @@ class IncrementalFogSurfacePresenter:
             surface = pygame.Surface(viewport, pygame.SRCALPHA)
             visible = fog.faction_vision.get(view_faction, set())
             explored = fog.explored_tiles.get(view_faction, set())
+            viewport_rect = surface.get_rect()
+            content_rect: Optional[pygame.Rect] = None
+
             for tile in visible_tiles:
-                self._draw_tile_state(
+                tile_rect = self._draw_tile_state(
                     surface,
                     tile,
                     camera_offset,
@@ -159,7 +200,16 @@ class IncrementalFogSurfacePresenter:
                     explored,
                     clear_first=False,
                 )
+                clipped = tile_rect.clip(viewport_rect)
+                if clipped.width <= 0 or clipped.height <= 0:
+                    continue
+                if content_rect is None:
+                    content_rect = clipped.copy()
+                else:
+                    content_rect.union_ip(clipped)
+
             self.surface = surface
+            self.presentation_rect = content_rect
 
         self.full_builds += 1
         metric = profiling.profiler.set_frame_metric
@@ -221,7 +271,7 @@ class IncrementalFogSurfacePresenter:
         explored: Set[Hex],
         *,
         clear_first: bool,
-    ) -> None:
+    ) -> pygame.Rect:
         q, r = tile
         corners = self.renderer.hex_converter.get_hex_corners(q, r)
         points = [
@@ -231,15 +281,27 @@ class IncrementalFogSurfacePresenter:
             )
             for x, y in corners
         ]
+        min_x = min(point[0] for point in points)
+        max_x = max(point[0] for point in points)
+        min_y = min(point[1] for point in points)
+        max_y = max(point[1] for point in points)
+        tile_rect = pygame.Rect(
+            min_x,
+            min_y,
+            max_x - min_x + 1,
+            max_y - min_y + 1,
+        )
 
         if clear_first:
             pygame.draw.polygon(surface, (0, 0, 0, 0), points)
 
         if tile in visible:
-            return
+            return tile_rect
+
         color = (
             GameConfig.FOG_EXPLORED_COLOR
             if tile in explored
             else GameConfig.FOG_UNEXPLORED_COLOR
         )
         pygame.draw.polygon(surface, color, points)
+        return tile_rect

@@ -7,7 +7,7 @@ command whose cost we want to isolate.
 Environment variables (read once at process import):
 
 - ``STAR_RENDER_ABLATE_FOG_PRESENT=1``: keep incremental fog-surface updates but
-  do not enqueue the viewport fog surface for presentation.
+  do not enqueue the fog presentation rectangle.
 - ``STAR_RENDER_ABLATE_TERRAIN_PRESENT=1``: let ``_draw_overscan`` perform its
   normal geometry/source-rect work and enqueue its command, then remove exactly
   that just-created overscan command before RenderEngine consumes the queue.
@@ -38,8 +38,15 @@ def _fog_render_without_present(self, visible_tiles, camera_offset, zoom: float)
     surface = self.update_surface(visible_tiles, camera_offset, zoom)
     pixels = 0
     if surface is not None:
-        width, height = surface.get_size()
-        pixels = int(width) * int(height)
+        rect = getattr(self, "presentation_rect", None)
+        if rect is not None:
+            clipped = rect.clip(surface.get_rect())
+            pixels = int(clipped.width) * int(clipped.height)
+        else:
+            # Compatibility fallback for simple test doubles and older presenter
+            # implementations that still present the whole semantic surface.
+            width, height = surface.get_size()
+            pixels = int(width) * int(height)
 
     profiler = profiling.profiler
     profiler.set_frame_metric("fog_present_ablation", 1)

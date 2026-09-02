@@ -44,6 +44,7 @@ def test_fog_ablation_keeps_surface_update_but_does_not_enqueue_present(monkeypa
     class DummyPresenter:
         def __init__(self):
             self.calls = 0
+            self.presentation_rect = pygame.Rect(2, 1, 4, 3)
 
         def update_surface(self, visible_tiles, camera_offset, zoom):
             self.calls += 1
@@ -61,7 +62,7 @@ def test_fog_ablation_keeps_surface_update_but_does_not_enqueue_present(monkeypa
     assert sum(len(commands) for commands in RMS._render_queue.values()) == 0
     metadata = stats["metadata"]
     assert metadata["scale_render_ablate_fog_present"] is True
-    assert metadata["scale_render_fog_present_last_suppressed_pixels"] == 50
+    assert metadata["scale_render_fog_present_last_suppressed_pixels"] == 12
 
 
 def test_terrain_ablation_removes_only_new_overscan_command(monkeypatch):
