@@ -61,8 +61,10 @@ class IncrementalFogSurfacePresenter:
         self.full_build_tile_loop_time_ns = 0
         self.full_build_polygon_time_ns = 0
         self.full_build_hex_corners_time_ns = 0
+        self.full_build_geometry_prepare_time_ns = 0
         self._polygon_attribution_enabled = False
         self._hex_corners_attribution_enabled = False
+        self._geometry_prepare_attribution_enabled = False
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
 
@@ -121,10 +123,19 @@ class IncrementalFogSurfacePresenter:
         if clear_events:
             self._attribution_events.clear()
 
+    def set_geometry_prepare_attribution_enabled(
+        self, enabled: bool, *, clear_events: bool = False
+    ) -> None:
+        """Gate attribution-only timing around Fog geometry preparation."""
+        self._geometry_prepare_attribution_enabled = bool(enabled)
+        if clear_events:
+            self._attribution_events.clear()
+
     def _full_build_attribution_enabled(self) -> bool:
         return bool(
             self._polygon_attribution_enabled
             or self._hex_corners_attribution_enabled
+            or self._geometry_prepare_attribution_enabled
         )
 
     def diagnostic_snapshot(self) -> Dict[str, object]:
@@ -154,9 +165,18 @@ class IncrementalFogSurfacePresenter:
             "full_build_hex_corners_time_ms": (
                 self.full_build_hex_corners_time_ns / 1_000_000.0
             ),
+            "full_build_geometry_prepare_time_ns": int(
+                self.full_build_geometry_prepare_time_ns
+            ),
+            "full_build_geometry_prepare_time_ms": (
+                self.full_build_geometry_prepare_time_ns / 1_000_000.0
+            ),
             "polygon_attribution_enabled": self._polygon_attribution_enabled,
             "hex_corners_attribution_enabled": (
                 self._hex_corners_attribution_enabled
+            ),
+            "geometry_prepare_attribution_enabled": (
+                self._geometry_prepare_attribution_enabled
             ),
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
@@ -333,6 +353,7 @@ class IncrementalFogSurfacePresenter:
             "tile_loop_time_ns": 0,
             "polygon_time_ns": 0,
             "hex_corners_time_ns": 0,
+            "geometry_prepare_time_ns": 0,
         }
         with profiling.profiler.time_system(
             "fog_surface_full_build", category="render"
@@ -393,12 +414,14 @@ class IncrementalFogSurfacePresenter:
         tile_loop_time_ns = build_diagnostics["tile_loop_time_ns"]
         polygon_time_ns = build_diagnostics["polygon_time_ns"]
         hex_corners_time_ns = build_diagnostics["hex_corners_time_ns"]
+        geometry_prepare_time_ns = build_diagnostics["geometry_prepare_time_ns"]
         self.full_build_input_tiles += input_tiles
         self.full_build_visible_no_fog_tiles += visible_no_fog_tiles
         self.full_build_polygon_draw_tiles += polygon_draw_tiles
         self.full_build_tile_loop_time_ns += tile_loop_time_ns
         self.full_build_polygon_time_ns += polygon_time_ns
         self.full_build_hex_corners_time_ns += hex_corners_time_ns
+        self.full_build_geometry_prepare_time_ns += geometry_prepare_time_ns
 
         event = {
             "full_build_counter": self.full_builds,
@@ -417,6 +440,8 @@ class IncrementalFogSurfacePresenter:
             "polygon_time_ms": polygon_time_ns / 1_000_000.0,
             "hex_corners_time_ns": hex_corners_time_ns,
             "hex_corners_time_ms": hex_corners_time_ns / 1_000_000.0,
+            "geometry_prepare_time_ns": geometry_prepare_time_ns,
+            "geometry_prepare_time_ms": geometry_prepare_time_ns / 1_000_000.0,
         }
         if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
@@ -439,6 +464,11 @@ class IncrementalFogSurfacePresenter:
             "fog_full_build_hex_corners_time_ms",
             hex_corners_time_ns / 1_000_000.0,
         )
+        metric("fog_full_build_geometry_prepare_time_ns", geometry_prepare_time_ns)
+        metric(
+            "fog_full_build_geometry_prepare_time_ms",
+            geometry_prepare_time_ns / 1_000_000.0,
+        )
         metric(
             "fog_full_build_polygon_timing_enabled",
             int(self._polygon_attribution_enabled),
@@ -446,6 +476,10 @@ class IncrementalFogSurfacePresenter:
         metric(
             "fog_full_build_hex_corners_timing_enabled",
             int(self._hex_corners_attribution_enabled),
+        )
+        metric(
+            "fog_full_build_geometry_prepare_timing_enabled",
+            int(self._geometry_prepare_attribution_enabled),
         )
         self._publish_geometry_metrics(
             geometry_change_mask, geometry_change_detail, camera_delta
@@ -520,6 +554,12 @@ class IncrementalFogSurfacePresenter:
         full_build_diagnostics: Optional[Dict[str, int]] = None,
     ) -> pygame.Rect:
         q, r = tile
+        geometry_prepare_start_ns = (
+            time.perf_counter_ns()
+            if full_build_diagnostics is not None
+            and self._geometry_prepare_attribution_enabled
+            else None
+        )
         if (
             full_build_diagnostics is not None
             and self._hex_corners_attribution_enabled
@@ -548,6 +588,10 @@ class IncrementalFogSurfacePresenter:
             max_x - min_x + 1,
             max_y - min_y + 1,
         )
+        if geometry_prepare_start_ns is not None:
+            full_build_diagnostics["geometry_prepare_time_ns"] += (
+                time.perf_counter_ns() - geometry_prepare_start_ns
+            )
 
         if clear_first:
             pygame.draw.polygon(surface, (0, 0, 0, 0), points)

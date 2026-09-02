@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Enable detailed get_hex_corners timing (default: enabled)",
     )
+    parser.add_argument(
+        "--geometry-prepare-timing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable detailed Fog geometry-preparation timing (default: disabled)",
+    )
     parser.add_argument("--poll-seconds", type=float, default=0.05)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--output", default=None)
@@ -67,6 +73,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "timer_sanity_samples": args.timer_sanity_samples,
             "polygon_timing_enabled": args.polygon_timing,
             "hex_corners_timing_enabled": args.hex_corners_timing,
+            "geometry_prepare_timing_enabled": args.geometry_prepare_timing,
         },
     )
     result: Dict[str, Any] = {"mode": mode, "start": started, "ok": False}

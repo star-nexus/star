@@ -37,6 +37,13 @@ def measure_hex_corners_timer_overhead(samples: int = 20_000) -> Dict[str, objec
     return _measure_direct_timer_overhead(samples)
 
 
+def measure_geometry_prepare_timer_overhead(
+    samples: int = 20_000,
+) -> Dict[str, object]:
+    """Measure the gated perf-counter pair used around geometry preparation."""
+    return _measure_direct_timer_overhead(samples)
+
+
 def _measure_direct_timer_overhead(samples: int) -> Dict[str, object]:
     samples = max(1, int(samples))
     measured_ns = 0
@@ -140,6 +147,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         hex_corners_timing_enabled = bool(
             command.get("hex_corners_timing_enabled", True)
         )
+        geometry_prepare_timing_enabled = bool(
+            command.get("geometry_prepare_timing_enabled", False)
+        )
         start_camera = {
             "offset_x": float(camera.offset_x),
             "offset_y": float(camera.offset_y),
@@ -151,6 +161,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         )
         presenter.set_hex_corners_attribution_enabled(
             hex_corners_timing_enabled
+        )
+        presenter.set_geometry_prepare_attribution_enabled(
+            geometry_prepare_timing_enabled
         )
         start_snapshot = presenter.diagnostic_snapshot()
         state = {
@@ -171,8 +184,12 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "hex_corners_timer_sanity": measure_hex_corners_timer_overhead(
                 timer_samples
             ),
+            "geometry_prepare_timer_sanity": (
+                measure_geometry_prepare_timer_overhead(timer_samples)
+            ),
             "polygon_timing_enabled": polygon_timing_enabled,
             "hex_corners_timing_enabled": hex_corners_timing_enabled,
+            "geometry_prepare_timing_enabled": geometry_prepare_timing_enabled,
             "active_moving_units_start": active_units,
             "max_active_moving_units": active_units,
             "unit_movement_frames": 0,
@@ -218,8 +235,14 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "fog_full_build_counter_start": start_snapshot["full_builds"],
             "timer_sanity": state["timer_sanity"],
             "hex_corners_timer_sanity": state["hex_corners_timer_sanity"],
+            "geometry_prepare_timer_sanity": state[
+                "geometry_prepare_timer_sanity"
+            ],
             "polygon_timing_enabled": state["polygon_timing_enabled"],
             "hex_corners_timing_enabled": state["hex_corners_timing_enabled"],
+            "geometry_prepare_timing_enabled": state[
+                "geometry_prepare_timing_enabled"
+            ],
         }
 
     def _finish_result(
@@ -237,6 +260,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "full_build_tile_loop_time_ns",
             "full_build_polygon_time_ns",
             "full_build_hex_corners_time_ns",
+            "full_build_geometry_prepare_time_ns",
         )
         attribution = {
             name: int(end_snapshot[name]) - int(start_snapshot[name])
@@ -250,6 +274,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         )
         attribution["full_build_hex_corners_time_ms"] = (
             attribution["full_build_hex_corners_time_ns"] / 1_000_000.0
+        )
+        attribution["full_build_geometry_prepare_time_ms"] = (
+            attribution["full_build_geometry_prepare_time_ns"] / 1_000_000.0
         )
         attribution["non_polygon_tile_loop_time_ns"] = max(
             0,
@@ -287,6 +314,79 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             if non_polygon_time_ns
             else None
         )
+        attribution["average_geometry_prepare_time_per_full_rebuild_ns"] = (
+            attribution["full_build_geometry_prepare_time_ns"] / build_delta
+            if build_delta
+            else None
+        )
+        attribution["average_geometry_prepare_time_per_full_rebuild_ms"] = (
+            attribution["full_build_geometry_prepare_time_ms"] / build_delta
+            if build_delta
+            else None
+        )
+        attribution["average_geometry_prepare_time_per_input_tile_ns"] = (
+            attribution["full_build_geometry_prepare_time_ns"] / input_tiles
+            if input_tiles
+            else None
+        )
+        attribution["geometry_prepare_fraction_of_tile_loop_time"] = (
+            attribution["full_build_geometry_prepare_time_ns"] / tile_loop_time_ns
+            if tile_loop_time_ns
+            else None
+        )
+        attribution["geometry_prepare_fraction_of_non_polygon_tile_loop_time"] = (
+            attribution["full_build_geometry_prepare_time_ns"]
+            / non_polygon_time_ns
+            if non_polygon_time_ns
+            else None
+        )
+        if (
+            state["hex_corners_timing_enabled"]
+            and state["geometry_prepare_timing_enabled"]
+        ):
+            screen_time_ns = (
+                attribution["full_build_geometry_prepare_time_ns"]
+                - attribution["full_build_hex_corners_time_ns"]
+            )
+            attribution["screen_transform_bounds_rect_time_ns"] = screen_time_ns
+            attribution["screen_transform_bounds_rect_time_ms"] = (
+                screen_time_ns / 1_000_000.0
+            )
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_full_rebuild_ns"
+            ] = screen_time_ns / build_delta if build_delta else None
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_full_rebuild_ms"
+            ] = (
+                attribution["screen_transform_bounds_rect_time_ms"] / build_delta
+                if build_delta
+                else None
+            )
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_input_tile_ns"
+            ] = screen_time_ns / input_tiles if input_tiles else None
+            attribution[
+                "screen_transform_bounds_rect_fraction_of_non_polygon_tile_loop_time"
+            ] = (
+                screen_time_ns / non_polygon_time_ns
+                if non_polygon_time_ns
+                else None
+            )
+        else:
+            attribution["screen_transform_bounds_rect_time_ns"] = None
+            attribution["screen_transform_bounds_rect_time_ms"] = None
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_full_rebuild_ns"
+            ] = None
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_full_rebuild_ms"
+            ] = None
+            attribution[
+                "average_screen_transform_bounds_rect_time_per_input_tile_ns"
+            ] = None
+            attribution[
+                "screen_transform_bounds_rect_fraction_of_non_polygon_tile_loop_time"
+            ] = None
         return {
             "total_frames": int(state["total_frames"]),
             "camera_changed_frames": camera_changed_frames,
@@ -340,6 +440,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         if presenter is not None:
             presenter.set_full_build_attribution_enabled(False)
             presenter.set_hex_corners_attribution_enabled(False)
+            presenter.set_geometry_prepare_attribution_enabled(False)
 
         restored = False
         if camera is not None:
@@ -375,8 +476,14 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "aborted_reason": state["aborted_reason"],
             "timer_sanity": state["timer_sanity"],
             "hex_corners_timer_sanity": state["hex_corners_timer_sanity"],
+            "geometry_prepare_timer_sanity": state[
+                "geometry_prepare_timer_sanity"
+            ],
             "polygon_timing_enabled": state["polygon_timing_enabled"],
             "hex_corners_timing_enabled": state["hex_corners_timing_enabled"],
+            "geometry_prepare_timing_enabled": state[
+                "geometry_prepare_timing_enabled"
+            ],
             "profile_snapshot": profile_snapshot,
         }
         result.update(_finish_result(state, end_snapshot))
@@ -517,6 +624,7 @@ __all__ = [
     "EXPERIMENT_ID",
     "MODES",
     "install_fog_camera_attribution",
+    "measure_geometry_prepare_timer_overhead",
     "measure_hex_corners_timer_overhead",
     "measure_polygon_timer_overhead",
 ]

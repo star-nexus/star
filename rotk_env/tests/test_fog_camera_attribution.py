@@ -90,6 +90,7 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
             "command": "start_fog_camera_attribution",
             "mode": "short_pan",
             "timer_sanity_samples": 10,
+            "geometry_prepare_timing_enabled": True,
         }
     )
     assert started["ok"] is True
@@ -97,6 +98,8 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert started["polygon_timing_enabled"] is True
     assert started["hex_corners_timing_enabled"] is True
     assert started["hex_corners_timer_sanity"]["samples"] == 10
+    assert started["geometry_prepare_timing_enabled"] is True
+    assert started["geometry_prepare_timer_sanity"]["samples"] == 10
 
     # The start frame is deliberately held so the deferred profiler epoch can
     # begin before the first production-style camera increment.
@@ -153,11 +156,30 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
         hex_time_ns
         / stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"]
     )
+    geometry_time_ns = stopped["full_build_attribution"][
+        "full_build_geometry_prepare_time_ns"
+    ]
+    assert geometry_time_ns >= hex_time_ns
+    assert stopped["full_build_attribution"][
+        "average_geometry_prepare_time_per_full_rebuild_ns"
+    ] == pytest.approx(geometry_time_ns / 3)
+    assert stopped["full_build_attribution"][
+        "average_geometry_prepare_time_per_input_tile_ns"
+    ] == pytest.approx(geometry_time_ns / 3)
+    screen_time_ns = stopped["full_build_attribution"][
+        "screen_transform_bounds_rect_time_ns"
+    ]
+    assert screen_time_ns == geometry_time_ns - hex_time_ns
+    assert screen_time_ns >= 0
     assert stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"] >= 0
     assert len(stopped["rebuild_frames"]) == 3
     assert presenter.diagnostic_snapshot()["polygon_attribution_enabled"] is False
     assert (
         presenter.diagnostic_snapshot()["hex_corners_attribution_enabled"] is False
+    )
+    assert (
+        presenter.diagnostic_snapshot()["geometry_prepare_attribution_enabled"]
+        is False
     )
 
 
@@ -176,6 +198,7 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
         }
     )
     assert started["pan_target_pixels"] == 320.0
+    assert started["geometry_prepare_timing_enabled"] is False
     harness.update(1.0)
     for _ in range(2):
         harness.update(1.0)
@@ -186,6 +209,14 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
     assert stopped["completed"] is True
     assert stopped["camera_end"]["offset_x"] == 420.0
     assert stopped["detailed_geometry_change_counts"] == {"offset_x": 2}
+    assert (
+        stopped["full_build_attribution"]["full_build_geometry_prepare_time_ns"]
+        == 0
+    )
+    assert (
+        stopped["full_build_attribution"]["screen_transform_bounds_rect_time_ns"]
+        is None
+    )
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
 
 
@@ -241,6 +272,7 @@ def test_stationary_and_zoom_epochs_complete_and_restore(monkeypatch):
 def test_timer_sanity_path_quantifies_observer_overhead():
     result = attribution.measure_polygon_timer_overhead(100)
     hex_result = attribution.measure_hex_corners_timer_overhead(100)
+    geometry_result = attribution.measure_geometry_prepare_timer_overhead(100)
 
     assert result["samples"] == 100
     assert result["wall_time_ns"] > 0
@@ -250,3 +282,7 @@ def test_timer_sanity_path_quantifies_observer_overhead():
     assert hex_result["wall_time_ns"] > 0
     assert hex_result["wall_ns_per_sample"] > 0
     assert hex_result["measured_interval_ns"] >= 0
+    assert geometry_result["samples"] == 100
+    assert geometry_result["wall_time_ns"] > 0
+    assert geometry_result["wall_ns_per_sample"] > 0
+    assert geometry_result["measured_interval_ns"] >= 0
