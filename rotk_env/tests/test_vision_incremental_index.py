@@ -19,10 +19,10 @@ def _spawn(world, *, faction=Faction.WEI, col=0, row=0, vision_range=1):
     return entity
 
 
-def _system(world):
+def _system(world, *, geometry_cache_max_entries=4096):
     fog = FogOfWar(enabled=True)
     world.add_singleton_component(fog)
-    system = VisionSystem()
+    system = VisionSystem(geometry_cache_max_entries=geometry_cache_max_entries)
     system.initialize(world)
     return system, fog
 
@@ -70,6 +70,40 @@ def test_geometry_cache_is_shared_by_units_with_same_center_and_range():
     assert stats["geometry_cache_misses"] == 1
     assert stats["geometry_cache_hits"] == 1
     assert stats["geometry_cache_size"] == 1
+
+
+def test_geometry_cache_is_bounded_and_evicts_least_recently_used_entry():
+    world = World()
+    system, _fog = _system(world, geometry_cache_max_entries=2)
+
+    first = system._visibility_for((0, 0), 1)
+    system._visibility_for((1, 0), 1)
+    # Refresh (0,0) so (1,0) becomes the LRU entry.
+    assert system._visibility_for((0, 0), 1) is first
+    system._visibility_for((2, 0), 1)
+
+    stats = system.get_stats()
+    assert stats["geometry_cache_capacity"] == 2
+    assert stats["geometry_cache_size"] == 2
+    assert stats["geometry_cache_evictions"] == 1
+    assert ((0, 0), 1, system._terrain_revision) in system._geometry_cache
+    assert ((2, 0), 1, system._terrain_revision) in system._geometry_cache
+    assert ((1, 0), 1, system._terrain_revision) not in system._geometry_cache
+
+
+def test_evicted_geometry_recomputes_without_changing_visibility_semantics():
+    world = World()
+    system, _fog = _system(world, geometry_cache_max_entries=1)
+
+    original = system._visibility_for((0, 0), 2)
+    system._visibility_for((5, 0), 2)
+    recomputed = system._visibility_for((0, 0), 2)
+
+    assert recomputed == original
+    stats = system.get_stats()
+    assert stats["geometry_cache_size"] == 1
+    assert stats["geometry_cache_evictions"] == 2
+    assert stats["geometry_cache_misses"] == 3
 
 
 def test_mark_dirty_updates_only_changed_unit_and_keeps_explored_history():
@@ -153,7 +187,7 @@ def test_invalidate_all_bumps_geometry_revision_and_recomputes_every_observer():
 
     system.invalidate_all()
     assert system._terrain_revision == old_revision + 1
-    assert system._geometry_cache == {}
+    assert not system._geometry_cache
     assert world.get_component(a, Vision).dirty is True
     assert world.get_component(b, Vision).dirty is True
 
