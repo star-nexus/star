@@ -4,7 +4,7 @@ from framework.ecs.world import World
 
 from rotk_env.components import FogOfWar, GameState, HexPosition, UIState, Unit, UnitCount
 from rotk_env.prefabs.config import Faction, UnitType
-from rotk_env.systems import scale_unit_render_system
+import rotk_env.systems.scale_unit_render_system as scale_unit_render_system
 from rotk_env.systems.scale_unit_render_system import UnitRenderSystem
 from rotk_env.utils.unit_spatial_index import (
     UnitSpatialRecord,
