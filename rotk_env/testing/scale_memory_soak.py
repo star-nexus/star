@@ -92,6 +92,59 @@ def _vision_stats(world) -> Dict[str, Any]:
     return {}
 
 
+def _statistics_stats(world) -> Dict[str, Any]:
+    """Count retained Statistics history at an explicit measurement boundary."""
+    from ..components import GameStats, UnitObservation, VisibilityTracker
+
+    game_stats = world.get_singleton_component(GameStats)
+    visibility = world.get_singleton_component(VisibilityTracker)
+
+    visibility_history = (
+        visibility.visibility_history
+        if visibility is not None and isinstance(visibility.visibility_history, dict)
+        else {}
+    )
+    visibility_records = sum(
+        len(records)
+        for records in visibility_history.values()
+        if hasattr(records, "__len__")
+    )
+    max_visibility_records = max(
+        (
+            len(records)
+            for records in visibility_history.values()
+            if hasattr(records, "__len__")
+        ),
+        default=0,
+    )
+
+    observation_components = 0
+    movement_path_entries = 0
+    try:
+        entities = world.query().with_component(UnitObservation).entities()
+    except Exception:
+        entities = ()
+    for entity in entities:
+        observation = world.get_component(entity, UnitObservation)
+        if observation is None:
+            continue
+        observation_components += 1
+        movement_path_entries += len(getattr(observation, "movement_path", ()))
+
+    return {
+        "unit_observation_history_records": (
+            len(game_stats.unit_observation_history)
+            if game_stats is not None
+            else 0
+        ),
+        "visibility_history_units": len(visibility_history),
+        "visibility_history_records": int(visibility_records),
+        "visibility_history_max_per_unit": int(max_visibility_records),
+        "unit_observation_components": int(observation_components),
+        "movement_path_entries": int(movement_path_entries),
+    }
+
+
 def _snapshot(harness, world) -> Dict[str, Any]:
     policy = getattr(harness, "_realtime_gc_policy", None)
     if policy is not None:
@@ -105,6 +158,7 @@ def _snapshot(harness, world) -> Dict[str, Any]:
         "world": _world_stats(world),
         "workload": _workload_stats(harness),
         "vision": _vision_stats(world),
+        "statistics": _statistics_stats(world),
         "gc_policy": policy_state,
     }
 
