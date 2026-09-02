@@ -94,6 +94,9 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     )
     assert started["ok"] is True
     assert started["fog_full_build_counter_start"] == 1
+    assert started["polygon_timing_enabled"] is True
+    assert started["hex_corners_timing_enabled"] is True
+    assert started["hex_corners_timer_sanity"]["samples"] == 10
 
     # The start frame is deliberately held so the deferred profiler epoch can
     # begin before the first production-style camera increment.
@@ -128,9 +131,34 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert stopped["detailed_geometry_change_counts"] == {"offset_x": 3}
     assert stopped["geometry_change_detail_counts"] == {"offset_x": 3}
     assert stopped["full_build_attribution"]["full_build_input_tiles"] == 3
+    hex_time_ns = stopped["full_build_attribution"][
+        "full_build_hex_corners_time_ns"
+    ]
+    assert hex_time_ns >= 0
+    assert stopped["full_build_attribution"][
+        "average_hex_corners_time_per_full_rebuild_ns"
+    ] == pytest.approx(hex_time_ns / 3)
+    assert stopped["full_build_attribution"][
+        "average_hex_corners_time_per_input_tile_ns"
+    ] == pytest.approx(hex_time_ns / 3)
+    assert stopped["full_build_attribution"][
+        "hex_corners_fraction_of_tile_loop_time"
+    ] == pytest.approx(
+        hex_time_ns
+        / stopped["full_build_attribution"]["full_build_tile_loop_time_ns"]
+    )
+    assert stopped["full_build_attribution"][
+        "hex_corners_fraction_of_non_polygon_tile_loop_time"
+    ] == pytest.approx(
+        hex_time_ns
+        / stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"]
+    )
     assert stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"] >= 0
     assert len(stopped["rebuild_frames"]) == 3
     assert presenter.diagnostic_snapshot()["polygon_attribution_enabled"] is False
+    assert (
+        presenter.diagnostic_snapshot()["hex_corners_attribution_enabled"] is False
+    )
 
 
 def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypatch):
@@ -212,8 +240,13 @@ def test_stationary_and_zoom_epochs_complete_and_restore(monkeypatch):
 
 def test_timer_sanity_path_quantifies_observer_overhead():
     result = attribution.measure_polygon_timer_overhead(100)
+    hex_result = attribution.measure_hex_corners_timer_overhead(100)
 
     assert result["samples"] == 100
     assert result["wall_time_ns"] > 0
     assert result["wall_ns_per_sample"] > 0
     assert result["measured_interval_ns"] >= 0
+    assert hex_result["samples"] == 100
+    assert hex_result["wall_time_ns"] > 0
+    assert hex_result["wall_ns_per_sample"] > 0
+    assert hex_result["measured_interval_ns"] >= 0

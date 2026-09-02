@@ -60,7 +60,9 @@ class IncrementalFogSurfacePresenter:
         self.full_build_polygon_draw_tiles = 0
         self.full_build_tile_loop_time_ns = 0
         self.full_build_polygon_time_ns = 0
+        self.full_build_hex_corners_time_ns = 0
         self._polygon_attribution_enabled = False
+        self._hex_corners_attribution_enabled = False
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
 
@@ -111,6 +113,20 @@ class IncrementalFogSurfacePresenter:
         if clear_events:
             self._attribution_events.clear()
 
+    def set_hex_corners_attribution_enabled(
+        self, enabled: bool, *, clear_events: bool = False
+    ) -> None:
+        """Gate attribution-only direct timing around ``get_hex_corners``."""
+        self._hex_corners_attribution_enabled = bool(enabled)
+        if clear_events:
+            self._attribution_events.clear()
+
+    def _full_build_attribution_enabled(self) -> bool:
+        return bool(
+            self._polygon_attribution_enabled
+            or self._hex_corners_attribution_enabled
+        )
+
     def diagnostic_snapshot(self) -> Dict[str, object]:
         """Return cumulative counters suitable for exact experiment deltas."""
         return {
@@ -132,7 +148,16 @@ class IncrementalFogSurfacePresenter:
             ),
             "full_build_tile_loop_time_ns": int(self.full_build_tile_loop_time_ns),
             "full_build_polygon_time_ns": int(self.full_build_polygon_time_ns),
+            "full_build_hex_corners_time_ns": int(
+                self.full_build_hex_corners_time_ns
+            ),
+            "full_build_hex_corners_time_ms": (
+                self.full_build_hex_corners_time_ns / 1_000_000.0
+            ),
             "polygon_attribution_enabled": self._polygon_attribution_enabled,
+            "hex_corners_attribution_enabled": (
+                self._hex_corners_attribution_enabled
+            ),
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
 
@@ -307,6 +332,7 @@ class IncrementalFogSurfacePresenter:
             "polygon_draw_tiles": 0,
             "tile_loop_time_ns": 0,
             "polygon_time_ns": 0,
+            "hex_corners_time_ns": 0,
         }
         with profiling.profiler.time_system(
             "fog_surface_full_build", category="render"
@@ -321,7 +347,9 @@ class IncrementalFogSurfacePresenter:
             content_rect: Optional[pygame.Rect] = None
 
             tile_loop_start_ns = (
-                time.perf_counter_ns() if self._polygon_attribution_enabled else None
+                time.perf_counter_ns()
+                if self._full_build_attribution_enabled()
+                else None
             )
             with profiling.profiler.time_system(
                 "fog_full_build_tile_loop", category="render"
@@ -364,11 +392,13 @@ class IncrementalFogSurfacePresenter:
         polygon_draw_tiles = build_diagnostics["polygon_draw_tiles"]
         tile_loop_time_ns = build_diagnostics["tile_loop_time_ns"]
         polygon_time_ns = build_diagnostics["polygon_time_ns"]
+        hex_corners_time_ns = build_diagnostics["hex_corners_time_ns"]
         self.full_build_input_tiles += input_tiles
         self.full_build_visible_no_fog_tiles += visible_no_fog_tiles
         self.full_build_polygon_draw_tiles += polygon_draw_tiles
         self.full_build_tile_loop_time_ns += tile_loop_time_ns
         self.full_build_polygon_time_ns += polygon_time_ns
+        self.full_build_hex_corners_time_ns += hex_corners_time_ns
 
         event = {
             "full_build_counter": self.full_builds,
@@ -385,8 +415,10 @@ class IncrementalFogSurfacePresenter:
             "tile_loop_time_ms": tile_loop_time_ns / 1_000_000.0,
             "polygon_time_ns": polygon_time_ns,
             "polygon_time_ms": polygon_time_ns / 1_000_000.0,
+            "hex_corners_time_ns": hex_corners_time_ns,
+            "hex_corners_time_ms": hex_corners_time_ns / 1_000_000.0,
         }
-        if self._polygon_attribution_enabled:
+        if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
 
         metric = profiling.profiler.set_frame_metric
@@ -402,9 +434,18 @@ class IncrementalFogSurfacePresenter:
         metric("fog_full_build_tile_loop_time_ms", tile_loop_time_ns / 1_000_000.0)
         metric("fog_full_build_polygon_time_ns", polygon_time_ns)
         metric("fog_full_build_polygon_time_ms", polygon_time_ns / 1_000_000.0)
+        metric("fog_full_build_hex_corners_time_ns", hex_corners_time_ns)
+        metric(
+            "fog_full_build_hex_corners_time_ms",
+            hex_corners_time_ns / 1_000_000.0,
+        )
         metric(
             "fog_full_build_polygon_timing_enabled",
             int(self._polygon_attribution_enabled),
+        )
+        metric(
+            "fog_full_build_hex_corners_timing_enabled",
+            int(self._hex_corners_attribution_enabled),
         )
         self._publish_geometry_metrics(
             geometry_change_mask, geometry_change_detail, camera_delta
@@ -479,7 +520,17 @@ class IncrementalFogSurfacePresenter:
         full_build_diagnostics: Optional[Dict[str, int]] = None,
     ) -> pygame.Rect:
         q, r = tile
-        corners = self.renderer.hex_converter.get_hex_corners(q, r)
+        if (
+            full_build_diagnostics is not None
+            and self._hex_corners_attribution_enabled
+        ):
+            hex_corners_start_ns = time.perf_counter_ns()
+            corners = self.renderer.hex_converter.get_hex_corners(q, r)
+            full_build_diagnostics["hex_corners_time_ns"] += (
+                time.perf_counter_ns() - hex_corners_start_ns
+            )
+        else:
+            corners = self.renderer.hex_converter.get_hex_corners(q, r)
         points = [
             (
                 int(round(x * zoom + camera_offset[0])),

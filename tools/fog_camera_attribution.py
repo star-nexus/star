@@ -39,6 +39,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--between-epochs", type=float, default=0.5)
     parser.add_argument("--stationary-frames", type=int, default=120)
     parser.add_argument("--timer-sanity-samples", type=int, default=20_000)
+    parser.add_argument(
+        "--polygon-timing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable detailed polygon timing (default: enabled)",
+    )
+    parser.add_argument(
+        "--hex-corners-timing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable detailed get_hex_corners timing (default: enabled)",
+    )
     parser.add_argument("--poll-seconds", type=float, default=0.05)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--output", default=None)
@@ -53,6 +65,8 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "mode": mode,
             "stationary_frames": args.stationary_frames,
             "timer_sanity_samples": args.timer_sanity_samples,
+            "polygon_timing_enabled": args.polygon_timing,
+            "hex_corners_timing_enabled": args.hex_corners_timing,
         },
     )
     result: Dict[str, Any] = {"mode": mode, "start": started, "ok": False}
