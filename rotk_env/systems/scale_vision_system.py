@@ -14,28 +14,33 @@ Window mode therefore needs no second algorithm. ScaleMovementSystem publishes
 hex-commit invalidations and the maintained UnitSpatialIndex lets the shared
 VisionSystem use the low-rate safety audit automatically.
 
-For scale experiments only, the bounded geometry-cache capacity can be selected
-at fresh-process startup with ``STAR_SCALE_VISION_GEOMETRY_CACHE_MAX_ENTRIES``.
-Keeping this in the window adapter leaves canonical/headless semantics and their
-default constructor unchanged while allowing clean working-set ablations.
+The large-window default deliberately carries headroom above the minimum capacity
+measured sufficient for the 5000-unit benchmark. 8192 entries eliminated cache
+thrash for that workload; 16384 is used here as the bounded operational default
+so larger worlds can grow their working set without immediately re-entering the
+thrashing regime. The cache does not preallocate entries, so this larger bound
+costs memory only when the workload actually uses the additional geometries.
+
+For controlled scale experiments, the bounded geometry-cache capacity can be
+selected at fresh-process startup with
+``STAR_SCALE_VISION_GEOMETRY_CACHE_MAX_ENTRIES``. Canonical/headless construction
+keeps the shared VisionSystem's smaller default unchanged.
 """
 
 from __future__ import annotations
 
 import os
 
-from .vision_system import (
-    VisionSystem as _BaseVisionSystem,
-    _DEFAULT_GEOMETRY_CACHE_MAX_ENTRIES,
-)
+from .vision_system import VisionSystem as _BaseVisionSystem
 
 _SCALE_VISION_CACHE_ENV = "STAR_SCALE_VISION_GEOMETRY_CACHE_MAX_ENTRIES"
+_DEFAULT_SCALE_GEOMETRY_CACHE_MAX_ENTRIES = 16384
 
 
 def _geometry_cache_capacity_from_env() -> int:
     raw = os.environ.get(_SCALE_VISION_CACHE_ENV)
     if raw is None or not raw.strip():
-        return _DEFAULT_GEOMETRY_CACHE_MAX_ENTRIES
+        return _DEFAULT_SCALE_GEOMETRY_CACHE_MAX_ENTRIES
     try:
         value = int(raw)
     except ValueError as exc:
