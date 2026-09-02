@@ -70,6 +70,28 @@ def _workload_stats(harness) -> Dict[str, Any]:
     }
 
 
+def _vision_stats(world) -> Dict[str, Any]:
+    """Find the mounted Vision system without importing window/base variants."""
+    for system in getattr(world, "systems", ()):  # pragma: no branch - tiny list
+        get_stats = getattr(system, "get_stats", None)
+        if not callable(get_stats):
+            continue
+        try:
+            stats = get_stats()
+        except Exception:
+            continue
+        if not isinstance(stats, dict) or "geometry_cache_size" not in stats:
+            continue
+        return {
+            "geometry_cache_size": int(stats.get("geometry_cache_size", 0)),
+            "geometry_cache_capacity": int(stats.get("geometry_cache_capacity", 0)),
+            "geometry_cache_hits": int(stats.get("geometry_cache_hits", 0)),
+            "geometry_cache_misses": int(stats.get("geometry_cache_misses", 0)),
+            "geometry_cache_evictions": int(stats.get("geometry_cache_evictions", 0)),
+        }
+    return {}
+
+
 def _snapshot(harness, world) -> Dict[str, Any]:
     policy = getattr(harness, "_realtime_gc_policy", None)
     if policy is not None:
@@ -82,6 +104,7 @@ def _snapshot(harness, world) -> Dict[str, Any]:
         "gc": _gc_stats(),
         "world": _world_stats(world),
         "workload": _workload_stats(harness),
+        "vision": _vision_stats(world),
         "gc_policy": policy_state,
     }
 
