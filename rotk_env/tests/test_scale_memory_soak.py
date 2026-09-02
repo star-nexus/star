@@ -37,6 +37,17 @@ class _Harness:
         return [1, 2, 3, 4]
 
 
+class _VisionLikeSystem:
+    def get_stats(self):
+        return {
+            "geometry_cache_size": 123,
+            "geometry_cache_capacity": 4096,
+            "geometry_cache_hits": 10,
+            "geometry_cache_misses": 20,
+            "geometry_cache_evictions": 3,
+        }
+
+
 def _fake_memory():
     return {
         "rss_bytes": 100 * 1024 * 1024,
@@ -47,10 +58,11 @@ def _fake_memory():
     }
 
 
-def test_memory_snapshot_reports_process_gc_world_and_workload(monkeypatch):
+def test_memory_snapshot_reports_process_gc_world_workload_and_vision(monkeypatch):
     monkeypatch.setattr(scale_memory_soak, "process_memory_snapshot", _fake_memory)
     world = World()
     entity = world.create_entity()
+    world.systems.append(_VisionLikeSystem())
     harness = _Harness()
     install_scale_memory_soak(harness, world)
 
@@ -62,8 +74,26 @@ def test_memory_snapshot_reports_process_gc_world_and_workload(monkeypatch):
     assert result["workload"]["active_moving_units"] == 3
     assert result["workload"]["living_units"] == 4
     assert result["workload"]["density"] == 0.75
+    assert result["vision"] == {
+        "geometry_cache_size": 123,
+        "geometry_cache_capacity": 4096,
+        "geometry_cache_hits": 10,
+        "geometry_cache_misses": 20,
+        "geometry_cache_evictions": 3,
+    }
     assert result["gc_policy"]["active"] is False
     assert harness.original_calls == []
+
+
+def test_memory_snapshot_without_vision_system_reports_empty_vision(monkeypatch):
+    monkeypatch.setattr(scale_memory_soak, "process_memory_snapshot", _fake_memory)
+    harness = _Harness()
+    install_scale_memory_soak(harness, World())
+
+    result = harness.handle_command({"command": "memory_snapshot"})
+
+    assert result["ok"] is True
+    assert result["vision"] == {}
 
 
 def test_safe_gc_collect_rejects_collection_inside_realtime_window(monkeypatch):
