@@ -6,6 +6,9 @@ def test_render_engine_breakdown_is_exported_in_formal_scale_snapshot():
     expected_sections = {
         "render_queue_prepare",
         "render_queue_submit",
+        "render_batch_pack",
+        "render_batch_blits",
+        "render_scalar_execute",
         "render_queue_clear",
     }
     assert expected_sections.issubset(set(base._RELEVANT_SECTIONS))
@@ -27,7 +30,7 @@ def test_render_engine_breakdown_is_exported_in_formal_scale_snapshot():
     assert expected_sections.issubset(set(exported))
 
 
-def test_render_engine_topology_metrics_survive_slow_frame_compaction():
+def test_render_engine_topology_and_pixel_metrics_survive_slow_frame_compaction():
     expected_metrics = {
         "render_layers",
         "render_batch_runs",
@@ -37,5 +40,11 @@ def test_render_engine_topology_metrics_survive_slow_frame_compaction():
         "render_other_commands",
         "render_scalar_commands",
         "render_max_batch_size",
+        "render_pixel_metrics_enabled",
+        "render_plain_blit_source_pixels",
+        "render_plain_blit_clipped_pixels",
+        "render_plain_blit_max_surface_pixels",
+        "render_plain_blit_max_batch_source_pixels",
+        "render_plain_blit_max_batch_clipped_pixels",
     }
     assert expected_metrics.issubset(set(measurement._TAIL_METRICS))

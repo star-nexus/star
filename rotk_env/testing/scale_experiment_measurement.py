@@ -32,6 +32,9 @@ _original_compact_slow_frame = _base._compact_slow_frame
 _RENDER_ENGINE_SECTIONS = (
     "render_queue_prepare",
     "render_queue_submit",
+    "render_batch_pack",
+    "render_batch_blits",
+    "render_scalar_execute",
     "render_queue_clear",
 )
 for _section in _RENDER_ENGINE_SECTIONS:
@@ -50,6 +53,12 @@ _TAIL_METRICS = (
     "render_other_commands",
     "render_scalar_commands",
     "render_max_batch_size",
+    "render_pixel_metrics_enabled",
+    "render_plain_blit_source_pixels",
+    "render_plain_blit_clipped_pixels",
+    "render_plain_blit_max_surface_pixels",
+    "render_plain_blit_max_batch_source_pixels",
+    "render_plain_blit_max_batch_clipped_pixels",
     "unit_static_groups",
     "unit_static_candidate_units",
     "unit_static_submitted_units",

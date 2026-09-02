@@ -1,3 +1,5 @@
+import os
+
 import pygame
 from typing import Dict, List, Tuple, Optional, Union, Callable
 from collections import defaultdict
@@ -5,10 +7,52 @@ from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from ..ecs import profiling
 
+# Optional deep pixel-workload diagnostics. This is intentionally process-scoped:
+# set the environment variable before launch so ordinary timing runs pay no
+# per-frame environment lookup cost.
+_RENDER_PIXEL_METRICS_ENABLED = (
+    os.environ.get("STAR_RENDER_PIXEL_METRICS", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
 # 类型别名
 ColorType = Union[pygame.Color, Tuple[int, int, int], Tuple[int, int, int, int]]
 PositionType = Union[pygame.Rect, Tuple[int, int]]
 PointType = Tuple[int, int]
+
+
+def _plain_blit_pixel_work(
+    surface: pygame.Surface,
+    dest: PositionType,
+    clip_rect: pygame.Rect,
+) -> Tuple[int, int]:
+    """Return source pixels and destination pixels surviving screen clipping.
+
+    This is a geometric workload diagnostic for plain blits. It does not try to
+    estimate transparency/format-conversion cost; it only answers how much source
+    rectangle is submitted and how much of it intersects the current screen clip.
+    """
+    width, height = surface.get_size()
+    source_pixels = max(0, int(width)) * max(0, int(height))
+    if source_pixels == 0:
+        return 0, 0
+
+    if isinstance(dest, pygame.Rect):
+        x = int(dest.x)
+        y = int(dest.y)
+    else:
+        x = int(dest[0])
+        y = int(dest[1])
+
+    clipped_width = max(
+        0,
+        min(x + width, clip_rect.right) - max(x, clip_rect.left),
+    )
+    clipped_height = max(
+        0,
+        min(y + height, clip_rect.bottom) - max(y, clip_rect.top),
+    )
+    return source_pixels, clipped_width * clipped_height
 
 
 class RenderCommand(ABC):
@@ -242,12 +286,19 @@ class RenderEngine:
         return self._add_command(command, layer)
 
     def update(self) -> None:
-        """Render all queued layers while exposing coarse queue-drain attribution.
+        """Render queued layers with hierarchical queue-submission attribution.
 
-        This instrumentation deliberately leaves the submission algorithm unchanged.
-        ``render_engine`` remains the parent timer owned by ``GameEngine``; the
-        sections below only split its existing queue-drain work into prepare,
-        submit, and clear phases.
+        Phase I splits the parent ``render_engine`` into prepare/submit/clear.
+        Phase II keeps the submission algorithm byte-for-byte equivalent in
+        behavior while timing three existing costs inside submit:
+
+        - ``render_batch_pack``: Python scan + temporary ``(surface, dest)`` list;
+        - ``render_batch_blits``: actual ``Surface.blits`` calls;
+        - ``render_scalar_execute``: singleton/non-batch/geometry command execution.
+
+        Optional pixel metrics are deliberately computed outside those child
+        timers. They are useful for a separate workload-shape run, but should not
+        be used to judge timing overhead because they add an extra batch traversal.
         """
         if not self.screen:
             raise RuntimeError("屏幕表面未设置，请先调用 set_screen()")
@@ -270,6 +321,14 @@ class RenderEngine:
         other_commands = 0
         max_batch_size = 0
 
+        pixel_metrics_enabled = _RENDER_PIXEL_METRICS_ENABLED
+        clip_rect = self.screen.get_clip() if pixel_metrics_enabled else None
+        plain_blit_source_pixels = 0
+        plain_blit_clipped_pixels = 0
+        plain_blit_max_surface_pixels = 0
+        plain_blit_max_batch_source_pixels = 0
+        plain_blit_max_batch_clipped_pixels = 0
+
         # Preserve layer and command order exactly. Only consecutive plain blits
         # are collapsed; any geometry/custom command is an ordering barrier.
         with profiler.time_system("render_queue_submit", category="render"):
@@ -280,26 +339,63 @@ class RenderEngine:
                     command = commands[index]
                     if isinstance(command, BlitCommand) and command.batchable:
                         batch_runs += 1
-                        batch = []
-                        while index < len(commands):
-                            candidate = commands[index]
-                            if (
-                                not isinstance(candidate, BlitCommand)
-                                or not candidate.batchable
-                            ):
-                                break
-                            batch.append((candidate.surface, candidate.dest))
-                            index += 1
+                        with profiler.time_system("render_batch_pack", category="render"):
+                            batch = []
+                            while index < len(commands):
+                                candidate = commands[index]
+                                if (
+                                    not isinstance(candidate, BlitCommand)
+                                    or not candidate.batchable
+                                ):
+                                    break
+                                batch.append((candidate.surface, candidate.dest))
+                                index += 1
 
                         batch_size = len(batch)
                         simple_blits += batch_size
                         max_batch_size = max(max_batch_size, batch_size)
+
+                        # Optional diagnostics deliberately live outside the pack
+                        # and blits child timers. They therefore show up as submit
+                        # self time and are only used in dedicated pixel runs.
+                        if pixel_metrics_enabled and clip_rect is not None:
+                            batch_source_pixels = 0
+                            batch_clipped_pixels = 0
+                            for surface, dest in batch:
+                                source_pixels, clipped_pixels = _plain_blit_pixel_work(
+                                    surface,
+                                    dest,
+                                    clip_rect,
+                                )
+                                batch_source_pixels += source_pixels
+                                batch_clipped_pixels += clipped_pixels
+                                plain_blit_max_surface_pixels = max(
+                                    plain_blit_max_surface_pixels,
+                                    source_pixels,
+                                )
+                            plain_blit_source_pixels += batch_source_pixels
+                            plain_blit_clipped_pixels += batch_clipped_pixels
+                            plain_blit_max_batch_source_pixels = max(
+                                plain_blit_max_batch_source_pixels,
+                                batch_source_pixels,
+                            )
+                            plain_blit_max_batch_clipped_pixels = max(
+                                plain_blit_max_batch_clipped_pixels,
+                                batch_clipped_pixels,
+                            )
+
                         if batch_size >= 2:
-                            self.screen.blits(batch, False)
+                            with profiler.time_system(
+                                "render_batch_blits", category="render"
+                            ):
+                                self.screen.blits(batch, False)
                             blit_batches += 1
                         else:
                             single_plain_blits += 1
-                            command.execute(self.screen)
+                            with profiler.time_system(
+                                "render_scalar_execute", category="render"
+                            ):
+                                command.execute(self.screen)
                         continue
 
                     if isinstance(command, BlitCommand):
@@ -308,7 +404,10 @@ class RenderEngine:
                         draw_commands += 1
                     else:
                         other_commands += 1
-                    command.execute(self.screen)
+                    with profiler.time_system(
+                        "render_scalar_execute", category="render"
+                    ):
+                        command.execute(self.screen)
                     index += 1
 
         scalar_commands = nonbatch_blits + draw_commands + other_commands
@@ -321,19 +420,53 @@ class RenderEngine:
         profiler.set_frame_metric("render_other_commands", other_commands)
         profiler.set_frame_metric("render_scalar_commands", scalar_commands)
         profiler.set_frame_metric("render_max_batch_size", max_batch_size)
-
-        # The scale snapshot already exports ``scale_*`` metadata. These values
-        # intentionally describe the latest completed frame, not a rolling mean;
-        # rolling timing attribution remains owned by the hierarchical profiler.
-        profiler.set_metadata(
-            scale_render_queue_last_commands=command_count,
-            scale_render_queue_last_layers=layer_count,
-            scale_render_queue_last_batch_runs=batch_runs,
-            scale_render_queue_last_simple_blits=simple_blits,
-            scale_render_queue_last_blit_batches=blit_batches,
-            scale_render_queue_last_scalar_commands=scalar_commands,
-            scale_render_queue_last_max_batch_size=max_batch_size,
+        profiler.set_frame_metric(
+            "render_pixel_metrics_enabled", int(pixel_metrics_enabled)
         )
+
+        metadata = {
+            "scale_render_queue_last_commands": command_count,
+            "scale_render_queue_last_layers": layer_count,
+            "scale_render_queue_last_batch_runs": batch_runs,
+            "scale_render_queue_last_simple_blits": simple_blits,
+            "scale_render_queue_last_blit_batches": blit_batches,
+            "scale_render_queue_last_scalar_commands": scalar_commands,
+            "scale_render_queue_last_max_batch_size": max_batch_size,
+            "scale_render_pixel_metrics_enabled": bool(pixel_metrics_enabled),
+        }
+
+        if pixel_metrics_enabled:
+            profiler.set_frame_metric(
+                "render_plain_blit_source_pixels",
+                plain_blit_source_pixels,
+            )
+            profiler.set_frame_metric(
+                "render_plain_blit_clipped_pixels",
+                plain_blit_clipped_pixels,
+            )
+            profiler.set_frame_metric(
+                "render_plain_blit_max_surface_pixels",
+                plain_blit_max_surface_pixels,
+            )
+            profiler.set_frame_metric(
+                "render_plain_blit_max_batch_source_pixels",
+                plain_blit_max_batch_source_pixels,
+            )
+            profiler.set_frame_metric(
+                "render_plain_blit_max_batch_clipped_pixels",
+                plain_blit_max_batch_clipped_pixels,
+            )
+            metadata.update(
+                scale_render_queue_last_plain_blit_source_pixels=plain_blit_source_pixels,
+                scale_render_queue_last_plain_blit_clipped_pixels=plain_blit_clipped_pixels,
+                scale_render_queue_last_plain_blit_max_surface_pixels=plain_blit_max_surface_pixels,
+                scale_render_queue_last_plain_blit_max_batch_source_pixels=plain_blit_max_batch_source_pixels,
+                scale_render_queue_last_plain_blit_max_batch_clipped_pixels=plain_blit_max_batch_clipped_pixels,
+            )
+
+        # ``scale_*`` metadata is copied into formal snapshots. These values
+        # describe the latest completed frame, not a rolling mean.
+        profiler.set_metadata(**metadata)
 
         with profiler.time_system("render_queue_clear", category="render"):
             self.clear()
