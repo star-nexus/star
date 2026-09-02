@@ -189,6 +189,7 @@ def test_gated_polygon_attribution_preserves_pixels_and_counts_tiles():
     attributed_presenter.set_full_build_attribution_enabled(True, clear_events=True)
     attributed_presenter.set_hex_corners_attribution_enabled(True)
     attributed_presenter.set_geometry_prepare_attribution_enabled(True)
+    attributed_presenter.set_screen_transform_attribution_enabled(True)
     attributed = attributed_presenter.update_surface(visible_tiles, camera, 1.0)
     snapshot = attributed_presenter.diagnostic_snapshot()
 
@@ -204,6 +205,7 @@ def test_gated_polygon_attribution_preserves_pixels_and_counts_tiles():
         snapshot["full_build_geometry_prepare_time_ns"]
         >= snapshot["full_build_hex_corners_time_ns"]
     )
+    assert snapshot["full_build_screen_transform_time_ns"] >= 0
 
 
 def test_detailed_attribution_timing_is_disabled_during_normal_runtime(monkeypatch):
@@ -226,6 +228,9 @@ def test_detailed_attribution_timing_is_disabled_during_normal_runtime(monkeypat
     assert snapshot["geometry_prepare_attribution_enabled"] is False
     assert snapshot["full_build_geometry_prepare_time_ns"] == 0
     assert snapshot["full_build_geometry_prepare_time_ms"] == 0.0
+    assert snapshot["screen_transform_attribution_enabled"] is False
+    assert snapshot["full_build_screen_transform_time_ns"] == 0
+    assert snapshot["full_build_screen_transform_time_ms"] == 0.0
 
 
 def test_gated_hex_corners_attribution_records_exact_cumulative_deltas():
@@ -287,6 +292,55 @@ def test_disabled_geometry_prepare_timer_records_zero_with_other_attribution():
     assert snapshot["full_build_geometry_prepare_time_ns"] == 0
     assert event["geometry_prepare_time_ns"] == 0
     assert event["geometry_prepare_time_ms"] == 0.0
+
+
+def test_gated_screen_transform_attribution_records_exact_cumulative_deltas():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    visible_tiles = {(0, 0), (0, 1), (1, 0)}
+    presenter.set_screen_transform_attribution_enabled(True, clear_events=True)
+
+    before = presenter.diagnostic_snapshot()
+    presenter.update_surface(visible_tiles, [160.0, 120.0], 1.0)
+    after_first = presenter.diagnostic_snapshot()
+    first_event = after_first["attribution_events"][-1]
+    first_delta = (
+        after_first["full_build_screen_transform_time_ns"]
+        - before["full_build_screen_transform_time_ns"]
+    )
+
+    assert first_delta == first_event["screen_transform_time_ns"]
+    assert first_delta >= 0
+    assert first_event["screen_transform_time_ms"] == first_delta / 1_000_000.0
+    assert after_first["polygon_attribution_enabled"] is False
+    assert after_first["hex_corners_attribution_enabled"] is False
+    assert after_first["geometry_prepare_attribution_enabled"] is False
+
+    presenter.update_surface(visible_tiles, [161.0, 120.0], 1.0)
+    after_second = presenter.diagnostic_snapshot()
+    second_event = after_second["attribution_events"][-1]
+    second_delta = (
+        after_second["full_build_screen_transform_time_ns"]
+        - after_first["full_build_screen_transform_time_ns"]
+    )
+
+    assert second_delta == second_event["screen_transform_time_ns"]
+    assert second_delta >= 0
+
+
+def test_disabled_screen_transform_timer_records_zero_with_other_attribution():
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world))
+    presenter.set_full_build_attribution_enabled(True, clear_events=True)
+
+    presenter.update_surface({(0, 0), (1, 0)}, [160.0, 120.0], 1.0)
+    snapshot = presenter.diagnostic_snapshot()
+    event = snapshot["attribution_events"][-1]
+
+    assert snapshot["screen_transform_attribution_enabled"] is False
+    assert snapshot["full_build_screen_transform_time_ns"] == 0
+    assert event["screen_transform_time_ns"] == 0
+    assert event["screen_transform_time_ms"] == 0.0
 
 
 def test_history_gap_falls_back_to_authoritative_full_rebuild():

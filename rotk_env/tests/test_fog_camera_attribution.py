@@ -91,6 +91,7 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
             "mode": "short_pan",
             "timer_sanity_samples": 10,
             "geometry_prepare_timing_enabled": True,
+            "screen_transform_timing_enabled": True,
         }
     )
     assert started["ok"] is True
@@ -100,6 +101,8 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert started["hex_corners_timer_sanity"]["samples"] == 10
     assert started["geometry_prepare_timing_enabled"] is True
     assert started["geometry_prepare_timer_sanity"]["samples"] == 10
+    assert started["screen_transform_timing_enabled"] is True
+    assert started["screen_transform_timer_sanity"]["samples"] == 10
 
     # The start frame is deliberately held so the deferred profiler epoch can
     # begin before the first production-style camera increment.
@@ -171,6 +174,28 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     ]
     assert screen_time_ns == geometry_time_ns - hex_time_ns
     assert screen_time_ns >= 0
+    direct_screen_time_ns = stopped["full_build_attribution"][
+        "full_build_screen_transform_time_ns"
+    ]
+    assert direct_screen_time_ns >= 0
+    assert stopped["full_build_attribution"][
+        "average_screen_transform_time_per_full_rebuild_ns"
+    ] == pytest.approx(direct_screen_time_ns / 3)
+    assert stopped["full_build_attribution"][
+        "average_screen_transform_time_per_input_tile_ns"
+    ] == pytest.approx(direct_screen_time_ns / 3)
+    assert stopped["full_build_attribution"][
+        "screen_transform_fraction_of_tile_loop_time"
+    ] == pytest.approx(
+        direct_screen_time_ns
+        / stopped["full_build_attribution"]["full_build_tile_loop_time_ns"]
+    )
+    assert stopped["full_build_attribution"][
+        "screen_transform_fraction_of_non_polygon_tile_loop_time"
+    ] == pytest.approx(
+        direct_screen_time_ns
+        / stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"]
+    )
     assert stopped["full_build_attribution"]["non_polygon_tile_loop_time_ns"] >= 0
     assert len(stopped["rebuild_frames"]) == 3
     assert presenter.diagnostic_snapshot()["polygon_attribution_enabled"] is False
@@ -179,6 +204,10 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     )
     assert (
         presenter.diagnostic_snapshot()["geometry_prepare_attribution_enabled"]
+        is False
+    )
+    assert (
+        presenter.diagnostic_snapshot()["screen_transform_attribution_enabled"]
         is False
     )
 
@@ -199,6 +228,7 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
     )
     assert started["pan_target_pixels"] == 320.0
     assert started["geometry_prepare_timing_enabled"] is False
+    assert started["screen_transform_timing_enabled"] is False
     harness.update(1.0)
     for _ in range(2):
         harness.update(1.0)
@@ -217,6 +247,7 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
         stopped["full_build_attribution"]["screen_transform_bounds_rect_time_ns"]
         is None
     )
+    assert stopped["full_build_attribution"]["full_build_screen_transform_time_ns"] == 0
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
 
 
@@ -273,6 +304,7 @@ def test_timer_sanity_path_quantifies_observer_overhead():
     result = attribution.measure_polygon_timer_overhead(100)
     hex_result = attribution.measure_hex_corners_timer_overhead(100)
     geometry_result = attribution.measure_geometry_prepare_timer_overhead(100)
+    screen_result = attribution.measure_screen_transform_timer_overhead(100)
 
     assert result["samples"] == 100
     assert result["wall_time_ns"] > 0
@@ -286,3 +318,7 @@ def test_timer_sanity_path_quantifies_observer_overhead():
     assert geometry_result["wall_time_ns"] > 0
     assert geometry_result["wall_ns_per_sample"] > 0
     assert geometry_result["measured_interval_ns"] >= 0
+    assert screen_result["samples"] == 100
+    assert screen_result["wall_time_ns"] > 0
+    assert screen_result["wall_ns_per_sample"] > 0
+    assert screen_result["measured_interval_ns"] >= 0
