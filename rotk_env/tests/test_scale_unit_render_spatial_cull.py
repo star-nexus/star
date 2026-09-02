@@ -81,6 +81,18 @@ class _FakeWorld:
         return None
 
 
+def _bare_renderer(world):
+    """Create only the object state needed by the cull method.
+
+    The production renderer constructor initializes pygame fonts/textures.  This
+    test targets only spatial candidate filtering, so exercising SDL/font setup
+    would add an unrelated environment dependency to a pure unit test.
+    """
+    renderer = UnitRenderSystem.__new__(UnitRenderSystem)
+    renderer.world = world
+    return renderer
+
+
 def test_spatial_cull_filters_bounds_before_fog_and_publishes_breakdown(monkeypatch):
     metrics = {}
     monkeypatch.setattr(
@@ -89,8 +101,7 @@ def test_spatial_cull_filters_bounds_before_fog_and_publishes_breakdown(monkeypa
         lambda name, value: metrics.__setitem__(name, value),
     )
 
-    renderer = UnitRenderSystem()
-    renderer.world = _FakeWorld()
+    renderer = _bare_renderer(_FakeWorld())
 
     visible = renderer._get_visible_units([0.0, 0.0], 1.0)
 
