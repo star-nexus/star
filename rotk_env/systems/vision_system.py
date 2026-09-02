@@ -20,6 +20,7 @@ is disabled so re-enabling it is immediate.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Dict, FrozenSet, Optional, Set, Tuple
 
 from framework import System, World
@@ -34,8 +35,10 @@ from ..utils.env_events import UnitDeathEvent
 from ..utils.unit_spatial_index import get_unit_spatial_index
 
 Hex = Tuple[int, int]
+GeometryKey = Tuple[Hex, int, int]
 
 _DIRTY_ATTR = "_vision_dirty_entities"
+_DEFAULT_GEOMETRY_CACHE_MAX_ENTRIES = 4096
 
 
 def _dirty_set(world: World) -> Set[int]:
@@ -64,13 +67,22 @@ class VisionSystem(System):
     # It is not part of steady per-frame work and is profiled independently.
     _AUDIT_EVERY_FRAMES = 60
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        geometry_cache_max_entries: int = _DEFAULT_GEOMETRY_CACHE_MAX_ENTRIES,
+    ):
         super().__init__(required_components={HexPosition, Vision, Unit})
         self._dirty: Set[int] = set()
         self._unit_visibility: Dict[int, FrozenSet[Hex]] = {}
         self._unit_faction: Dict[int, Faction] = {}
         self._faction_tile_counts: Dict[Faction, Dict[Hex, int]] = {}
-        self._geometry_cache: Dict[Tuple[Hex, int, int], FrozenSet[Hex]] = {}
+        # Geometry depends only on immutable inputs captured in the key, so an
+        # LRU is sufficient: evicting an entry changes performance only, never
+        # visibility semantics. Bounding it prevents long-running dynamic worlds
+        # from retaining every position/range combination ever visited.
+        self._geometry_cache_max_entries = max(1, int(geometry_cache_max_entries))
+        self._geometry_cache: OrderedDict[GeometryKey, FrozenSet[Hex]] = OrderedDict()
         self._terrain_revision = 0
         self._frames = 0
         self._bootstrapped = False
@@ -82,6 +94,7 @@ class VisionSystem(System):
         self._stat_cache_hits = 0
         self._stat_geometry_hits = 0
         self._stat_geometry_misses = 0
+        self._stat_geometry_evictions = 0
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -142,6 +155,7 @@ class VisionSystem(System):
         faction_tiles_removed = 0
         geometry_hits_before = self._stat_geometry_hits
         geometry_misses_before = self._stat_geometry_misses
+        geometry_evictions_before = self._stat_geometry_evictions
 
         for entity in dirty:
             position = self.world.get_component(entity, HexPosition)
@@ -226,6 +240,7 @@ class VisionSystem(System):
             audit_scanned=audit_scanned,
             geometry_hits=self._stat_geometry_hits - geometry_hits_before,
             geometry_misses=self._stat_geometry_misses - geometry_misses_before,
+            geometry_evictions=self._stat_geometry_evictions - geometry_evictions_before,
             fog_delta_tiles=fog_delta_tiles,
             fog_journal_revision=fog_journal_revision,
         )
@@ -254,10 +269,12 @@ class VisionSystem(System):
             "hit_rate": (self._stat_cache_hits / total) if total else 0.0,
             "geometry_cache_hits": self._stat_geometry_hits,
             "geometry_cache_misses": self._stat_geometry_misses,
+            "geometry_cache_evictions": self._stat_geometry_evictions,
             "geometry_hit_rate": (
                 self._stat_geometry_hits / geometry_total if geometry_total else 0.0
             ),
             "geometry_cache_size": len(self._geometry_cache),
+            "geometry_cache_capacity": self._geometry_cache_max_entries,
         }
 
     # ------------------------------------------------------------------
@@ -361,6 +378,9 @@ class VisionSystem(System):
         key = (center, effective_range, self._terrain_revision)
         cached = self._geometry_cache.get(key)
         if cached is not None:
+            # OrderedDict doubles as a tiny explicit LRU: this O(1) mutation
+            # keeps recently reused positions resident without scanning entries.
+            self._geometry_cache.move_to_end(key)
             self._stat_geometry_hits += 1
             return cached
 
@@ -368,6 +388,9 @@ class VisionSystem(System):
             self._calculate_vision_effective(center, effective_range)
         )
         self._geometry_cache[key] = visible
+        if len(self._geometry_cache) > self._geometry_cache_max_entries:
+            self._geometry_cache.popitem(last=False)
+            self._stat_geometry_evictions += 1
         self._stat_geometry_misses += 1
         return visible
 
@@ -438,6 +461,7 @@ class VisionSystem(System):
         audit_scanned: int,
         geometry_hits: int,
         geometry_misses: int,
+        geometry_evictions: int,
         fog_delta_tiles: int,
         fog_journal_revision: int,
     ) -> None:
@@ -453,7 +477,9 @@ class VisionSystem(System):
         metric("vision_faction_tiles_removed", faction_tiles_removed)
         metric("vision_geometry_cache_hits", geometry_hits)
         metric("vision_geometry_cache_misses", geometry_misses)
+        metric("vision_geometry_cache_evictions", geometry_evictions)
         metric("vision_geometry_cache_size", len(self._geometry_cache))
+        metric("vision_geometry_cache_capacity", self._geometry_cache_max_entries)
         metric("vision_audit_scanned", audit_scanned)
         metric("vision_fog_delta_tiles", fog_delta_tiles)
         metric("vision_fog_journal_revision", fog_journal_revision)
