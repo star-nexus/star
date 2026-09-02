@@ -242,47 +242,101 @@ class RenderEngine:
         return self._add_command(command, layer)
 
     def update(self) -> None:
-        """渲染所有图层到屏幕"""
+        """Render all queued layers while exposing coarse queue-drain attribution.
+
+        This instrumentation deliberately leaves the submission algorithm unchanged.
+        ``render_engine`` remains the parent timer owned by ``GameEngine``; the
+        sections below only split its existing queue-drain work into prepare,
+        submit, and clear phases.
+        """
         if not self.screen:
             raise RuntimeError("屏幕表面未设置，请先调用 set_screen()")
 
-        command_count = sum(len(commands) for commands in self._render_queue.values())
-        profiling.profiler.set_frame_metric("render_commands", command_count)
-        profiling.profiler.set_frame_metric("render_layers", len(self._render_queue))
+        profiler = profiling.profiler
+        with profiler.time_system("render_queue_prepare", category="render"):
+            layer_keys = sorted(self._render_queue.keys())
+            command_count = sum(len(commands) for commands in self._render_queue.values())
+            layer_count = len(layer_keys)
+
+        profiler.set_frame_metric("render_commands", command_count)
+        profiler.set_frame_metric("render_layers", layer_count)
 
         simple_blits = 0
         blit_batches = 0
+        batch_runs = 0
+        single_plain_blits = 0
+        nonbatch_blits = 0
+        draw_commands = 0
+        other_commands = 0
+        max_batch_size = 0
 
         # Preserve layer and command order exactly. Only consecutive plain blits
         # are collapsed; any geometry/custom command is an ordering barrier.
-        for layer in sorted(self._render_queue.keys()):
-            commands = self._render_queue[layer]
-            index = 0
-            while index < len(commands):
-                command = commands[index]
-                if isinstance(command, BlitCommand) and command.batchable:
-                    batch = []
-                    while index < len(commands):
-                        candidate = commands[index]
-                        if not isinstance(candidate, BlitCommand) or not candidate.batchable:
-                            break
-                        batch.append((candidate.surface, candidate.dest))
-                        index += 1
+        with profiler.time_system("render_queue_submit", category="render"):
+            for layer in layer_keys:
+                commands = self._render_queue[layer]
+                index = 0
+                while index < len(commands):
+                    command = commands[index]
+                    if isinstance(command, BlitCommand) and command.batchable:
+                        batch_runs += 1
+                        batch = []
+                        while index < len(commands):
+                            candidate = commands[index]
+                            if (
+                                not isinstance(candidate, BlitCommand)
+                                or not candidate.batchable
+                            ):
+                                break
+                            batch.append((candidate.surface, candidate.dest))
+                            index += 1
 
-                    simple_blits += len(batch)
-                    if len(batch) >= 2:
-                        self.screen.blits(batch, False)
-                        blit_batches += 1
+                        batch_size = len(batch)
+                        simple_blits += batch_size
+                        max_batch_size = max(max_batch_size, batch_size)
+                        if batch_size >= 2:
+                            self.screen.blits(batch, False)
+                            blit_batches += 1
+                        else:
+                            single_plain_blits += 1
+                            command.execute(self.screen)
+                        continue
+
+                    if isinstance(command, BlitCommand):
+                        nonbatch_blits += 1
+                    elif isinstance(command, DrawCommand):
+                        draw_commands += 1
                     else:
-                        command.execute(self.screen)
-                    continue
+                        other_commands += 1
+                    command.execute(self.screen)
+                    index += 1
 
-                command.execute(self.screen)
-                index += 1
+        scalar_commands = nonbatch_blits + draw_commands + other_commands
+        profiler.set_frame_metric("render_simple_blits", simple_blits)
+        profiler.set_frame_metric("render_blit_batches", blit_batches)
+        profiler.set_frame_metric("render_batch_runs", batch_runs)
+        profiler.set_frame_metric("render_single_plain_blits", single_plain_blits)
+        profiler.set_frame_metric("render_nonbatch_blits", nonbatch_blits)
+        profiler.set_frame_metric("render_draw_commands", draw_commands)
+        profiler.set_frame_metric("render_other_commands", other_commands)
+        profiler.set_frame_metric("render_scalar_commands", scalar_commands)
+        profiler.set_frame_metric("render_max_batch_size", max_batch_size)
 
-        profiling.profiler.set_frame_metric("render_simple_blits", simple_blits)
-        profiling.profiler.set_frame_metric("render_blit_batches", blit_batches)
-        self.clear()
+        # The scale snapshot already exports ``scale_*`` metadata. These values
+        # intentionally describe the latest completed frame, not a rolling mean;
+        # rolling timing attribution remains owned by the hierarchical profiler.
+        profiler.set_metadata(
+            scale_render_queue_last_commands=command_count,
+            scale_render_queue_last_layers=layer_count,
+            scale_render_queue_last_batch_runs=batch_runs,
+            scale_render_queue_last_simple_blits=simple_blits,
+            scale_render_queue_last_blit_batches=blit_batches,
+            scale_render_queue_last_scalar_commands=scalar_commands,
+            scale_render_queue_last_max_batch_size=max_batch_size,
+        )
+
+        with profiler.time_system("render_queue_clear", category="render"):
+            self.clear()
 
     def clear(self) -> None:
         """清空渲染队列"""

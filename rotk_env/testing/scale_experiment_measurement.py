@@ -29,10 +29,27 @@ from . import scale_experiment_measurement_base as _base
 
 _original_compact_slow_frame = _base._compact_slow_frame
 
+_RENDER_ENGINE_SECTIONS = (
+    "render_queue_prepare",
+    "render_queue_submit",
+    "render_queue_clear",
+)
+for _section in _RENDER_ENGINE_SECTIONS:
+    if _section not in _base._RELEVANT_SECTIONS:
+        _base._RELEVANT_SECTIONS += (_section,)
+
 _TAIL_METRICS = (
     "render_commands",
+    "render_layers",
     "render_simple_blits",
     "render_blit_batches",
+    "render_batch_runs",
+    "render_single_plain_blits",
+    "render_nonbatch_blits",
+    "render_draw_commands",
+    "render_other_commands",
+    "render_scalar_commands",
+    "render_max_batch_size",
     "unit_static_groups",
     "unit_static_candidate_units",
     "unit_static_submitted_units",
