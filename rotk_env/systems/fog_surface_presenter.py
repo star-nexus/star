@@ -69,6 +69,7 @@ class IncrementalFogSurfacePresenter:
         self._geometry_prepare_attribution_enabled = False
         self._screen_transform_attribution_enabled = False
         self._bounds_rect_attribution_enabled = False
+        self._fused_transform_bounds_enabled = True
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
 
@@ -151,6 +152,22 @@ class IncrementalFogSurfacePresenter:
         if clear_events:
             self._attribution_events.clear()
 
+    def set_fused_transform_bounds_enabled(self, enabled: bool) -> None:
+        """Select the production fused path or the attribution-only legacy path."""
+        self._fused_transform_bounds_enabled = bool(enabled)
+
+    def _effective_geometry_path(self) -> str:
+        # The fine-grained timers retain their original exact phase boundaries.
+        # Controlled optimization A/B runs disable both timers and exercise the
+        # selected production or legacy implementation directly.
+        if (
+            self._fused_transform_bounds_enabled
+            and not self._screen_transform_attribution_enabled
+            and not self._bounds_rect_attribution_enabled
+        ):
+            return "fused"
+        return "legacy"
+
     def _full_build_attribution_enabled(self) -> bool:
         return bool(
             self._polygon_attribution_enabled
@@ -218,6 +235,10 @@ class IncrementalFogSurfacePresenter:
             "bounds_rect_attribution_enabled": (
                 self._bounds_rect_attribution_enabled
             ),
+            "fused_transform_bounds_enabled": (
+                self._fused_transform_bounds_enabled
+            ),
+            "geometry_path": self._effective_geometry_path(),
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
 
@@ -492,6 +513,7 @@ class IncrementalFogSurfacePresenter:
             "screen_transform_time_ms": screen_transform_time_ns / 1_000_000.0,
             "bounds_rect_time_ns": bounds_rect_time_ns,
             "bounds_rect_time_ms": bounds_rect_time_ns / 1_000_000.0,
+            "geometry_path": self._effective_geometry_path(),
         }
         if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
@@ -529,6 +551,7 @@ class IncrementalFogSurfacePresenter:
             "fog_full_build_bounds_rect_time_ms",
             bounds_rect_time_ns / 1_000_000.0,
         )
+        metric("fog_full_build_geometry_path", self._effective_geometry_path())
         metric(
             "fog_full_build_polygon_timing_enabled",
             int(self._polygon_attribution_enabled),
@@ -639,43 +662,68 @@ class IncrementalFogSurfacePresenter:
             )
         else:
             corners = self.renderer.hex_converter.get_hex_corners(q, r)
-        screen_transform_start_ns = (
-            time.perf_counter_ns()
-            if full_build_diagnostics is not None
-            and self._screen_transform_attribution_enabled
-            else None
-        )
-        points = [
-            (
-                int(round(x * zoom + camera_offset[0])),
-                int(round(y * zoom + camera_offset[1])),
+        if self._effective_geometry_path() == "fused":
+            points = []
+            for index, (x, y) in enumerate(corners):
+                sx = int(round(x * zoom + camera_offset[0]))
+                sy = int(round(y * zoom + camera_offset[1]))
+                points.append((sx, sy))
+                if index == 0:
+                    min_x = max_x = sx
+                    min_y = max_y = sy
+                else:
+                    if sx < min_x:
+                        min_x = sx
+                    if sx > max_x:
+                        max_x = sx
+                    if sy < min_y:
+                        min_y = sy
+                    if sy > max_y:
+                        max_y = sy
+            tile_rect = pygame.Rect(
+                min_x,
+                min_y,
+                max_x - min_x + 1,
+                max_y - min_y + 1,
             )
-            for x, y in corners
-        ]
-        if screen_transform_start_ns is not None:
-            full_build_diagnostics["screen_transform_time_ns"] += (
-                time.perf_counter_ns() - screen_transform_start_ns
+        else:
+            screen_transform_start_ns = (
+                time.perf_counter_ns()
+                if full_build_diagnostics is not None
+                and self._screen_transform_attribution_enabled
+                else None
             )
-        bounds_rect_start_ns = (
-            time.perf_counter_ns()
-            if full_build_diagnostics is not None
-            and self._bounds_rect_attribution_enabled
-            else None
-        )
-        min_x = min(point[0] for point in points)
-        max_x = max(point[0] for point in points)
-        min_y = min(point[1] for point in points)
-        max_y = max(point[1] for point in points)
-        tile_rect = pygame.Rect(
-            min_x,
-            min_y,
-            max_x - min_x + 1,
-            max_y - min_y + 1,
-        )
-        if bounds_rect_start_ns is not None:
-            full_build_diagnostics["bounds_rect_time_ns"] += (
-                time.perf_counter_ns() - bounds_rect_start_ns
+            points = [
+                (
+                    int(round(x * zoom + camera_offset[0])),
+                    int(round(y * zoom + camera_offset[1])),
+                )
+                for x, y in corners
+            ]
+            if screen_transform_start_ns is not None:
+                full_build_diagnostics["screen_transform_time_ns"] += (
+                    time.perf_counter_ns() - screen_transform_start_ns
+                )
+            bounds_rect_start_ns = (
+                time.perf_counter_ns()
+                if full_build_diagnostics is not None
+                and self._bounds_rect_attribution_enabled
+                else None
             )
+            min_x = min(point[0] for point in points)
+            max_x = max(point[0] for point in points)
+            min_y = min(point[1] for point in points)
+            max_y = max(point[1] for point in points)
+            tile_rect = pygame.Rect(
+                min_x,
+                min_y,
+                max_x - min_x + 1,
+                max_y - min_y + 1,
+            )
+            if bounds_rect_start_ns is not None:
+                full_build_diagnostics["bounds_rect_time_ns"] += (
+                    time.perf_counter_ns() - bounds_rect_start_ns
+                )
         if geometry_prepare_start_ns is not None:
             full_build_diagnostics["geometry_prepare_time_ns"] += (
                 time.perf_counter_ns() - geometry_prepare_start_ns

@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup", type=float, default=2.0)
     parser.add_argument("--between-epochs", type=float, default=0.5)
     parser.add_argument("--stationary-frames", type=int, default=120)
+    parser.add_argument(
+        "--geometry-path",
+        choices=("fused", "legacy"),
+        default="fused",
+        help="Select fused production or legacy Fog tile geometry (default: fused)",
+    )
     parser.add_argument("--timer-sanity-samples", type=int, default=20_000)
     parser.add_argument(
         "--polygon-timing",
@@ -81,6 +87,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
         {
             "command": "start_fog_camera_attribution",
             "mode": mode,
+            "geometry_path": args.geometry_path,
             "stationary_frames": args.stationary_frames,
             "timer_sanity_samples": args.timer_sanity_samples,
             "polygon_timing_enabled": args.polygon_timing,
@@ -114,6 +121,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
     checks = {
         "completed": bool(stopped.get("completed")),
         "camera_restored": bool(stopped.get("camera_restored")),
+        "geometry_path_restored": bool(stopped.get("geometry_path_restored")),
         "fog_counter_delta_exact": (
             stopped.get("fog_full_build_delta")
             == stopped.get("fog_full_build_counter_end", 0)

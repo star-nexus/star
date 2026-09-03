@@ -1,12 +1,13 @@
 from collections import defaultdict
 
 import pygame
+import pytest
 
 from framework.ecs.world import World
 from framework.engine import RMS
 
 from rotk_env.components import FogOfWar, GameState, UIState
-from rotk_env.prefabs.config import Faction, GameConfig
+from rotk_env.prefabs.config import Faction, GameConfig, HexOrientation
 from rotk_env.systems import fog_surface_presenter as fog_presenter_module
 from rotk_env.systems.fog_surface_presenter import (
     FOG_GEOMETRY_BITS,
@@ -20,10 +21,10 @@ from rotk_env.utils.hex_utils import HexConverter
 
 
 class _Renderer:
-    def __init__(self, world):
+    def __init__(self, world, orientation=None):
         self.world = world
         self.hex_converter = HexConverter(
-            GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
+            GameConfig.HEX_SIZE, orientation or GameConfig.HEX_ORIENTATION
         )
 
 
@@ -208,6 +209,130 @@ def test_gated_polygon_attribution_preserves_pixels_and_counts_tiles():
     )
     assert snapshot["full_build_screen_transform_time_ns"] >= 0
     assert snapshot["full_build_bounds_rect_time_ns"] >= 0
+
+
+@pytest.mark.parametrize(
+    "orientation", [HexOrientation.FLAT_TOP, HexOrientation.POINTY_TOP]
+)
+@pytest.mark.parametrize("tile", [(-7, 3), (0, 0), (11, -9)])
+@pytest.mark.parametrize(
+    "camera_offset", [(-123.5, 87.5), (0.0, 0.0), (160.25, -240.75)]
+)
+@pytest.mark.parametrize("zoom", [0.15, 0.5, 1.0, 1.75, 2.5])
+def test_fused_geometry_matches_legacy_points_and_rect(
+    monkeypatch, orientation, tile, camera_offset, zoom
+):
+    world = _world()
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world, orientation))
+    captured_points = []
+
+    def capture_polygon(_surface, _color, points):
+        captured_points.append(tuple(points))
+
+    monkeypatch.setattr(pygame.draw, "polygon", capture_polygon)
+    surface = pygame.Surface((320, 240), pygame.SRCALPHA)
+
+    presenter.set_fused_transform_bounds_enabled(False)
+    legacy_rect = presenter._draw_tile_state(
+        surface,
+        tile,
+        list(camera_offset),
+        zoom,
+        set(),
+        set(),
+        clear_first=False,
+    )
+    legacy_points = captured_points.pop()
+
+    presenter.set_fused_transform_bounds_enabled(True)
+    fused_rect = presenter._draw_tile_state(
+        surface,
+        tile,
+        list(camera_offset),
+        zoom,
+        set(),
+        set(),
+        clear_first=False,
+    )
+    fused_points = captured_points.pop()
+
+    assert fused_points == legacy_points
+    assert fused_rect == legacy_rect
+
+
+def test_fused_geometry_preserves_half_rounding_points_and_rect(monkeypatch):
+    world = _world()
+    renderer = _Renderer(world)
+    renderer.hex_converter.get_hex_corners = lambda _q, _r: [
+        (-2.5, -1.5),
+        (-0.5, 0.5),
+        (0.5, 1.5),
+        (2.5, 3.5),
+        (4.5, -3.5),
+        (6.5, -5.5),
+    ]
+    presenter = IncrementalFogSurfacePresenter(renderer)
+    captured_points = []
+
+    def capture_polygon(_surface, _color, points):
+        captured_points.append(tuple(points))
+
+    monkeypatch.setattr(pygame.draw, "polygon", capture_polygon)
+    surface = pygame.Surface((320, 240), pygame.SRCALPHA)
+
+    presenter.set_fused_transform_bounds_enabled(False)
+    legacy_rect = presenter._draw_tile_state(
+        surface, (0, 0), [0.0, 0.0], 1.0, set(), set(), clear_first=False
+    )
+    legacy_points = captured_points.pop()
+    presenter.set_fused_transform_bounds_enabled(True)
+    fused_rect = presenter._draw_tile_state(
+        surface, (0, 0), [0.0, 0.0], 1.0, set(), set(), clear_first=False
+    )
+    fused_points = captured_points.pop()
+
+    assert legacy_points == ((-2, -2), (0, 0), (0, 2), (2, 4), (4, -4), (6, -6))
+    assert fused_points == legacy_points
+    assert fused_rect == legacy_rect == pygame.Rect(-2, -6, 9, 11)
+
+
+@pytest.mark.parametrize(
+    "orientation", [HexOrientation.FLAT_TOP, HexOrientation.POINTY_TOP]
+)
+def test_fused_geometry_matches_legacy_fog_pixels(orientation):
+    visible_tiles = {(-2, 1), (-1, 0), (0, 0), (1, -1), (2, -2)}
+    camera = [160.25, 120.5]
+    zoom = 1.75
+
+    legacy_world = _world()
+    legacy_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    legacy_world.get_singleton_component(FogOfWar).explored_tiles[
+        Faction.WEI
+    ].add((1, -1))
+    legacy_presenter = IncrementalFogSurfacePresenter(
+        _Renderer(legacy_world, orientation)
+    )
+    legacy_presenter.set_fused_transform_bounds_enabled(False)
+    legacy = legacy_presenter.update_surface(visible_tiles, camera, zoom)
+
+    fused_world = _world()
+    fused_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    fused_world.get_singleton_component(FogOfWar).explored_tiles[
+        Faction.WEI
+    ].add((1, -1))
+    fused_presenter = IncrementalFogSurfacePresenter(
+        _Renderer(fused_world, orientation)
+    )
+    fused = fused_presenter.update_surface(visible_tiles, camera, zoom)
+
+    assert pygame.image.tostring(fused, "RGBA") == pygame.image.tostring(
+        legacy, "RGBA"
+    )
+    assert fused_presenter.presentation_rect == legacy_presenter.presentation_rect
 
 
 def test_detailed_attribution_timing_is_disabled_during_normal_runtime(monkeypatch):

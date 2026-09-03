@@ -16,6 +16,7 @@ from .profiler_epoch import request_measurement_epoch
 
 EXPERIMENT_ID = "2026-09-camera-fog-full-rebuild"
 MODES = {"stationary", "short_pan", "long_pan", "zoom"}
+GEOMETRY_PATHS = {"fused", "legacy"}
 PAN_TARGETS = {"short_pan": 128.0, "long_pan": 320.0}
 ZOOM_TARGET_DELTA = 0.5
 
@@ -134,6 +135,13 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "error": "invalid_fog_camera_attribution_mode",
                 "modes": sorted(MODES),
             }
+        geometry_path = str(command.get("geometry_path", "fused")).strip().lower()
+        if geometry_path not in GEOMETRY_PATHS:
+            return {
+                "ok": False,
+                "error": "invalid_fog_geometry_path",
+                "geometry_paths": sorted(GEOMETRY_PATHS),
+            }
         camera = _camera()
         if camera is None:
             return {"ok": False, "error": "camera_unavailable"}
@@ -168,6 +176,10 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         bounds_rect_timing_enabled = bool(
             command.get("bounds_rect_timing_enabled", False)
         )
+        presenter_before = presenter.diagnostic_snapshot()
+        fused_transform_bounds_enabled_before = bool(
+            presenter_before["fused_transform_bounds_enabled"]
+        )
         start_camera = {
             "offset_x": float(camera.offset_x),
             "offset_y": float(camera.offset_y),
@@ -187,6 +199,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             screen_transform_timing_enabled
         )
         presenter.set_bounds_rect_attribution_enabled(bounds_rect_timing_enabled)
+        presenter.set_fused_transform_bounds_enabled(geometry_path == "fused")
         start_snapshot = presenter.diagnostic_snapshot()
         state = {
             "active": True,
@@ -220,6 +233,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "geometry_prepare_timing_enabled": geometry_prepare_timing_enabled,
             "screen_transform_timing_enabled": screen_transform_timing_enabled,
             "bounds_rect_timing_enabled": bounds_rect_timing_enabled,
+            "geometry_path_requested": geometry_path,
+            "geometry_path_effective": start_snapshot["geometry_path"],
+            "fused_transform_bounds_enabled_before": (
+                fused_transform_bounds_enabled_before
+            ),
             "active_moving_units_start": active_units,
             "max_active_moving_units": active_units,
             "unit_movement_frames": 0,
@@ -281,6 +299,8 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "screen_transform_timing_enabled"
             ],
             "bounds_rect_timing_enabled": state["bounds_rect_timing_enabled"],
+            "geometry_path_requested": state["geometry_path_requested"],
+            "geometry_path_effective": state["geometry_path_effective"],
         }
 
     def _finish_result(
@@ -540,6 +560,17 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             presenter.set_geometry_prepare_attribution_enabled(False)
             presenter.set_screen_transform_attribution_enabled(False)
             presenter.set_bounds_rect_attribution_enabled(False)
+            presenter.set_fused_transform_bounds_enabled(
+                state["fused_transform_bounds_enabled_before"]
+            )
+
+        geometry_path_restored = bool(
+            presenter is not None
+            and bool(
+                presenter.diagnostic_snapshot()["fused_transform_bounds_enabled"]
+            )
+            == state["fused_transform_bounds_enabled_before"]
+        )
 
         restored = False
         if camera is not None:
@@ -591,6 +622,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "screen_transform_timing_enabled"
             ],
             "bounds_rect_timing_enabled": state["bounds_rect_timing_enabled"],
+            "geometry_path_requested": state["geometry_path_requested"],
+            "geometry_path_effective": state["geometry_path_effective"],
+            "geometry_path_restored": geometry_path_restored,
             "profile_snapshot": profile_snapshot,
         }
         result.update(_finish_result(state, end_snapshot))
