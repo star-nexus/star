@@ -63,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Enable detailed screen-space point timing (default: disabled)",
     )
+    parser.add_argument(
+        "--bounds-rect-timing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable detailed bounds and Rect timing (default: disabled)",
+    )
     parser.add_argument("--poll-seconds", type=float, default=0.05)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--output", default=None)
@@ -81,6 +87,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "hex_corners_timing_enabled": args.hex_corners_timing,
             "geometry_prepare_timing_enabled": args.geometry_prepare_timing,
             "screen_transform_timing_enabled": args.screen_transform_timing,
+            "bounds_rect_timing_enabled": args.bounds_rect_timing,
         },
     )
     result: Dict[str, Any] = {"mode": mode, "start": started, "ok": False}
