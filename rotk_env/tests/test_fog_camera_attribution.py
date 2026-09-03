@@ -364,6 +364,50 @@ def test_stationary_and_zoom_epochs_complete_and_restore(monkeypatch):
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
 
 
+def test_short_pan_translation_feasibility_captures_every_camera_frame(monkeypatch):
+    world, camera, presenter, visible_tiles = _setup()
+    harness = _Harness()
+    profiler = _Profiler()
+    monkeypatch.setattr(attribution, "request_measurement_epoch", lambda *a, **k: True)
+    attribution.install_fog_camera_attribution(harness, world, profiler)
+
+    started = harness.handle_command(
+        {
+            "command": "start_fog_camera_attribution",
+            "mode": "short_pan",
+            "geometry_path": "fused",
+            "corner_path": "precomputed",
+            "polygon_timing_enabled": False,
+            "hex_corners_timing_enabled": False,
+            "geometry_prepare_timing_enabled": False,
+            "screen_transform_timing_enabled": False,
+            "bounds_rect_timing_enabled": False,
+            "timer_sanity_samples": 1,
+            "translation_feasibility_enabled": True,
+            "translation_nearby_radius": 1,
+        }
+    )
+    assert started["ok"] is True
+    assert started["translation_feasibility_enabled"] is True
+
+    harness.update(0.25)
+    _render(presenter, camera, visible_tiles)
+    for _ in range(3):
+        harness.update(0.25)
+        _render(presenter, camera, visible_tiles)
+
+    stopped = harness.handle_command({"command": "stop_fog_camera_attribution"})
+    result = stopped["translation_feasibility"]
+    assert stopped["camera_changed_frames"] == 3
+    assert result["total_camera_changing_frames"] == 3
+    assert len(result["frames"]) == 3
+    assert all(frame["camera_dx"] > 0.0 for frame in result["frames"])
+    assert all(frame["camera_dy"] == 0.0 for frame in result["frames"])
+    assert all(frame["candidates"] for frame in result["frames"])
+    assert stopped["camera_restored"] is True
+    assert presenter._full_rebuild_observer is None
+
+
 def test_timer_sanity_path_quantifies_observer_overhead():
     result = attribution.measure_polygon_timer_overhead(100)
     hex_result = attribution.measure_hex_corners_timer_overhead(100)

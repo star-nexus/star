@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 import pygame
 
@@ -70,6 +70,7 @@ class IncrementalFogSurfacePresenter:
         self._screen_transform_attribution_enabled = False
         self._bounds_rect_attribution_enabled = False
         self._fused_transform_bounds_enabled = True
+        self._full_rebuild_observer: Optional[Callable[..., None]] = None
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
 
@@ -159,6 +160,12 @@ class IncrementalFogSurfacePresenter:
     def set_precomputed_hex_corners_enabled(self, enabled: bool) -> None:
         """Select precomputed or legacy corners for controlled attribution A/B."""
         self.renderer.hex_converter._set_precomputed_corner_offsets_enabled(enabled)
+
+    def set_full_rebuild_observer(
+        self, observer: Optional[Callable[..., None]]
+    ) -> None:
+        """Install a correctness-experiment observer; disabled in production."""
+        self._full_rebuild_observer = observer
 
     def _effective_corner_path(self) -> str:
         return self.renderer.hex_converter._effective_corner_path()
@@ -588,6 +595,14 @@ class IncrementalFogSurfacePresenter:
         self._publish_geometry_metrics(
             geometry_change_mask, geometry_change_detail, camera_delta
         )
+        if self._full_rebuild_observer is not None:
+            self._full_rebuild_observer(
+                surface=self.surface,
+                presentation_rect=self.presentation_rect,
+                camera_offset=camera_offset,
+                zoom=zoom,
+                visible_tiles=visible_tiles,
+            )
 
     @staticmethod
     def _publish_geometry_metrics(

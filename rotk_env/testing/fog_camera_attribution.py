@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from ..components import Camera, FogOfWar
 from . import scale_experiment_measurement_base as _measurement_base
+from .fog_pan_translation_feasibility import FogPanTranslationFeasibility
 from .profiler_epoch import request_measurement_epoch
 
 EXPERIMENT_ID = "2026-09-camera-fog-full-rebuild"
@@ -150,6 +151,17 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "error": "invalid_fog_corner_path",
                 "corner_paths": sorted(CORNER_PATHS),
             }
+        translation_feasibility_enabled = bool(
+            command.get("translation_feasibility_enabled", False)
+        )
+        if translation_feasibility_enabled and mode != "short_pan":
+            return {
+                "ok": False,
+                "error": "translation_feasibility_requires_short_pan",
+            }
+        translation_nearby_radius = max(
+            0, int(command.get("translation_nearby_radius", 1))
+        )
         camera = _camera()
         if camera is None:
             return {"ok": False, "error": "camera_unavailable"}
@@ -191,6 +203,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         precomputed_hex_corner_offsets_enabled_before = bool(
             presenter_before["precomputed_hex_corner_offsets_enabled"]
         )
+        full_rebuild_observer_before = presenter._full_rebuild_observer
         start_camera = {
             "offset_x": float(camera.offset_x),
             "offset_y": float(camera.offset_y),
@@ -212,6 +225,19 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         presenter.set_bounds_rect_attribution_enabled(bounds_rect_timing_enabled)
         presenter.set_fused_transform_bounds_enabled(geometry_path == "fused")
         presenter.set_precomputed_hex_corners_enabled(corner_path == "precomputed")
+        translation_collector = None
+        if translation_feasibility_enabled:
+            translation_collector = FogPanTranslationFeasibility(
+                presenter.renderer.hex_converter,
+                nearby_radius=translation_nearby_radius,
+            )
+            translation_collector.seed(
+                presenter.surface,
+                presenter.presentation_rect,
+                (camera.offset_x, camera.offset_y),
+                camera.zoom,
+            )
+            presenter.set_full_rebuild_observer(translation_collector.observe)
         start_snapshot = presenter.diagnostic_snapshot()
         state = {
             "active": True,
@@ -255,6 +281,10 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "precomputed_hex_corner_offsets_enabled_before": (
                 precomputed_hex_corner_offsets_enabled_before
             ),
+            "full_rebuild_observer_before": full_rebuild_observer_before,
+            "translation_feasibility_enabled": translation_feasibility_enabled,
+            "translation_nearby_radius": translation_nearby_radius,
+            "translation_collector": translation_collector,
             "active_moving_units_start": active_units,
             "max_active_moving_units": active_units,
             "unit_movement_frames": 0,
@@ -320,6 +350,10 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "geometry_path_effective": state["geometry_path_effective"],
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
+            "translation_feasibility_enabled": state[
+                "translation_feasibility_enabled"
+            ],
+            "translation_nearby_radius": state["translation_nearby_radius"],
         }
 
     def _finish_result(
@@ -573,7 +607,15 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             presenter.diagnostic_snapshot() if presenter is not None else state["fog_start"]
         )
         profile_snapshot = original_handle({"command": "profile_snapshot"})
+        translation_feasibility = (
+            state["translation_collector"].result()
+            if state["translation_collector"] is not None
+            else None
+        )
         if presenter is not None:
+            presenter.set_full_rebuild_observer(
+                state["full_rebuild_observer_before"]
+            )
             presenter.set_full_build_attribution_enabled(False)
             presenter.set_hex_corners_attribution_enabled(False)
             presenter.set_geometry_prepare_attribution_enabled(False)
@@ -659,6 +701,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
             "corner_path_restored": corner_path_restored,
+            "translation_feasibility_enabled": state[
+                "translation_feasibility_enabled"
+            ],
+            "translation_nearby_radius": state["translation_nearby_radius"],
+            "translation_feasibility": translation_feasibility,
             "profile_snapshot": profile_snapshot,
         }
         result.update(_finish_result(state, end_snapshot))
@@ -675,6 +722,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "mode": state["mode"],
             "total_frames": int(state["total_frames"]),
             "camera_changed_frames": int(state["camera_changed_frames"]),
+            "translation_feasibility_frames": (
+                len(state["translation_collector"].frames)
+                if state["translation_collector"] is not None
+                else 0
+            ),
         }
 
     def _handle(command: Dict[str, Any]) -> Dict[str, Any]:
