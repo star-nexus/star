@@ -196,6 +196,9 @@ class HexConverter:
         self.orientation = orientation or GameConfig.HEX_ORIENTATION
         self.width = math.sqrt(3) * hex_size
         self.height = 2 * hex_size
+        self._precomputed_corner_offsets_enabled = True
+        self._corner_offsets_key: Optional[Tuple[object, object]] = None
+        self._corner_offsets: Tuple[Tuple[float, float], ...] = ()
 
     def hex_to_pixel(self, col: int, row: int) -> Tuple[float, float]:
         """Convert hex (offset) to screen pixel coordinates; increasing row goes up on screen."""
@@ -268,15 +271,47 @@ class HexConverter:
     def get_hex_corners(self, col: int, row: int) -> List[Tuple[float, float]]:
         """Return the 6 corner coordinates of a hex (offset coords, Cartesian)."""
         center_x, center_y = self.hex_to_pixel(col, row)
+        if not self._precomputed_corner_offsets_enabled:
+            return self._get_hex_corners_legacy(center_x, center_y)
+
+        key = (self.size, self.orientation)
+        if self._corner_offsets_key != key:
+            self._corner_offsets = self._build_corner_offsets()
+            self._corner_offsets_key = key
+
+        return [
+            (center_x + offset_x, center_y + offset_y)
+            for offset_x, offset_y in self._corner_offsets
+        ]
+
+    def _set_precomputed_corner_offsets_enabled(self, enabled: bool) -> None:
+        """Select the production path or exact legacy path for controlled A/B."""
+        self._precomputed_corner_offsets_enabled = bool(enabled)
+
+    def _effective_corner_path(self) -> str:
+        return (
+            "precomputed" if self._precomputed_corner_offsets_enabled else "legacy"
+        )
+
+    def _build_corner_offsets(self) -> Tuple[Tuple[float, float], ...]:
+        start_angle = -30 if self.orientation == HexOrientation.POINTY_TOP else 0
+        offsets = []
+        for i in range(6):
+            angle_deg = 60 * i + start_angle
+            angle_rad = math.radians(angle_deg)
+            offsets.append(
+                (
+                    self.size * math.cos(angle_rad),
+                    self.size * math.sin(angle_rad),
+                )
+            )
+        return tuple(offsets)
+
+    def _get_hex_corners_legacy(
+        self, center_x: float, center_y: float
+    ) -> List[Tuple[float, float]]:
         corners = []
-
-        if self.orientation == HexOrientation.POINTY_TOP:
-            # Pointy-top: start at -30°, step 60°
-            start_angle = -30
-        else:  # FLAT_TOP
-            # Flat-top: start at 0°, step 60°
-            start_angle = 0
-
+        start_angle = -30 if self.orientation == HexOrientation.POINTY_TOP else 0
         for i in range(6):
             angle_deg = 60 * i + start_angle
             angle_rad = math.radians(angle_deg)
@@ -284,7 +319,6 @@ class HexConverter:
             # Y flip is already applied in hex_to_pixel; keep consistent
             y = center_y + self.size * math.sin(angle_rad)
             corners.append((x, y))
-
         return corners
 
 

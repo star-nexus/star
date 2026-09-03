@@ -44,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="fused",
         help="Select fused production or legacy Fog tile geometry (default: fused)",
     )
+    parser.add_argument(
+        "--corner-path",
+        choices=("precomputed", "legacy"),
+        default="precomputed",
+        help="Select precomputed production or legacy hex corners (default: precomputed)",
+    )
     parser.add_argument("--timer-sanity-samples", type=int, default=20_000)
     parser.add_argument(
         "--polygon-timing",
@@ -88,6 +94,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "command": "start_fog_camera_attribution",
             "mode": mode,
             "geometry_path": args.geometry_path,
+            "corner_path": args.corner_path,
             "stationary_frames": args.stationary_frames,
             "timer_sanity_samples": args.timer_sanity_samples,
             "polygon_timing_enabled": args.polygon_timing,
@@ -122,6 +129,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
         "completed": bool(stopped.get("completed")),
         "camera_restored": bool(stopped.get("camera_restored")),
         "geometry_path_restored": bool(stopped.get("geometry_path_restored")),
+        "corner_path_restored": bool(stopped.get("corner_path_restored")),
         "fog_counter_delta_exact": (
             stopped.get("fog_full_build_delta")
             == stopped.get("fog_full_build_counter_end", 0)

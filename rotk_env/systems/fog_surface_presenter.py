@@ -156,6 +156,13 @@ class IncrementalFogSurfacePresenter:
         """Select the production fused path or the attribution-only legacy path."""
         self._fused_transform_bounds_enabled = bool(enabled)
 
+    def set_precomputed_hex_corners_enabled(self, enabled: bool) -> None:
+        """Select precomputed or legacy corners for controlled attribution A/B."""
+        self.renderer.hex_converter._set_precomputed_corner_offsets_enabled(enabled)
+
+    def _effective_corner_path(self) -> str:
+        return self.renderer.hex_converter._effective_corner_path()
+
     def _effective_geometry_path(self) -> str:
         # The fine-grained timers retain their original exact phase boundaries.
         # Controlled optimization A/B runs disable both timers and exercise the
@@ -239,6 +246,10 @@ class IncrementalFogSurfacePresenter:
                 self._fused_transform_bounds_enabled
             ),
             "geometry_path": self._effective_geometry_path(),
+            "precomputed_hex_corner_offsets_enabled": (
+                self._effective_corner_path() == "precomputed"
+            ),
+            "corner_path": self._effective_corner_path(),
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
 
@@ -514,6 +525,7 @@ class IncrementalFogSurfacePresenter:
             "bounds_rect_time_ns": bounds_rect_time_ns,
             "bounds_rect_time_ms": bounds_rect_time_ns / 1_000_000.0,
             "geometry_path": self._effective_geometry_path(),
+            "corner_path": self._effective_corner_path(),
         }
         if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
@@ -552,6 +564,7 @@ class IncrementalFogSurfacePresenter:
             bounds_rect_time_ns / 1_000_000.0,
         )
         metric("fog_full_build_geometry_path", self._effective_geometry_path())
+        metric("fog_full_build_corner_path", self._effective_corner_path())
         metric(
             "fog_full_build_polygon_timing_enabled",
             int(self._polygon_attribution_enabled),

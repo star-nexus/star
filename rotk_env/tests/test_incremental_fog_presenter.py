@@ -335,6 +335,100 @@ def test_fused_geometry_matches_legacy_fog_pixels(orientation):
     assert fused_presenter.presentation_rect == legacy_presenter.presentation_rect
 
 
+@pytest.mark.parametrize(
+    "orientation", [HexOrientation.FLAT_TOP, HexOrientation.POINTY_TOP]
+)
+@pytest.mark.parametrize("tile", [(-7, 3), (0, 0), (11, -9)])
+@pytest.mark.parametrize(
+    "camera_offset", [(-123.5, 87.5), (0.0, 0.0), (160.25, -240.75)]
+)
+@pytest.mark.parametrize("zoom", [0.15, 0.5, 1.0, 1.75, 2.5])
+def test_precomputed_corners_match_legacy_fused_points_and_rect(
+    monkeypatch, orientation, tile, camera_offset, zoom
+):
+    world = _world()
+    renderer = _Renderer(world, orientation)
+    presenter = IncrementalFogSurfacePresenter(renderer)
+    captured_points = []
+
+    def capture_polygon(_surface, _color, points):
+        captured_points.append(tuple(points))
+
+    monkeypatch.setattr(pygame.draw, "polygon", capture_polygon)
+    surface = pygame.Surface((320, 240), pygame.SRCALPHA)
+
+    presenter.set_precomputed_hex_corners_enabled(False)
+    legacy_rect = presenter._draw_tile_state(
+        surface,
+        tile,
+        list(camera_offset),
+        zoom,
+        set(),
+        set(),
+        clear_first=False,
+    )
+    legacy_points = captured_points.pop()
+
+    presenter.set_precomputed_hex_corners_enabled(True)
+    precomputed_rect = presenter._draw_tile_state(
+        surface,
+        tile,
+        list(camera_offset),
+        zoom,
+        set(),
+        set(),
+        clear_first=False,
+    )
+    precomputed_points = captured_points.pop()
+
+    assert precomputed_points == legacy_points
+    assert precomputed_rect == legacy_rect
+
+
+@pytest.mark.parametrize(
+    "orientation", [HexOrientation.FLAT_TOP, HexOrientation.POINTY_TOP]
+)
+def test_precomputed_corners_match_legacy_fog_pixels(orientation):
+    visible_tiles = {(-2, 1), (-1, 0), (0, 0), (1, -1), (2, -2)}
+    camera = [160.25, 120.5]
+    zoom = 1.75
+
+    legacy_world = _world()
+    legacy_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    legacy_world.get_singleton_component(FogOfWar).explored_tiles[
+        Faction.WEI
+    ].add((1, -1))
+    legacy_presenter = IncrementalFogSurfacePresenter(
+        _Renderer(legacy_world, orientation)
+    )
+    legacy_presenter.set_precomputed_hex_corners_enabled(False)
+    legacy = legacy_presenter.update_surface(visible_tiles, camera, zoom)
+
+    precomputed_world = _world()
+    precomputed_world.get_singleton_component(FogOfWar).faction_vision[
+        Faction.WEI
+    ].add((0, 0))
+    precomputed_world.get_singleton_component(FogOfWar).explored_tiles[
+        Faction.WEI
+    ].add((1, -1))
+    precomputed_presenter = IncrementalFogSurfacePresenter(
+        _Renderer(precomputed_world, orientation)
+    )
+    precomputed = precomputed_presenter.update_surface(
+        visible_tiles, camera, zoom
+    )
+
+    assert pygame.image.tostring(precomputed, "RGBA") == pygame.image.tostring(
+        legacy, "RGBA"
+    )
+    assert (
+        precomputed_presenter.presentation_rect
+        == legacy_presenter.presentation_rect
+    )
+
+
 def test_detailed_attribution_timing_is_disabled_during_normal_runtime(monkeypatch):
     world = _world()
     presenter = IncrementalFogSurfacePresenter(_Renderer(world))

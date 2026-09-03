@@ -109,6 +109,8 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert started["bounds_rect_timer_sanity"]["samples"] == 10
     assert started["geometry_path_requested"] == "fused"
     assert started["geometry_path_effective"] == "legacy"
+    assert started["corner_path_requested"] == "precomputed"
+    assert started["corner_path_effective"] == "precomputed"
 
     # The start frame is deliberately held so the deferred profiler epoch can
     # begin before the first production-style camera increment.
@@ -128,6 +130,7 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert stopped["ok"] is True
     assert stopped["camera_restored"] is True
     assert stopped["geometry_path_restored"] is True
+    assert stopped["corner_path_restored"] is True
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
     assert stopped["total_frames"] == 3
     assert stopped["camera_changed_frames"] == 3
@@ -230,6 +233,9 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert {event["geometry_path"] for event in stopped["rebuild_frames"]} == {
         "legacy"
     }
+    assert {event["corner_path"] for event in stopped["rebuild_frames"]} == {
+        "precomputed"
+    }
     assert presenter.diagnostic_snapshot()["polygon_attribution_enabled"] is False
     assert (
         presenter.diagnostic_snapshot()["hex_corners_attribution_enabled"] is False
@@ -262,6 +268,7 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
             "mode": "long_pan",
             "timer_sanity_samples": 10,
             "geometry_path": "legacy",
+            "corner_path": "legacy",
             "hex_corners_timing_enabled": False,
         }
     )
@@ -271,6 +278,8 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
     assert started["bounds_rect_timing_enabled"] is False
     assert started["geometry_path_requested"] == "legacy"
     assert started["geometry_path_effective"] == "legacy"
+    assert started["corner_path_requested"] == "legacy"
+    assert started["corner_path_effective"] == "legacy"
     harness.update(1.0)
     for _ in range(2):
         harness.update(1.0)
@@ -292,10 +301,15 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
     assert stopped["full_build_attribution"]["full_build_screen_transform_time_ns"] == 0
     assert stopped["full_build_attribution"]["full_build_bounds_rect_time_ns"] == 0
     assert stopped["geometry_path_restored"] is True
+    assert stopped["corner_path_restored"] is True
     assert {event["geometry_path"] for event in stopped["rebuild_frames"]} == {
         "legacy"
     }
+    assert {event["corner_path"] for event in stopped["rebuild_frames"]} == {
+        "legacy"
+    }
     assert presenter.diagnostic_snapshot()["geometry_path"] == "fused"
+    assert presenter.diagnostic_snapshot()["corner_path"] == "precomputed"
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
 
 
