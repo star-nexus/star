@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
+import pytest
 
 from framework.ecs.world import World
 
@@ -50,6 +51,80 @@ def _fresh(tiles, *, visible=(), explored=(), camera=(160.25, 120.75), zoom=1.0)
     presenter = IncrementalFogSurfacePresenter(_Renderer(world))
     surface = presenter.update_surface(set(tiles), list(camera), zoom)
     return world, presenter, surface
+
+
+def _reference_surface(
+    tiles,
+    *,
+    visible,
+    explored,
+    camera,
+    zoom,
+    orientation,
+):
+    surface = pygame.Surface(
+        (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT), pygame.SRCALPHA
+    )
+    converter = HexConverter(GameConfig.HEX_SIZE, orientation)
+    for tile in tiles:
+        if tile in visible:
+            continue
+        points = [
+            (
+                int(round(world_x * zoom + camera[0])),
+                int(round(world_y * zoom + camera[1])),
+            )
+            for world_x, world_y in converter.get_hex_corners(*tile)
+        ]
+        color = (
+            GameConfig.FOG_EXPLORED_COLOR
+            if tile in explored
+            else GameConfig.FOG_UNEXPLORED_COLOR
+        )
+        pygame.draw.polygon(surface, color, points)
+    return surface
+
+
+@pytest.mark.parametrize(
+    "orientation", [HexOrientation.FLAT_TOP, HexOrientation.POINTY_TOP]
+)
+@pytest.mark.parametrize("zoom", [0.1, 0.15, 0.5, 1.0, 3.0])
+@pytest.mark.parametrize(
+    "camera",
+    [
+        (160.0, 120.0),
+        (160.25, 120.75),
+        (160.5, 120.5),
+        (160.75, 120.25),
+        (160.123456789, -20.333333333),
+    ],
+)
+def test_full_rebuild_is_pixel_exact_across_camera_zoom_and_orientation(
+    monkeypatch, orientation, zoom, camera
+):
+    monkeypatch.setattr(GameConfig, "WINDOW_WIDTH", 320)
+    monkeypatch.setattr(GameConfig, "WINDOW_HEIGHT", 240)
+    tiles = {(-1, 0), (0, 0), (1, 0), (0, 1), (3, -2)}
+    visible = {(0, 0), (3, -2)}
+    explored = {(1, 0), (0, 1)}
+    world = _world(visible=visible, explored=explored)
+    presenter = IncrementalFogSurfacePresenter(_Renderer(world, orientation))
+    surface = presenter.update_surface(tiles, list(camera), zoom)
+    reference = _reference_surface(
+        tiles,
+        visible=visible,
+        explored=explored,
+        camera=camera,
+        zoom=zoom,
+        orientation=orientation,
+    )
+
+    assert _pixels(surface) == _pixels(reference)
+    alpha_bounds = surface.get_bounding_rect(min_alpha=1)
+    if alpha_bounds.width == 0:
+        assert presenter.presentation_rect is None
+    else:
+        assert presenter.presentation_rect.contains(alpha_bounds)
 
 
 def test_identical_geometry_reuses_surface_and_camera_change_rebuilds(monkeypatch):
@@ -154,4 +229,3 @@ def test_world_corner_cache_is_camera_independent_and_geometry_sensitive():
     orientation_changed = presenter._tile_world_corners((2, -3))
     assert orientation_changed is not size_changed
     assert orientation_changed != size_changed
-
