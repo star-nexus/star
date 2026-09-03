@@ -14,15 +14,9 @@ Window mode therefore needs no second algorithm. ScaleMovementSystem publishes
 hex-commit invalidations and the maintained UnitSpatialIndex lets the shared
 VisionSystem use the low-rate safety audit automatically.
 
-The large-window default deliberately carries headroom above the minimum capacity
-measured sufficient for the 5000-unit benchmark. 8192 entries eliminated cache
-thrash for that workload; 16384 is used here as the bounded operational default
-so larger worlds can grow their working set without immediately re-entering the
-thrashing regime. The cache does not preallocate entries, so this larger bound
-costs memory only when the workload actually uses the additional geometries.
-
-Window mode uses a bounded capacity with enough headroom for large maps while
-the shared headless system keeps its smaller default.
+Window mode uses a bounded capacity with headroom for large maps. The cache does
+not preallocate entries, while headless mode keeps the shared system's smaller
+default.
 """
 
 from __future__ import annotations

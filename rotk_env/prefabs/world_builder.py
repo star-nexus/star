@@ -4,6 +4,10 @@ GameScene, pytest, and ``--headless --no-hub`` share this builder so the
 system list and opening setup stay one copy. ``hub_url=None`` installs an
 offline ``LLMSystem`` that never opens a websocket.
 
+The built-in ``MockLLMAISystem`` is an explicit rule-BOT controller, not an
+automatic fallback for missing external agents. It is mounted only when
+``enable_mock_ai=True``.
+
 This assembler is the current eval match: annihilate the enemy on one map.
 TerritorySystem, RandomEventSystem, ConstructionPoints, and SkillPoints stay
 in ENV for other scenes; they are not mounted here. Map tiles are terrain
@@ -66,7 +70,7 @@ from ..systems.resource_recovery_system import ResourceRecoverySystem
 from ..systems.settlement_report_system import SettlementReportSystem
 from ..systems.statistics_system import StatisticsSystem
 from ..systems.turn_system import TurnSystem
-from ..systems.vision_system import VisionSystem
+from ..systems.vision_system import VisionSystem as BaseVisionSystem
 
 DEFAULT_HUB_URL = "ws://localhost:8000/ws/metaverse"
 
@@ -83,6 +87,7 @@ def build_skirmish_world(
     hub_url: Optional[str] = None,
     env_id: Optional[str] = None,
     display: DisplayKind = "none",
+    enable_mock_ai: bool = False,
     world: Optional[World] = None,
 ) -> World:
     """Build a match World.
@@ -95,6 +100,10 @@ def build_skirmish_world(
 
     ``hub_url=None`` keeps ``LLMSystem`` offline. Pass ``DEFAULT_HUB_URL``
     (or another websocket URL) to attach to a Hub.
+
+    ``enable_mock_ai`` explicitly mounts the built-in rule BOT. Leaving it
+    false guarantees that no MockLLMAISystem runs in the background, even if
+    player slots are marked ``PlayerType.AI`` for external-agent evaluation.
     """
     if isinstance(mode, str):
         try:
@@ -114,6 +123,7 @@ def build_skirmish_world(
         hub_url=hub_url,
         env_id=env_id,
         display=display,
+        enable_mock_ai=enable_mock_ai,
     )
     assembler.assemble()
     return assembler.world
@@ -131,6 +141,7 @@ class _SkirmishAssembler:
         hub_url: Optional[str],
         env_id: Optional[str],
         display: DisplayKind,
+        enable_mock_ai: bool,
     ):
         self.world = world
         self.players = players
@@ -141,6 +152,7 @@ class _SkirmishAssembler:
         self.hub_url = hub_url
         self.env_id = env_id
         self.display = display
+        self.enable_mock_ai = bool(enable_mock_ai)
         self._temp_initial_unit_counts: Dict[Faction, int] = {}
 
     def assemble(self) -> None:
@@ -150,6 +162,7 @@ class _SkirmishAssembler:
         self._initialize_systems()
         self._initialize_players()
         self._initialize_units()
+        self._initialize_scale_spatial_index()
         self._initialize_stats()
         self._refresh_opening_vision()
 
@@ -195,35 +208,69 @@ class _SkirmishAssembler:
         self.world.add_singleton_component(AgentInfoRegistry())
 
     def _initialize_systems(self) -> None:
+        vision_system = BaseVisionSystem()
+        movement_system = MovementSystem()
+        combat_system = CombatSystem()
+        recovery_system = ResourceRecoverySystem()
+
+        if self.display == "window":
+            from ..systems.scale_vision_system import VisionSystem as WindowVisionSystem
+            from ..systems.scale_movement_system import MovementSystem as WindowMovementSystem
+            from ..systems.scale_combat_system import CombatSystem as WindowCombatSystem
+            from ..systems.scale_resource_recovery_system import (
+                ResourceRecoverySystem as WindowResourceRecoverySystem,
+            )
+
+            vision_system = WindowVisionSystem()
+            movement_system = WindowMovementSystem()
+            combat_system = WindowCombatSystem()
+            recovery_system = WindowResourceRecoverySystem()
+
         systems = [
             GameTimeSystem(),
             MapSystem(scenario=self.scenario),
-            VisionSystem(),
-            MovementSystem(),
-            CombatSystem(),
-            ResourceRecoverySystem(),
-            MockLLMAISystem(),
-            LLMSystem(server_url=self.hub_url, env_id=self.env_id),
-            StatisticsSystem(),
-            SettlementReportSystem(),
+            vision_system,
+            movement_system,
+            combat_system,
+            recovery_system,
         ]
-        # Display-dependent systems are imported here, not at module scope:
-        # they pull in pygame, and `display="none"` (the eval path) mounts none
-        # of them. A module-level import would put SDL in every headless run.
+
+        if self.enable_mock_ai:
+            systems.append(MockLLMAISystem())
+
+        statistics_system = StatisticsSystem()
+        if self.display == "window":
+            from ..systems.scale_statistics_system import (
+                StatisticsSystem as WindowStatisticsSystem,
+            )
+
+            statistics_system = WindowStatisticsSystem()
+
+        systems.extend(
+            [
+                LLMSystem(server_url=self.hub_url, env_id=self.env_id),
+                statistics_system,
+                SettlementReportSystem(),
+            ]
+        )
+
         if self.display in ("dummy", "window"):
-            from ..systems.animation_system import AnimationSystem
-            from ..systems.input_system import InputHandlingSystem
+            if self.display == "window":
+                # All visible launches share the same window-specific input and
+                # animation semantics. Dummy/headless keeps legacy non-rendering
+                # systems so evaluation behavior is unchanged.
+                from ..systems.window_animation_system import AnimationSystem
+                from ..systems.scale_input_system import InputHandlingSystem
+            else:
+                from ..systems.animation_system import AnimationSystem
+                from ..systems.input_system import InputHandlingSystem
 
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
-            # Compatibility-named optimized renderers preserve legacy UI helpers
-            # that discover systems by class name.
-            from ..systems.optimized_render_systems import (
-                EffectRenderSystem,
-                MapRenderSystem,
-                MiniMapSystem,
-                UnitRenderSystem,
-            )
+            from ..systems.optimized_render_systems import MapRenderSystem
+            from ..systems.scale_unit_render_system import UnitRenderSystem
+            from ..systems.scale_minimap_system import MiniMapSystem
+            from ..systems.scale_effect_render_system import EffectRenderSystem
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
             from ..systems.ui_render_system import UIRenderSystem
@@ -242,7 +289,12 @@ class _SkirmishAssembler:
                 ]
             )
         if self.game_mode == GameMode.REAL_TIME:
-            systems.append(RealtimeSystem())
+            realtime_system = RealtimeSystem()
+            if self.display == "window":
+                from ..systems.scale_realtime_system import RealtimeSystem as WindowRealtimeSystem
+
+                realtime_system = WindowRealtimeSystem()
+            systems.append(realtime_system)
         else:
             systems.append(TurnSystem())
         for system in systems:
@@ -296,6 +348,14 @@ class _SkirmishAssembler:
                     name=f"{faction.value}_{unit_type.value}_{i+1}",
                 )
                 player.units.add(unit_entity)
+
+    def _initialize_scale_spatial_index(self) -> None:
+        """Build the window-only derived unit index before profiling begins."""
+        if self.display != "window":
+            return
+        from ..utils.unit_spatial_index import rebuild_unit_spatial_index
+
+        rebuild_unit_spatial_index(self.world)
 
     def _create_unit(
         self, faction: Faction, unit_type: UnitType, position: tuple, name: str = ""
@@ -390,6 +450,6 @@ class _SkirmishAssembler:
     def _refresh_opening_vision(self) -> None:
         """Compute FogOfWar before the first tick so get_faction_state is not empty."""
         for system in self.world.systems:
-            if isinstance(system, VisionSystem):
+            if isinstance(system, BaseVisionSystem):
                 system.update(0.0)
                 break

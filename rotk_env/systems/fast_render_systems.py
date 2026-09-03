@@ -3,8 +3,7 @@
 These classes keep the existing renderers as the source of visual semantics and
 only replace hot paths that were doing expensive work every frame:
 
-* map terrain is rasterized once per camera/zoom state instead of rebuilding
-  every tile every frame;
+* map terrain uses cached texture scaling plus an adaptive direct/raster path;
 * terrain/unit texture scaling is cached by pixel size;
 * fog and minimap surfaces are reused/cached instead of allocated and redrawn
   from scratch every frame;
@@ -25,6 +24,7 @@ from typing import Dict, List, Optional, Tuple
 import pygame
 
 from framework.engine import RMS
+from framework.ecs import profiling
 from ..components import (
     Camera,
     Combat,
@@ -47,7 +47,17 @@ from .unit_render_system import UnitRenderSystem
 
 
 class FastMapRenderSystem(MapRenderSystem):
-    """Map renderer with viewport, texture-scale, and fog raster caches."""
+    """Map renderer with adaptive terrain, texture-scale, and fog caches.
+
+    A viewport raster is excellent while the camera is stationary, but the old
+    fast path rebuilt a full-window Surface every frame while panning/zooming.
+    Under sustained camera movement that made ``MapRenderSystem`` cost 5-10 ms.
+
+    The adaptive path renders cached per-tile textures directly while the camera
+    state is changing, then builds a viewport raster only after the exact camera
+    state is observed for a second frame. Once stationary, subsequent frames go
+    back to the single cached-raster blit.
+    """
 
     def __init__(self):
         super().__init__()
@@ -55,6 +65,9 @@ class FastMapRenderSystem(MapRenderSystem):
         self._scaled_terrain_cache: Dict[int, pygame.Surface] = {}
         self._terrain_surface: Optional[pygame.Surface] = None
         self._terrain_surface_key = None
+        self._terrain_candidate_key = None
+        self._terrain_stable_frames = 0
+        self._terrain_raster_stable_frames = 2
         self._fog_cached_surface: Optional[pygame.Surface] = None
         self._fog_cache_key = None
 
@@ -63,6 +76,8 @@ class FastMapRenderSystem(MapRenderSystem):
         self._scaled_terrain_size = None
         self._terrain_surface = None
         self._terrain_surface_key = None
+        self._terrain_candidate_key = None
+        self._terrain_stable_frames = 0
         self._fog_cached_surface = None
         self._fog_cache_key = None
 
@@ -91,32 +106,60 @@ class FastMapRenderSystem(MapRenderSystem):
             self._scaled_terrain_cache[key] = scaled
         return scaled
 
-    def _render_map_optimized(
-        self,
-        visible_tiles,
-        camera_offset: List[float],
-        zoom: float,
-    ):
-        """Rasterize static terrain once for an unchanged camera state."""
-        map_data = self.world.get_singleton_component(MapData)
-        if not map_data:
-            return
-
-        viewport = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
-        key = (
+    def _terrain_view_key(self, map_data, camera_offset, zoom):
+        return (
             id(map_data),
             map_data.map_id,
-            viewport,
+            (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT),
             round(float(camera_offset[0]), 3),
             round(float(camera_offset[1]), 3),
             round(float(zoom), 5),
             self.hex_converter.orientation,
         )
-        if self._terrain_surface is not None and key == self._terrain_surface_key:
-            RMS.draw(self._terrain_surface, (0, 0))
-            return
 
+    def _render_terrain_direct(
+        self,
+        map_data: MapData,
+        visible_tiles,
+        camera_offset: List[float],
+        zoom: float,
+    ) -> None:
+        """Queue visible terrain directly; scaled textures are already cached."""
+        for q, r in visible_tiles:
+            tile_entity = map_data.tiles.get((q, r))
+            if tile_entity is None:
+                continue
+            terrain = self.world.get_component(tile_entity, Terrain)
+            if terrain is None:
+                continue
+
+            world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
+            screen_x = world_x * zoom + camera_offset[0]
+            screen_y = world_y * zoom + camera_offset[1]
+            texture = self._get_terrain_texture(terrain.terrain_type, (q, r))
+
+            if texture is not None and self.texture_loaded:
+                scaled = self._scaled_terrain_texture(texture, zoom)
+                rect = scaled.get_rect(center=(int(screen_x), int(screen_y)))
+                RMS.draw(scaled, rect.topleft)
+                if terrain.terrain_type == TerrainType.CITY:
+                    self._render_city_marker(q, r, camera_offset, zoom)
+            else:
+                self._render_hex_with_color(
+                    terrain.terrain_type, q, r, camera_offset, zoom
+                )
+
+    def _build_terrain_surface(
+        self,
+        map_data: MapData,
+        visible_tiles,
+        camera_offset: List[float],
+        zoom: float,
+    ) -> pygame.Surface:
+        """Rasterize the current stationary viewport once."""
+        viewport = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
         surface = pygame.Surface(viewport, pygame.SRCALPHA)
+
         for q, r in visible_tiles:
             tile_entity = map_data.tiles.get((q, r))
             if tile_entity is None:
@@ -162,9 +205,47 @@ class FastMapRenderSystem(MapRenderSystem):
                     2,
                 )
 
-        self._terrain_surface = surface
-        self._terrain_surface_key = key
-        RMS.draw(surface, (0, 0))
+        return surface
+
+    def _render_map_optimized(
+        self,
+        visible_tiles,
+        camera_offset: List[float],
+        zoom: float,
+    ):
+        """Use direct rendering while moving; raster cache while stationary."""
+        map_data = self.world.get_singleton_component(MapData)
+        if not map_data:
+            return
+
+        key = self._terrain_view_key(map_data, camera_offset, zoom)
+        profiling.profiler.set_frame_metric("map_visible_tiles", len(visible_tiles))
+
+        if self._terrain_surface is not None and key == self._terrain_surface_key:
+            profiling.profiler.set_frame_metric("map_render_mode", "cached_raster")
+            RMS.draw(self._terrain_surface, (0, 0))
+            return
+
+        if key == self._terrain_candidate_key:
+            self._terrain_stable_frames += 1
+        else:
+            self._terrain_candidate_key = key
+            self._terrain_stable_frames = 1
+
+        if self._terrain_stable_frames >= self._terrain_raster_stable_frames:
+            self._terrain_surface = self._build_terrain_surface(
+                map_data, visible_tiles, camera_offset, zoom
+            )
+            self._terrain_surface_key = key
+            profiling.profiler.set_frame_metric("map_render_mode", "raster_build")
+            RMS.draw(self._terrain_surface, (0, 0))
+            return
+
+        # A changing camera used to allocate/rasterize a full viewport here on
+        # every frame. Queueing cached tile blits is substantially cheaper, and
+        # RenderEngine batches consecutive simple blits before submitting them.
+        profiling.profiler.set_frame_metric("map_render_mode", "direct_moving")
+        self._render_terrain_direct(map_data, visible_tiles, camera_offset, zoom)
 
     def _render_fog_of_war_optimized(
         self,

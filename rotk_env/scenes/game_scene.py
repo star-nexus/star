@@ -6,7 +6,7 @@ from typing import Dict, Any
 from framework.engine.scenes import Scene, SMS
 from framework import World
 from ..components.settlement_report import SettlementReport
-from ..components import GameState, Unit, UnitCount
+from ..components import GameState, MapData, Unit, UnitCount
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from performance_profiler import profiler
@@ -23,9 +23,11 @@ class GameScene(Scene):
         # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         self.game_mode = GameMode.TURN_BASED  # Default game mode
+        self.enable_mock_ai = False
 
         # Initialization flag
         self.initialized = False
+        self._profile_warmup_pending = False
 
         # Game end waiting state
         self.game_end_wait_start = None
@@ -57,6 +59,7 @@ class GameScene(Scene):
         # still attaches to the default local Hub.
         self.hub_url = kwargs["hub_url"] if "hub_url" in kwargs else DEFAULT_HUB_URL
         self.env_id = kwargs.get("env_id")
+        self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
 
         if not self.initialized:
             self._initialize_game()
@@ -74,16 +77,61 @@ class GameScene(Scene):
             hub_url=self.hub_url,
             env_id=self.env_id,
             display=display,
+            enable_mock_ai=self.enable_mock_ai,
             world=self.world,
         )
+
+        # Attach workload context to profiler snapshots so timing reports remain
+        # interpretable across maps and player configurations.
+        map_data = self.world.get_singleton_component(MapData)
+        initial_units = len(self.world.query().with_component(Unit).entities())
+        mode_label = (
+            self.game_mode.value if hasattr(self.game_mode, "value") else str(self.game_mode)
+        )
+        players_label = ",".join(
+            f"{getattr(faction, 'value', faction)}:{getattr(player_type, 'value', player_type)}"
+            for faction, player_type in sorted(
+                self.players.items(), key=lambda item: str(getattr(item[0], "value", item[0]))
+            )
+        )
+        metadata = {
+            "mode": mode_label,
+            "scenario": self.scenario,
+            "players": players_label,
+            "initial_units": initial_units,
+            "display": display,
+            "mock_ai": self.enable_mock_ai,
+        }
+        if map_data is not None:
+            metadata.update(
+                map_id=map_data.map_id or self.scenario,
+                map_size=f"{map_data.width}x{map_data.height}",
+                map_tiles=len(map_data.tiles),
+            )
+        profiler.set_metadata(**metadata)
+
+        # Drop menu/scene-switch/map-initialization frames. The first complete
+        # gameplay render still performs lazy UI/font/surface initialization, so
+        # mark one current engine frame for exclusion as well. The deferred reset
+        # in update() closes the profiler for that whole frame; timing resumes on
+        # the following start_frame(). This keeps frame-1 warmup from permanently
+        # occupying the rolling "worst slow frame" diagnostic.
+        if profiler.enabled:
+            profiler.reset()
+            self._profile_warmup_pending = True
 
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
+            if self._profile_warmup_pending:
+                self._profile_warmup_pending = False
+                if profiler.enabled:
+                    profiler.reset()
+
             GameConfig.sync_from_display()
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
-            with profiler.time_system("world_update"):
+            with profiler.time_system("world_update", category="update"):
                 self.world.update(delta_time)
 
             game_state = self.world.get_singleton_component(GameState)

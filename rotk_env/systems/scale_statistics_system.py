@@ -1,7 +1,7 @@
 """Window-only statistics sampler for large interactive scenarios.
 
-The legacy StatisticsSystem intentionally keeps the benchmark/eval behaviour
-unchanged. This compatibility-named subclass is mounted only for
+The base StatisticsSystem keeps headless evaluation behaviour unchanged. This
+compatibility-named subclass is mounted only for
 ``display='window'`` and spreads the once-per-second O(units) bookkeeping over
 small frame batches so 1000+ unit visualization does not pay three full scans
 in a single frame.
