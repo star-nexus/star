@@ -111,8 +111,14 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert started["bounds_rect_timer_sanity"]["samples"] == 10
     assert started["geometry_path_requested"] == "fused"
     assert started["geometry_path_effective"] == "legacy"
+    assert started["geometry_path_before"] == "fused"
     assert started["corner_path_requested"] == "precomputed"
     assert started["corner_path_effective"] == "precomputed"
+    assert started["corner_path_before"] == "precomputed"
+    assert started["world_corner_path_before"] == "cached"
+    assert started["presentation_bounds_path_before"] == "fog_content"
+    assert started["full_rebuild_observer_active_before"] is False
+    assert started["full_rebuild_observer_active_effective"] is False
 
     # The start frame is deliberately held so the deferred profiler epoch can
     # begin before the first production-style camera increment.
@@ -133,6 +139,12 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     assert stopped["camera_restored"] is True
     assert stopped["geometry_path_restored"] is True
     assert stopped["corner_path_restored"] is True
+    assert stopped["geometry_path_before"] == "fused"
+    assert stopped["corner_path_before"] == "precomputed"
+    assert stopped["world_corner_path_before"] == "cached"
+    assert stopped["presentation_bounds_path_before"] == "fog_content"
+    assert stopped["full_rebuild_observer_active_before"] is False
+    assert stopped["full_rebuild_observer_active_effective"] is False
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
     assert stopped["total_frames"] == 3
     assert stopped["camera_changed_frames"] == 3

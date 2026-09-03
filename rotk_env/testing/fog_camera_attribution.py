@@ -250,6 +250,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             command.get("bounds_rect_timing_enabled", False)
         )
         presenter_before = presenter.diagnostic_snapshot()
+        geometry_path_before = presenter_before["geometry_path"]
+        corner_path_before = presenter_before["corner_path"]
+        world_corner_path_before = presenter_before["tile_world_corner_path"]
         presentation_bounds_path_before = presenter_before[
             "presentation_bounds_path"
         ]
@@ -281,6 +284,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             ),
         }
         full_rebuild_observer_before = presenter._full_rebuild_observer
+        full_rebuild_observer_active_before = (
+            full_rebuild_observer_before is not None
+        )
         original_camera = {
             "offset_x": float(camera.offset_x),
             "offset_y": float(camera.offset_y),
@@ -377,10 +383,13 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "bounds_rect_timing_enabled": bounds_rect_timing_enabled,
             "geometry_path_requested": geometry_path,
             "geometry_path_effective": start_snapshot["geometry_path"],
+            "geometry_path_before": geometry_path_before,
             "corner_path_requested": corner_path,
             "corner_path_effective": start_snapshot["corner_path"],
+            "corner_path_before": corner_path_before,
             "world_corner_path_requested": world_corner_path,
             "world_corner_path_effective": start_snapshot["tile_world_corner_path"],
+            "world_corner_path_before": world_corner_path_before,
             "presentation_bounds_path_requested": presentation_bounds_path,
             "presentation_bounds_path_effective": start_snapshot[
                 "presentation_bounds_path"
@@ -397,6 +406,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "presentation_bounds_path_before": presentation_bounds_path_before,
             "attribution_enabled_before": attribution_enabled_before,
             "full_rebuild_observer_before": full_rebuild_observer_before,
+            "full_rebuild_observer_active_before": (
+                full_rebuild_observer_active_before
+            ),
             "translation_feasibility_enabled": translation_feasibility_enabled,
             "translation_nearby_radius": translation_nearby_radius,
             "translation_collector": translation_collector,
@@ -465,15 +477,21 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "bounds_rect_timing_enabled": state["bounds_rect_timing_enabled"],
             "geometry_path_requested": state["geometry_path_requested"],
             "geometry_path_effective": state["geometry_path_effective"],
+            "geometry_path_before": state["geometry_path_before"],
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
+            "corner_path_before": state["corner_path_before"],
             "world_corner_path_requested": state["world_corner_path_requested"],
             "world_corner_path_effective": state["world_corner_path_effective"],
+            "world_corner_path_before": state["world_corner_path_before"],
             "presentation_bounds_path_requested": state[
                 "presentation_bounds_path_requested"
             ],
             "presentation_bounds_path_effective": state[
                 "presentation_bounds_path_effective"
+            ],
+            "presentation_bounds_path_before": state[
+                "presentation_bounds_path_before"
             ],
             "translation_feasibility_enabled": state[
                 "translation_feasibility_enabled"
@@ -482,6 +500,12 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "phase_raster_feasibility_enabled": state[
                 "phase_raster_feasibility_enabled"
             ],
+            "full_rebuild_observer_active_before": state[
+                "full_rebuild_observer_active_before"
+            ],
+            "full_rebuild_observer_active_effective": (
+                presenter._full_rebuild_observer is not None
+            ),
         }
 
     def _finish_result(
@@ -934,12 +958,15 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "bounds_rect_timing_enabled": state["bounds_rect_timing_enabled"],
             "geometry_path_requested": state["geometry_path_requested"],
             "geometry_path_effective": state["geometry_path_effective"],
+            "geometry_path_before": state["geometry_path_before"],
             "geometry_path_restored": geometry_path_restored,
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
+            "corner_path_before": state["corner_path_before"],
             "corner_path_restored": corner_path_restored,
             "world_corner_path_requested": state["world_corner_path_requested"],
             "world_corner_path_effective": state["world_corner_path_effective"],
+            "world_corner_path_before": state["world_corner_path_before"],
             "world_corner_path_restored": world_corner_path_restored,
             "presentation_bounds_path_requested": state[
                 "presentation_bounds_path_requested"
@@ -947,9 +974,20 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "presentation_bounds_path_effective": state[
                 "presentation_bounds_path_effective"
             ],
+            "presentation_bounds_path_before": state[
+                "presentation_bounds_path_before"
+            ],
             "presentation_bounds_path_restored": presentation_bounds_path_restored,
             "attribution_timers_restored": attribution_timers_restored,
             "full_rebuild_observer_restored": full_rebuild_observer_restored,
+            "full_rebuild_observer_active_before": state[
+                "full_rebuild_observer_active_before"
+            ],
+            "full_rebuild_observer_active_effective": (
+                state["translation_collector"] is not None
+                or state["phase_raster_collector"] is not None
+                or state["full_rebuild_observer_active_before"]
+            ),
             "translation_feasibility_enabled": state[
                 "translation_feasibility_enabled"
             ],
