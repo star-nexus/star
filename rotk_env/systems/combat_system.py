@@ -34,6 +34,7 @@ from ..prefabs.config import (
 )
 from ..utils.hex_utils import HexMath
 from ..utils.env_events import BattleEvent, UnitDeathEvent
+from .resource_recovery_system import mark_action_points_spent
 
 
 class CombatSystem(System):
@@ -234,6 +235,7 @@ class CombatSystem(System):
             self._create_miss_display(target_entity)
             self._record_miss_to_systems(attacker_entity, target_entity)
             action_points.consume_ap(ActionType.ATTACK)
+            mark_action_points_spent(self.world, attacker_entity)
             return {
                 "success": True,
                 "battle_result": battle_result,
@@ -308,6 +310,7 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
+        mark_action_points_spent(self.world, attacker_entity)
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)
@@ -391,6 +394,7 @@ class CombatSystem(System):
             # Record miss to BattleLog
             self._record_miss_to_systems(attacker_entity, target_entity)
             action_points.consume_ap(ActionType.ATTACK)
+            mark_action_points_spent(self.world, attacker_entity)
             return False
 
         # 2) Calculate base damage
@@ -450,6 +454,7 @@ class CombatSystem(System):
 
         # 5) Consume action points
         action_points.consume_ap(ActionType.ATTACK)
+        mark_action_points_spent(self.world, attacker_entity)
 
         # 6) Handle special effects
         self._handle_combat_effects(attacker_entity, target_entity)

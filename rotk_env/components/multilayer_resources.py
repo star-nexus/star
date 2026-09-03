@@ -49,6 +49,10 @@ class ActionPoints(Component):
         """Reset AP (at the start of a turn)."""
         self.current_ap = self.max_ap
 
+    def recover(self, amount: int = 1) -> None:
+        """Recover AP without duplicating its max-bound rule in a scheduler."""
+        self.current_ap = min(self.max_ap, self.current_ap + max(0, int(amount)))
+
 
 @dataclass
 class MovementPoints(Component):

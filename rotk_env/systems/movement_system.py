@@ -23,6 +23,7 @@ from ..components import (
 )
 from ..prefabs.config import TerrainType, UnitState
 from ..utils.hex_utils import HexMath
+from .resource_recovery_system import mark_movement_points_spent
 
 
 class MovementSystem(System):
@@ -150,6 +151,7 @@ class MovementSystem(System):
         print(f"✓ Unit {entity} moves to {target_pos}")
 
         movement_points.current_mp -= total_cost
+        mark_movement_points_spent(self.world, entity)
 
         statistics_system = self._get_statistics_system()
         if statistics_system:
