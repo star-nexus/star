@@ -20,6 +20,7 @@ EXPERIMENT_ID = "2026-09-camera-fog-full-rebuild"
 MODES = {"stationary", "short_pan", "long_pan", "zoom"}
 GEOMETRY_PATHS = {"fused", "legacy"}
 CORNER_PATHS = {"precomputed", "legacy"}
+WORLD_CORNER_PATHS = {"cached", "legacy"}
 PAN_TARGETS = {"short_pan": 128.0, "long_pan": 320.0}
 ZOOM_TARGET_DELTA = 0.5
 
@@ -152,6 +153,15 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "error": "invalid_fog_corner_path",
                 "corner_paths": sorted(CORNER_PATHS),
             }
+        world_corner_path = str(
+            command.get("world_corner_path", "cached")
+        ).strip().lower()
+        if world_corner_path not in WORLD_CORNER_PATHS:
+            return {
+                "ok": False,
+                "error": "invalid_fog_world_corner_path",
+                "world_corner_paths": sorted(WORLD_CORNER_PATHS),
+            }
         translation_feasibility_enabled = bool(
             command.get("translation_feasibility_enabled", False)
         )
@@ -214,6 +224,24 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         precomputed_hex_corner_offsets_enabled_before = bool(
             presenter_before["precomputed_hex_corner_offsets_enabled"]
         )
+        tile_world_corner_cache_enabled_before = bool(
+            presenter_before["tile_world_corner_cache_enabled"]
+        )
+        attribution_enabled_before = {
+            "polygon": bool(presenter_before["polygon_attribution_enabled"]),
+            "hex_corners": bool(
+                presenter_before["hex_corners_attribution_enabled"]
+            ),
+            "geometry_prepare": bool(
+                presenter_before["geometry_prepare_attribution_enabled"]
+            ),
+            "screen_transform": bool(
+                presenter_before["screen_transform_attribution_enabled"]
+            ),
+            "bounds_rect": bool(
+                presenter_before["bounds_rect_attribution_enabled"]
+            ),
+        }
         full_rebuild_observer_before = presenter._full_rebuild_observer
         start_camera = {
             "offset_x": float(camera.offset_x),
@@ -236,6 +264,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         presenter.set_bounds_rect_attribution_enabled(bounds_rect_timing_enabled)
         presenter.set_fused_transform_bounds_enabled(geometry_path == "fused")
         presenter.set_precomputed_hex_corners_enabled(corner_path == "precomputed")
+        presenter.set_tile_world_corner_cache_enabled(world_corner_path == "cached")
         translation_collector = None
         phase_raster_collector = None
         if translation_feasibility_enabled:
@@ -302,12 +331,18 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "geometry_path_effective": start_snapshot["geometry_path"],
             "corner_path_requested": corner_path,
             "corner_path_effective": start_snapshot["corner_path"],
+            "world_corner_path_requested": world_corner_path,
+            "world_corner_path_effective": start_snapshot["tile_world_corner_path"],
             "fused_transform_bounds_enabled_before": (
                 fused_transform_bounds_enabled_before
             ),
             "precomputed_hex_corner_offsets_enabled_before": (
                 precomputed_hex_corner_offsets_enabled_before
             ),
+            "tile_world_corner_cache_enabled_before": (
+                tile_world_corner_cache_enabled_before
+            ),
+            "attribution_enabled_before": attribution_enabled_before,
             "full_rebuild_observer_before": full_rebuild_observer_before,
             "translation_feasibility_enabled": translation_feasibility_enabled,
             "translation_nearby_radius": translation_nearby_radius,
@@ -379,6 +414,8 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "geometry_path_effective": state["geometry_path_effective"],
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
+            "world_corner_path_requested": state["world_corner_path_requested"],
+            "world_corner_path_effective": state["world_corner_path_effective"],
             "translation_feasibility_enabled": state[
                 "translation_feasibility_enabled"
             ],
@@ -437,6 +474,40 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         attribution["non_polygon_tile_loop_time_ms"] = (
             attribution["non_polygon_tile_loop_time_ns"] / 1_000_000.0
         )
+        cache_hits = int(end_snapshot["tile_world_corner_cache_hits"]) - int(
+            start_snapshot["tile_world_corner_cache_hits"]
+        )
+        cache_misses = int(end_snapshot["tile_world_corner_cache_misses"]) - int(
+            start_snapshot["tile_world_corner_cache_misses"]
+        )
+        cache_resets = int(end_snapshot["tile_world_corner_cache_resets"]) - int(
+            start_snapshot["tile_world_corner_cache_resets"]
+        )
+        cache_lookups = cache_hits + cache_misses
+        cache_diagnostics = {
+            "enabled": state["world_corner_path_effective"] == "cached",
+            "path_requested": state["world_corner_path_requested"],
+            "path_effective": state["world_corner_path_effective"],
+            "entries_start": int(
+                start_snapshot["tile_world_corner_cache_entries"]
+            ),
+            "entries_end": int(end_snapshot["tile_world_corner_cache_entries"]),
+            "hits_start": int(start_snapshot["tile_world_corner_cache_hits"]),
+            "hits_end": int(end_snapshot["tile_world_corner_cache_hits"]),
+            "hits_delta": cache_hits,
+            "misses_start": int(start_snapshot["tile_world_corner_cache_misses"]),
+            "misses_end": int(end_snapshot["tile_world_corner_cache_misses"]),
+            "misses_delta": cache_misses,
+            "resets_delta": cache_resets,
+            "lookups_delta": cache_lookups,
+            "hit_ratio": cache_hits / cache_lookups if cache_lookups else None,
+            "hits_per_full_rebuild": (
+                cache_hits / build_delta if build_delta else None
+            ),
+            "misses_per_full_rebuild": (
+                cache_misses / build_delta if build_delta else None
+            ),
+        }
         attribution["average_hex_corners_time_per_full_rebuild_ns"] = (
             attribution["full_build_hex_corners_time_ns"] / build_delta
             if build_delta
@@ -616,6 +687,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 start_snapshot["geometry_change_detail_counts"],
             ),
             "full_build_attribution": attribution,
+            "tile_world_corner_cache": cache_diagnostics,
             "rebuild_frames": end_snapshot["attribution_events"],
         }
 
@@ -653,16 +725,30 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             presenter.set_full_rebuild_observer(
                 state["full_rebuild_observer_before"]
             )
-            presenter.set_full_build_attribution_enabled(False)
-            presenter.set_hex_corners_attribution_enabled(False)
-            presenter.set_geometry_prepare_attribution_enabled(False)
-            presenter.set_screen_transform_attribution_enabled(False)
-            presenter.set_bounds_rect_attribution_enabled(False)
+            attribution_before = state["attribution_enabled_before"]
+            presenter.set_full_build_attribution_enabled(
+                attribution_before["polygon"]
+            )
+            presenter.set_hex_corners_attribution_enabled(
+                attribution_before["hex_corners"]
+            )
+            presenter.set_geometry_prepare_attribution_enabled(
+                attribution_before["geometry_prepare"]
+            )
+            presenter.set_screen_transform_attribution_enabled(
+                attribution_before["screen_transform"]
+            )
+            presenter.set_bounds_rect_attribution_enabled(
+                attribution_before["bounds_rect"]
+            )
             presenter.set_fused_transform_bounds_enabled(
                 state["fused_transform_bounds_enabled_before"]
             )
             presenter.set_precomputed_hex_corners_enabled(
                 state["precomputed_hex_corner_offsets_enabled_before"]
+            )
+            presenter.set_tile_world_corner_cache_enabled(
+                state["tile_world_corner_cache_enabled_before"]
             )
 
         geometry_path_restored = bool(
@@ -680,6 +766,51 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 ]
             )
             == state["precomputed_hex_corner_offsets_enabled_before"]
+        )
+        world_corner_path_restored = bool(
+            presenter is not None
+            and bool(
+                presenter.diagnostic_snapshot()[
+                    "tile_world_corner_cache_enabled"
+                ]
+            )
+            == state["tile_world_corner_cache_enabled_before"]
+        )
+        attribution_timers_restored = bool(
+            presenter is not None
+            and {
+                "polygon": bool(
+                    presenter.diagnostic_snapshot()[
+                        "polygon_attribution_enabled"
+                    ]
+                ),
+                "hex_corners": bool(
+                    presenter.diagnostic_snapshot()[
+                        "hex_corners_attribution_enabled"
+                    ]
+                ),
+                "geometry_prepare": bool(
+                    presenter.diagnostic_snapshot()[
+                        "geometry_prepare_attribution_enabled"
+                    ]
+                ),
+                "screen_transform": bool(
+                    presenter.diagnostic_snapshot()[
+                        "screen_transform_attribution_enabled"
+                    ]
+                ),
+                "bounds_rect": bool(
+                    presenter.diagnostic_snapshot()[
+                        "bounds_rect_attribution_enabled"
+                    ]
+                ),
+            }
+            == state["attribution_enabled_before"]
+        )
+        full_rebuild_observer_restored = bool(
+            presenter is not None
+            and presenter._full_rebuild_observer
+            is state["full_rebuild_observer_before"]
         )
 
         restored = False
@@ -738,6 +869,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "corner_path_requested": state["corner_path_requested"],
             "corner_path_effective": state["corner_path_effective"],
             "corner_path_restored": corner_path_restored,
+            "world_corner_path_requested": state["world_corner_path_requested"],
+            "world_corner_path_effective": state["world_corner_path_effective"],
+            "world_corner_path_restored": world_corner_path_restored,
+            "attribution_timers_restored": attribution_timers_restored,
+            "full_rebuild_observer_restored": full_rebuild_observer_restored,
             "translation_feasibility_enabled": state[
                 "translation_feasibility_enabled"
             ],
@@ -896,6 +1032,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
 __all__ = [
     "EXPERIMENT_ID",
     "MODES",
+    "WORLD_CORNER_PATHS",
     "install_fog_camera_attribution",
     "measure_bounds_rect_timer_overhead",
     "measure_geometry_prepare_timer_overhead",

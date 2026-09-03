@@ -27,6 +27,7 @@ from ..utils.fog_visibility_journal import get_fog_visibility_journal
 from ..utils.hex_utils import HexMath
 
 Hex = Tuple[int, int]
+WorldCorners = Tuple[Tuple[float, float], ...]
 
 FOG_GEOMETRY_COMPONENTS = (
     "viewport",
@@ -70,6 +71,12 @@ class IncrementalFogSurfacePresenter:
         self._screen_transform_attribution_enabled = False
         self._bounds_rect_attribution_enabled = False
         self._fused_transform_bounds_enabled = True
+        self._tile_world_corner_cache_enabled = True
+        self._tile_world_corner_cache: Dict[Hex, WorldCorners] = {}
+        self._tile_world_corner_cache_geometry_signature = None
+        self._tile_world_corner_cache_hits = 0
+        self._tile_world_corner_cache_misses = 0
+        self._tile_world_corner_cache_resets = 0
         self._full_rebuild_observer: Optional[Callable[..., None]] = None
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
@@ -160,6 +167,48 @@ class IncrementalFogSurfacePresenter:
     def set_precomputed_hex_corners_enabled(self, enabled: bool) -> None:
         """Select precomputed or legacy corners for controlled attribution A/B."""
         self.renderer.hex_converter._set_precomputed_corner_offsets_enabled(enabled)
+
+    def set_tile_world_corner_cache_enabled(self, enabled: bool) -> None:
+        """Select the Fog-local cached or canonical world-corner path for A/B."""
+        self._tile_world_corner_cache_enabled = bool(enabled)
+
+    def _effective_tile_world_corner_path(self) -> str:
+        return (
+            "cached"
+            if self._tile_world_corner_cache_enabled
+            and not self._hex_corners_attribution_enabled
+            else "legacy"
+        )
+
+    def _tile_world_corners(self, tile: Hex) -> WorldCorners:
+        """Return immutable canonical corners from the Fog-local geometry cache."""
+        converter = self.renderer.hex_converter
+        signature = self._tile_world_corner_cache_geometry_signature
+        if (
+            signature is None
+            or signature[0] != converter.size
+            or signature[1] != converter.orientation
+        ):
+            if signature is not None:
+                self._tile_world_corner_cache_resets += 1
+            self._tile_world_corner_cache.clear()
+            self._tile_world_corner_cache_geometry_signature = (
+                converter.size,
+                converter.orientation,
+            )
+
+        if not self._tile_world_corner_cache_enabled:
+            return tuple(converter.get_hex_corners(*tile))
+
+        corners = self._tile_world_corner_cache.get(tile)
+        if corners is not None:
+            self._tile_world_corner_cache_hits += 1
+            return corners
+
+        corners = tuple(converter.get_hex_corners(*tile))
+        self._tile_world_corner_cache[tile] = corners
+        self._tile_world_corner_cache_misses += 1
+        return corners
 
     def set_full_rebuild_observer(
         self, observer: Optional[Callable[..., None]]
@@ -257,6 +306,16 @@ class IncrementalFogSurfacePresenter:
                 self._effective_corner_path() == "precomputed"
             ),
             "corner_path": self._effective_corner_path(),
+            "tile_world_corner_cache_enabled": (
+                self._tile_world_corner_cache_enabled
+            ),
+            "tile_world_corner_cache_entries": len(
+                self._tile_world_corner_cache
+            ),
+            "tile_world_corner_cache_hits": self._tile_world_corner_cache_hits,
+            "tile_world_corner_cache_misses": self._tile_world_corner_cache_misses,
+            "tile_world_corner_cache_resets": self._tile_world_corner_cache_resets,
+            "tile_world_corner_path": self._effective_tile_world_corner_path(),
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
 
@@ -533,6 +592,7 @@ class IncrementalFogSurfacePresenter:
             "bounds_rect_time_ms": bounds_rect_time_ns / 1_000_000.0,
             "geometry_path": self._effective_geometry_path(),
             "corner_path": self._effective_corner_path(),
+            "tile_world_corner_path": self._effective_tile_world_corner_path(),
         }
         if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
@@ -572,6 +632,17 @@ class IncrementalFogSurfacePresenter:
         )
         metric("fog_full_build_geometry_path", self._effective_geometry_path())
         metric("fog_full_build_corner_path", self._effective_corner_path())
+        metric(
+            "fog_tile_world_corner_cache_enabled",
+            int(self._tile_world_corner_cache_enabled),
+        )
+        metric("fog_tile_world_corner_cache_entries", len(self._tile_world_corner_cache))
+        metric("fog_tile_world_corner_cache_hits", self._tile_world_corner_cache_hits)
+        metric(
+            "fog_tile_world_corner_cache_misses",
+            self._tile_world_corner_cache_misses,
+        )
+        metric("fog_tile_world_corner_cache_resets", self._tile_world_corner_cache_resets)
         metric(
             "fog_full_build_polygon_timing_enabled",
             int(self._polygon_attribution_enabled),
@@ -692,7 +763,7 @@ class IncrementalFogSurfacePresenter:
                 time.perf_counter_ns() - hex_corners_start_ns
             )
         else:
-            corners = self.renderer.hex_converter.get_hex_corners(q, r)
+            corners = self._tile_world_corners(tile)
         if self._effective_geometry_path() == "fused":
             points = []
             for index, (x, y) in enumerate(corners):

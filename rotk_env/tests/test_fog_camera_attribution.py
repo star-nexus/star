@@ -313,6 +313,56 @@ def test_long_pan_crosses_256_pixels_and_stops_at_deterministic_target(monkeypat
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
 
 
+def test_short_pan_reports_exact_world_corner_cache_deltas_and_restores_path(
+    monkeypatch,
+):
+    world, camera, presenter, visible_tiles = _setup()
+    harness = _Harness()
+    profiler = _Profiler()
+    monkeypatch.setattr(attribution, "request_measurement_epoch", lambda *a, **k: True)
+    attribution.install_fog_camera_attribution(harness, world, profiler)
+
+    started = harness.handle_command(
+        {
+            "command": "start_fog_camera_attribution",
+            "mode": "short_pan",
+            "geometry_path": "fused",
+            "corner_path": "precomputed",
+            "world_corner_path": "cached",
+            "polygon_timing_enabled": True,
+            "hex_corners_timing_enabled": False,
+            "geometry_prepare_timing_enabled": False,
+            "screen_transform_timing_enabled": False,
+            "bounds_rect_timing_enabled": False,
+            "timer_sanity_samples": 1,
+        }
+    )
+    assert started["world_corner_path_requested"] == "cached"
+    assert started["world_corner_path_effective"] == "cached"
+
+    harness.update(0.25)
+    _render(presenter, camera, visible_tiles)
+    for _ in range(3):
+        harness.update(0.25)
+        _render(presenter, camera, visible_tiles)
+
+    stopped = harness.handle_command({"command": "stop_fog_camera_attribution"})
+    cache = stopped["tile_world_corner_cache"]
+    assert stopped["fog_full_build_delta"] == 3
+    assert cache["path_effective"] == "cached"
+    assert cache["hits_delta"] == 3
+    assert cache["misses_delta"] == 0
+    assert cache["lookups_delta"] == 3
+    assert cache["hit_ratio"] == 1.0
+    assert cache["hits_per_full_rebuild"] == 1.0
+    assert cache["misses_per_full_rebuild"] == 0.0
+    assert cache["entries_start"] == cache["entries_end"] == 1
+    assert stopped["world_corner_path_restored"] is True
+    assert stopped["attribution_timers_restored"] is True
+    assert stopped["full_rebuild_observer_restored"] is True
+    assert presenter.diagnostic_snapshot()["tile_world_corner_path"] == "cached"
+
+
 def test_stationary_and_zoom_epochs_complete_and_restore(monkeypatch):
     world, camera, presenter, visible_tiles = _setup()
     harness = _Harness()

@@ -50,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="precomputed",
         help="Select precomputed production or legacy hex corners (default: precomputed)",
     )
+    parser.add_argument(
+        "--world-corner-path",
+        choices=("cached", "legacy"),
+        default="cached",
+        help="Select cached or legacy Fog world corners (default: cached)",
+    )
     parser.add_argument("--timer-sanity-samples", type=int, default=20_000)
     parser.add_argument(
         "--polygon-timing",
@@ -95,6 +101,7 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "mode": mode,
             "geometry_path": args.geometry_path,
             "corner_path": args.corner_path,
+            "world_corner_path": args.world_corner_path,
             "stationary_frames": args.stationary_frames,
             "timer_sanity_samples": args.timer_sanity_samples,
             "polygon_timing_enabled": args.polygon_timing,
@@ -130,6 +137,15 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
         "camera_restored": bool(stopped.get("camera_restored")),
         "geometry_path_restored": bool(stopped.get("geometry_path_restored")),
         "corner_path_restored": bool(stopped.get("corner_path_restored")),
+        "world_corner_path_restored": bool(
+            stopped.get("world_corner_path_restored")
+        ),
+        "attribution_timers_restored": bool(
+            stopped.get("attribution_timers_restored")
+        ),
+        "full_rebuild_observer_restored": bool(
+            stopped.get("full_rebuild_observer_restored")
+        ),
         "fog_counter_delta_exact": (
             stopped.get("fog_full_build_delta")
             == stopped.get("fog_full_build_counter_end", 0)
