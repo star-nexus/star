@@ -130,6 +130,9 @@ class FogPanTranslationFeasibility:
         camera_offset: Sequence[float],
         zoom: float,
         visible_tiles: Iterable[Hex],
+        view_faction=None,
+        orientation=None,
+        viewport=None,
     ) -> None:
         canonical = _surface_rgba(surface)
         current_offset = (float(camera_offset[0]), float(camera_offset[1]))

@@ -10,8 +10,9 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional
 
-from ..components import Camera, FogOfWar
+from ..components import Camera, FogOfWar, GameState, UIState
 from . import scale_experiment_measurement_base as _measurement_base
+from .fog_phase_raster_feasibility import FogPhaseRasterFeasibility
 from .fog_pan_translation_feasibility import FogPanTranslationFeasibility
 from .profiler_epoch import request_measurement_epoch
 
@@ -154,11 +155,21 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         translation_feasibility_enabled = bool(
             command.get("translation_feasibility_enabled", False)
         )
+        phase_raster_feasibility_enabled = bool(
+            command.get("phase_raster_feasibility_enabled", False)
+        )
         if translation_feasibility_enabled and mode != "short_pan":
             return {
                 "ok": False,
                 "error": "translation_feasibility_requires_short_pan",
             }
+        if phase_raster_feasibility_enabled and mode != "short_pan":
+            return {
+                "ok": False,
+                "error": "phase_raster_feasibility_requires_short_pan",
+            }
+        if translation_feasibility_enabled and phase_raster_feasibility_enabled:
+            return {"ok": False, "error": "raster_feasibility_modes_are_exclusive"}
         translation_nearby_radius = max(
             0, int(command.get("translation_nearby_radius", 1))
         )
@@ -226,6 +237,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         presenter.set_fused_transform_bounds_enabled(geometry_path == "fused")
         presenter.set_precomputed_hex_corners_enabled(corner_path == "precomputed")
         translation_collector = None
+        phase_raster_collector = None
         if translation_feasibility_enabled:
             translation_collector = FogPanTranslationFeasibility(
                 presenter.renderer.hex_converter,
@@ -238,6 +250,21 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 camera.zoom,
             )
             presenter.set_full_rebuild_observer(translation_collector.observe)
+        elif phase_raster_feasibility_enabled:
+            ui_state = world.get_singleton_component(UIState)
+            game_state = world.get_singleton_component(GameState)
+            view_faction = ui_state.view_faction or game_state.current_player
+            phase_raster_collector = FogPhaseRasterFeasibility()
+            phase_raster_collector.seed(
+                presenter.surface,
+                presenter.presentation_rect,
+                (camera.offset_x, camera.offset_y),
+                camera.zoom,
+                orientation=presenter.renderer.hex_converter.orientation,
+                viewport=presenter.surface.get_size(),
+                view_faction=view_faction,
+            )
+            presenter.set_full_rebuild_observer(phase_raster_collector.observe)
         start_snapshot = presenter.diagnostic_snapshot()
         state = {
             "active": True,
@@ -285,6 +312,8 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "translation_feasibility_enabled": translation_feasibility_enabled,
             "translation_nearby_radius": translation_nearby_radius,
             "translation_collector": translation_collector,
+            "phase_raster_feasibility_enabled": phase_raster_feasibility_enabled,
+            "phase_raster_collector": phase_raster_collector,
             "active_moving_units_start": active_units,
             "max_active_moving_units": active_units,
             "unit_movement_frames": 0,
@@ -354,6 +383,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "translation_feasibility_enabled"
             ],
             "translation_nearby_radius": state["translation_nearby_radius"],
+            "phase_raster_feasibility_enabled": state[
+                "phase_raster_feasibility_enabled"
+            ],
         }
 
     def _finish_result(
@@ -612,6 +644,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             if state["translation_collector"] is not None
             else None
         )
+        phase_raster_feasibility = (
+            state["phase_raster_collector"].result()
+            if state["phase_raster_collector"] is not None
+            else None
+        )
         if presenter is not None:
             presenter.set_full_rebuild_observer(
                 state["full_rebuild_observer_before"]
@@ -706,6 +743,10 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             ],
             "translation_nearby_radius": state["translation_nearby_radius"],
             "translation_feasibility": translation_feasibility,
+            "phase_raster_feasibility_enabled": state[
+                "phase_raster_feasibility_enabled"
+            ],
+            "phase_raster_feasibility": phase_raster_feasibility,
             "profile_snapshot": profile_snapshot,
         }
         result.update(_finish_result(state, end_snapshot))
@@ -725,6 +766,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "translation_feasibility_frames": (
                 len(state["translation_collector"].frames)
                 if state["translation_collector"] is not None
+                else 0
+            ),
+            "phase_raster_feasibility_frames": (
+                len(state["phase_raster_collector"].frames)
+                if state["phase_raster_collector"] is not None
                 else 0
             ),
         }

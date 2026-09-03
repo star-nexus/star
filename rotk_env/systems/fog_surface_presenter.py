@@ -602,6 +602,9 @@ class IncrementalFogSurfacePresenter:
                 camera_offset=camera_offset,
                 zoom=zoom,
                 visible_tiles=visible_tiles,
+                view_faction=view_faction,
+                orientation=self.renderer.hex_converter.orientation,
+                viewport=viewport,
             )
 
     @staticmethod

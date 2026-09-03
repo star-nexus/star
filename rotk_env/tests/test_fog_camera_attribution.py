@@ -408,6 +408,53 @@ def test_short_pan_translation_feasibility_captures_every_camera_frame(monkeypat
     assert presenter._full_rebuild_observer is None
 
 
+def test_short_pan_phase_raster_feasibility_restores_observer_and_camera(
+    monkeypatch,
+):
+    world, camera, presenter, visible_tiles = _setup()
+    previous_observer = lambda **_kwargs: None
+    presenter.set_full_rebuild_observer(previous_observer)
+    harness = _Harness()
+    profiler = _Profiler()
+    monkeypatch.setattr(attribution, "request_measurement_epoch", lambda *a, **k: True)
+    attribution.install_fog_camera_attribution(harness, world, profiler)
+
+    started = harness.handle_command(
+        {
+            "command": "start_fog_camera_attribution",
+            "mode": "short_pan",
+            "geometry_path": "fused",
+            "corner_path": "precomputed",
+            "polygon_timing_enabled": False,
+            "hex_corners_timing_enabled": False,
+            "geometry_prepare_timing_enabled": False,
+            "screen_transform_timing_enabled": False,
+            "bounds_rect_timing_enabled": False,
+            "timer_sanity_samples": 1,
+            "phase_raster_feasibility_enabled": True,
+        }
+    )
+    assert started["ok"] is True
+    assert started["phase_raster_feasibility_enabled"] is True
+
+    harness.update(0.25)
+    _render(presenter, camera, visible_tiles)
+    for _ in range(3):
+        harness.update(0.25)
+        _render(presenter, camera, visible_tiles)
+
+    stopped = harness.handle_command({"command": "stop_fog_camera_attribution"})
+    result = stopped["phase_raster_feasibility"]
+    assert stopped["camera_changed_frames"] == 3
+    assert result["total_canonical_camera_frames"] == 3
+    assert len(result["observed_phase_key_sequence"]) == 3
+    assert stopped["camera_restored"] is True
+    assert stopped["geometry_path_restored"] is True
+    assert stopped["corner_path_restored"] is True
+    assert presenter._full_rebuild_observer is previous_observer
+    assert harness._fog_camera_attribution_state is None
+
+
 def test_timer_sanity_path_quantifies_observer_overhead():
     result = attribution.measure_polygon_timer_overhead(100)
     hex_result = attribution.measure_hex_corners_timer_overhead(100)
