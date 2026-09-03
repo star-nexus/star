@@ -21,6 +21,7 @@ MODES = {"stationary", "short_pan", "long_pan", "zoom"}
 GEOMETRY_PATHS = {"fused", "legacy"}
 CORNER_PATHS = {"precomputed", "legacy"}
 WORLD_CORNER_PATHS = {"cached", "legacy"}
+PRESENTATION_BOUNDS_PATHS = {"map_content_legacy", "fog_content"}
 PAN_TARGETS = {"short_pan": 128.0, "long_pan": 320.0}
 ZOOM_TARGET_DELTA = 0.5
 
@@ -162,6 +163,27 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 "error": "invalid_fog_world_corner_path",
                 "world_corner_paths": sorted(WORLD_CORNER_PATHS),
             }
+        requested_presentation_bounds_path = command.get(
+            "presentation_bounds_path"
+        )
+        if requested_presentation_bounds_path is not None:
+            requested_presentation_bounds_path = str(
+                requested_presentation_bounds_path
+            ).strip().lower()
+            if requested_presentation_bounds_path not in PRESENTATION_BOUNDS_PATHS:
+                return {
+                    "ok": False,
+                    "error": "invalid_fog_presentation_bounds_path",
+                    "presentation_bounds_paths": sorted(PRESENTATION_BOUNDS_PATHS),
+                }
+        start_zoom_override = command.get("start_zoom")
+        if start_zoom_override is not None:
+            try:
+                start_zoom_override = float(start_zoom_override)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "invalid_start_zoom"}
+            if start_zoom_override <= 0.0:
+                return {"ok": False, "error": "start_zoom_must_be_positive"}
         translation_feasibility_enabled = bool(
             command.get("translation_feasibility_enabled", False)
         )
@@ -180,6 +202,16 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             }
         if translation_feasibility_enabled and phase_raster_feasibility_enabled:
             return {"ok": False, "error": "raster_feasibility_modes_are_exclusive"}
+        if (
+            translation_feasibility_enabled or phase_raster_feasibility_enabled
+        ) and (
+            start_zoom_override is not None
+            or requested_presentation_bounds_path is not None
+        ):
+            return {
+                "ok": False,
+                "error": "raster_feasibility_disallows_camera_or_bounds_override",
+            }
         translation_nearby_radius = max(
             0, int(command.get("translation_nearby_radius", 1))
         )
@@ -218,6 +250,12 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             command.get("bounds_rect_timing_enabled", False)
         )
         presenter_before = presenter.diagnostic_snapshot()
+        presentation_bounds_path_before = presenter_before[
+            "presentation_bounds_path"
+        ]
+        presentation_bounds_path = (
+            requested_presentation_bounds_path or presentation_bounds_path_before
+        )
         fused_transform_bounds_enabled_before = bool(
             presenter_before["fused_transform_bounds_enabled"]
         )
@@ -243,6 +281,13 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             ),
         }
         full_rebuild_observer_before = presenter._full_rebuild_observer
+        original_camera = {
+            "offset_x": float(camera.offset_x),
+            "offset_y": float(camera.offset_y),
+            "zoom": float(camera.zoom),
+        }
+        if start_zoom_override is not None:
+            camera.zoom = start_zoom_override
         start_camera = {
             "offset_x": float(camera.offset_x),
             "offset_y": float(camera.offset_y),
@@ -265,6 +310,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         presenter.set_fused_transform_bounds_enabled(geometry_path == "fused")
         presenter.set_precomputed_hex_corners_enabled(corner_path == "precomputed")
         presenter.set_tile_world_corner_cache_enabled(world_corner_path == "cached")
+        presenter.set_presentation_bounds_path(presentation_bounds_path)
         translation_collector = None
         phase_raster_collector = None
         if translation_feasibility_enabled:
@@ -299,6 +345,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "active": True,
             "completed": False,
             "just_started": True,
+            "start_state_priming": start_zoom_override is not None,
             "mode": mode,
             "stationary_frames": stationary_frames,
             "total_frames": 0,
@@ -307,6 +354,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "offset_y_changed_frames": 0,
             "zoom_changed_frames": 0,
             "start_camera": start_camera,
+            "original_camera": original_camera,
             "zoom_direction": zoom_direction,
             "fog_start": start_snapshot,
             "timer_sanity": measure_polygon_timer_overhead(timer_samples),
@@ -333,6 +381,10 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "corner_path_effective": start_snapshot["corner_path"],
             "world_corner_path_requested": world_corner_path,
             "world_corner_path_effective": start_snapshot["tile_world_corner_path"],
+            "presentation_bounds_path_requested": presentation_bounds_path,
+            "presentation_bounds_path_effective": start_snapshot[
+                "presentation_bounds_path"
+            ],
             "fused_transform_bounds_enabled_before": (
                 fused_transform_bounds_enabled_before
             ),
@@ -342,6 +394,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "tile_world_corner_cache_enabled_before": (
                 tile_world_corner_cache_enabled_before
             ),
+            "presentation_bounds_path_before": presentation_bounds_path_before,
             "attribution_enabled_before": attribution_enabled_before,
             "full_rebuild_observer_before": full_rebuild_observer_before,
             "translation_feasibility_enabled": translation_feasibility_enabled,
@@ -416,6 +469,12 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "corner_path_effective": state["corner_path_effective"],
             "world_corner_path_requested": state["world_corner_path_requested"],
             "world_corner_path_effective": state["world_corner_path_effective"],
+            "presentation_bounds_path_requested": state[
+                "presentation_bounds_path_requested"
+            ],
+            "presentation_bounds_path_effective": state[
+                "presentation_bounds_path_effective"
+            ],
             "translation_feasibility_enabled": state[
                 "translation_feasibility_enabled"
             ],
@@ -436,6 +495,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
         cumulative_fields = (
             "full_build_input_tiles",
             "full_build_visible_no_fog_tiles",
+            "full_build_visible_no_fog_skipped_tiles",
             "full_build_polygon_draw_tiles",
             "full_build_tile_loop_time_ns",
             "full_build_polygon_time_ns",
@@ -750,6 +810,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             presenter.set_tile_world_corner_cache_enabled(
                 state["tile_world_corner_cache_enabled_before"]
             )
+            presenter.set_presentation_bounds_path(
+                state["presentation_bounds_path_before"]
+            )
 
         geometry_path_restored = bool(
             presenter is not None
@@ -775,6 +838,11 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 ]
             )
             == state["tile_world_corner_cache_enabled_before"]
+        )
+        presentation_bounds_path_restored = bool(
+            presenter is not None
+            and presenter.diagnostic_snapshot()["presentation_bounds_path"]
+            == state["presentation_bounds_path_before"]
         )
         attribution_timers_restored = bool(
             presenter is not None
@@ -815,9 +883,9 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
 
         restored = False
         if camera is not None:
-            camera.offset_x = float(state["start_camera"]["offset_x"])
-            camera.offset_y = float(state["start_camera"]["offset_y"])
-            camera.zoom = float(state["start_camera"]["zoom"])
+            camera.offset_x = float(state["original_camera"]["offset_x"])
+            camera.offset_y = float(state["original_camera"]["offset_y"])
+            camera.zoom = float(state["original_camera"]["zoom"])
             restored = True
         harness._fog_camera_attribution_state = None
 
@@ -833,6 +901,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "mode": state["mode"],
             "completed": bool(state["completed"]),
             "camera_start": dict(state["start_camera"]),
+            "camera_original": dict(state["original_camera"]),
             "camera_end": end_camera,
             "camera_restored": restored,
             "active_moving_units_start": state["active_moving_units_start"],
@@ -872,6 +941,13 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "world_corner_path_requested": state["world_corner_path_requested"],
             "world_corner_path_effective": state["world_corner_path_effective"],
             "world_corner_path_restored": world_corner_path_restored,
+            "presentation_bounds_path_requested": state[
+                "presentation_bounds_path_requested"
+            ],
+            "presentation_bounds_path_effective": state[
+                "presentation_bounds_path_effective"
+            ],
+            "presentation_bounds_path_restored": presentation_bounds_path_restored,
             "attribution_timers_restored": attribution_timers_restored,
             "full_rebuild_observer_restored": full_rebuild_observer_restored,
             "translation_feasibility_enabled": state[
@@ -896,6 +972,7 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
             "ok": True,
             "active": True,
             "completed": bool(state["completed"]),
+            "start_state_priming": bool(state["start_state_priming"]),
             "mode": state["mode"],
             "total_frames": int(state["total_frames"]),
             "camera_changed_frames": int(state["camera_changed_frames"]),
@@ -934,6 +1011,34 @@ def install_fog_camera_attribution(harness, world, profiler) -> bool:
                 state["just_started"] = False
                 return
             if bool(state.get("completed")):
+                return
+
+            if bool(state.get("start_state_priming")):
+                presenter = _find_fog_presenter(world)
+                camera = _camera()
+                if presenter is None or camera is None or presenter.surface is None:
+                    return
+                if getattr(presenter, "_camera_geometry", None) != (
+                    float(camera.offset_x),
+                    float(camera.offset_y),
+                    float(camera.zoom),
+                ):
+                    return
+                presenter.set_full_build_attribution_enabled(
+                    state["polygon_timing_enabled"], clear_events=True
+                )
+                state["fog_start"] = presenter.diagnostic_snapshot()
+                state["start_state_priming"] = False
+                request_measurement_epoch(
+                    profiler,
+                    f"fog_camera_attribution.{state['mode']}",
+                    scale_experiment_kind=EXPERIMENT_ID,
+                    scale_fog_camera_attribution_mode=state["mode"],
+                    scale_fog_camera_attribution_active=True,
+                    scale_fog_camera_start_x=state["start_camera"]["offset_x"],
+                    scale_fog_camera_start_y=state["start_camera"]["offset_y"],
+                    scale_fog_camera_start_zoom=state["start_camera"]["zoom"],
+                )
                 return
 
             active_units = _moving_units()

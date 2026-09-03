@@ -17,11 +17,25 @@ ALL_MODES = ("stationary", "short-pan", "long-pan", "zoom")
 
 def _write(data: Dict[str, Any], output: str | None) -> None:
     text = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
-    print(text)
     if output:
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "ok": data.get("ok"),
+                    "experiment": data.get("experiment"),
+                    "run_count": len(data.get("runs", ())),
+                    "output": str(path),
+                },
+                indent=2,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(text)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +69,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("cached", "legacy"),
         default="cached",
         help="Select cached or legacy Fog world corners (default: cached)",
+    )
+    parser.add_argument(
+        "--presentation-bounds-path",
+        choices=("fog_content", "map_content_legacy"),
+        default=None,
+        help="Select Fog-content or legacy map-content presentation bounds",
+    )
+    parser.add_argument(
+        "--start-zoom",
+        type=float,
+        default=None,
+        help="Temporarily set a fixed starting zoom and restore it after the run",
     )
     parser.add_argument("--timer-sanity-samples", type=int, default=20_000)
     parser.add_argument(
@@ -102,6 +128,8 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
             "geometry_path": args.geometry_path,
             "corner_path": args.corner_path,
             "world_corner_path": args.world_corner_path,
+            "presentation_bounds_path": args.presentation_bounds_path,
+            "start_zoom": args.start_zoom,
             "stationary_frames": args.stationary_frames,
             "timer_sanity_samples": args.timer_sanity_samples,
             "polygon_timing_enabled": args.polygon_timing,
@@ -139,6 +167,9 @@ def _run_mode(args, mode: str) -> Dict[str, Any]:
         "corner_path_restored": bool(stopped.get("corner_path_restored")),
         "world_corner_path_restored": bool(
             stopped.get("world_corner_path_restored")
+        ),
+        "presentation_bounds_path_restored": bool(
+            stopped.get("presentation_bounds_path_restored")
         ),
         "attribution_timers_restored": bool(
             stopped.get("attribution_timers_restored")

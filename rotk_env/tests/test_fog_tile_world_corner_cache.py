@@ -191,5 +191,7 @@ def test_cached_and_legacy_world_corners_render_pixel_exact_fog(
     )
     assert cached_presenter.presentation_rect == legacy_presenter.presentation_rect
     snapshot = cached_presenter.diagnostic_snapshot()
-    assert snapshot["tile_world_corner_cache_entries"] == len(visible_tiles)
-    assert snapshot["tile_world_corner_cache_misses"] == len(visible_tiles)
+    fogged_tiles = visible_tiles - {(0, 0)}
+    assert snapshot["tile_world_corner_cache_entries"] == len(fogged_tiles)
+    assert snapshot["tile_world_corner_cache_misses"] == len(fogged_tiles)
+    assert snapshot["full_build_visible_no_fog_skipped_tiles"] == 1

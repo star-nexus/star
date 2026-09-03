@@ -6,8 +6,8 @@ camera/view geometry is unchanged. It falls back to a full rebuild for first use
 camera/zoom/viewport/faction changes, or journal history gaps.
 
 The semantic surface remains viewport-sized so dirty-tile patch coordinates stay
-stable. Presentation is content-bounded: only the screen-space rectangle covered
-by visible map hexes is composited into the final framebuffer.
+stable. Presentation is content-bounded: only a conservative screen-space
+rectangle containing the rendered Fog pixels is composited into the framebuffer.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ FOG_GEOMETRY_COMPONENTS = (
 FOG_GEOMETRY_BITS = {
     name: 1 << index for index, name in enumerate(FOG_GEOMETRY_COMPONENTS)
 }
+FOG_PRESENTATION_BOUNDS_PATHS = ("map_content_legacy", "fog_content")
 
 
 class IncrementalFogSurfacePresenter:
@@ -58,6 +59,7 @@ class IncrementalFogSurfacePresenter:
         self.geometry_change_detail_counts: Counter[str] = Counter()
         self.full_build_input_tiles = 0
         self.full_build_visible_no_fog_tiles = 0
+        self.full_build_visible_no_fog_skipped_tiles = 0
         self.full_build_polygon_draw_tiles = 0
         self.full_build_tile_loop_time_ns = 0
         self.full_build_polygon_time_ns = 0
@@ -77,6 +79,7 @@ class IncrementalFogSurfacePresenter:
         self._tile_world_corner_cache_hits = 0
         self._tile_world_corner_cache_misses = 0
         self._tile_world_corner_cache_resets = 0
+        self._presentation_bounds_path = "fog_content"
         self._full_rebuild_observer: Optional[Callable[..., None]] = None
         self._attribution_events: List[Dict[str, object]] = []
         self._camera_geometry = None
@@ -172,6 +175,15 @@ class IncrementalFogSurfacePresenter:
         """Select the Fog-local cached or canonical world-corner path for A/B."""
         self._tile_world_corner_cache_enabled = bool(enabled)
 
+    def set_presentation_bounds_path(self, path: str) -> None:
+        """Select legacy map bounds or Fog-content bounds for controlled A/B."""
+        normalized = str(path).strip().lower()
+        if normalized not in FOG_PRESENTATION_BOUNDS_PATHS:
+            raise ValueError(
+                f"unsupported Fog presentation-bounds path: {path!r}"
+            )
+        self._presentation_bounds_path = normalized
+
     def _effective_tile_world_corner_path(self) -> str:
         return (
             "cached"
@@ -256,6 +268,9 @@ class IncrementalFogSurfacePresenter:
             "full_build_visible_no_fog_tiles": int(
                 self.full_build_visible_no_fog_tiles
             ),
+            "full_build_visible_no_fog_skipped_tiles": int(
+                self.full_build_visible_no_fog_skipped_tiles
+            ),
             "full_build_polygon_draw_tiles": int(
                 self.full_build_polygon_draw_tiles
             ),
@@ -316,6 +331,7 @@ class IncrementalFogSurfacePresenter:
             "tile_world_corner_cache_misses": self._tile_world_corner_cache_misses,
             "tile_world_corner_cache_resets": self._tile_world_corner_cache_resets,
             "tile_world_corner_path": self._effective_tile_world_corner_path(),
+            "presentation_bounds_path": self._presentation_bounds_path,
             "attribution_events": [dict(event) for event in self._attribution_events],
         }
 
@@ -487,6 +503,7 @@ class IncrementalFogSurfacePresenter:
     ) -> None:
         build_diagnostics: Dict[str, int] = {
             "visible_no_fog_tiles": 0,
+            "visible_no_fog_skipped_tiles": 0,
             "polygon_draw_tiles": 0,
             "tile_loop_time_ns": 0,
             "polygon_time_ns": 0,
@@ -516,6 +533,13 @@ class IncrementalFogSurfacePresenter:
                 "fog_full_build_tile_loop", category="render"
             ):
                 for tile in visible_tiles:
+                    if (
+                        self._presentation_bounds_path == "fog_content"
+                        and tile in visible
+                    ):
+                        build_diagnostics["visible_no_fog_tiles"] += 1
+                        build_diagnostics["visible_no_fog_skipped_tiles"] += 1
+                        continue
                     tile_rect = self._draw_tile_state(
                         surface,
                         tile,
@@ -525,6 +549,11 @@ class IncrementalFogSurfacePresenter:
                         explored,
                         clear_first=False,
                         full_build_diagnostics=build_diagnostics,
+                        tile_is_fogged=(
+                            True
+                            if self._presentation_bounds_path == "fog_content"
+                            else None
+                        ),
                     )
                     clipped = tile_rect.clip(viewport_rect)
                     if clipped.width <= 0 or clipped.height <= 0:
@@ -550,6 +579,9 @@ class IncrementalFogSurfacePresenter:
             self.geometry_change_detail_counts[detail_key] += 1
         input_tiles = len(visible_tiles)
         visible_no_fog_tiles = build_diagnostics["visible_no_fog_tiles"]
+        visible_no_fog_skipped_tiles = build_diagnostics[
+            "visible_no_fog_skipped_tiles"
+        ]
         polygon_draw_tiles = build_diagnostics["polygon_draw_tiles"]
         tile_loop_time_ns = build_diagnostics["tile_loop_time_ns"]
         polygon_time_ns = build_diagnostics["polygon_time_ns"]
@@ -559,6 +591,9 @@ class IncrementalFogSurfacePresenter:
         bounds_rect_time_ns = build_diagnostics["bounds_rect_time_ns"]
         self.full_build_input_tiles += input_tiles
         self.full_build_visible_no_fog_tiles += visible_no_fog_tiles
+        self.full_build_visible_no_fog_skipped_tiles += (
+            visible_no_fog_skipped_tiles
+        )
         self.full_build_polygon_draw_tiles += polygon_draw_tiles
         self.full_build_tile_loop_time_ns += tile_loop_time_ns
         self.full_build_polygon_time_ns += polygon_time_ns
@@ -577,6 +612,7 @@ class IncrementalFogSurfacePresenter:
             "zoom_delta": camera_delta[2],
             "input_tile_count": input_tiles,
             "visible_no_fog_tile_count": visible_no_fog_tiles,
+            "visible_no_fog_skipped_tile_count": visible_no_fog_skipped_tiles,
             "polygon_draw_tile_count": polygon_draw_tiles,
             "tile_loop_time_ns": tile_loop_time_ns,
             "tile_loop_time_ms": tile_loop_time_ns / 1_000_000.0,
@@ -593,6 +629,7 @@ class IncrementalFogSurfacePresenter:
             "geometry_path": self._effective_geometry_path(),
             "corner_path": self._effective_corner_path(),
             "tile_world_corner_path": self._effective_tile_world_corner_path(),
+            "presentation_bounds_path": self._presentation_bounds_path,
         }
         if self._full_build_attribution_enabled():
             self._attribution_events.append(event)
@@ -605,6 +642,10 @@ class IncrementalFogSurfacePresenter:
         metric("fog_patch_updates", self.patch_updates)
         metric("fog_full_build_input_tiles", input_tiles)
         metric("fog_full_build_visible_no_fog_tiles", visible_no_fog_tiles)
+        metric(
+            "fog_full_build_visible_no_fog_skipped_tiles",
+            visible_no_fog_skipped_tiles,
+        )
         metric("fog_full_build_polygon_draw_tiles", polygon_draw_tiles)
         metric("fog_full_build_tile_loop_time_ns", tile_loop_time_ns)
         metric("fog_full_build_tile_loop_time_ms", tile_loop_time_ns / 1_000_000.0)
@@ -663,6 +704,10 @@ class IncrementalFogSurfacePresenter:
             "fog_full_build_bounds_rect_timing_enabled",
             int(self._bounds_rect_attribution_enabled),
         )
+        metric(
+            "fog_full_build_presentation_bounds_path",
+            self._presentation_bounds_path,
+        )
         self._publish_geometry_metrics(
             geometry_change_mask, geometry_change_detail, camera_delta
         )
@@ -706,15 +751,27 @@ class IncrementalFogSurfacePresenter:
         # Polygon rasterization includes edge pixels shared by adjacent hexes.
         # Redraw one ring around each semantic dirty tile so clearing one polygon
         # cannot leave a transparent seam on a still-fogged neighbor.
+        dirty_tile_set = set(dirty_tiles)
         patch_candidates: Set[Hex] = set()
-        for q, r in dirty_tiles:
+        for q, r in dirty_tile_set:
             patch_candidates.update(HexMath.hex_in_range(q, r, 1))
         patch_tiles = patch_candidates.intersection(visible_tiles)
 
         visible = fog.faction_vision.get(view_faction, set())
         explored = fog.explored_tiles.get(view_faction, set())
+        # Clear only semantic dirty polygons. Clearing the entire one-ring would
+        # touch edge pixels outside that ring and require recursively wider
+        # repair. Then redraw every fogged patch tile in full-rebuild order.
+        dirty_draw_tiles = [
+            tile for tile in visible_tiles if tile in dirty_tile_set
+        ]
+        fogged_patch_tiles = [
+            tile
+            for tile in visible_tiles
+            if tile in patch_tiles and tile not in visible
+        ]
         with profiling.profiler.time_system("fog_surface_patch", category="render"):
-            for tile in patch_tiles:
+            for tile in dirty_draw_tiles:
                 self._draw_tile_state(
                     self.surface,
                     tile,
@@ -723,7 +780,26 @@ class IncrementalFogSurfacePresenter:
                     visible,
                     explored,
                     clear_first=True,
+                    tile_is_fogged=False,
                 )
+            for tile in fogged_patch_tiles:
+                tile_rect = self._draw_tile_state(
+                    self.surface,
+                    tile,
+                    camera_offset,
+                    zoom,
+                    visible,
+                    explored,
+                    clear_first=True,
+                    tile_is_fogged=True,
+                )
+                if self._presentation_bounds_path == "fog_content":
+                    clipped = tile_rect.clip(self.surface.get_rect())
+                    if clipped.width > 0 and clipped.height > 0:
+                        if self.presentation_rect is None:
+                            self.presentation_rect = clipped.copy()
+                        else:
+                            self.presentation_rect.union_ip(clipped)
 
         self.patch_updates += 1
         metric = profiling.profiler.set_frame_metric
@@ -745,6 +821,7 @@ class IncrementalFogSurfacePresenter:
         *,
         clear_first: bool,
         full_build_diagnostics: Optional[Dict[str, int]] = None,
+        tile_is_fogged: Optional[bool] = None,
     ) -> pygame.Rect:
         q, r = tile
         geometry_prepare_start_ns = (
@@ -834,7 +911,10 @@ class IncrementalFogSurfacePresenter:
         if clear_first:
             pygame.draw.polygon(surface, (0, 0, 0, 0), points)
 
-        if tile in visible:
+        if tile_is_fogged is None:
+            tile_is_fogged = tile not in visible
+
+        if not tile_is_fogged:
             if full_build_diagnostics is not None:
                 full_build_diagnostics["visible_no_fog_tiles"] += 1
             return tile_rect

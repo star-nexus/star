@@ -46,6 +46,9 @@ class MovementSystem(_BaseMovementSystem):
         from ..testing.fog_camera_attribution import (
             install_fog_camera_attribution,
         )
+        from ..testing.fog_content_bounds_experiment import (
+            install_fog_content_bounds_experiment,
+        )
         from ..testing.fog_directed_phase_experiment import (
             install_fog_directed_phase_experiment,
         )
@@ -78,6 +81,7 @@ class MovementSystem(_BaseMovementSystem):
         install_scale_experiment_measurement(harness, world, profiling.profiler)
         install_scale_camera_stress(harness, world, profiling.profiler)
         install_fog_camera_attribution(harness, world, profiling.profiler)
+        install_fog_content_bounds_experiment(harness, world, profiling.profiler)
         install_fog_directed_phase_experiment(harness, world, profiling.profiler)
         install_fog_presentation_bounds_experiment(
             harness, world, profiling.profiler

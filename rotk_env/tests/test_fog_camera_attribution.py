@@ -82,7 +82,9 @@ def test_short_pan_uses_continuous_camera_semantics_and_exact_counter_deltas(
     world, camera, presenter, visible_tiles = _setup()
     harness = _Harness()
     profiler = _Profiler()
-    monkeypatch.setattr(attribution, "request_measurement_epoch", lambda *a, **k: True)
+    monkeypatch.setattr(
+        attribution, "request_measurement_epoch", lambda *a, **k: True
+    )
 
     assert attribution.install_fog_camera_attribution(harness, world, profiler)
     started = harness.handle_command(
@@ -412,6 +414,51 @@ def test_stationary_and_zoom_epochs_complete_and_restore(monkeypatch):
     assert zoom_stop["zoom_changed_frames"] == 3
     assert zoom_stop["detailed_geometry_change_counts"] == {"zoom": 3}
     assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
+
+
+def test_fixed_start_zoom_primes_before_measurement_and_restores_path(monkeypatch):
+    world, camera, presenter, visible_tiles = _setup()
+    harness = _Harness()
+    profiler = _Profiler()
+    monkeypatch.setattr(attribution, "request_measurement_epoch", lambda *a, **k: True)
+    attribution.install_fog_camera_attribution(harness, world, profiler)
+
+    started = harness.handle_command(
+        {
+            "command": "start_fog_camera_attribution",
+            "mode": "short_pan",
+            "start_zoom": 0.5,
+            "presentation_bounds_path": "map_content_legacy",
+            "timer_sanity_samples": 10,
+        }
+    )
+    assert started["ok"] is True
+    assert started["camera_start"]["zoom"] == 0.5
+    assert started["presentation_bounds_path_effective"] == "map_content_legacy"
+
+    harness.update(0.25)
+    _render(presenter, camera, visible_tiles)
+    assert camera.offset_x == 100.0
+    assert presenter.full_builds == 2
+
+    harness.update(0.25)
+    _render(presenter, camera, visible_tiles)
+    assert harness.handle_command(
+        {"command": "fog_camera_attribution_status"}
+    )["start_state_priming"] is False
+    assert camera.offset_x == 100.0
+
+    for _ in range(3):
+        harness.update(0.25)
+        _render(presenter, camera, visible_tiles)
+
+    stopped = harness.handle_command({"command": "stop_fog_camera_attribution"})
+    assert stopped["fog_full_build_delta"] == 3
+    assert stopped["camera_changed_frames"] == 3
+    assert stopped["presentation_bounds_path_restored"] is True
+    assert stopped["camera_restored"] is True
+    assert (camera.offset_x, camera.offset_y, camera.zoom) == (100.0, 200.0, 1.0)
+    assert presenter.diagnostic_snapshot()["presentation_bounds_path"] == "fog_content"
 
 
 def test_short_pan_translation_feasibility_captures_every_camera_frame(monkeypatch):

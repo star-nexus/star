@@ -644,6 +644,7 @@ def test_presentation_bounds_include_currently_transparent_visible_tiles(monkeyp
     world = _world()
     renderer = _Renderer(world)
     presenter = IncrementalFogSurfacePresenter(renderer)
+    presenter.set_presentation_bounds_path("map_content_legacy")
     tile = (0, 0)
     camera = [160.0, 120.0]
     pixel = _center(renderer, tile, camera, 1.0)

@@ -270,8 +270,8 @@ class PresentationBoundsCollector:
         }
 
 
-def evaluate_direct_correctness_matrix() -> Dict[str, object]:
-    """Exercise broad deterministic geometry, clipping, and topology cases."""
+def direct_correctness_cases():
+    """Return the 510 deterministic geometry cases used by feasibility probes."""
     shapes = {
         "empty": (set(), True),
         "single": ({(0, 0)}, True),
@@ -331,6 +331,12 @@ def evaluate_direct_correctness_matrix() -> Dict[str, object]:
         for name, tiles, offset, zoom in viewport_cases
         for orientation in orientations
     )
+    return tuple(cases)
+
+
+def evaluate_direct_correctness_matrix() -> Dict[str, object]:
+    """Exercise broad deterministic geometry, clipping, and topology cases."""
+    cases = direct_correctness_cases()
 
     mismatches = []
     exact = 0
@@ -390,6 +396,7 @@ __all__ = [
     "candidate_presentation_bounds",
     "canonical_world_bounds",
     "classify_mismatch",
+    "direct_correctness_cases",
     "evaluate_direct_correctness_matrix",
     "legacy_presentation_bounds",
 ]
