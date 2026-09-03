@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Optional, Union, Callable
 from collections import defaultdict
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
+from ..ecs import profiling
 
 # 类型别名
 ColorType = Union[pygame.Color, Tuple[int, int, int], Tuple[int, int, int, int]]
@@ -22,6 +23,8 @@ class RenderCommand(ABC):
 class DrawCommand(RenderCommand):
     """通用绘制命令"""
 
+    __slots__ = ("draw_func", "args", "kwargs")
+
     def __init__(self, draw_func: Callable, *args, **kwargs):
         self.draw_func = draw_func
         self.args = args
@@ -29,6 +32,37 @@ class DrawCommand(RenderCommand):
 
     def execute(self, screen: pygame.Surface) -> None:
         self.draw_func(screen, *self.args, **self.kwargs)
+
+
+class BlitCommand(RenderCommand):
+    """Surface blit command with a batchable fast path.
+
+    Most terrain/unit rendering is a plain ``screen.blit(surface, dest)``. Keeping
+    that operation typed lets ``RenderEngine.update`` submit long consecutive runs
+    through ``Surface.blits`` instead of crossing Python once per tile/unit.
+    Commands with an ``area`` or special flags retain the exact single-blit path.
+    """
+
+    __slots__ = ("surface", "dest", "area", "special_flags")
+
+    def __init__(
+        self,
+        surface: pygame.Surface,
+        dest: PositionType,
+        area: Optional[pygame.Rect] = None,
+        special_flags: int = 0,
+    ):
+        self.surface = surface
+        self.dest = dest
+        self.area = area
+        self.special_flags = special_flags
+
+    @property
+    def batchable(self) -> bool:
+        return self.area is None and self.special_flags == 0
+
+    def execute(self, screen: pygame.Surface) -> None:
+        screen.blit(self.surface, self.dest, self.area, self.special_flags)
 
 
 class RenderEngine:
@@ -97,17 +131,9 @@ class RenderEngine:
         layer: Optional[int] = None,
     ) -> "RenderEngine":
         """绘制表面到指定位置"""
-        command = DrawCommand(
-            lambda screen, surface, dest, area, special: screen.blit(
-                surface, dest, area, special
-            ),
-            surface,
-            dest,
-            area,
-            special_flags,
+        return self._add_command(
+            BlitCommand(surface, dest, area=area, special_flags=special_flags), layer
         )
-        # command = BlitCommand(surface, dest, area, special_flags)
-        return self._add_command(command, layer)
 
     # 几何图形绘制方法
     def rect(
@@ -216,16 +242,103 @@ class RenderEngine:
         return self._add_command(command, layer)
 
     def update(self) -> None:
-        """渲染所有图层到屏幕"""
+        """Render queued layers while preserving layer and command ordering.
+
+        Consecutive plain blits are submitted through ``Surface.blits``. Custom
+        drawing operations and nonstandard blits remain ordering barriers and
+        execute individually. Coarse profiler regions remain available for
+        normal development diagnostics:
+
+        - ``render_batch_pack``: Python scan + temporary ``(surface, dest)`` list;
+        - ``render_batch_blits``: actual ``Surface.blits`` calls;
+        - ``render_scalar_execute``: singleton/non-batch/geometry command execution.
+
+        """
         if not self.screen:
             raise RuntimeError("屏幕表面未设置，请先调用 set_screen()")
 
-        # 按层级顺序渲染
-        for layer in sorted(self._render_queue.keys()):
-            for command in self._render_queue[layer]:
-                command.execute(self.screen)
+        profiler = profiling.profiler
+        with profiler.time_system("render_queue_prepare", category="render"):
+            layer_keys = sorted(self._render_queue.keys())
+            command_count = sum(len(commands) for commands in self._render_queue.values())
+            layer_count = len(layer_keys)
 
-        self.clear()
+        profiler.set_frame_metric("render_commands", command_count)
+        profiler.set_frame_metric("render_layers", layer_count)
+
+        simple_blits = 0
+        blit_batches = 0
+        batch_runs = 0
+        single_plain_blits = 0
+        nonbatch_blits = 0
+        draw_commands = 0
+        other_commands = 0
+        max_batch_size = 0
+
+        # Preserve layer and command order exactly. Only consecutive plain blits
+        # are collapsed; any geometry/custom command is an ordering barrier.
+        with profiler.time_system("render_queue_submit", category="render"):
+            for layer in layer_keys:
+                commands = self._render_queue[layer]
+                index = 0
+                while index < len(commands):
+                    command = commands[index]
+                    if isinstance(command, BlitCommand) and command.batchable:
+                        batch_runs += 1
+                        with profiler.time_system("render_batch_pack", category="render"):
+                            batch = []
+                            while index < len(commands):
+                                candidate = commands[index]
+                                if (
+                                    not isinstance(candidate, BlitCommand)
+                                    or not candidate.batchable
+                                ):
+                                    break
+                                batch.append((candidate.surface, candidate.dest))
+                                index += 1
+
+                        batch_size = len(batch)
+                        simple_blits += batch_size
+                        max_batch_size = max(max_batch_size, batch_size)
+
+                        if batch_size >= 2:
+                            with profiler.time_system(
+                                "render_batch_blits", category="render"
+                            ):
+                                self.screen.blits(batch, False)
+                            blit_batches += 1
+                        else:
+                            single_plain_blits += 1
+                            with profiler.time_system(
+                                "render_scalar_execute", category="render"
+                            ):
+                                command.execute(self.screen)
+                        continue
+
+                    if isinstance(command, BlitCommand):
+                        nonbatch_blits += 1
+                    elif isinstance(command, DrawCommand):
+                        draw_commands += 1
+                    else:
+                        other_commands += 1
+                    with profiler.time_system(
+                        "render_scalar_execute", category="render"
+                    ):
+                        command.execute(self.screen)
+                    index += 1
+
+        scalar_commands = nonbatch_blits + draw_commands + other_commands
+        profiler.set_frame_metric("render_simple_blits", simple_blits)
+        profiler.set_frame_metric("render_blit_batches", blit_batches)
+        profiler.set_frame_metric("render_batch_runs", batch_runs)
+        profiler.set_frame_metric("render_single_plain_blits", single_plain_blits)
+        profiler.set_frame_metric("render_nonbatch_blits", nonbatch_blits)
+        profiler.set_frame_metric("render_draw_commands", draw_commands)
+        profiler.set_frame_metric("render_other_commands", other_commands)
+        profiler.set_frame_metric("render_scalar_commands", scalar_commands)
+        profiler.set_frame_metric("render_max_batch_size", max_batch_size)
+        with profiler.time_system("render_queue_clear", category="render"):
+            self.clear()
 
     def clear(self) -> None:
         """清空渲染队列"""

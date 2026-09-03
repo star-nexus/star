@@ -11,8 +11,11 @@ Options:
     --skip-start  Skip the start UI and apply --players/--mode/--scenario
     --headless  Skip start UI, dummy display, auto end (eval / CI)
     --hub-url URL  Hub websocket (default: ws://localhost:8000/ws/metaverse)
-    --no-hub  Do not connect to a Hub (offline BOT / rules tests)
-    --help  Show help information   
+    --no-hub  Do not connect to a Hub
+    --mock-ai  Explicitly enable the built-in rule BOT controller
+    --profile  Print Performance Profiler v2 stats every ~5 seconds
+    --profile-json PATH  Write the final rolling profiler snapshot as JSON
+    --help  Show help information
 """
 
 import sys
@@ -78,7 +81,16 @@ Victory Conditions:
         "--no-hub",
         action="store_true",
         default=False,
-        help="Do not open a Hub websocket. Rule BOT still plays; LLM agents cannot join.",
+        help="Do not open a Hub websocket. External LLM agents cannot join.",
+    )
+    parser.add_argument(
+        "--mock-ai",
+        action="store_true",
+        default=False,
+        help=(
+            "Explicitly mount the built-in rule BOT (MockLLMAISystem). "
+            "It is never used as an automatic fallback for missing LLM agents."
+        ),
     )
     parser.add_argument(
         "--skip-start",
@@ -107,7 +119,10 @@ Victory Conditions:
         "--players",
         choices=["human_vs_ai", "ai_vs_ai", "three_kingdoms", "human_vs_two_ai"],
         default="human_vs_ai",
-        help="Player configuration (default: human_vs_ai). three_kingdoms is AI/AI/AI for eval.",
+        help=(
+            "Player slot configuration (default: human_vs_ai). "
+            "Use --mock-ai only when those AI slots should be driven by the local rule BOT."
+        ),
     )
 
     parser.add_argument(
@@ -126,6 +141,24 @@ Victory Conditions:
             "combat rolls, terrain/skill events, and visual particles. "
             "Resolution priority: --seed > $STAR_SEED > .configs.toml[default].seed > wall-clock."
         ),
+    )
+
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable STAR Performance Profiler v2 console output. Reports "
+            "exclusive/inclusive timings, frame percentiles, present time, "
+            "and FPS-cap waiting separately."
+        ),
+    )
+    parser.add_argument(
+        "--profile-json",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write the final rolling Performance Profiler v2 snapshot to PATH as JSON.",
     )
 
     return parser.parse_args()
@@ -150,6 +183,21 @@ def create_game_from_args(args):
     )
 
 
+def game_scene_kwargs_from_args(args) -> dict:
+    """Build the one GameScene configuration used by CLI launch paths."""
+    return {
+        "players": create_game_from_args(args),
+        "mode": args.mode,
+        "headless": args.headless,
+        "scenario": args.scenario,
+        "seed": args.seed,
+        "seed_source": "cli" if args.seed is not None else "default",
+        "hub_url": resolve_hub_url(args),
+        "env_id": args.env_id,
+        "enable_mock_ai": args.mock_ai,
+    }
+
+
 def print_welcome():
     """Display welcome message"""
     print("\n" + "=" * 60)
@@ -168,22 +216,32 @@ def print_welcome():
 
 def main():
     """Main game function"""
+    args = None
     try:
-        # Parse command line arguments
         args = parse_arguments()
+
+        # Collection is opt-in so normal runs do not pay profiler timing/deque
+        # overhead. JSON-only runs collect silently; --profile additionally
+        # enables periodic console output.
+        profiler.enabled = args.profile or bool(args.profile_json)
+        profiler.enable_profiler = args.profile
+        profiler.set_metadata(
+            mode=args.mode,
+            scenario=args.scenario,
+            players=args.players,
+            mock_ai=args.mock_ai,
+        )
 
         # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
         if args.env_id is not None:
             os.environ["ENV_ID"] = args.env_id
 
-        # Display welcome message
         print_welcome()
 
         if args.headless:
             os.environ["SDL_VIDEODRIVER"] = "dummy"
             os.environ["HEADLESS"] = "1"
 
-        # Create game engine
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
             fps=GameConfig.FPS,
@@ -192,30 +250,32 @@ def main():
             GameConfig.WINDOW_WIDTH = engine.width
             GameConfig.WINDOW_HEIGHT = engine.height
 
-        # Register game scenes
         engine.scene_manager.register_scene("start", StartScene)
         engine.scene_manager.register_scene("game", GameScene)
         engine.scene_manager.register_scene("game_over", GameOverScene)
 
-        # Determine initial scene based on command line arguments
-        if args.headless or args.skip_start:
-            players_config = create_game_from_args(args)
-            hub_url = resolve_hub_url(args)
+        if args.headless:
+            # Headless evaluation has no human input lifecycle to unify and can
+            # still enter GameScene directly before the loop starts.
+            engine.scene_manager.switch_to("game", **game_scene_kwargs_from_args(args))
+        elif args.skip_start:
+            # Visible CLI and visible menu launches must enter GameScene from the
+            # same frame-boundary handoff.  StartScene consumes this config on
+            # its first update without requiring any menu interaction.
             engine.scene_manager.switch_to(
-                "game",
-                players=players_config,
-                mode=args.mode,
-                headless=args.headless,
-                scenario=args.scenario,
-                seed=args.seed,
-                seed_source="cli" if args.seed is not None else "default",
-                hub_url=hub_url,
-                env_id=args.env_id,
+                "start",
+                auto_start_config=game_scene_kwargs_from_args(args),
             )
+        else:
+            engine.scene_manager.switch_to("start")
+            print("Enter game configuration interface...")
 
+        if args.headless or args.skip_start:
+            hub_url = resolve_hub_url(args)
             print(f"Game mode: {args.mode}")
             print(f"Player configuration: {args.players}")
             print(f"Game scenario: {args.scenario}")
+            print(f"Rule BOT: {'enabled' if args.mock_ai else 'disabled'}")
             if hub_url is None:
                 print("Hub: offline (--no-hub)")
             else:
@@ -224,14 +284,10 @@ def main():
                 print(f"Environment ID: {args.env_id}")
             if args.seed is not None:
                 print(f"Root seed: {args.seed}")
-        else:
-            # Default to start scene
-            engine.scene_manager.switch_to("start")
-            print("Enter game configuration interface...")
+            if args.profile:
+                print("Performance Profiler v2: enabled")
 
         print("Game started! Configure the game in the start interface, then click start game.")
-
-        # Start game
         engine.start()
 
     except KeyboardInterrupt:
@@ -242,6 +298,12 @@ def main():
 
         traceback.print_exc()
     finally:
+        if args is not None and args.profile_json:
+            try:
+                profiler.write_json(args.profile_json)
+                print(f"Performance profile written to: {args.profile_json}")
+            except Exception as e:
+                print(f"Warning: Failed to write performance profile: {e}")
         pygame.quit()
         print("Game Over")
 
