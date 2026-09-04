@@ -1,0 +1,114 @@
+# Reference host: macOS visible window 2480x1268, uncapped.
+# 2026-09 baseline (3 runs): controlled max = 3.086-3.192 ms;
+# uninstrumented p99 = 0.024-0.026 ms. Limits intentionally leave broad headroom.
+name: one-mover-v1-reference
+rules:
+  - path: metadata.benchmark_workload
+    op: eq
+    value: one-mover-v1
+    description: Profile must come from the canonical one-mover workload.
+
+  - path: metadata.benchmark_input_policy
+    op: eq
+    value: blocked_gameplay_events
+    description: Local gameplay input must remain blocked.
+
+  - path: metadata.benchmark_measurement_duration_s
+    op: eq
+    value: 5.0
+    description: The dynamic workload uses the canonical five-second measurement window.
+
+  - path: metadata.benchmark_summary_scope
+    op: eq
+    value: final_measurement_window
+    description: The move must occur inside the measured window.
+
+  - path: metadata.benchmark_move_path_length
+    op: gte
+    value: 2
+    description: The benchmark must issue a real multi-position movement path.
+
+  - path: metadata.benchmark_move_cost
+    op: gt
+    value: 0
+    description: The one-mover order must consume real movement budget.
+
+  - path: window_capacity_limited
+    op: eq
+    value: false
+    description: The rolling window must not be capacity truncated.
+
+  - path: window_coverage_s
+    op: gte
+    value: 4.5
+    description: Final profile must cover nearly the full measured interval.
+
+  - path: frame_metrics.fog_enabled.min
+    op: eq
+    value: 1.0
+    description: Fog remains enabled while the mover changes visibility.
+
+  - path: frame_metrics.fog_enabled.max
+    op: eq
+    value: 1.0
+    description: Fog remains enabled while the mover changes visibility.
+
+  - path: frame_metrics.effect_position_index_changes.max
+    op: gte
+    value: 1.0
+    description: The mover must commit at least one new hex during the window.
+
+  - path: frame_metrics.vision_dirty_units.max
+    op: lte
+    value: 1.0
+    description: One moving unit must not dirty multiple units.
+
+  - path: frame_metrics.vision_units_scanned.max
+    op: lte
+    value: 1.0
+    description: Movement-driven Vision work must remain local to the one dirty unit.
+
+  - path: frame_metrics.vision_units_changed.max
+    op: lte
+    value: 1.0
+    description: A one-unit move must not publish multiple changed units per frame.
+
+  - path: frame_metrics.vision_fog_delta_tiles.max
+    op: gt
+    value: 0.0
+    description: The selected path must actually exercise incremental Fog deltas.
+
+  - path: frame_metrics.vision_geometry_cache_evictions.max
+    op: eq
+    value: 0.0
+    description: The 15-unit Vision working set must remain resident.
+
+  - path: frame_metrics.input_key_down.max
+    op: eq
+    value: 0.0
+    description: No gameplay key input is allowed.
+
+  - path: frame_metrics.input_mouse_button.max
+    op: eq
+    value: 0.0
+    description: No gameplay mouse click is allowed.
+
+  - path: frame_metrics.input_mouse_wheel.max
+    op: eq
+    value: 0.0
+    description: No camera zoom input is allowed.
+
+  - path: frame_metrics.map_render_mode.values
+    op: contains
+    value: overscan_cached
+    description: Dynamic unit movement must not force a terrain cache rebuild.
+
+  - path: controlled_work_frame_ms.max
+    op: lte
+    value: 4.0
+    description: Detect a material regression even when movement commits occupy less than one percent of frames.
+
+  - path: uninstrumented_frame_ms.p99
+    op: lte
+    value: 0.2
+    description: Large new uninstrumented work must not bypass the controlled-work gate.

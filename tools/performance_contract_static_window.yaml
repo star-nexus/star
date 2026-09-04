@@ -1,0 +1,141 @@
+name: static-window-v1-workload-integrity
+rules:
+  - path: metadata.benchmark_workload
+    op: eq
+    value: static-window-v1
+    description: Profile must come from the canonical deterministic visible-window workload.
+
+  - path: metadata.benchmark_input_policy
+    op: eq
+    value: blocked_gameplay_events
+    description: Gameplay key/mouse events must be filtered so the world cannot drift from local interaction.
+
+  - path: metadata.benchmark_measurement_duration_s
+    op: eq
+    value: 5.0
+    description: The canonical steady-state measurement interval must match the five-second profiler horizon.
+
+  - path: metadata.benchmark_summary_scope
+    op: eq
+    value: final_steady_state_window
+    description: Benchmark throughput evidence must use the final warmed steady-state scope.
+
+  - path: window_capacity_limited
+    op: eq
+    value: false
+    description: The hard frame capacity must not truncate the rolling horizon.
+
+  - path: window_coverage_s
+    op: gte
+    value: 4.5
+    description: Final profile must contain a warmed, nearly full five-second window.
+
+  - path: avg_fps_semantics
+    op: eq
+    value: inverse_mean_frame_body_ms
+    description: FPS compatibility field must retain explicit frame-body semantics.
+
+  - path: controlled_work_frame_ms
+    op: exists
+    value: true
+    description: STAR-controlled work must be available independently of platform/present/wait time.
+
+  - path: platform_input_frame_ms
+    op: exists
+    value: true
+    description: SDL/platform input time must remain separately attributable.
+
+  - path: slow_frame_scope
+    op: eq
+    value: gameplay_epoch
+    description: Slow-frame history scope must be explicit.
+
+  - path: frame_metrics.fog_enabled.min
+    op: eq
+    value: 1.0
+    description: Static-window-v1 keeps Fog enabled throughout the measured window.
+
+  - path: frame_metrics.fog_enabled.max
+    op: eq
+    value: 1.0
+    description: Static-window-v1 keeps Fog enabled throughout the measured window.
+
+  - path: frame_metrics.fog_toggle_this_frame.max
+    op: eq
+    value: 0.0
+    description: No Fog toggle is allowed inside the static workload.
+
+  - path: frame_metrics.effect_position_index_changes.max
+    op: eq
+    value: 0.0
+    description: No Unit may commit a new hex position during the static workload.
+
+  - path: frame_metrics.vision_dirty_units.max
+    op: eq
+    value: 0.0
+    description: No movement-driven Vision recomputation should occur in the static workload.
+
+  - path: frame_metrics.vision_geometry_cache_evictions.max
+    op: eq
+    value: 0.0
+    description: The static 15-unit working set must not evict Vision geometry entries.
+
+  - path: frame_metrics.input_key_down.max
+    op: eq
+    value: 0.0
+    description: Gameplay key presses are forbidden in the deterministic workload.
+
+  - path: frame_metrics.input_mouse_button.max
+    op: eq
+    value: 0.0
+    description: Gameplay mouse clicks are forbidden in the deterministic workload.
+
+  - path: frame_metrics.input_mouse_wheel.max
+    op: eq
+    value: 0.0
+    description: Camera zoom input is forbidden in the deterministic workload.
+
+  - path: frame_metrics.map_render_mode.values
+    op: contains
+    value: overscan_cached
+    description: The warmed static workload must be on the normal cached map presentation path.
+
+  - path: frame_metrics.map_visible_tiles.min
+    op: eq
+    value: 225.0
+    description: The canonical 15x15 map must keep all 225 tiles in the visible-map workload.
+
+  - path: frame_metrics.map_visible_tiles.max
+    op: eq
+    value: 225.0
+    description: The canonical 15x15 map must keep all 225 tiles in the visible-map workload.
+
+  - path: frame_metrics.render_commands.min
+    op: eq
+    value: 50.0
+    description: Static-window-v1 must retain its canonical render command shape.
+
+  - path: frame_metrics.render_commands.max
+    op: eq
+    value: 50.0
+    description: Static-window-v1 must retain its canonical render command shape.
+
+  - path: frame_metrics.render_blit_batches.min
+    op: eq
+    value: 9.0
+    description: Static-window-v1 must retain its canonical blit batching shape.
+
+  - path: frame_metrics.render_blit_batches.max
+    op: eq
+    value: 9.0
+    description: Static-window-v1 must retain its canonical blit batching shape.
+
+  - path: frame_metrics.render_batch_runs.min
+    op: eq
+    value: 11.0
+    description: Static-window-v1 must retain its canonical batch-run shape.
+
+  - path: frame_metrics.render_batch_runs.max
+    op: eq
+    value: 11.0
+    description: Static-window-v1 must retain its canonical batch-run shape.

@@ -1,0 +1,31 @@
+name: static-window-v1-reference-timing
+rules:
+  - path: metadata.benchmark_workload
+    op: eq
+    value: static-window-v1
+    description: Timing budgets apply only to the canonical static workload.
+
+  - path: metadata.benchmark_uncapped
+    op: eq
+    value: true
+    description: Reference timing budgets are defined for the uncapped workload.
+
+  - path: controlled_work_frame_ms.p99
+    op: lte
+    value: 3.6
+    description: Detect a material STAR-controlled steady-state regression.
+
+  - path: sections.render_engine.inclusive_ms
+    op: lte
+    value: 2.0
+    description: Detect a material regression in the dominant render subsystem.
+
+  - path: sections.render_scalar_execute.inclusive_ms
+    op: lte
+    value: 1.6
+    description: Detect a material regression in scalar render execution.
+
+  - path: uninstrumented_frame_ms.p99
+    op: lte
+    value: 0.2
+    description: Large new frame work must not appear outside profiler attribution.

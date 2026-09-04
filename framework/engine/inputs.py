@@ -38,13 +38,13 @@ class InputSystem:
     def update(self):
         profiler = profiling.profiler
 
-        # Pump SDL and drain Pygame's queue as separate observable phases. This
-        # preserves input ordering while distinguishing platform event handling
-        # from Python-side queue retrieval and dispatch.
-        with profiler.time_system("input_event_pump", category="input"):
+        # Pump SDL and drain Pygame's queue as separate observable phases.
+        # They are platform-boundary work, not STAR-controlled input logic.
+        # Python-side dispatch remains category="input" below.
+        with profiler.time_system("input_event_pump", category="platform_input"):
             pygame.event.pump()
 
-        with profiler.time_system("input_event_get_queue", category="input"):
+        with profiler.time_system("input_event_get_queue", category="platform_input"):
             events = pygame.event.get(pump=False)
 
         collect_metrics = bool(getattr(profiler, "enabled", False))
