@@ -56,14 +56,21 @@ def _load_profile(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _metric_max(profile: Dict[str, Any], name: str):
+def _metric_stat(profile: Dict[str, Any], name: str, stat: str):
     metric = profile.get("frame_metrics", {}).get(name)
-    return metric.get("max") if isinstance(metric, dict) else None
+    return metric.get(stat) if isinstance(metric, dict) else None
+
+
+def _metric_max(profile: Dict[str, Any], name: str):
+    return _metric_stat(profile, name, "max")
+
+
+def _metric_min(profile: Dict[str, Any], name: str):
+    return _metric_stat(profile, name, "min")
 
 
 def _metric_values(profile: Dict[str, Any], name: str):
-    metric = profile.get("frame_metrics", {}).get(name)
-    return metric.get("values") if isinstance(metric, dict) else None
+    return _metric_stat(profile, name, "values")
 
 
 def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -76,16 +83,13 @@ def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
         "render_engine",
         "render_scalar_execute",
     )
-    digest_sections = {
-        name: sections[name]
-        for name in wanted
-        if name in sections
-    }
+    digest_sections = {name: sections[name] for name in wanted if name in sections}
     metrics = profile.get("frame_metrics", {})
     wanted_metrics = (
         "scale_configured_moving_units",
         "scale_execution_density",
         "scale_motion_phase",
+        "fog_enabled",
         "effect_position_index_changes",
         "vision_dirty_units",
         "vision_units_scanned",
@@ -94,11 +98,7 @@ def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
         "input_mouse_button",
         "input_mouse_wheel",
     )
-    digest_metrics = {
-        name: metrics[name]
-        for name in wanted_metrics
-        if name in metrics
-    }
+    digest_metrics = {name: metrics[name] for name in wanted_metrics if name in metrics}
     return {
         "metadata": profile.get("metadata", {}),
         "window_coverage_s": profile.get("window_coverage_s"),
@@ -187,6 +187,7 @@ def _density_point(args: argparse.Namespace) -> int:
     configured_max = _metric_max(profile, "scale_configured_moving_units")
     density_max = _metric_max(profile, "scale_execution_density")
     phase_values = _metric_values(profile, "scale_motion_phase")
+    dynamic_required = requested_density > 0.0
 
     guards = {
         "rolling_window_full": float(profile.get("window_coverage_s") or 0.0) >= 4.5,
@@ -201,10 +202,22 @@ def _density_point(args: argparse.Namespace) -> int:
             and abs(float(density_max) - requested_density) <= 1e-9
         ),
         "profile_phase_matches": isinstance(phase_values, list) and args.phase in phase_values,
+        "fog_fixed_on": (
+            _metric_min(profile, "fog_enabled") == 1.0
+            and _metric_max(profile, "fog_enabled") == 1.0
+        ),
         "input_policy_fixed": metadata.get("scale_input_policy") == "blocked_gameplay_events",
         "no_key_input": _metric_max(profile, "input_key_down") == 0.0,
         "no_mouse_button_input": _metric_max(profile, "input_mouse_button") == 0.0,
         "no_mouse_wheel_input": _metric_max(profile, "input_mouse_wheel") == 0.0,
+        "position_commits_present": (
+            not dynamic_required
+            or float(_metric_max(profile, "effect_position_index_changes") or 0.0) > 0.0
+        ),
+        "vision_dirty_present": (
+            not dynamic_required
+            or float(_metric_max(profile, "vision_dirty_units") or 0.0) > 0.0
+        ),
         "production_animation_path": start.get("production_animation_and_commits") is True,
         "no_pathfinding_during_execution": start.get("pathfinding_during_execution") is False,
     }
