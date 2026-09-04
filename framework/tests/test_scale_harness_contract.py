@@ -7,7 +7,9 @@ import random
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+from rotk_env.main import game_scene_kwargs_from_args
 from rotk_env.testing.scale_harness import ScaleHarnessSystem
 from rotk_env.utils.hex_utils import HexMath
 
@@ -65,6 +67,22 @@ def test_sustained_path_expands_without_per_frame_harness_work():
     assert path is not None
     assert len(path) == 6
     assert path[0] == (0, 0)
+
+
+def test_existing_runtime_args_do_not_need_scale_field():
+    args = SimpleNamespace(
+        players="human_vs_two_ai",
+        mode="real_time",
+        headless=False,
+        scenario="default",
+        seed=42,
+        no_hub=True,
+        hub_url=None,
+        env_id=None,
+        mock_ai=False,
+    )
+    kwargs = game_scene_kwargs_from_args(args)
+    assert kwargs["scale_harness_socket"] is None
 
 
 def test_scale_driver_entrypoint_works_outside_repo_cwd(tmp_path):
