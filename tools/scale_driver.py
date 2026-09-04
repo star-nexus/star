@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import socket
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -57,6 +56,16 @@ def _load_profile(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _metric_max(profile: Dict[str, Any], name: str):
+    metric = profile.get("frame_metrics", {}).get(name)
+    return metric.get("max") if isinstance(metric, dict) else None
+
+
+def _metric_values(profile: Dict[str, Any], name: str):
+    metric = profile.get("frame_metrics", {}).get(name)
+    return metric.get("values") if isinstance(metric, dict) else None
+
+
 def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
     sections = profile.get("sections", {})
     wanted = (
@@ -72,7 +81,26 @@ def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
         for name in wanted
         if name in sections
     }
+    metrics = profile.get("frame_metrics", {})
+    wanted_metrics = (
+        "scale_configured_moving_units",
+        "scale_execution_density",
+        "scale_motion_phase",
+        "effect_position_index_changes",
+        "vision_dirty_units",
+        "vision_units_scanned",
+        "vision_fog_delta_tiles",
+        "input_key_down",
+        "input_mouse_button",
+        "input_mouse_wheel",
+    )
+    digest_metrics = {
+        name: metrics[name]
+        for name in wanted_metrics
+        if name in metrics
+    }
     return {
+        "metadata": profile.get("metadata", {}),
         "window_coverage_s": profile.get("window_coverage_s"),
         "sample_count": profile.get("sample_count"),
         "window_capacity_limited": profile.get("window_capacity_limited"),
@@ -88,6 +116,7 @@ def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
         "platform_input_frame_ms": profile.get("platform_input_frame_ms"),
         "present_frame_ms": profile.get("present_frame_ms"),
         "uninstrumented_frame_ms": profile.get("uninstrumented_frame_ms"),
+        "frame_metrics": digest_metrics,
         "sections": digest_sections,
     }
 
@@ -151,16 +180,31 @@ def _density_point(args: argparse.Namespace) -> int:
     resident = int(status.get("living_units") or 0)
     active = int(status.get("active_moving_units") or 0)
     requested_density = float(args.density)
+    accepted = int(start.get("accepted_moving_units") or 0)
     actual_density = active / resident if resident else 0.0
     density_tolerance = max(0.01, (1.0 / resident) if resident else 1.0)
+    metadata = profile.get("metadata", {})
+    configured_max = _metric_max(profile, "scale_configured_moving_units")
+    density_max = _metric_max(profile, "scale_execution_density")
+    phase_values = _metric_values(profile, "scale_motion_phase")
 
     guards = {
         "rolling_window_full": float(profile.get("window_coverage_s") or 0.0) >= 4.5,
         "window_not_capacity_limited": profile.get("window_capacity_limited") is False,
         "controlled_work_present": isinstance(profile.get("controlled_work_frame_ms"), dict),
         "resident_matches_prepare": resident == int(prepare.get("living_units") or -1),
-        "active_matches_start": active == int(start.get("accepted_moving_units") or -1),
+        "active_matches_start": active == accepted,
         "density_matches": abs(actual_density - requested_density) <= density_tolerance,
+        "profile_configured_movers_match": configured_max == float(accepted),
+        "profile_density_matches": (
+            isinstance(density_max, (int, float))
+            and abs(float(density_max) - requested_density) <= 1e-9
+        ),
+        "profile_phase_matches": isinstance(phase_values, list) and args.phase in phase_values,
+        "input_policy_fixed": metadata.get("scale_input_policy") == "blocked_gameplay_events",
+        "no_key_input": _metric_max(profile, "input_key_down") == 0.0,
+        "no_mouse_button_input": _metric_max(profile, "input_mouse_button") == 0.0,
+        "no_mouse_wheel_input": _metric_max(profile, "input_mouse_wheel") == 0.0,
         "production_animation_path": start.get("production_animation_and_commits") is True,
         "no_pathfinding_during_execution": start.get("pathfinding_during_execution") is False,
     }
