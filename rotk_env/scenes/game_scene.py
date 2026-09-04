@@ -87,9 +87,22 @@ class GameScene(Scene):
         # assembled, so it can reuse the production AnimationSystem and lets
         # World priority sorting place its command poll before animation update.
         if self.scale_harness_socket:
+            import pygame
+
+            pygame.event.set_blocked(
+                [
+                    pygame.KEYDOWN,
+                    pygame.KEYUP,
+                    pygame.MOUSEBUTTONDOWN,
+                    pygame.MOUSEBUTTONUP,
+                    pygame.MOUSEMOTION,
+                    pygame.MOUSEWHEEL,
+                ]
+            )
             from ..testing.scale_harness import ScaleHarnessSystem
 
             self.world.add_system(ScaleHarnessSystem(self.scale_harness_socket))
+            profiler.set_metadata(scale_input_policy="blocked_gameplay_events")
 
         # Attach workload context to profiler snapshots so timing reports remain
         # interpretable across maps and player configurations.
