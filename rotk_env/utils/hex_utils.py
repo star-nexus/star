@@ -141,23 +141,22 @@ class HexMath:
     def hex_in_range(
         center_col: int, center_row: int, range_val: int
     ) -> Set[Tuple[int, int]]:
-        """Return all hexes within the given range (offset coordinates)."""
-        results = set()
-        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
+        """Return the translation-invariant hex disk around an offset cell.
 
-        for q in range(center_q - range_val, center_q + range_val + 1):
-            for r in range(
-                max(center_r - range_val, -q - range_val),
-                min(center_r + range_val, -q + range_val) + 1,
-            ):
-                if (
-                    HexMath.hex_distance(
-                        (center_col, center_row), HexMath.axial_to_offset(q, r)
-                    )
-                    <= range_val
-                ):
-                    col, row = HexMath.axial_to_offset(q, r)
-                    results.add((col, row))
+        Iterate *relative* axial deltas and translate them by the center so the
+        disk is independent of the center's absolute coordinates.
+        """
+        radius = max(0, int(range_val))
+        center_q, center_r = HexMath.offset_to_axial(center_col, center_row)
+        results: Set[Tuple[int, int]] = set()
+
+        for dq in range(-radius, radius + 1):
+            dr_min = max(-radius, -dq - radius)
+            dr_max = min(radius, -dq + radius)
+            for dr in range(dr_min, dr_max + 1):
+                results.add(
+                    HexMath.axial_to_offset(center_q + dq, center_r + dr)
+                )
         return results
 
     @staticmethod
@@ -195,6 +194,8 @@ class HexConverter:
         self.orientation = orientation or GameConfig.HEX_ORIENTATION
         self.width = math.sqrt(3) * hex_size
         self.height = 2 * hex_size
+        self._corner_offsets_key: Optional[Tuple[object, object]] = None
+        self._corner_offsets: Tuple[Tuple[float, float], ...] = ()
 
     def hex_to_pixel(self, col: int, row: int) -> Tuple[float, float]:
         """Convert hex (offset) to screen pixel coordinates; increasing row goes up on screen."""
@@ -267,25 +268,29 @@ class HexConverter:
     def get_hex_corners(self, col: int, row: int) -> List[Tuple[float, float]]:
         """Return the 6 corner coordinates of a hex (offset coords, Cartesian)."""
         center_x, center_y = self.hex_to_pixel(col, row)
-        corners = []
+        key = (self.size, self.orientation)
+        if self._corner_offsets_key != key:
+            self._corner_offsets = self._build_corner_offsets()
+            self._corner_offsets_key = key
 
-        if self.orientation == HexOrientation.POINTY_TOP:
-            # Pointy-top: start at -30°, step 60°
-            start_angle = -30
-        else:  # FLAT_TOP
-            # Flat-top: start at 0°, step 60°
-            start_angle = 0
+        return [
+            (center_x + offset_x, center_y + offset_y)
+            for offset_x, offset_y in self._corner_offsets
+        ]
 
+    def _build_corner_offsets(self) -> Tuple[Tuple[float, float], ...]:
+        start_angle = -30 if self.orientation == HexOrientation.POINTY_TOP else 0
+        offsets = []
         for i in range(6):
             angle_deg = 60 * i + start_angle
             angle_rad = math.radians(angle_deg)
-            x = center_x + self.size * math.cos(angle_rad)
-            # Y flip is already applied in hex_to_pixel; keep consistent
-            y = center_y + self.size * math.sin(angle_rad)
-            corners.append((x, y))
-
-        return corners
-
+            offsets.append(
+                (
+                    self.size * math.cos(angle_rad),
+                    self.size * math.sin(angle_rad),
+                )
+            )
+        return tuple(offsets)
 
 class PathFinding:
     """A* pathfinding (offset coordinates)."""

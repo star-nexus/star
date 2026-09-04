@@ -1,34 +1,24 @@
-"""Compatibility-named scale renderers used by the interactive world.
+"""Production window renderers assembled from the optimized implementations."""
 
-Several legacy UI helpers discover render systems by ``type(system).__name__``.
-Keep those public class names stable while the implementation lives in the
-Fast* subclasses.
-"""
-
-from .fast_render_systems import (
-    FastEffectRenderSystem,
-    FastMapRenderSystem,
-    FastMiniMapSystem,
-    FastUnitRenderSystem,
+from .window_render_systems_base import (
+    EffectRenderSystem,
+    MapRenderSystem as _BaseMapRenderSystem,
+    MiniMapSystem,
+    UnitRenderSystem,
 )
+from .terrain_presentation_cache import OpaqueTerrainPresentationMixin
 
 
-class MapRenderSystem(FastMapRenderSystem):
-    pass
+class MapRenderSystem(OpaqueTerrainPresentationMixin, _BaseMapRenderSystem):
+    """Map renderer with opaque terrain presentation and incremental Fog."""
+
+    def _render_fog_of_war_optimized(
+        self,
+        visible_tiles,
+        camera_offset,
+        zoom: float = 1.0,
+    ) -> None:
+        self._fog_presenter.render(visible_tiles, camera_offset, zoom)
 
 
-class UnitRenderSystem(FastUnitRenderSystem):
-    pass
-
-
-class EffectRenderSystem(FastEffectRenderSystem):
-    pass
-
-
-class MiniMapSystem(FastMiniMapSystem):
-    def _render_minimap(self, minimap):
-        # The cached frame surface is intentionally reused. Clear dynamic unit/
-        # viewport pixels before restoring the cached static terrain layer.
-        if self._frame_surface is not None:
-            self._frame_surface.fill((0, 0, 0, 0))
-        super()._render_minimap(minimap)
+__all__ = ["EffectRenderSystem", "MapRenderSystem", "MiniMapSystem", "UnitRenderSystem"]

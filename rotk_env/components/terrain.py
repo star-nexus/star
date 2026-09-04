@@ -26,14 +26,19 @@ def effect_for(terrain_type: TerrainType) -> TerrainEffect:
 
 
 def terrain_at(world, position: Tuple[int, int]) -> Optional[Terrain]:
-    """Terrain component on the map tile at ``position``, if any."""
+    """Terrain component on the map tile at ``position``, if any.
+
+    Entity ids are integers and ``0`` is a valid first entity in a World.  Test
+    boards commonly create their first tile as entity 0, so absence must be
+    checked explicitly against ``None`` rather than by truthiness.
+    """
     from .state import MapData
 
     map_data = world.get_singleton_component(MapData)
     if not map_data:
         return None
     tile_entity = map_data.tiles.get(position)
-    if not tile_entity:
+    if tile_entity is None:
         return None
     return world.get_component(tile_entity, Terrain)
 

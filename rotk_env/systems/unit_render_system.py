@@ -8,6 +8,8 @@ Unit Render System - High-performance, feature-complete unit rendering
 Designed to minimize per-frame cost while keeping visuals informative.
 """
 
+from collections import OrderedDict
+
 import pygame
 import os
 import math
@@ -50,6 +52,8 @@ except ImportError:
 class UnitRenderSystem(System):
     """Integrated unit renderer with optional performance profiling."""
 
+    SCALED_TEXTURE_CACHE_MAX = 200
+
     def __init__(self):
         super().__init__(priority=2)  # Render above the map layer
         self.hex_converter = HexConverter(
@@ -58,9 +62,12 @@ class UnitRenderSystem(System):
         self.font = None
         self.small_font = None
 
-        # Pre-cached textures for performance
+        # Common sizes and runtime zoom variants share one bounded LRU.
         self.unit_textures: Dict[str, pygame.Surface] = {}
-        self.scaled_texture_cache: Dict[Tuple[str, int], pygame.Surface] = {}
+        self.scaled_texture_cache: OrderedDict[
+            Tuple[str, int], pygame.Surface
+        ] = OrderedDict()
+        self.scaled_texture_cache_max = self.SCALED_TEXTURE_CACHE_MAX
         self.textures_loaded = False
 
         # Visible units cache based on camera
@@ -71,6 +78,7 @@ class UnitRenderSystem(System):
         self.render_count = 0
         self.cache_hits = 0
         self.cache_misses = 0
+        self.cache_evictions = 0
 
         # Profiling switch (off by default)
         self.enable_profiler = False
@@ -180,6 +188,9 @@ class UnitRenderSystem(System):
                             f"Warning: failed to load unit texture {texture_path}: {e}"
                         )
 
+        while len(self.scaled_texture_cache) > self.scaled_texture_cache_max:
+            self.scaled_texture_cache.popitem(last=False)
+
         if len(self.unit_textures) > 0:
             self.textures_loaded = True
             print(
@@ -202,27 +213,29 @@ class UnitRenderSystem(System):
     def _get_cached_texture(
         self, faction: Faction, unit_type: UnitType, size: int
     ) -> Optional[pygame.Surface]:
-        """Get cached texture of exact size; create near-size on miss (with cap)."""
+        """Get an exact-size texture from the bounded LRU cache."""
+        size = max(1, int(size))
         key = f"{faction.value}_{unit_type.value}"
         cache_key = (key, size)
 
-        if cache_key in self.scaled_texture_cache:
+        cached = self.scaled_texture_cache.get(cache_key)
+        if cached is not None:
             self.cache_hits += 1
-            return self.scaled_texture_cache[cache_key]
+            self.scaled_texture_cache.move_to_end(cache_key)
+            return cached
 
-        # Cache miss: scale from original to requested size
-        if key in self.unit_textures:
-            self.cache_misses += 1
-            original = self.unit_textures[key]
-            scaled = pygame.transform.scale(original, (size, size))
+        original = self.unit_textures.get(key)
+        if original is None:
+            return None
 
-            # Cache new size (bounded cache size)
-            if len(self.scaled_texture_cache) < 200:
-                self.scaled_texture_cache[cache_key] = scaled
-
-            return scaled
-
-        return None
+        self.cache_misses += 1
+        scaled = pygame.transform.scale(original, (size, size))
+        self.scaled_texture_cache[cache_key] = scaled
+        self.scaled_texture_cache.move_to_end(cache_key)
+        if len(self.scaled_texture_cache) > self.scaled_texture_cache_max:
+            self.scaled_texture_cache.popitem(last=False)
+            self.cache_evictions += 1
+        return scaled
 
     def _get_unit_texture(
         self, faction: Faction, unit_type: UnitType

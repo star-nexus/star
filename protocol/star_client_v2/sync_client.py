@@ -26,6 +26,8 @@ class SyncWebSocketClient(BaseWebSocketClient):
         self._loop_thread = None
         self._stop_event = None
         self._loop_ready = None
+        self._message_task = None
+        self._heartbeat_task = None
         self.connected = False
 
     def connect(self) -> bool:
@@ -53,33 +55,58 @@ class SyncWebSocketClient(BaseWebSocketClient):
             return result
 
         except Exception as e:
+            # A failed connection must release the helper loop before the
+            # exception is surfaced to the caller.
+            if self._stop_event:
+                self._stop_event.set()
+            if (
+                self._loop_thread
+                and self._loop_thread.is_alive()
+                and self._loop_thread is not threading.current_thread()
+            ):
+                self._loop_thread.join(timeout=2)
             raise ConnectionError(f"Connection failed: {e}")
 
     def disconnect(self):
-        """Disconnect (synchronous)."""
-        if not self.connected:
-            return
+        """Disconnect and stop all background asyncio work (synchronous).
 
+        Do not return early merely because ``connected`` is already false: the
+        message loop may observe a remote close first while the heartbeat task
+        and helper event-loop thread are still alive. Shutdown is intentionally
+        idempotent and owns the thread lifecycle, not just websocket state.
+        """
         try:
-            # Run disconnect coroutine in the event loop
-            if self._loop and not self._loop.is_closed():
+            loop = self._loop
+            thread_alive = bool(self._loop_thread and self._loop_thread.is_alive())
+
+            if loop and not loop.is_closed() and thread_alive:
                 future = asyncio.run_coroutine_threadsafe(
-                    self._async_disconnect(), self._loop
+                    self._async_disconnect(), loop
                 )
                 future.result(timeout=5)
 
-            # Stop the event loop
             if self._stop_event:
                 self._stop_event.set()
 
-            # Wait for the loop thread to finish
-            if self._loop_thread and self._loop_thread.is_alive():
-                self._loop_thread.join(timeout=2)
+            if (
+                self._loop_thread
+                and self._loop_thread.is_alive()
+                and self._loop_thread is not threading.current_thread()
+            ):
+                self._loop_thread.join(timeout=5)
 
         except Exception as e:
             print(f"Error while disconnecting: {e}")
+            if self._stop_event:
+                self._stop_event.set()
         finally:
             self.connected = False
+            self.websocket = None
+            if not self._loop_thread or not self._loop_thread.is_alive():
+                self._loop_thread = None
+                self._loop = None
+                self._message_task = None
+                self._heartbeat_task = None
 
     def send_message(
         self,
@@ -112,10 +139,8 @@ class SyncWebSocketClient(BaseWebSocketClient):
             # Run the loop until a stop signal is received
             self._loop.run_until_complete(self._wait_for_stop())
         finally:
-            # Cleanup
             try:
-                # Cancel all pending tasks
-                pending = asyncio.all_tasks()
+                pending = asyncio.all_tasks(self._loop)
                 for task in pending:
                     task.cancel()
 
@@ -123,6 +148,7 @@ class SyncWebSocketClient(BaseWebSocketClient):
                     self._loop.run_until_complete(
                         asyncio.gather(*pending, return_exceptions=True)
                     )
+                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             except Exception:
                 pass
             finally:
@@ -130,7 +156,7 @@ class SyncWebSocketClient(BaseWebSocketClient):
 
     async def _wait_for_stop(self):
         """Wait for a stop signal."""
-        while not self._stop_event.is_set():
+        while self._stop_event and not self._stop_event.is_set():
             await asyncio.sleep(0.1)
 
     async def _async_connect(self) -> bool:
@@ -140,23 +166,48 @@ class SyncWebSocketClient(BaseWebSocketClient):
             self.websocket = await websockets.connect(url)
             self.connected = True
 
-            # Start message listener and heartbeat tasks
-            asyncio.create_task(self._message_loop())
-            asyncio.create_task(self._heartbeat_loop())
+            # Track background tasks explicitly so shutdown can cancel + await
+            # them before the helper loop is closed.
+            self._message_task = asyncio.create_task(self._message_loop())
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
             return True
 
         except Exception as e:
             raise ConnectionError(f"Connection failed: {e}")
 
+    async def _cancel_background_tasks(self):
+        """Cancel and await listener/heartbeat tasks owned by this client."""
+        current = asyncio.current_task()
+        tasks = []
+        for task in (self._message_task, self._heartbeat_task):
+            if task is not None and task is not current and not task.done():
+                task.cancel()
+                tasks.append(task)
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self._message_task = None
+        self._heartbeat_task = None
+
     async def _async_disconnect(self):
         """Async disconnect implementation."""
+        had_transport = self.websocket is not None
+        was_connected = self.connected
         self.connected = False
+
+        # Stop background work before tearing down the transport. In particular,
+        # a heartbeat sleeping for 30 seconds must be cancelled and awaited, not
+        # left pending until the event loop object is destroyed.
+        await self._cancel_background_tasks()
 
         if self.websocket:
             await self.websocket.close()
+            self.websocket = None
 
-        await self._trigger_event("disconnect", {"reason": "Disconnected by client"})
+        if was_connected or had_transport:
+            await self._trigger_event("disconnect", {"reason": "Disconnected by client"})
 
     async def _async_send_message(
         self,
@@ -205,6 +256,8 @@ class SyncWebSocketClient(BaseWebSocketClient):
                         # Handle other message types
                         await self._trigger_event("other", message_data)
 
+        except asyncio.CancelledError:
+            raise
         except websockets.exceptions.ConnectionClosed:
             self.connected = False
             await self._trigger_event("disconnect", {"reason": "Connection was closed"})
@@ -222,7 +275,7 @@ class SyncWebSocketClient(BaseWebSocketClient):
                         MessageType.HEARTBEAT.value, {"timestamp": time.time()}
                     )
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception as e:
             await self._trigger_event("error", {"error": f"Heartbeat error: {e}"})
 

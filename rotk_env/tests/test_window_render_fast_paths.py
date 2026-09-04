@@ -1,4 +1,4 @@
-"""Regression tests for the scale-up rendering/query fast paths."""
+"""Regression tests for window rendering caches and query paths."""
 
 import os
 

@@ -73,6 +73,9 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 
 ![System Architecture](docs/architecture.jpg)
 
+Developers working on the interactive renderer can also read the
+[window runtime and rendering architecture](docs/window-runtime-rendering.md).
+
 | Layer | Component | Description |
 | :--- | :--- | :--- |
 | **Agent Layer** | *Decision Host* | Decision hosts that speak the [Agent–ENV protocol](docs/agent-protocol.md). |
@@ -365,4 +368,3 @@ If you find this project useful in your research, please consider citing:
       url={https://arxiv.org/abs/2603.09337}, 
 }
 ```
-

@@ -13,7 +13,6 @@ from ..components import (
     AttackAnimation,
     EffectAnimation,
     ProjectileAnimation,
-    UnitStatus,
     DamageNumber,
     Camera,
     Unit,
@@ -34,10 +33,8 @@ class AnimationSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
-        # Same defensive init as the other font-using systems. This used to work
-        # by accident: importing `framework` constructed the engine and called
-        # pygame.init(). Now that import is side-effect free, a system that
-        # needs fonts has to ask for them.
+        # Framework import is side-effect free, so each font-using system
+        # initializes Pygame's font module explicitly.
         pygame.font.init()
         self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.damage_font = pygame.font.Font(self.font_file_path, 24)
@@ -52,7 +49,6 @@ class AnimationSystem(System):
         self._update_attack_animations(delta_time)
         self._update_projectile_animations(delta_time)
         self._update_effect_animations(delta_time)
-        self._update_unit_status(delta_time)
         self._update_damage_numbers(delta_time)
 
     def _update_movement_animations(self, delta_time: float):
@@ -111,22 +107,6 @@ class AnimationSystem(System):
                 target_hex[0], target_hex[1]
             )
             anim.target_pixel_pos = (target_x, target_y)
-
-    def _update_unit_status(self, delta_time: float):
-        """Update unit status"""
-        for entity in self.world.query().with_all(UnitStatus).entities():
-            status = self.world.get_component(entity, UnitStatus)
-            if not status:
-                continue
-
-            status.status_duration += delta_time
-
-            # Check movement status
-            anim = self.world.get_component(entity, MovementAnimation)
-            if anim and anim.is_moving:
-                status.current_status = "moving"
-            elif status.current_status == "moving" and (not anim or not anim.is_moving):
-                status.current_status = "idle"
 
     def _update_damage_numbers(self, delta_time: float):
         """Update damage number display"""
