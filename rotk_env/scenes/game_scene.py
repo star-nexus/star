@@ -24,6 +24,7 @@ class GameScene(Scene):
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
         self.game_mode = GameMode.TURN_BASED  # Default game mode
         self.enable_mock_ai = False
+        self.scale_harness_socket = None
 
         # Initialization flag
         self.initialized = False
@@ -60,6 +61,7 @@ class GameScene(Scene):
         self.hub_url = kwargs["hub_url"] if "hub_url" in kwargs else DEFAULT_HUB_URL
         self.env_id = kwargs.get("env_id")
         self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
+        self.scale_harness_socket = kwargs.get("scale_harness_socket")
 
         if not self.initialized:
             self._initialize_game()
@@ -81,6 +83,14 @@ class GameScene(Scene):
             world=self.world,
         )
 
+        # The scale controller is added only after the normal world is fully
+        # assembled, so it can reuse the production AnimationSystem and lets
+        # World priority sorting place its command poll before animation update.
+        if self.scale_harness_socket:
+            from ..testing.scale_harness import ScaleHarnessSystem
+
+            self.world.add_system(ScaleHarnessSystem(self.scale_harness_socket))
+
         # Attach workload context to profiler snapshots so timing reports remain
         # interpretable across maps and player configurations.
         map_data = self.world.get_singleton_component(MapData)
@@ -101,6 +111,7 @@ class GameScene(Scene):
             "initial_units": initial_units,
             "display": display,
             "mock_ai": self.enable_mock_ai,
+            "scale_harness": bool(self.scale_harness_socket),
         }
         if map_data is not None:
             metadata.update(
