@@ -185,7 +185,7 @@ class GameEngine:
         second of LLM think time is about FPS sim frames (and thus the
         intended AP/MP recovery) as long as the machine keeps up.
 
-        Profiler v2 deliberately wraps ``clock.tick`` and ends the frame *after*
+        The profiler deliberately wraps ``clock.tick`` and ends the frame *after*
         the limiter, so active work, presentation blocking, and intentional FPS
         cap waiting are reported separately.
         """
@@ -269,7 +269,7 @@ class GameEngine:
                 self.render_manager.update()
 
             # This is presentation-call wall time. On some SDL/display stacks it
-            # includes VSync/compositor blocking; profiler v2 reports it
+            # includes VSync/compositor blocking; the profiler reports it
             # separately rather than calling it CPU rendering time.
             with profiler.time_system("display_present", category="present"):
                 pygame.display.flip()

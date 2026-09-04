@@ -1,21 +1,14 @@
-"""Scale map renderer that amortizes terrain blits while the camera pans.
+"""Window map renderer with reusable terrain and incremental Fog surfaces.
 
-At 1000 units the remaining sustained interactive cost is no longer map command
-construction: ``RenderEngine`` spends roughly 6-7 ms executing hundreds of
-terrain blits in a typical 51x51 viewport. ``FastMapRenderSystem`` already
-collapses a stationary view to one cached raster, but deliberately falls back to
-per-tile blits whenever the camera moves.
-
-This compatibility renderer adds an overscan raster around the viewport. After
+The terrain path keeps an overscan raster around the viewport. After
 one stable-zoom frame it rasterizes the visible terrain plus a screen-space
 margin. Subsequent pans within that margin are a single cropped blit; only when
 the camera leaves the margin is the overscan surface rebuilt. Continuous zoom
-still uses the proven direct-tile path so we do not trade RenderEngine time for a
-full raster rebuild on every zoom step.
+uses the direct-tile path to avoid rebuilding a full raster on every zoom step.
 
 Overscan rebuilds use a staging surface and split candidate scanning and terrain
 rasterization across frames under a small time budget. While a pan rebuild is in
-flight, the previous raster supplies the overlapping region and only newly
+flight, the active raster supplies the overlapping region and only newly
 exposed tiles use the direct path. The active cache is swapped atomically after
 the staging build completes.
 
@@ -59,7 +52,7 @@ class _OverscanBuildJob:
     tiles_built: int = 0
 
 
-class ScaleMapRenderSystem(FastMapRenderSystem):
+class WindowMapRenderSystem(FastMapRenderSystem):
     """Fast map renderer with pan-friendly terrain and incremental fog."""
 
     OVERSCAN_MARGIN_PX = 256
@@ -98,7 +91,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         if hasattr(self, "_fog_presenter"):
             self._fog_presenter.reset()
 
-    def _scale_map_key(self, map_data: MapData):
+    def _map_cache_key(self, map_data: MapData):
         return (
             id(map_data),
             map_data.map_id,
@@ -107,7 +100,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         )
 
     @staticmethod
-    def _scale_zoom_key(zoom: float) -> float:
+    def _zoom_cache_key(zoom: float) -> float:
         return round(float(zoom), 5)
 
     def _overscan_matches_view(
@@ -121,9 +114,9 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         viewport = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
         if self._overscan_viewport != viewport:
             return False
-        if self._overscan_map_key != self._scale_map_key(map_data):
+        if self._overscan_map_key != self._map_cache_key(map_data):
             return False
-        if self._overscan_zoom_key != self._scale_zoom_key(zoom):
+        if self._overscan_zoom_key != self._zoom_cache_key(zoom):
             return False
 
         dx = float(camera_offset[0]) - self._overscan_camera_offset[0]
@@ -177,8 +170,8 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             and self._overscan_camera_offset is not None
             and self._overscan_viewport
             == (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
-            and self._overscan_map_key == self._scale_map_key(map_data)
-            and self._overscan_zoom_key == self._scale_zoom_key(zoom)
+            and self._overscan_map_key == self._map_cache_key(map_data)
+            and self._overscan_zoom_key == self._zoom_cache_key(zoom)
         )
 
     def _render_direct_outside_cached_overlap(
@@ -188,12 +181,10 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         camera_offset: List[float],
         zoom: float,
     ) -> int:
-        """Use the old raster for overlap and direct-render only exposed tiles.
+        """Reuse cached overlap and direct-render only exposed tiles.
 
-        A pan beyond the overscan margin used to force either one synchronous
-        rebuild or a full direct fallback. During an incremental rebuild the old
-        surface still covers most of the new viewport, so retain that one blit
-        and submit direct commands only for tiles touching the exposed strips.
+        During an incremental rebuild, the active surface continues to cover
+        the overlapping region. Direct commands fill only newly exposed strips.
         """
         if not self._active_overscan_geometry_matches(map_data, zoom):
             direct_tiles = set(visible_tiles)
@@ -252,9 +243,9 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             return "initial"
         if self._overscan_viewport != viewport:
             return "viewport_changed"
-        if self._overscan_map_key != self._scale_map_key(map_data):
+        if self._overscan_map_key != self._map_cache_key(map_data):
             return "map_changed"
-        if self._overscan_zoom_key != self._scale_zoom_key(zoom):
+        if self._overscan_zoom_key != self._zoom_cache_key(zoom):
             return "zoom_changed"
         dx = float(camera_offset[0]) - self._overscan_camera_offset[0]
         dy = float(camera_offset[1]) - self._overscan_camera_offset[1]
@@ -271,9 +262,9 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
     ) -> bool:
         if job.viewport != (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT):
             return False
-        if job.map_key != self._scale_map_key(map_data):
+        if job.map_key != self._map_cache_key(map_data):
             return False
-        if job.zoom_key != self._scale_zoom_key(zoom):
+        if job.zoom_key != self._zoom_cache_key(zoom):
             return False
         dx = float(camera_offset[0]) - job.camera_offset[0]
         dy = float(camera_offset[1]) - job.camera_offset[1]
@@ -304,8 +295,8 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             surface=staging_surface,
             camera_offset=(float(camera_offset[0]), float(camera_offset[1])),
             zoom=float(zoom),
-            zoom_key=self._scale_zoom_key(zoom),
-            map_key=self._scale_map_key(map_data),
+            zoom_key=self._zoom_cache_key(zoom),
+            map_key=self._map_cache_key(map_data),
             viewport=(width, height),
             tile_iterator=iter(map_data.tiles.items()),
             reason=reason,
@@ -484,7 +475,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
         return False
 
     def _acquire_overscan_surface(self, size: Tuple[int, int]) -> tuple[pygame.Surface, int]:
-        """Reuse the previous surface and clear only its last drawn content."""
+        """Reuse the active surface and clear only its last drawn content."""
         if self._overscan_surface is not None and self._overscan_surface.get_size() == size:
             cleared_pixels = 0
             if self._overscan_content_rect.width > 0 and self._overscan_content_rect.height > 0:
@@ -622,8 +613,8 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             float(camera_offset[0]),
             float(camera_offset[1]),
         )
-        self._overscan_zoom_key = self._scale_zoom_key(zoom)
-        self._overscan_map_key = self._scale_map_key(map_data)
+        self._overscan_zoom_key = self._zoom_cache_key(zoom)
+        self._overscan_map_key = self._map_cache_key(map_data)
         self._overscan_viewport = (
             GameConfig.WINDOW_WIDTH,
             GameConfig.WINDOW_HEIGHT,
@@ -655,7 +646,7 @@ class ScaleMapRenderSystem(FastMapRenderSystem):
             return
 
         profiling.profiler.set_frame_metric("map_visible_tiles", len(visible_tiles))
-        zoom_key = self._scale_zoom_key(zoom)
+        zoom_key = self._zoom_cache_key(zoom)
 
         if self._overscan_matches_view(map_data, camera_offset, zoom):
             self._cancel_overscan_build()

@@ -8,7 +8,7 @@ import pygame
 from framework.engine import RMS
 from rotk_env.components import MapData, Terrain
 from rotk_env.prefabs.config import GameConfig, TerrainType
-from rotk_env.systems.scale_map_render_system import ScaleMapRenderSystem
+from rotk_env.systems.window_map_render_system import WindowMapRenderSystem
 
 
 class _World:
@@ -37,7 +37,7 @@ def teardown_module():
 
 
 def test_pan_reuses_overscan_and_zoom_keeps_direct_fallback(monkeypatch):
-    renderer = ScaleMapRenderSystem()
+    renderer = WindowMapRenderSystem()
     renderer.world = _World(SimpleNamespace(map_id="test", tiles={}))
     renderer.OVERSCAN_MARGIN_PX = 128
     monkeypatch.setattr(GameConfig, "WINDOW_WIDTH", 100)
@@ -94,7 +94,7 @@ def test_pan_reuses_overscan_and_zoom_keeps_direct_fallback(monkeypatch):
 def test_overscan_build_is_incremental_and_uses_direct_fallback(monkeypatch):
     tiles = {(q, 0): q for q in range(6)}
     components = {entity: Terrain(TerrainType.PLAIN) for entity in tiles.values()}
-    renderer = ScaleMapRenderSystem()
+    renderer = WindowMapRenderSystem()
     renderer.world = _World(SimpleNamespace(map_id="test", tiles=tiles), components)
     renderer.OVERSCAN_MARGIN_PX = 10
     renderer.OVERSCAN_BUILD_MAX_ITEMS_PER_STEP = 1
@@ -128,7 +128,7 @@ def test_overscan_build_is_incremental_and_uses_direct_fallback(monkeypatch):
 
 def test_pan_rebuild_fallback_draws_only_tiles_outside_cached_overlap(monkeypatch):
     map_data = SimpleNamespace(map_id="test", tiles={(20, 20): 1, (100, 20): 2})
-    renderer = ScaleMapRenderSystem()
+    renderer = WindowMapRenderSystem()
     renderer.world = _World(map_data)
     renderer.OVERSCAN_MARGIN_PX = 20
     monkeypatch.setattr(GameConfig, "WINDOW_WIDTH", 100)
@@ -139,8 +139,8 @@ def test_pan_rebuild_fallback_draws_only_tiles_outside_cached_overlap(monkeypatc
     renderer._overscan_surface = pygame.Surface((140, 100), pygame.SRCALPHA)
     renderer._overscan_content_rect = renderer._overscan_surface.get_rect()
     renderer._overscan_camera_offset = (0.0, 0.0)
-    renderer._overscan_zoom_key = renderer._scale_zoom_key(1.0)
-    renderer._overscan_map_key = renderer._scale_map_key(map_data)
+    renderer._overscan_zoom_key = renderer._zoom_cache_key(1.0)
+    renderer._overscan_map_key = renderer._map_cache_key(map_data)
     renderer._overscan_viewport = (100, 60)
 
     direct_calls = []
@@ -163,7 +163,7 @@ def test_pan_rebuild_fallback_draws_only_tiles_outside_cached_overlap(monkeypatc
 
 
 def test_overscan_draw_crops_wide_empty_regions(monkeypatch):
-    renderer = ScaleMapRenderSystem()
+    renderer = WindowMapRenderSystem()
     renderer.OVERSCAN_MARGIN_PX = 20
     monkeypatch.setattr(GameConfig, "WINDOW_WIDTH", 100)
     monkeypatch.setattr(GameConfig, "WINDOW_HEIGHT", 60)

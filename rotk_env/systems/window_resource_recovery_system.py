@@ -1,4 +1,4 @@
-"""Window compatibility name for the scheduled resource recovery system."""
+"""Window resource recovery using the shared scheduled recovery policy."""
 
 from __future__ import annotations
 

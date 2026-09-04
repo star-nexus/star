@@ -13,7 +13,7 @@ Options:
     --hub-url URL  Hub websocket (default: ws://localhost:8000/ws/metaverse)
     --no-hub  Do not connect to a Hub
     --mock-ai  Explicitly enable the built-in rule BOT controller
-    --profile  Print Performance Profiler v2 stats every ~5 seconds
+    --profile  Print performance profiler stats every ~5 seconds
     --profile-json PATH  Write the final rolling profiler snapshot as JSON
     --help  Show help information
 """
@@ -148,7 +148,7 @@ Victory Conditions:
         action="store_true",
         default=False,
         help=(
-            "Enable STAR Performance Profiler v2 console output. Reports "
+            "Enable STAR performance profiler console output. Reports "
             "exclusive/inclusive timings, frame percentiles, present time, "
             "and FPS-cap waiting separately."
         ),
@@ -158,7 +158,7 @@ Victory Conditions:
         type=str,
         default=None,
         metavar="PATH",
-        help="Write the final rolling Performance Profiler v2 snapshot to PATH as JSON.",
+        help="Write the final rolling performance profiler snapshot to PATH as JSON.",
     )
 
     return parser.parse_args()
@@ -285,7 +285,7 @@ def main():
             if args.seed is not None:
                 print(f"Root seed: {args.seed}")
             if args.profile:
-                print("Performance Profiler v2: enabled")
+                print("Performance profiler: enabled")
 
         print("Game started! Configure the game in the start interface, then click start game.")
         engine.start()

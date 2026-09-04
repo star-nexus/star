@@ -13,7 +13,7 @@ from rotk_env.components import (
 )
 from rotk_env.components.unit_action_buttons import UnitActionPanel
 from rotk_env.prefabs.config import Faction, GameMode, PlayerType, UnitType
-from rotk_env.systems.scale_input_system import InputHandlingSystem
+from rotk_env.systems.window_input_system import InputHandlingSystem
 from rotk_env.utils.hex_utils import HexConverter
 
 
@@ -138,7 +138,7 @@ def test_move_target_mode_executes_empty_tile_and_refreshes_panel(monkeypatch):
         moves.append((entity, pos)) or {"success": True}
     )
     monkeypatch.setattr(
-        "rotk_env.systems.scale_input_system.EBS.publish", lambda event: None
+        "rotk_env.systems.window_input_system.EBS.publish", lambda event: None
     )
     assert system.begin_targeting("move", 2) is True
     system._handle_tile_click((5, 6), world.ui_state, clicked_unit=None)
@@ -160,7 +160,7 @@ def test_attack_target_click_completes_mode_even_when_combat_returns_false(monke
         attacks.append((attacker, target)) or False
     )
     monkeypatch.setattr(
-        "rotk_env.systems.scale_input_system.EBS.publish", lambda event: None
+        "rotk_env.systems.window_input_system.EBS.publish", lambda event: None
     )
     assert system.begin_targeting("attack", 2) is True
     system._handle_tile_click((3, 4), world.ui_state, clicked_unit=1)

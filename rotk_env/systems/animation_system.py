@@ -33,10 +33,8 @@ class AnimationSystem(System):
 
     def initialize(self, world: World) -> None:
         self.world = world
-        # Same defensive init as the other font-using systems. This used to work
-        # by accident: importing `framework` constructed the engine and called
-        # pygame.init(). Now that import is side-effect free, a system that
-        # needs fonts has to ask for them.
+        # Framework import is side-effect free, so each font-using system
+        # initializes Pygame's font module explicitly.
         pygame.font.init()
         self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.damage_font = pygame.font.Font(self.font_file_path, 24)

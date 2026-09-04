@@ -1,4 +1,4 @@
-"""Window realtime system using shared living-faction counts."""
+"""Window realtime system using indexed living-faction counts."""
 
 from __future__ import annotations
 

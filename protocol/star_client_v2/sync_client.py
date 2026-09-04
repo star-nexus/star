@@ -55,8 +55,8 @@ class SyncWebSocketClient(BaseWebSocketClient):
             return result
 
         except Exception as e:
-            # A failed connect previously left the loop thread alive. Always
-            # release the helper loop before surfacing the connection failure.
+            # A failed connection must release the helper loop before the
+            # exception is surfaced to the caller.
             if self._stop_event:
                 self._stop_event.set()
             if (

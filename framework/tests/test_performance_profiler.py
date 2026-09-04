@@ -1,3 +1,5 @@
+"""Production frame-profiler regression tests."""
+
 from __future__ import annotations
 
 import json
@@ -64,7 +66,7 @@ def test_nested_timers_report_exclusive_time_without_double_count(monkeypatch):
 def test_sections_are_averaged_per_frame_including_zero_frames(monkeypatch):
     # Frame 1 is 10ms and contains 4ms of work. Frame 2 is also 10ms but the
     # section does not execute. The rolling per-frame average must be 2ms,
-    # rather than the old profiler's occurrence-only 4ms average.
+    # rather than an occurrence-only 4ms average.
     _clock(
         monkeypatch,
         [0, 1_000_000, 5_000_000, 10_000_000, 10_000_000, 20_000_000],

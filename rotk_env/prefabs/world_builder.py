@@ -162,7 +162,7 @@ class _SkirmishAssembler:
         self._initialize_systems()
         self._initialize_players()
         self._initialize_units()
-        self._initialize_scale_spatial_index()
+        self._initialize_unit_spatial_index()
         self._initialize_stats()
         self._refresh_opening_vision()
 
@@ -214,10 +214,10 @@ class _SkirmishAssembler:
         recovery_system = ResourceRecoverySystem()
 
         if self.display == "window":
-            from ..systems.scale_vision_system import VisionSystem as WindowVisionSystem
-            from ..systems.scale_movement_system import MovementSystem as WindowMovementSystem
-            from ..systems.scale_combat_system import CombatSystem as WindowCombatSystem
-            from ..systems.scale_resource_recovery_system import (
+            from ..systems.window_vision_system import VisionSystem as WindowVisionSystem
+            from ..systems.window_movement_system import MovementSystem as WindowMovementSystem
+            from ..systems.window_combat_system import CombatSystem as WindowCombatSystem
+            from ..systems.window_resource_recovery_system import (
                 ResourceRecoverySystem as WindowResourceRecoverySystem,
             )
 
@@ -240,7 +240,7 @@ class _SkirmishAssembler:
 
         statistics_system = StatisticsSystem()
         if self.display == "window":
-            from ..systems.scale_statistics_system import (
+            from ..systems.window_statistics_system import (
                 StatisticsSystem as WindowStatisticsSystem,
             )
 
@@ -257,10 +257,10 @@ class _SkirmishAssembler:
         if self.display in ("dummy", "window"):
             if self.display == "window":
                 # All visible launches share the same window-specific input and
-                # animation semantics. Dummy/headless keeps legacy non-rendering
+                # animation semantics. Dummy/headless keeps non-rendering
                 # systems so evaluation behavior is unchanged.
                 from ..systems.window_animation_system import AnimationSystem
-                from ..systems.scale_input_system import InputHandlingSystem
+                from ..systems.window_input_system import InputHandlingSystem
             else:
                 from ..systems.animation_system import AnimationSystem
                 from ..systems.input_system import InputHandlingSystem
@@ -268,9 +268,9 @@ class _SkirmishAssembler:
             systems.extend([AnimationSystem(), InputHandlingSystem()])
         if self.display == "window":
             from ..systems.optimized_render_systems import MapRenderSystem
-            from ..systems.scale_unit_render_system import UnitRenderSystem
-            from ..systems.scale_minimap_system import MiniMapSystem
-            from ..systems.scale_effect_render_system import EffectRenderSystem
+            from ..systems.window_unit_render_system import UnitRenderSystem
+            from ..systems.window_minimap_system import MiniMapSystem
+            from ..systems.window_effect_render_system import EffectRenderSystem
             from ..systems.panel_render_system import PanelRenderSystem
             from ..systems.ui_button_system import UIButtonSystem
             from ..systems.ui_render_system import UIRenderSystem
@@ -291,7 +291,7 @@ class _SkirmishAssembler:
         if self.game_mode == GameMode.REAL_TIME:
             realtime_system = RealtimeSystem()
             if self.display == "window":
-                from ..systems.scale_realtime_system import RealtimeSystem as WindowRealtimeSystem
+                from ..systems.window_realtime_system import RealtimeSystem as WindowRealtimeSystem
 
                 realtime_system = WindowRealtimeSystem()
             systems.append(realtime_system)
@@ -349,8 +349,8 @@ class _SkirmishAssembler:
                 )
                 player.units.add(unit_entity)
 
-    def _initialize_scale_spatial_index(self) -> None:
-        """Build the window-only derived unit index before profiling begins."""
+    def _initialize_unit_spatial_index(self) -> None:
+        """Build the window-only derived unit index before systems consume it."""
         if self.display != "window":
             return
         from ..utils.unit_spatial_index import rebuild_unit_spatial_index

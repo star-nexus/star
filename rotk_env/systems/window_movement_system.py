@@ -1,4 +1,4 @@
-"""Window movement adapter backed by the maintained unit spatial index."""
+"""Window movement system backed by the maintained unit spatial index."""
 
 from __future__ import annotations
 

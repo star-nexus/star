@@ -117,9 +117,8 @@ class MovementSystem(System):
         if target_pos in occupied_cells(self.world, exclude_entity=entity):
             return self._destination_occupied_result(entity, current_pos, target_pos)
 
-        # Uncapped cheapest route. A cap equal to remaining MP used to return
-        # empty when hills/mountains made the path cost more than hex-distance,
-        # which was mis-reported as no_path.
+        # Plan the uncapped cheapest route so terrain cost above remaining MP is
+        # reported as insufficient movement rather than an unreachable target.
         path = plan_hex_path(
             self.world,
             current_pos,

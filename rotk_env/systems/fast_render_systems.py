@@ -1,7 +1,7 @@
-"""Scale-friendly renderers for large STAR maps and unit counts.
+"""Window renderers with bounded geometry and texture caches.
 
 These classes keep the existing renderers as the source of visual semantics and
-only replace hot paths that were doing expensive work every frame:
+provide window-specific caching and update policies:
 
 * map terrain uses cached texture scaling plus an adaptive direct/raster path;
 * terrain/unit texture scaling is cached by pixel size;
@@ -49,14 +49,9 @@ from .unit_render_system import UnitRenderSystem
 class FastMapRenderSystem(MapRenderSystem):
     """Map renderer with adaptive terrain, texture-scale, and fog caches.
 
-    A viewport raster is excellent while the camera is stationary, but the old
-    fast path rebuilt a full-window Surface every frame while panning/zooming.
-    Under sustained camera movement that made ``MapRenderSystem`` cost 5-10 ms.
-
-    The adaptive path renders cached per-tile textures directly while the camera
-    state is changing, then builds a viewport raster only after the exact camera
-    state is observed for a second frame. Once stationary, subsequent frames go
-    back to the single cached-raster blit.
+    Camera movement uses cached per-tile textures directly. Once an exact camera
+    state remains stable, the renderer builds a viewport raster and subsequent
+    frames reuse that single surface.
     """
 
     def __init__(self):
@@ -241,9 +236,8 @@ class FastMapRenderSystem(MapRenderSystem):
             RMS.draw(self._terrain_surface, (0, 0))
             return
 
-        # A changing camera used to allocate/rasterize a full viewport here on
-        # every frame. Queueing cached tile blits is substantially cheaper, and
-        # RenderEngine batches consecutive simple blits before submitting them.
+        # While the camera changes, queue cached tile blits; RenderEngine batches
+        # consecutive simple blits before submitting them.
         profiling.profiler.set_frame_metric("map_render_mode", "direct_moving")
         self._render_terrain_direct(map_data, visible_tiles, camera_offset, zoom)
 
@@ -299,7 +293,7 @@ class FastMapRenderSystem(MapRenderSystem):
 
 
 class FastUnitRenderSystem(UnitRenderSystem):
-    """Unit renderer with bounded dynamic scale cache and cheaper visibility."""
+    """Unit renderer with bounded texture-size caching and visibility filtering."""
 
     def __init__(self):
         super().__init__()

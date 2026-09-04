@@ -28,7 +28,7 @@ from framework.engine import RMS
 from ..prefabs.config import GameConfig
 
 class OpaqueTerrainPresentationMixin:
-    """Add a compact non-SRCALPHA presentation cache to ScaleMapRenderSystem."""
+    """Add a compact non-SRCALPHA cache to WindowMapRenderSystem."""
 
     # Must match GameEngine's per-frame screen clear colour. Keeping the colour
     # here is deliberate: transparent pixels in the semantic overscan raster are

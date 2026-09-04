@@ -37,9 +37,8 @@ def test_full_texture_cache_evicts_lru_and_caches_new_zoom_size(monkeypatch):
     first = renderer._get_cached_texture(Faction.WEI, UnitType.INFANTRY, 73)
     second = renderer._get_cached_texture(Faction.WEI, UnitType.INFANTRY, 73)
 
-    # The old hard-cap behavior would scale twice because the new variant was
-    # never inserted once the cache reached its limit. LRU must scale exactly
-    # once, evict the oldest entry, then hit on the second lookup.
+    # LRU insertion scales exactly once, evicts the oldest entry, and hits on
+    # the second lookup.
     assert first == "scaled-73"
     assert second == first
     assert len(scale_calls) == 1

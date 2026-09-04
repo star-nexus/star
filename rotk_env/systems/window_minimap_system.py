@@ -1,11 +1,11 @@
-"""Window-only minimap refresh policy for large unit counts.
+"""Window minimap with independently cached terrain and unit layers.
 
 Terrain is already cached by FastMiniMapSystem. The remaining cost is redrawing
 all unit dots at render FPS even though the minimap is a low-frequency overview.
-This subclass caches only the dynamic unit-dot layer at 15 Hz while keeping the
+The dynamic unit-dot layer refreshes at 15 Hz while keeping the
 camera viewport, frame border and final composite at full frame rate.
 
-The change is visual-only and mounted only for display='window'.
+This policy is mounted only for ``display='window'``.
 """
 
 from __future__ import annotations

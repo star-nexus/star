@@ -32,7 +32,7 @@ def teardown_module():
 def test_base_fast_renderer_still_keeps_direct_then_stationary_raster_contract(monkeypatch):
     """Keep coverage for FastMapRenderSystem itself.
 
-    Window mode now layers ScaleMapRenderSystem's overscan policy on top of this
+    Window mode layers WindowMapRenderSystem's overscan policy on top of this
     base class, but the original adaptive direct/stationary implementation stays
     valid and available to subclasses.
     """

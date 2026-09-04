@@ -153,8 +153,8 @@ def test_vision_publishes_only_faction_union_transitions_to_fog_journal():
     assert any(col >= 3 for col, _row in delta.dirty_tiles)
 
 
-def test_legacy_world_direct_position_write_is_detected_next_tick_without_mark():
-    """Non-indexed worlds retain the old immediate direct-write semantics."""
+def test_nonindexed_world_detects_direct_position_write_on_next_tick():
+    """Non-indexed worlds observe direct component writes on the next tick."""
     world = World()
     entity = _spawn(world, col=0, row=0, vision_range=1)
     system, _fog = _system(world)
@@ -165,7 +165,7 @@ def test_legacy_world_direct_position_write_is_detected_next_tick_without_mark()
     pos = world.get_component(entity, HexPosition)
     pos.col, pos.row = 5, 0
     # Intentionally do not call mark_vision_dirty: base/test worlds have no
-    # UnitSpatialIndex, so the compatibility audit runs every tick.
+    # UnitSpatialIndex, so the semantic safety audit runs every tick.
     system.update(0.0)
 
     after = set(world.get_component(entity, Vision).visible_tiles)

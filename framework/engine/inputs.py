@@ -38,12 +38,9 @@ class InputSystem:
     def update(self):
         profiler = profiling.profiler
 
-        # pygame.event.get() normally performs two jobs: it first pumps SDL's
-        # platform event loop, then drains the already queued Pygame events.
-        # A 200-unit macOS stress run showed rare 30-70 ms stalls inside that
-        # combined call even when only 1-5 events were returned. Keep the exact
-        # input semantics, but time the two phases independently so we can tell
-        # a Cocoa/SDL pump stall from Python-side queue retrieval/dispatch.
+        # Pump SDL and drain Pygame's queue as separate observable phases. This
+        # preserves input ordering while distinguishing platform event handling
+        # from Python-side queue retrieval and dispatch.
         with profiler.time_system("input_event_pump", category="input"):
             pygame.event.pump()
 

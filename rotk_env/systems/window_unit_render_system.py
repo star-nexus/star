@@ -18,13 +18,13 @@ from .optimized_render_systems import UnitRenderSystem as _BaseUnitRenderSystem
 
 
 class UnitRenderSystem(_BaseUnitRenderSystem):
-    """Scale renderer with coarse spatial culling before exact visibility."""
+    """Window renderer with coarse spatial culling before exact visibility."""
 
     # A committed HexPosition can trail/lead the interpolated render position by
     # at most one adjacent-hex segment.  One segment is < 2*HEX_SIZE in either
     # orientation, and the unit sprite extends roughly one HEX_SIZE from center.
     # Three hex radii therefore conservatively cover animation + sprite extent
-    # without the old screen-space 100px margin exploding at low zoom.
+    # without making the world-space margin zoom-dependent.
     CULL_WORLD_MARGIN_HEX_RADII = 3.0
 
     def _get_visible_units(self, camera_offset: List[float], zoom: float) -> List[int]:

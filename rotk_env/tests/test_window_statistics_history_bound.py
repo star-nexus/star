@@ -1,11 +1,11 @@
-"""Regression coverage for bounded scale/window visibility history."""
+"""Regression coverage for bounded window visibility history."""
 
 from rotk_env.components import UnitObservation, VisibilityTracker
 from rotk_env.prefabs.config import Faction
-from rotk_env.systems.scale_statistics_system import StatisticsSystem
+from rotk_env.systems.window_statistics_system import StatisticsSystem
 
 
-def test_scale_visibility_history_keeps_only_latest_change():
+def test_window_visibility_history_keeps_only_latest_change():
     system = StatisticsSystem()
     tracker = VisibilityTracker()
     observation = UnitObservation()
@@ -38,7 +38,7 @@ def test_scale_visibility_history_keeps_only_latest_change():
     assert observation.is_visible_to == {Faction.WEI, Faction.SHU}
 
 
-def test_scale_visibility_history_does_not_allocate_when_relation_is_unchanged():
+def test_window_visibility_history_does_not_allocate_when_relation_is_unchanged():
     system = StatisticsSystem()
     tracker = VisibilityTracker()
     observation = UnitObservation(is_visible_to={Faction.WEI})

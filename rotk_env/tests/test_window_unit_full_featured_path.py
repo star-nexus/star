@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from rotk_env.components import HexPosition, Unit, UnitCount
 from rotk_env.prefabs.config import Faction, UnitType
-from rotk_env.systems import optimized_render_systems_base as optimized
+from rotk_env.systems import window_render_systems_base as optimized
 
 
 class _Query:

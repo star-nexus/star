@@ -12,7 +12,7 @@ from rotk_env.components import (
     VisibilityTracker,
 )
 from rotk_env.prefabs.config import Faction, UnitType
-from rotk_env.systems.scale_statistics_system import StatisticsSystem
+from rotk_env.systems.window_statistics_system import StatisticsSystem
 
 
 def _world_with_units(count: int, batch_size: int = 2):

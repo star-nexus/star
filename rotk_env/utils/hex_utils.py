@@ -143,10 +143,8 @@ class HexMath:
     ) -> Set[Tuple[int, int]]:
         """Return the translation-invariant hex disk around an offset cell.
 
-        Iterate *relative* axial deltas and translate them by the center. The
-        previous implementation mixed absolute ``q`` with the cube ``s`` bound,
-        which accidentally constrained the disk around the origin and could
-        return an empty set for centers far from ``(0, 0)``.
+        Iterate *relative* axial deltas and translate them by the center so the
+        disk is independent of the center's absolute coordinates.
         """
         radius = max(0, int(range_val))
         center_q, center_r = HexMath.offset_to_axial(center_col, center_row)

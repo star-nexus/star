@@ -1,13 +1,12 @@
-"""Shared unit spatial state for large interactive worlds.
+"""Shared unit spatial state for interactive window worlds.
 
-The scale render/input/movement paths used to rediscover the same facts by
-scanning every Unit entity independently.  This module keeps one derived index
+Window rendering, input, and movement share one derived index
 of authoritative ``HexPosition`` state and updates it only when movement commits
 or combat removes a unit.
 
 The index is deliberately a cache, not a second source of truth:
 ``HexPosition``/``Unit``/``UnitCount`` remain authoritative.  Worlds that do not
-install the index keep the legacy scan-based fallbacks in their callers.
+install the index retain scan-based fallbacks in their callers.
 """
 
 from __future__ import annotations
@@ -276,8 +275,8 @@ class UnitSpatialIndex:
 
         This is deliberately conservative: movement anywhere in one of the
         buckets touched by the radius invalidates the local cache, even if that
-        changed unit is just outside the exact reachable cells.  Crucially,
-        movement elsewhere on a 2000+ unit map no longer invalidates it.
+        changed unit is just outside the exact reachable cells. Movement in
+        unrelated buckets does not invalidate the local cache.
         """
         radius = max(0, int(hex_radius))
         buckets = {

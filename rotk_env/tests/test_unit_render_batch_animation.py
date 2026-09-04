@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rotk_env.components import HexPosition
-from rotk_env.systems.optimized_render_systems_base import UnitRenderSystem
+from rotk_env.systems.window_render_systems_base import UnitRenderSystem
 
 
 class _FakeWorld:

@@ -79,8 +79,7 @@ class ResourceRecoverySystem(System):
         self._ap_versions: Dict[int, int] = {}
         self._mp_versions: Dict[int, int] = {}
         self._skill_versions: Dict[int, int] = {}
-        # MP recovery deliberately starts on the first recovery update after a
-        # spend, matching the previous first-observed-spend semantics exactly.
+        # MP recovery starts on the first recovery update after a spend.
         self._mp_pending_detection: Set[int] = set()
         self._known_entity_counter = 0
 
@@ -120,14 +119,13 @@ class ResourceRecoverySystem(System):
         if sim_dt <= 0:
             return
 
-        # Register resources created since the previous recovery boundary. AP
-        # and skill cadence therefore starts at ``last``, matching the full-scan
-        # implementation which accrued this entire sim_dt on first sight.
+        # Resources created since the previous recovery boundary begin AP and
+        # skill cadence at ``last`` and accrue this complete simulation interval.
         self._register_new_entities()
         self._last_game_elapsed = now
 
-        # Detect MP spends at the same boundary where the old full scan first
-        # observed them. Pending entries invalidate any older recovery task.
+        # Detect MP spends at the recovery boundary. Pending entries invalidate
+        # any superseded recovery task.
         pending_mp = tuple(self._mp_pending_detection)
         self._mp_pending_detection.clear()
         for entity in pending_mp:
@@ -241,7 +239,7 @@ class ResourceRecoverySystem(System):
         action_points = self.world.get_component(entity, ActionPoints)
         if action_points is None or action_points.current_ap >= action_points.max_ap:
             return
-        # Additional spends do not reset the AP cadence in the legacy system.
+        # Additional spends do not reset an active AP recovery cadence.
         if entity not in self._ap_due:
             self.ap_elapsed[entity] = 0.0
             self._schedule_ap(entity, self._schedule_anchor() + self.ap_recovery_interval)
@@ -250,8 +248,8 @@ class ResourceRecoverySystem(System):
         movement_points = self.world.get_component(entity, MovementPoints)
         if movement_points is None or movement_points.current_mp >= movement_points.max_mp:
             return
-        # Invalidate an already-running timer now; restart it at the next
-        # ResourceRecoverySystem update to retain old detection-frame behavior.
+        # Invalidate an active timer now and restart it at the next recovery
+        # update, when the spend becomes part of the board-time ledger.
         self._cancel(entity, self._mp_due, self._mp_versions)
         self._mp_pending_detection.add(entity)
         self.mp_elapsed[entity] = 0.0
@@ -309,9 +307,8 @@ class ResourceRecoverySystem(System):
     def _register_new_entities(self) -> None:
         """Inspect only entity IDs created since the previous recovery update.
 
-        World IDs are monotonic. This preserves the legacy ability to register a
-        system before constructing initial units without reintroducing a scan of
-        the existing 5k/10k roster every frame.
+        World IDs are monotonic, so a system may initialize before initial units
+        are constructed without rescanning all existing entities every frame.
         """
         current_counter = self.world.entity_counter
         start = self._known_entity_counter

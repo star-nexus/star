@@ -10,7 +10,7 @@ from rotk_env.components import (
     UnitCount,
 )
 from rotk_env.prefabs.config import Faction, TerrainType, UnitType
-from rotk_env.systems.scale_effect_render_system import EffectRenderSystem
+from rotk_env.systems.window_effect_render_system import EffectRenderSystem
 from rotk_env.utils.hex_utils import HexMath
 from rotk_env.utils.map_query import reachable_hexes
 from rotk_env.utils.unit_spatial_index import (

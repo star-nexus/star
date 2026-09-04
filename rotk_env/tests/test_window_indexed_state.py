@@ -10,9 +10,9 @@ from rotk_env.components import (
     UnitCount,
 )
 from rotk_env.prefabs.config import ActionType, Faction, GameMode, UnitType
-from rotk_env.systems.scale_movement_system import MovementSystem
-from rotk_env.systems.scale_realtime_system import _IndexedGameOverPolicy
-from rotk_env.systems.scale_resource_recovery_system import ResourceRecoverySystem
+from rotk_env.systems.window_movement_system import MovementSystem
+from rotk_env.systems.window_realtime_system import _IndexedGameOverPolicy
+from rotk_env.systems.window_resource_recovery_system import ResourceRecoverySystem
 from rotk_env.systems.resource_recovery_system import (
     mark_action_points_spent,
     mark_movement_points_spent,
@@ -60,7 +60,7 @@ def test_spatial_index_excludes_only_mover_and_tracks_living_factions():
     assert wei_same_hex in index.by_entity
 
 
-def test_scale_movement_commit_updates_spatial_bucket_and_revision():
+def test_window_movement_commit_updates_spatial_bucket_and_revision():
     world = World()
     wei = _add_unit(world, Faction.WEI, 0, 0)
     index = rebuild_unit_spatial_index(world)
@@ -90,7 +90,7 @@ def test_indexed_realtime_policy_reads_living_counts_without_world_scan():
     assert wei in rebuild_unit_spatial_index(world).by_entity
 
 
-def test_scale_recovery_keeps_ap_and_mp_board_time_semantics():
+def test_window_recovery_keeps_ap_and_mp_board_time_semantics():
     world = World()
     entity = _add_unit(world, Faction.WEI, 0, 0, ap=0, mp=1)
     game_time = GameTime(current_mode=GameMode.REAL_TIME, game_elapsed_time=0.0)
@@ -161,7 +161,7 @@ def test_scheduled_recovery_registers_spends_without_update_scans():
     assert skill_points.skill_cooldowns == {"test": 1}
 
 
-def test_mp_respend_invalidates_old_recovery_deadline():
+def test_mp_respend_invalidates_superseded_recovery_deadline():
     world = World()
     entity = _add_unit(world, Faction.WEI, 0, 0, ap=1, mp=3)
     game_time = GameTime(current_mode=GameMode.REAL_TIME, game_elapsed_time=0.0)

@@ -19,7 +19,7 @@ visibility and exploration continue to advance.
 
 ## Terrain presentation
 
-`ScaleMapRenderSystem` keeps an oversized terrain raster around the viewport.
+`WindowMapRenderSystem` keeps an oversized terrain raster around the viewport.
 Camera movement inside that region reuses the raster and changes only the source
 rectangle. Rebuilds are prepared incrementally and installed atomically.
 

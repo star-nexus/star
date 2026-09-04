@@ -1,23 +1,11 @@
-"""Window-only statistics sampler for large interactive scenarios.
+"""Frame-amortized statistics sampling for the interactive window.
 
-The base StatisticsSystem keeps headless evaluation behaviour unchanged. This
-compatibility-named subclass is mounted only for
-``display='window'`` and spreads the once-per-second O(units) bookkeeping over
-small frame batches so 1000+ unit visualization does not pay three full scans
-in a single frame.
-
-The observation history keeps ordinary ``list`` semantics for compatibility,
-but trims only the small overflow beyond the cap. The previous implementation
-periodically copied the newest 5000 records and released ~5000 dicts in one
-frame, which can create a 20 ms allocator/refcount tail at 2000 units.
-
-Visibility history is change-oriented rather than snapshot-oriented. The live
-``faction_visible_units`` and ``UnitObservation.is_visible_to`` state is still
-refreshed by the sampler, but scale/window mode retains only the latest change
-record per unit. Long visibility trajectories are telemetry, not realtime world
-state; retaining up to 100 records per unit made memory grow with historical
-activity (5000 units => up to 500k dict records) even though runtime state was
-stable. Canonical/headless StatisticsSystem behaviour is unchanged.
+The window sampler spreads periodic O(units) bookkeeping across bounded frame
+batches while preserving the base StatisticsSystem's observable state.
+Observation history retains ordinary ``list`` semantics and is trimmed in small
+increments. Visibility history is change-oriented: live visibility is refreshed
+by the sampler, while each unit retains only its latest transition in the live
+ECS. Longer trajectories belong in the external logging/evaluation plane.
 """
 
 from __future__ import annotations
@@ -43,11 +31,11 @@ from .statistics_system import StatisticsSystem as _BaseStatisticsSystem
 
 
 class StatisticsSystem(_BaseStatisticsSystem):
-    """Compatibility-named, frame-amortized StatisticsSystem for window mode."""
+    """Frame-amortized StatisticsSystem for the window runtime."""
 
     DEFAULT_BATCH_SIZE = 128
     OBSERVATION_HISTORY_LIMIT = 10000
-    # Scale/window runtime keeps only the latest visibility transition. Historical
+    # The window runtime keeps only the latest visibility transition. Historical
     # trajectories belong in the external logging/evaluation plane, not live ECS.
     VISIBILITY_HISTORY_LIMIT = 1
 
@@ -196,8 +184,8 @@ class StatisticsSystem(_BaseStatisticsSystem):
                         }
                     )
 
-                # Keep list compatibility while spreading eviction over the same
-                # 128-record batches that spread insertion work.
+                # Preserve list semantics while trimming alongside batched
+                # insertion work.
                 trimmed = self._trim_observation_history(stats)
 
         profiling.profiler.set_frame_metric("statistics_history_trimmed", trimmed)
@@ -234,10 +222,10 @@ class StatisticsSystem(_BaseStatisticsSystem):
         observation: UnitObservation | None,
         current_time: float,
     ) -> tuple[int, int]:
-        """Update live visibility and retain only the latest scale-mode change.
+        """Update live visibility and retain only the latest window change.
 
         Returns ``(records_appended, records_trimmed)``. The retained record keeps
-        compatibility/debug context and lets baseline detection distinguish a
+        diagnostic context and lets baseline detection distinguish a
         never-observed unit from one whose current visible relation is empty.
         Full historical trajectories are deliberately not realtime ECS state.
         """
@@ -246,8 +234,8 @@ class StatisticsSystem(_BaseStatisticsSystem):
 
         if observation is not None:
             # Keep the live state fresh without replacing its set object every
-            # statistics cycle. ``last_seen_time`` retains the legacy sampler's
-            # semantics: the own faction always sees the unit.
+            # statistics cycle. ``last_seen_time`` follows the invariant that a
+            # unit's own faction always sees it.
             observation.last_seen_time = current_time
 
         if not changed:
@@ -281,9 +269,8 @@ class StatisticsSystem(_BaseStatisticsSystem):
         overflow = len(history) - self.VISIBILITY_HISTORY_LIMIT
         trimmed = 0
         if overflow > 0:
-            # Keep list compatibility while bounding retained history to one
-            # latest record. At scale this removes O(units * history_length)
-            # historical live-object growth from the realtime world.
+            # Preserve list semantics while bounding retained live history to
+            # the latest transition.
             del history[:overflow]
             trimmed = overflow
 

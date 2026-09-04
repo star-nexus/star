@@ -1,14 +1,13 @@
-"""Compatibility-named EffectRenderSystem for 1000+ unit interactive scale tests.
+"""Window effect rendering backed by shared indexed world state.
 
 The renderer keeps the visual semantics of ``FastEffectRenderSystem`` while
-sharing the same event-driven ``UnitSpatialIndex`` as movement, culling and
-realtime game-over checks.  It no longer owns a second per-frame unit index.
+sharing the event-driven ``UnitSpatialIndex`` used by movement, culling, and
+realtime game-over checks.
 
-Movement-range overlays also use a local spatial revision: movement elsewhere
-on a large map no longer invalidates the selected unit's reachable mask.  On an
-actual cache miss, occupancy is read from the shared index only inside the
-selected unit's movement radius, then the canonical terrain/pathfinding rules
-compute the same legal destinations as ``reachable_hexes``.
+Movement-range overlays use a local spatial revision, so movement outside the
+selected unit's relevant buckets does not invalidate its reachable mask. On a
+cache miss, occupancy is read from the shared index only inside the movement
+radius, then canonical terrain/pathfinding rules compute legal destinations.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from .fast_render_systems import FastEffectRenderSystem
 
 
 class EffectRenderSystem(FastEffectRenderSystem):
-    """Fast effect renderer backed by the shared scale spatial index."""
+    """Render effects using the shared unit spatial index."""
 
     def __init__(self):
         super().__init__()
@@ -35,7 +34,7 @@ class EffectRenderSystem(FastEffectRenderSystem):
 
     def initialize(self, world) -> None:
         # Do not build a private index here.  WorldBuilder installs the shared
-        # UnitSpatialIndex after unit creation and before gameplay profiling.
+        # UnitSpatialIndex after unit creation and before gameplay begins.
         super().initialize(world)
 
     def _get_enemy_unit_at_position(self, position, friendly_faction):
@@ -43,8 +42,7 @@ class EffectRenderSystem(FastEffectRenderSystem):
         if index is not None:
             return index.enemy_at_cell(position, friendly_faction)
 
-        # Compatibility fallback for isolated tests/worlds that deliberately do
-        # not install the window scale index.
+        # Isolated worlds may omit the shared index, so retain scan semantics.
         for entity in self.world.query().with_all(HexPosition, Unit).entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)

@@ -1,12 +1,6 @@
-"""Window-only input hardening for large-map interactive play.
+"""Window input with render-consistent picking and explicit action targeting.
 
-The legacy input path identifies a click by first converting the mouse position
-back to one hex and then taking the first Unit entity found on that hex. That is
-fragile once zoom/fog/render visibility and multi-unit hexes enter the picture:
-the sprite the user sees is not necessarily the first ECS entity on that cell.
-
-This compatibility-named subclass keeps headless/dummy input untouched and
-adds two window-only guarantees:
+The window path provides two guarantees beyond coordinate-only input:
 * visible unit sprites are picked in screen space using the same camera transform
   as the renderer, then the clicked entity is carried into tile dispatch;
 * Move/Attack action-panel buttons enter an explicit target-selection mode
@@ -35,7 +29,7 @@ from .input_system import InputHandlingSystem as BaseInputHandlingSystem
 
 
 class InputHandlingSystem(BaseInputHandlingSystem):
-    """Scale-safe interactive input with render-consistent unit hit testing."""
+    """Interactive input with render-consistent unit hit testing."""
 
     def __init__(self):
         super().__init__()
@@ -154,7 +148,7 @@ class InputHandlingSystem(BaseInputHandlingSystem):
                 # resulting world state instead of trapping the user in target mode.
                 self.cancel_targeting(refresh_panel=True)
             elif clicked_unit is not None and self._should_select_unit(clicked_unit):
-                # Selecting another local unit cancels the old target mode.
+                # Selecting another local unit cancels the active target mode.
                 self.cancel_targeting(refresh_panel=False)
                 ui_state.selected_unit = clicked_unit
                 EBS.publish(UnitSelectedEvent(clicked_unit))
@@ -195,10 +189,9 @@ class InputHandlingSystem(BaseInputHandlingSystem):
     ) -> Optional[int]:
         """Return the visible token under the pointer using renderer coordinates.
 
-        This runs only on mouse-down, not every frame, so an O(N) scan of a
-        1000-unit world is inexpensive and avoids maintaining another hot-path
-        index. A HUMAN token wins an exact-position tie, which also makes
-        overlapped real-time units manually recoverable.
+        This runs only on mouse-down, not every frame, which avoids maintaining
+        another hot-path index. A HUMAN token wins an exact-position tie, which
+        also makes overlapped real-time units manually recoverable.
         """
         camera = self.world.get_singleton_component(Camera)
         if camera is None or camera.zoom <= 0:

@@ -1,4 +1,4 @@
-"""Compatibility-named renderers used by the interactive world.
+"""Core render-system implementations used by the interactive window.
 
 Several UI helpers discover render systems by class name, so these stable names
 wrap the optimized implementations used by the window runtime.
@@ -11,22 +11,30 @@ import pygame
 from framework.ecs import profiling
 from framework.engine import RMS
 
-from ..components import Camera, FogOfWar, GameState, HexPosition, UIState, Unit, UnitCount
+from ..components import (
+    Camera,
+    FogOfWar,
+    GameState,
+    HexPosition,
+    UIState,
+    Unit,
+    UnitCount,
+)
 from ..prefabs.config import Faction, GameConfig, UnitType
 from .fast_render_systems import (
     FastEffectRenderSystem,
     FastMiniMapSystem,
     FastUnitRenderSystem,
 )
-from .scale_map_render_system import ScaleMapRenderSystem
+from .window_map_render_system import WindowMapRenderSystem
 
 
-class MapRenderSystem(ScaleMapRenderSystem):
+class MapRenderSystem(WindowMapRenderSystem):
     pass
 
 
 class UnitRenderSystem(FastUnitRenderSystem):
-    """Scale-safe renderer retaining rich visuals for small visible sets."""
+    """Renderer retaining rich visuals for small visible sets."""
 
     COMBAT_FONT_SIZES = (20, 24, 28)
     COMBAT_FONT_PREWARM_TEXT = "0123456789MISSCRIT!+-"

@@ -1,15 +1,10 @@
-"""Window-mode animation coordinates for camera-scaled floating combat text.
+"""Window animation coordinates for camera-scaled floating combat text.
 
 Combat creates damage/MISS/CRIT text from hex positions in world-pixel space,
-while the render path historically treated ``DamageNumber.position`` as if it
-were already screen-relative.  At zoom != 1 this makes text drift away from the
-unit that was hit.
-
-This compatibility-named subclass is used by the visible window world.  It
-keeps the authoritative floating-text trajectory in world pixels and publishes
+and the renderer consumes screen-relative coordinates. This window system keeps
+the authoritative floating-text trajectory in world pixels and publishes
 a camera-zoomed, screen-relative ``DamageNumber.position`` before rendering.
-Both the legacy damage renderer and the profiled large-unit renderer then add
-the camera offset exactly once.
+Renderers then add the camera offset exactly once.
 """
 
 from __future__ import annotations
@@ -147,9 +142,8 @@ class AnimationSystem(BaseAnimationSystem):
 
             world_pos = self._floating_world_positions.get(entity)
             if world_pos is None:
-                # Defensive compatibility for a DamageNumber created outside the
-                # public AnimationSystem factory. Such legacy components were
-                # authored in world pixels.
+                # Components created outside the public AnimationSystem factory
+                # are interpreted as world-pixel coordinates.
                 world_pos = [
                     float(damage_num.position[0]),
                     float(damage_num.position[1]),

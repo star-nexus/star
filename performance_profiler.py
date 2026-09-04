@@ -1,5 +1,5 @@
 """
-Performance profiler v2 for STAR.
+Performance profiler for STAR.
 
 Goals:
 - separate active work from presentation / FPS-cap waiting;
@@ -8,7 +8,7 @@ Goals:
 - provide frame-time percentiles for runtime diagnostics;
 - capture exceptional p99-style slow frames with per-section diagnostics;
 - retain the worst slow-frame diagnosis so rare spikes are visible in periodic stats;
-- keep the old ``time_system(name)`` API compatible with existing call sites;
+- keep the established ``time_system(name)`` API available to call sites;
 - add effectively zero profiling overhead when profiling is disabled.
 """
 
@@ -228,7 +228,7 @@ class PerformanceProfiler:
         if self._timer_stack:
             self._timer_stack[-1].child_ns += inclusive
 
-    # Backwards compatibility for older tests/callers.
+    # Public duration-recording API retained for existing callers.
     def add_system_time(
         self,
         system_name: str,
@@ -245,7 +245,7 @@ class PerformanceProfiler:
             self._frame_self_ns[system_name] += elapsed_ns
             return
 
-        # Legacy out-of-frame recording. Keep it visible without pretending it
+        # Out-of-frame recording remains visible without pretending it
         # has a frame percentage until a frame sample exists.
         series = self.section_inclusive_ns.setdefault(
             system_name, deque(maxlen=self.sample_window)
@@ -475,7 +475,7 @@ class PerformanceProfiler:
             return
 
         print("\n" + "=" * 76)
-        print("STAR Performance Profiler v2")
+        print("STAR Performance Profiler")
         print("=" * 76)
         print(
             f"FPS avg/min/max: {stats['avg_fps']:.1f} / "

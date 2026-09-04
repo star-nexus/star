@@ -116,10 +116,8 @@ class UnitActionButtonSystem(System):
         if not ui_state or not action_panel:
             return
 
-        # This panel used to be hard-coded at x=850, which was the right side
-        # of the old 1200px window but sits over the playable map on a 2480px
-        # desktop. Anchor it to the live right edge so it does not swallow map
-        # clicks after the first unit selection.
+        # Anchor the panel to the live right edge so it remains outside the
+        # playable map as the window size changes.
         action_panel.x = max(20, GameConfig.WINDOW_WIDTH - action_panel.width - 20)
         action_panel.y = 100
 

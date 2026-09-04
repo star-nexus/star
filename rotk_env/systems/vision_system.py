@@ -1,12 +1,6 @@
-"""
-Vision system - incremental fog-of-war visibility with event-driven dirty work.
+"""Incremental fog-of-war visibility with event-driven dirty work.
 
-The old implementation cached each unit's ray-cast result, but still scanned every
-Vision unit and rebuilt faction unions every frame. At large world scale that made
-static cost proportional to resident units and synchronized movement produced
-large O(N) visibility bursts.
-
-This implementation separates four concerns:
+The system separates four concerns:
 - invalidation: movement/terrain changes enqueue only affected units;
 - geometry: (center, effective_range, terrain_revision) visibility is cached;
 - aggregation: per-faction tile reference counts incrementally maintain the union;
@@ -130,9 +124,9 @@ class VisionSystem(System):
             audit_scanned = self._audit_all_units(force_all=True)
             self._bootstrapped = True
         else:
-            # Indexed scale worlds publish position invalidations explicitly and
-            # need only a low-rate safety audit. Legacy/base worlds keep the old
-            # immediate semantics by auditing every tick.
+            # Indexed worlds publish position invalidations explicitly and need
+            # only a low-rate safety audit. Worlds without the index audit every
+            # tick so direct HexPosition writes remain visible immediately.
             audit_interval = (
                 self._AUDIT_EVERY_FRAMES
                 if get_unit_spatial_index(self.world) is not None
@@ -283,9 +277,9 @@ class VisionSystem(System):
     def _audit_all_units(self, *, force_all: bool) -> int:
         """Reconcile membership and catch direct component writes.
 
-        Normal scale movement is event-driven through ``mark_vision_dirty``. This
-        audit is a semantic safety net: low-rate in indexed scale worlds and
-        every tick in legacy/base worlds that may mutate HexPosition directly.
+        Normal indexed movement is event-driven through ``mark_vision_dirty``.
+        This audit is a semantic safety net: low-rate when an index is installed
+        and every tick in worlds that may mutate HexPosition directly.
         """
         current_entities: Set[int] = set()
         for entity in self.world.query().with_all(HexPosition, Vision, Unit).entities():

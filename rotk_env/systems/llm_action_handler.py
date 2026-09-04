@@ -614,7 +614,7 @@ class LLMActionHandler:
             return permission_error
 
         # Rest: increment wait streak. Two waits while confused clears it.
-        # Does not consume action points (same as the old ActionSystem wait).
+        # Waiting does not consume action points.
         unit_status = self.world.get_component(unit_id, UnitStatus)
         if not unit_status:
             return self._create_error_response(f"Unit {unit_id} has no status")

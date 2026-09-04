@@ -1,6 +1,6 @@
 """Production window renderers assembled from the optimized implementations."""
 
-from .optimized_render_systems_base import (
+from .window_render_systems_base import (
     EffectRenderSystem,
     MapRenderSystem as _BaseMapRenderSystem,
     MiniMapSystem,
