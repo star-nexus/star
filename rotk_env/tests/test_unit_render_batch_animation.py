@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rotk_env.components import HexPosition
-from rotk_env.systems.window_render_systems_base import UnitRenderSystem
+from rotk_env.systems.window_unit_render_system import UnitRenderSystem
 
 
 class _FakeWorld:
@@ -33,10 +33,24 @@ class _FakeAnimationSystem:
         return (100.0, 0.0)
 
 
-def test_batch_renderer_peels_animated_units_out_of_static_hex_groups():
+class _TinyAnimationSystem:
+    @staticmethod
+    def get_unit_render_position(entity):
+        if entity == 1:
+            # Deliberately below the old 1px/5px dead zones.
+            return (0.5, 0.0)
+        return (100.0, 0.0)
+
+
+def _renderer():
     renderer = UnitRenderSystem.__new__(UnitRenderSystem)
     renderer.world = _FakeWorld()
     renderer.hex_converter = _FakeHexConverter()
+    return renderer
+
+
+def test_batch_renderer_peels_animated_units_out_of_static_hex_groups():
+    renderer = _renderer()
     renderer._get_animation_system = lambda: _FakeAnimationSystem()
 
     static_groups = []
@@ -61,3 +75,27 @@ def test_batch_renderer_peels_animated_units_out_of_static_hex_groups():
     # Entity 2 is static and remains in the cheap grouped fast path. Most
     # importantly, entity 1 is not drawn a second time at its committed hex.
     assert static_groups == [((1, 0), [2])]
+
+
+def test_animation_position_has_no_subpixel_dead_zone():
+    renderer = _renderer()
+
+    # A real 0.5-world-pixel displacement is still animation, not a static
+    # committed-hex position. At zoom 2 with offset (10,20), it becomes (11,20).
+    assert renderer._animation_screen_position(
+        1,
+        _TinyAnimationSystem(),
+        [10.0, 20.0],
+        2.0,
+    ) == (11.0, 20.0)
+
+    # A truly static entity still stays on the static grouped path.
+    assert (
+        renderer._animation_screen_position(
+            2,
+            _TinyAnimationSystem(),
+            [10.0, 20.0],
+            2.0,
+        )
+        is None
+    )

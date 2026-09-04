@@ -21,6 +21,9 @@ from ..utils.hex_utils import HexConverter
 from ..prefabs.config import GameConfig, HexOrientation
 
 
+_MOVEMENT_PROGRESS_EPSILON = 1e-12
+
+
 class AnimationSystem(System):
     """Animation system"""
 
@@ -52,7 +55,7 @@ class AnimationSystem(System):
         self._update_damage_numbers(delta_time)
 
     def _update_movement_animations(self, delta_time: float):
-        """Update movement animations"""
+        """Update movement animations without losing time at segment boundaries."""
         for entity in (
             self.world.query().with_all(HexPosition, MovementAnimation).entities()
         ):
@@ -70,28 +73,39 @@ class AnimationSystem(System):
                 anim.path.clear()
                 continue
 
-            # Update movement progress
+            # Accumulate this frame's movement once, then consume every complete
+            # segment while preserving any fractional overshoot for the next one.
+            # The epsilon only absorbs floating-point error at an exact boundary
+            # (e.g. 60 Hz at 2 tiles/s summing to 0.9999999999999999).
             anim.progress += anim.speed * delta_time
+            movement_system = self._get_movement_system()
 
-            if anim.progress >= 1.0:
-                # Reached current target point
+            while (
+                anim.is_moving
+                and anim.current_target_index < len(anim.path)
+                and anim.progress >= 1.0 - _MOVEMENT_PROGRESS_EPSILON
+            ):
                 target_hex = anim.path[anim.current_target_index]
                 arrived = anim.current_target_index + 1 >= len(anim.path)
-                movement_system = self._get_movement_system()
                 if movement_system:
                     movement_system.commit_hex_position(
                         entity, target_hex[0], target_hex[1], arrived=arrived
                     )
                 else:
                     pos.col, pos.row = target_hex
+
                 anim.current_target_index += 1
-                anim.progress = 0.0
+                anim.progress = max(0.0, anim.progress - 1.0)
 
                 if anim.current_target_index >= len(anim.path):
-                    # All path segments complete
+                    # All path segments complete. There is no next visual segment
+                    # on which to spend any remaining fractional movement.
                     anim.is_moving = False
+                    anim.progress = 0.0
                 else:
-                    # Set start and target pixel coordinates for the next segment
+                    # The committed hex is the next segment's visual start. Keep
+                    # the residual progress so the rendered trajectory is
+                    # continuous across the boundary in this same frame.
                     self._setup_movement_segment(anim, pos)
 
     def _setup_movement_segment(self, anim: MovementAnimation, pos: HexPosition):
