@@ -16,6 +16,7 @@ Options:
     --profile  Print performance profiler stats every ~5 seconds
     --profile-json PATH  Write the final rolling profiler snapshot as JSON
     --uncapped  Disable the production FPS limiter for throughput measurement
+    --scale-harness-socket PATH  Mount the explicit Phase-4 UDS scale controller
     --help  Show help information
 """
 
@@ -171,6 +172,17 @@ Victory Conditions:
             "simulation does not accelerate with render throughput."
         ),
     )
+    parser.add_argument(
+        "--scale-harness-socket",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Mount the explicit test-only Unix-domain scale controller. "
+            "This also enables silent profiler collection; production systems "
+            "remain unchanged."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -206,6 +218,7 @@ def game_scene_kwargs_from_args(args) -> dict:
         "hub_url": resolve_hub_url(args),
         "env_id": args.env_id,
         "enable_mock_ai": args.mock_ai,
+        "scale_harness_socket": args.scale_harness_socket,
     }
 
 
@@ -232,9 +245,11 @@ def main():
         args = parse_arguments()
 
         # Collection is opt-in so normal runs do not pay profiler timing/deque
-        # overhead. JSON-only runs collect silently; --profile additionally
-        # enables periodic console output.
-        profiler.enabled = args.profile or bool(args.profile_json)
+        # overhead. JSON-only and explicit scale-harness runs collect silently;
+        # --profile additionally enables periodic console output.
+        profiler.enabled = (
+            args.profile or bool(args.profile_json) or bool(args.scale_harness_socket)
+        )
         profiler.enable_profiler = args.profile
         profiler.set_metadata(
             mode=args.mode,
@@ -242,6 +257,7 @@ def main():
             players=args.players,
             mock_ai=args.mock_ai,
             benchmark_uncapped=args.uncapped,
+            scale_harness=bool(args.scale_harness_socket),
         )
 
         # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
@@ -301,6 +317,8 @@ def main():
                 print("Performance profiler: enabled")
             if args.uncapped:
                 print("Render cap: uncapped (throughput measurement, wall-clock delta)")
+            if args.scale_harness_socket:
+                print(f"Scale harness: {args.scale_harness_socket}")
 
         print("Game started! Configure the game in the start interface, then click start game.")
         engine.start()
