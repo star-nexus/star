@@ -4,6 +4,21 @@ STAR's interactive window uses the same authoritative ECS components and game
 rules as headless execution. Window-specific systems replace repeated global
 scans and transient raster work with derived, bounded state.
 
+## Frame clock modes
+
+Normal interactive play keeps the production 60 FPS cap and the established
+fixed timestep of `1/FPS` per frame.
+
+For throughput measurement, `--uncapped` removes the production frame limiter
+and drives the full game/update/render frame with measured wall-clock delta.
+This exposes actual frame capacity instead of flattening faster workloads at
+60 FPS, while avoiding the incorrect behavior of advancing `1/60` seconds on
+every uncapped frame. Profiler metadata reports `fps_cap=uncapped` and
+`clock_mode=uncapped_wall_clock` in this mode.
+
+`--uncapped` is a measurement clock, not a change to the default runtime policy.
+Normal user launches remain capped.
+
 ## Derived unit state
 
 `UnitSpatialIndex` is rebuilt when a window world starts and then maintained

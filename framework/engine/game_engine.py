@@ -13,9 +13,9 @@ from ..ecs.world import World
 from ..ecs import profiling
 from .engine_event import QuitEvent, WindowResizeEvent
 
-# Eval and interactive play share this cap. Real-time AP/MP recover from
-# fixed 1/FPS seconds per frame, so a 30fps loop would recover at half
-# the intended rate. Do not lower this without changing recovery intervals.
+# Production play is capped at 60 FPS by default. The optional uncapped mode is
+# intended for throughput measurement: it removes the render-loop limiter and
+# drives systems with measured wall-clock delta so the world does not speed up.
 DEFAULT_FPS = 60
 MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 800
@@ -42,15 +42,22 @@ class GameEngine:
         width: Optional[int] = None,
         height: Optional[int] = None,
         fps: int = DEFAULT_FPS,
+        uncapped: Optional[bool] = None,
     ):
         """Initialize the game engine."""
         if hasattr(self, "_initialized"):
-            # Already built for this process. Only FPS is re-pinnable, because
-            # real-time AP/MP recovery is defined per frame. Headless mode
-            # cannot change after SDL is up; a live window can still resize.
+            # Already built for this process. FPS remains re-pinnable. Uncapped
+            # is only changed when explicitly supplied so incidental get_engine()
+            # calls cannot silently alter the active clock mode.
+            changed = False
             if fps != self.fps:
                 self.fps = fps
-                profiling.profiler.set_metadata(fps_cap=self.fps)
+                changed = True
+            if uncapped is not None and bool(uncapped) != self.uncapped:
+                self.uncapped = bool(uncapped)
+                changed = True
+            if changed:
+                self._publish_clock_metadata()
             return
 
         # Load config to check for headless mode
@@ -77,6 +84,7 @@ class GameEngine:
         self.width = width
         self.height = height
         self.fps = fps
+        self.uncapped = bool(uncapped) if uncapped is not None else False
         self.running = False
         self.delta_time = 0.0
 
@@ -89,11 +97,18 @@ class GameEngine:
         self._init_managers()
 
         profiling.profiler.set_metadata(
-            fps_cap=self.fps,
             headless=self.headless,
             window=f"{self.width}x{self.height}",
         )
+        self._publish_clock_metadata()
         self._initialized = True
+
+    def _publish_clock_metadata(self) -> None:
+        """Expose the active frame-clock semantics in profiler output."""
+        profiling.profiler.set_metadata(
+            fps_cap="uncapped" if self.uncapped else self.fps,
+            clock_mode="uncapped_wall_clock" if self.uncapped else "fixed_step_capped",
+        )
 
     def _init_pygame(self) -> None:
         """Initialize Pygame context and screen."""
@@ -177,30 +192,60 @@ class GameEngine:
         """Start the engine (blocking)."""
         self.run()
 
+    def _frame_delta_seconds(
+        self,
+        now: float,
+        previous_frame_started_at: Optional[float],
+        fixed_dt: float,
+    ) -> float:
+        """Return the simulation delta for the active clock mode.
+
+        Capped production play keeps the established fixed timestep. Uncapped
+        measurement uses time between frame starts, so removing the limiter does
+        not make one wall-clock second advance multiple seconds of game time.
+        """
+        if not self.uncapped or previous_frame_started_at is None:
+            return fixed_dt
+        return max(0.0, now - previous_frame_started_at)
+
+    def _wait_for_frame_cap(self, profiler) -> None:
+        """Apply the production frame cap; benchmark mode deliberately skips it."""
+        if self.uncapped:
+            return
+        with profiler.time_system("fps_limiter_wait", category="wait"):
+            self.clock.tick(self.fps)
+
     def run(self) -> None:
         """Run the main game loop.
 
-        Simulation uses a fixed timestep of 1/FPS, not wall-clock frame
-        jitter. ``clock.tick`` caps the loop at FPS so one wall-clock
-        second of LLM think time is about FPS sim frames (and thus the
-        intended AP/MP recovery) as long as the machine keeps up.
+        Production mode uses the established fixed timestep of ``1/FPS`` and
+        ``clock.tick(FPS)``. ``uncapped`` mode is a throughput-measurement clock:
+        it removes the limiter and supplies measured wall-clock delta to systems.
+        This exposes full-frame capacity without accelerating realtime game time.
 
-        The profiler deliberately wraps ``clock.tick`` and ends the frame *after*
-        the limiter, so active work, presentation blocking, and intentional FPS
-        cap waiting are reported separately.
+        The profiler ends each frame after any production limiter wait, so active
+        work, presentation blocking, and intentional FPS-cap waiting remain
+        separate in capped reports. Uncapped reports contain no limiter wait.
         """
         self.running = True
-        frame_dt = 1.0 / float(self.fps)
+        fixed_dt = 1.0 / float(self.fps)
+        previous_frame_started_at: Optional[float] = None
         profiler = profiling.profiler
 
         try:
             while self.running:
+                frame_started_at = time.perf_counter()
                 profiler.start_frame()
-                self.delta_time = frame_dt
+                self.delta_time = self._frame_delta_seconds(
+                    frame_started_at,
+                    previous_frame_started_at,
+                    fixed_dt,
+                )
+                previous_frame_started_at = frame_started_at
+                profiler.set_frame_metric("render_uncapped", int(self.uncapped))
                 self._update()
 
-                with profiler.time_system("fps_limiter_wait", category="wait"):
-                    self.clock.tick(self.fps)
+                self._wait_for_frame_cap(profiler)
 
                 profiler.end_frame()
                 self._maybe_print_profiler(profiler)

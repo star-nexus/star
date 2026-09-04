@@ -15,6 +15,7 @@ Options:
     --mock-ai  Explicitly enable the built-in rule BOT controller
     --profile  Print performance profiler stats every ~5 seconds
     --profile-json PATH  Write the final rolling profiler snapshot as JSON
+    --uncapped  Disable the production FPS limiter for throughput measurement
     --help  Show help information
 """
 
@@ -160,6 +161,16 @@ Victory Conditions:
         metavar="PATH",
         help="Write the final rolling performance profiler snapshot to PATH as JSON.",
     )
+    parser.add_argument(
+        "--uncapped",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable the production FPS limiter for throughput measurement. "
+            "The game uses measured wall-clock delta in this mode so realtime "
+            "simulation does not accelerate with render throughput."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -230,6 +241,7 @@ def main():
             scenario=args.scenario,
             players=args.players,
             mock_ai=args.mock_ai,
+            benchmark_uncapped=args.uncapped,
         )
 
         # --env-id 优先于环境变量 ENV_ID，便于 auto_test 等通过 CLI 显式传入
@@ -245,6 +257,7 @@ def main():
         engine = GameEngine(
             title="Romance of the Three Kingdoms Strategy Game",
             fps=GameConfig.FPS,
+            uncapped=args.uncapped,
         )
         if not args.headless:
             GameConfig.WINDOW_WIDTH = engine.width
@@ -286,6 +299,8 @@ def main():
                 print(f"Root seed: {args.seed}")
             if args.profile:
                 print("Performance profiler: enabled")
+            if args.uncapped:
+                print("Render cap: uncapped (throughput measurement, wall-clock delta)")
 
         print("Game started! Configure the game in the start interface, then click start game.")
         engine.start()
