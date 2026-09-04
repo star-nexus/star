@@ -218,7 +218,7 @@ def game_scene_kwargs_from_args(args) -> dict:
         "hub_url": resolve_hub_url(args),
         "env_id": args.env_id,
         "enable_mock_ai": args.mock_ai,
-        "scale_harness_socket": args.scale_harness_socket,
+        "scale_harness_socket": getattr(args, "scale_harness_socket", None),
     }
 
 
