@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import random
 import subprocess
@@ -100,3 +101,20 @@ def test_scale_driver_entrypoint_works_outside_repo_cwd(tmp_path):
     )
     assert result.returncode == 0
     assert "production-path system-scale harness" in result.stdout
+
+
+def test_formal_density_point_defaults_to_accepted_realtime_gc_policy():
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "tools" / "scale_driver.py"
+    spec = importlib.util.spec_from_file_location("star_scale_driver_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    density_args = module.parse_args(
+        ["density-point", "--density", "0.25", "--profile", "/tmp/profile.json"]
+    )
+    manual_args = module.parse_args(["start"])
+
+    assert density_args.gc_policy == "realtime_defer"
+    assert manual_args.gc_policy == "auto"
