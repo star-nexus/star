@@ -5,11 +5,16 @@ all unit dots at render FPS even though the minimap is a low-frequency overview.
 The dynamic unit-dot layer refreshes at 15 Hz while keeping the
 camera viewport, frame border and final composite at full frame rate.
 
+The optional ``STAR_SCALE_MINIMAP_UNITS`` environment override exists only to
+support controlled scale-ablation runs. Normal production behavior is unchanged
+when the variable is absent.
+
 This policy is mounted only for ``display='window'``.
 """
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Optional, Tuple
 
@@ -21,6 +26,21 @@ from framework.ecs import profiling
 from ..components import Camera, MapData, MiniMap
 from ..utils.unit_spatial_index import get_unit_spatial_index
 from .optimized_render_systems import MiniMapSystem as _BaseMiniMapSystem
+
+_MINIMAP_UNITS_OVERRIDE_ENV = "STAR_SCALE_MINIMAP_UNITS"
+
+
+def _parse_minimap_units_override(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(
+        f"{_MINIMAP_UNITS_OVERRIDE_ENV} must be one of on/off, true/false, 1/0"
+    )
 
 
 class MiniMapSystem(_BaseMiniMapSystem):
@@ -37,6 +57,28 @@ class MiniMapSystem(_BaseMiniMapSystem):
         self._layout_key = None
         self._layout_bounds: Optional[Tuple[int, int, int, int]] = None
         self._layout_rebuild_count = 0
+
+    def initialize(self, world) -> None:
+        super().initialize(world)
+        minimap = self.world.get_singleton_component(MiniMap)
+        if minimap is None:
+            return
+
+        requested = _parse_minimap_units_override(
+            os.environ.get(_MINIMAP_UNITS_OVERRIDE_ENV)
+        )
+        if requested is not None:
+            minimap.show_units = requested
+
+        profiling.profiler.set_metadata(
+            minimap_unit_layer_enabled=bool(minimap.show_units),
+            minimap_unit_layer_override=(
+                "default"
+                if requested is None
+                else ("on" if requested else "off")
+            ),
+            minimap_unit_refresh_hz=self.UNIT_REFRESH_HZ,
+        )
 
     def _get_layout_bounds(self, map_data: MapData) -> Tuple[int, int, int, int]:
         layout_key = (
@@ -182,6 +224,9 @@ class MiniMapSystem(_BaseMiniMapSystem):
         )
         RMS.draw(frame, (rect_x, rect_y))
 
+        profiling.profiler.set_frame_metric(
+            "minimap_unit_layer_enabled", 1 if minimap.show_units else 0
+        )
         profiling.profiler.set_frame_metric(
             "minimap_unit_refreshed", 1 if refresh_units else 0
         )
