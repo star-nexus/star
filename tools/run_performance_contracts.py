@@ -27,6 +27,8 @@ STRUCTURAL_CONTRACTS = [
     "framework/tests/test_render_blit_batching.py",
     # One dirty Vision observer must not become an all-observer recompute.
     "rotk_env/tests/test_vision_incremental_index.py::test_mark_dirty_updates_only_changed_unit_and_keeps_explored_history",
+    # The validated large-window Vision working-set headroom must not regress to 4096.
+    "rotk_env/tests/test_window_vision_cache_config.py::test_window_vision_cache_keeps_validated_headroom_default",
     # Fog visibility changes must stay incremental and pixel-equivalent.
     "rotk_env/tests/test_fog_surface_presenter.py::test_incremental_reveal_and_hide_match_fresh_canonical_surface",
     # Unit rendering must filter spatial candidates rather than resident units.
