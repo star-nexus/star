@@ -27,17 +27,33 @@ def test_specialized_move_uses_index_record_without_world_component_reads(monkey
     living_before = dict(index.living_counts)
     bucket_before = index.by_entity[entity].bucket
 
+    # Pick an actual same-bucket destination instead of assuming a particular
+    # neighboring hex shares the spatial bucket. Bucket membership depends on
+    # the hex-to-pixel projection and floor() at bucket boundaries.
+    target = None
+    for col in range(-4, 5):
+        for row in range(-4, 5):
+            if (col, row) == (0, 0):
+                continue
+            if index._record_for_hex(col, row, Faction.WEI).bucket == bucket_before:
+                target = (col, row)
+                break
+        if target is not None:
+            break
+    assert target is not None
+    target_col, target_row = target
+
     def unexpected_get_component(*_args, **_kwargs):
         raise AssertionError("specialized indexed move must not re-read ECS components")
 
     monkeypatch.setattr(world, "get_component", unexpected_get_component)
 
-    assert move_unit_spatial_index(world, entity, 1, 0) is True
+    assert move_unit_spatial_index(world, entity, target_col, target_row) is True
     record = index.by_entity[entity]
-    assert (record.col, record.row) == (1, 0)
+    assert (record.col, record.row) == (target_col, target_row)
     assert record.bucket == bucket_before
     assert entity not in index.by_cell_entities.get((0, 0), set())
-    assert entity in index.by_cell_entities[(1, 0)]
+    assert entity in index.by_cell_entities[(target_col, target_row)]
     assert entity in index.by_bucket[bucket_before]
     assert index.living_counts == living_before
 
