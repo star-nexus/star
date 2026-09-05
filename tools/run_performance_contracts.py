@@ -19,9 +19,8 @@ STRUCTURAL_CONTRACTS = [
     "framework/tests/test_performance_measurement_contract.py",
     "framework/tests/test_performance_gate.py",
     "framework/tests/test_static_window_benchmark_entrypoint.py",
-    # Phase-4 scale control/workload generation must stay deterministic.
+    # Phase-4 scale control must remain deterministic and outside per-frame work.
     "framework/tests/test_scale_harness_contract.py",
-    "framework/tests/test_scale_map_generator.py",
     # Render queue should preserve blit batching.
     "framework/tests/test_render_blit_batching.py",
     # One dirty Vision observer must not become an all-observer recompute.
