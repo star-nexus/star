@@ -18,10 +18,15 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Optional
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from framework.ecs import profiling as ecs_profiling
 
@@ -103,6 +108,7 @@ def _publish_sample(prefix: str, acc: _SampleAccumulator) -> None:
 def _git_blob(path: str) -> str:
     return subprocess.check_output(
         ["git", "hash-object", path],
+        cwd=_REPO_ROOT,
         text=True,
         stderr=subprocess.STDOUT,
     ).strip()
@@ -111,7 +117,7 @@ def _git_blob(path: str) -> str:
 def _verify_source_contract() -> None:
     drift = []
     for path, expected in EXPECTED_BLOBS.items():
-        if not Path(path).is_file():
+        if not (_REPO_ROOT / path).is_file():
             drift.append(f"{path}: missing")
             continue
         actual = _git_blob(path)
