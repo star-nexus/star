@@ -4,7 +4,7 @@ A dependency-free browser map editor for STAR / StarBench.
 
 ## v2.0 changes
 
-- Large maps: odd width / height from **5 to 101** (v1.5 stopped at 51).
+- Large maps: integer width / height from **5 to 201**, including even sizes such as **120×120** (v1.5 stopped at 51).
 - Typed unit painting: paint **Infantry / Archer / Cavalry** directly into Wei / Shu / Wu formations.
 - Native typed export: formation slots are exported as `[col, row, type]`, which is accepted by `rotk_env.maps.map_file`.
 - Legacy map compatibility: untyped `[col, row]` slots are inferred from `unit_mix` exactly like the runtime loader; without a mix they become Infantry.
@@ -25,7 +25,7 @@ Then visit `http://localhost:8080`.
 
 ## Core workflow
 
-1. Choose an odd map width / height up to 101 and click **Create / Resize**.
+1. Choose an integer map width / height up to 201 and click **Create / Resize**.
 2. Paint terrain.
 3. Under **Units / Formation**, choose a faction and unit type.
 4. Click + drag to paint typed spawn units. Use **Erase Unit** to remove them.

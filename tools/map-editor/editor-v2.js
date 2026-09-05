@@ -4,7 +4,7 @@
   const SVG_NS = "http://www.w3.org/2000/svg";
   const HEX_SIZE = 28;
   const SQRT3 = Math.sqrt(3);
-  const MAX_MAP_SIZE = 101;
+  const MAX_MAP_SIZE = 201;
   const STORAGE_KEY = "star-map-editor-v2";
   const LEGACY_STORAGE_KEY = "star-map-editor-v1.5";
 
@@ -129,21 +129,28 @@
   }
 
   function mapBounds() {
-    // Correct for both even/odd column vertical offsets. At v2's 101x101
-    // ceiling this one-time 6-corners-per-cell pass is still cheap and avoids
-    // subtle clipping at the south edge.
-    const all = [];
+    // Scan bounds incrementally so 120x120+ maps do not build giant temporary
+    // coordinate arrays or spread tens of thousands of values into Math.min/max.
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
     for (const row of rowsNorthFirst()) {
-      for (const col of cols()) all.push(...hexCorners(col, row));
+      for (const col of cols()) {
+        for (const [x, y] of hexCorners(col, row)) {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
     }
-    const xs = all.map((p) => p[0]);
-    const ys = all.map((p) => p[1]);
     const margin = HEX_SIZE * 1.25;
     return {
-      minX: Math.min(...xs) - margin,
-      maxX: Math.max(...xs) + margin,
-      minY: Math.min(...ys) - margin,
-      maxY: Math.max(...ys) + margin,
+      minX: minX - margin,
+      maxX: maxX + margin,
+      minY: minY - margin,
+      maxY: maxY + margin,
     };
   }
 
@@ -563,7 +570,7 @@
     const width = Number(doc.width);
     const height = Number(doc.height);
     if (!validSize(width) || !validSize(height)) {
-      throw new Error(`Map dimensions must be odd numbers between 5 and ${MAX_MAP_SIZE}.`);
+      throw new Error(`Map dimensions must be integers between 5 and ${MAX_MAP_SIZE}.`);
     }
     if (doc.terrain.length !== height || doc.terrain.some((row) => typeof row !== "string" || row.length !== width)) {
       throw new Error("Terrain dimensions do not match width/height.");
@@ -631,7 +638,7 @@
     const width = Number(els.mapWidth.value);
     const height = Number(els.mapHeight.value);
     if (!validSize(width) || !validSize(height)) {
-      alert(`Use odd map dimensions between 5 and ${MAX_MAP_SIZE}.`);
+      alert(`Use integer map dimensions between 5 and ${MAX_MAP_SIZE}.`);
       return;
     }
 
@@ -655,7 +662,7 @@
   }
 
   function validSize(n) {
-    return Number.isInteger(n) && n >= 5 && n <= MAX_MAP_SIZE && n % 2 === 1;
+    return Number.isInteger(n) && n >= 5 && n <= MAX_MAP_SIZE;
   }
 
   function terrainFromRgb(r, g, b) {
