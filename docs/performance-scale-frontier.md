@@ -17,6 +17,20 @@ This is intentionally a **pure dynamic-world execution workload**, not a game-le
 
 Gameplay key/mouse events are blocked while the harness is mounted; SDL event pumping and display presentation remain active.
 
+### Realtime cyclic-GC condition
+
+The historical Realtime-GC case established that automatic CPython generation-2 collection can create rare latency cliffs while `UnitRenderSystem` happens to be the active timed scope. Formal latency-critical scale points therefore use the accepted bounded `realtime_defer` policy:
+
+```text
+kickoff allocations complete
+-> full Gen2 collection at the scale-control safe point
+-> automatic cyclic GC disabled for the bounded sustained window
+-> ordinary CPython reference counting remains active
+-> original automatic-GC state restored on stop/clear/cleanup/deadline
+```
+
+This is a measurement condition, not a new rendering optimization. Normal STAR runtime remains unchanged unless the explicit scale harness is mounted. The formal `density-point` driver defaults to `realtime_defer`; manual `start` remains `auto` unless explicitly requested otherwise.
+
 ## Canonical point
 
 Unless a specific ablation changes one field, record:
@@ -31,6 +45,7 @@ seed             42
 route seed       42
 route steps      12
 phase seed       42
+gc policy        realtime_defer
 warmup           5 s
 sustained        20 s
 sample after     7 s
@@ -70,22 +85,38 @@ Run the current production runtime on a reproducibly identified 5K map/workload.
 
 Do not proceed to larger N until the 5K workload identity and causal profile are validated.
 
-### 2. C + D frontier sweep
+### 2. Current-production density frontier calibration
 
-First hold resident population and map fixed while varying moving density:
+Do not repeat the archived full historical density curve. Hold resident population and map fixed and use the minimum current-production points needed to locate the 60 Hz boundary.
 
-```text
-rho = 0.00, 0.25, 0.50, 0.75, 1.00
-phase = staggered
-```
-
-Then compare temporal concentration with the same route pool:
+Current search rule:
 
 ```text
-phase = staggered vs synchronized
+0% clear PASS
+50% clear FAIL
+25% requires clean classification under realtime_defer
 ```
 
-Only after the density curve is understood, increase resident population N. Keep map/workload identity explicit; do not compare different map footprints as if N were the only changed variable.
+After the clean 25% point:
+
+```text
+25% PASS -> next 37.5%
+25% FAIL -> next 12.5%
+```
+
+Continue only until the boundary interval is decision-useful; do not chase false precision below ordinary runtime variance.
+
+### 3. Temporal concentration
+
+Once the highest clear-PASS staggered density is known, compare that same density and route pool under:
+
+```text
+staggered vs synchronized
+```
+
+This isolates temporal concentration of the same total dynamic workload.
+
+Only after the density and concentration effects are understood should resident population N be increased. Keep map/workload identity explicit; do not compare different map footprints as if N were the only changed variable.
 
 ## Formal driver
 
@@ -109,7 +140,7 @@ Terminal B:
 uv run python tools/scale_driver.py \
   --socket /tmp/star-scale.sock \
   density-point \
-  --density 1.0 \
+  --density 0.25 \
   --phase staggered \
   --seed 42 \
   --phase-seed 42 \
@@ -120,6 +151,8 @@ uv run python tools/scale_driver.py \
   --profile /tmp/scale-profile.json \
   --output /tmp/scale-point.json
 ```
+
+`density-point` defaults to `--gc-policy realtime_defer`. The driver verifies that the requested policy is present in metadata and frame metrics, that bounded deferral remains active throughout the saved rolling window, and that automatic cyclic GC is disabled during that window. If those guards fail, the point is invalid rather than silently accepted.
 
 The driver snapshots the profiler before running its O(N) status validation, so the validation scan cannot contaminate the saved window.
 
@@ -134,6 +167,7 @@ resident units
 requested and achieved moving density
 phase
 route/phase seed
+GC policy and policy guards
 Fog state
 controlled avg/p95/p99/max
 controlled >16.67 ms tail
