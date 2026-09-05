@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from framework import System
 from framework.ecs import profiling
+from framework.utils.realtime_gc_policy import (
+    GC_POLICY_AUTO,
+    RealtimeGCPolicy,
+    normalize_gc_policy,
+)
 
 from ..components import HexPosition, MovementAnimation, Unit, UnitCount
 from ..utils.hex_utils import HexMath
@@ -79,6 +84,7 @@ class ScaleHarnessSystem(System):
         self._sustained_entities: set[int] = set()
         self._execution_density = 0.0
         self._phase: Optional[str] = None
+        self._gc_policy = RealtimeGCPolicy()
 
     def initialize(self, world) -> None:
         self.world = world
@@ -119,6 +125,7 @@ class ScaleHarnessSystem(System):
 
     def cleanup(self) -> None:
         self._stop_sustained()
+        self._gc_policy.restore("cleanup")
         for client in list(self.clients):
             self._drop_client(client)
         if self.server is not None:
@@ -133,12 +140,16 @@ class ScaleHarnessSystem(System):
             pass
 
     def update(self, delta_time: float) -> None:
-        # Keep test-control polling outside the STAR-controlled regression plane.
+        # Keep test-control and GC-policy bookkeeping outside the STAR-controlled
+        # regression plane. The accepted realtime_defer policy moves cyclic-GC
+        # maintenance to the start safe point rather than hiding its cost.
         with profiling.profiler.time_system(
             "scale_harness_control", category="diagnostic"
         ):
+            self._gc_policy.tick()
             self._accept_clients()
             self._read_commands()
+
         profiling.profiler.set_frame_metric(
             "scale_configured_moving_units", len(self._sustained_entities)
         )
@@ -147,6 +158,16 @@ class ScaleHarnessSystem(System):
         )
         if self._phase is not None:
             profiling.profiler.set_frame_metric("scale_motion_phase", self._phase)
+
+        gc_state = self._gc_policy.snapshot()
+        profiling.profiler.set_frame_metric("scale_gc_policy", gc_state["mode"])
+        profiling.profiler.set_frame_metric(
+            "scale_gc_defer_active", 1 if gc_state["active"] else 0
+        )
+        profiling.profiler.set_frame_metric(
+            "scale_gc_automatic_enabled",
+            1 if gc_state["automatic_gc_enabled"] else 0,
+        )
 
     # ------------------------------------------------------------------
     # UDS
@@ -218,15 +239,27 @@ class ScaleHarnessSystem(System):
         if op == "start_sustained":
             return self._start_sustained(command)
         if op == "stop_sustained":
-            return {"ok": True, "stopped_units": self._stop_sustained()}
+            stopped = self._stop_sustained()
+            self._gc_policy.restore("stop_sustained")
+            return {
+                "ok": True,
+                "stopped_units": stopped,
+                "gc_policy": self._gc_policy.snapshot(),
+            }
         if op == "profile_snapshot":
             return self._profile_snapshot(command)
         if op == "status":
             return {"ok": True, **self._status()}
         if op == "clear":
             stopped = self._stop_sustained()
+            self._gc_policy.restore("clear")
             self.prepared = None
-            return {"ok": True, "cleared": True, "stopped_units": stopped}
+            return {
+                "ok": True,
+                "cleared": True,
+                "stopped_units": stopped,
+                "gc_policy": self._gc_policy.snapshot(),
+            }
         return {"ok": False, "error": "unknown_command", "command": op}
 
     def _prepare_routes(self, command: Dict[str, Any]) -> Dict[str, Any]:
@@ -335,9 +368,17 @@ class ScaleHarnessSystem(System):
                 "phase": phase,
                 "allowed": sorted(_PHASES),
             }
+        try:
+            requested_gc_policy = normalize_gc_policy(
+                command.get("gc_policy", GC_POLICY_AUTO)
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": "invalid_gc_policy", "message": str(exc)}
+
         phase_seed = int(command.get("phase_seed", pool.seed))
         phase_rng = random.Random(phase_seed)
 
+        self._gc_policy.restore("replaced")
         self._stop_sustained()
         requested = int(round(len(pool.routes) * execution_density))
         selected = pool.routes[:requested]
@@ -376,6 +417,12 @@ class ScaleHarnessSystem(System):
             self._sustained_entities.add(prepared.entity)
             accepted += 1
 
+        # Historical Realtime-GC case established this exact placement: after
+        # kickoff allocation, before the latency-critical window. The full Gen2
+        # collection therefore happens at a diagnostic safe point, then automatic
+        # cyclic GC is boundedly deferred while ordinary refcounting continues.
+        gc_state = self._gc_policy.activate(requested_gc_policy, duration_seconds)
+
         self._execution_density = execution_density
         self._phase = phase
         resident = pool.living_units
@@ -388,6 +435,9 @@ class ScaleHarnessSystem(System):
             scale_motion_phase=phase,
             scale_phase_seed=phase_seed,
             scale_duration_seconds=duration_seconds,
+            scale_gc_policy=requested_gc_policy,
+            scale_gc_full_collect_ms=gc_state["full_collect_ms"],
+            scale_gc_full_collect_collected=gc_state["full_collect_collected"],
         )
         return {
             "ok": True,
@@ -408,6 +458,7 @@ class ScaleHarnessSystem(System):
             "pathfinding_during_execution": False,
             "normal_move_resources_and_stats": False,
             "production_animation_and_commits": True,
+            "gc_policy": gc_state,
         }
 
     def _build_sustained_path(
@@ -481,6 +532,7 @@ class ScaleHarnessSystem(System):
             "execution_density": self._execution_density,
             "motion_phase": self._phase,
             "prepared": self.prepared.summary() if self.prepared else None,
+            "gc_policy": self._gc_policy.snapshot(),
         }
 
     @staticmethod
