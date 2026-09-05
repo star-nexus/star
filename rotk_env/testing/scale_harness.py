@@ -30,6 +30,7 @@ from framework.utils.realtime_gc_policy import (
 from ..components import HexPosition, MovementAnimation, Unit, UnitCount
 from ..utils.hex_utils import HexMath
 from ..utils.map_query import board_hexes, impassable_terrain
+from .crossing_cost_correlation import build_crossing_cost_correlation
 
 Hex = Tuple[int, int]
 _PHASES = {"synchronized", "staggered"}
@@ -482,11 +483,22 @@ class ScaleHarnessSystem(System):
         if not path:
             return {"ok": False, "error": "snapshot_path_required"}
         expanded = os.path.abspath(os.path.expanduser(path))
-        profiling.profiler.write_json(expanded)
+
+        # Correlation is computed only after the retained measurement window is
+        # complete. It consumes already-recorded aligned profiler samples and
+        # therefore adds zero instrumentation to the measured per-frame path.
+        stats = profiling.profiler.get_stats()
+        correlation = build_crossing_cost_correlation(profiling.profiler)
+        stats["crossing_cost_correlation"] = correlation
+        with open(expanded, "w", encoding="utf-8") as handle:
+            json.dump(stats, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+
         return {
             "ok": True,
             "path": expanded,
-            "sample_count": len(getattr(profiling.profiler, "frame_times_ns", ())),
+            "sample_count": int(stats.get("sample_count") or 0),
+            "crossing_cost_correlation_available": correlation.get("available") is True,
         }
 
     def _stop_sustained(self) -> int:
