@@ -16,8 +16,14 @@ def test_map_editor_v2_entrypoint_and_large_map_limit():
     assert "STAR Map Editor <span>v2.0</span>" in html
     assert 'src="editor-v2.js"' in html
     assert 'href="style-v2.css"' in html
-    assert html.count('max="101"') >= 2
-    assert "const MAX_MAP_SIZE = 101;" in js
+    assert html.count('max="201"') >= 2
+    assert html.count('step="1"') >= 2
+    assert "const MAX_MAP_SIZE = 201;" in js
+    assert "n % 2 === 1" not in js
+    assert "Number.isInteger(n) && n >= 5 && n <= MAX_MAP_SIZE" in js
+    assert "Scan bounds incrementally so 120x120+ maps" in js
+    assert "minX: Math.min(...xs) - margin" not in js
+    assert "maxY: Math.max(...ys) + margin" not in js
 
 
 def test_map_editor_v2_exposes_typed_unit_painting():
