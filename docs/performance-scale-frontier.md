@@ -58,17 +58,96 @@ This is explicitly a STAR-controlled CPU/runtime boundary, not a claim about end
 
 For synchronized burst experiments also inspect controlled `max` and the `>16.67 ms` tail rate; a short burst can be important without dominating the five-second p99 distribution.
 
+## Reproducible synthetic scale maps
+
+Formal Phase-4 maps are generated from source rather than depending on local historical map files. `tools/generate_scale_map.py` creates an ordinary STAR map with:
+
+```text
+terrain       all plain
+map size      explicit odd square size
+formations    unique/non-overlapping
+factions      balanced spatial bands
+unit mix      [1 infantry, 3 archer, 1 cavalry] repeated
+seed          explicit
+```
+
+Generated map JSON is ignored by git; the generator SHA and arguments are the durable experiment identity.
+
+Canonical 5K input:
+
+```bash
+uv run python tools/generate_scale_map.py \
+  --size 91 \
+  --units 5000 \
+  --seed 42
+```
+
+This creates:
+
+```text
+rotk_env/maps/_generated_scale_91x91_5000.json
+scenario = _generated_scale_91x91_5000
+map      = 91 x 91 = 8281 tiles
+resident = 5000
+```
+
+The synthetic all-plain input is not claimed to reproduce the terrain composition of the historical `TestMap-8K-scale-5000`. Historical results remain context only. The new map exists to establish a clean current-production frontier with explicit variables.
+
 ## Experiment order
 
 ### 0. Harness smoke
 
 Use the normal 15-unit default scenario. Require all driver guards to pass and confirm production position/Vision/Fog metrics change while movement is active.
 
+Validated Phase-4 smoke criteria include:
+
+```text
+all structural contracts PASS
+all density-point guards PASS
+production position commits observed
+Vision dirty work observed
+Fog fixed ON
+no gameplay input
+no pathfinding during sustained execution
+```
+
 ### 1. 5K production replay
 
-Run the current production runtime on a reproducibly identified 5K map/workload. This establishes the new Phase-4 reference point. Historical 5K evidence remains context only because it used older source cohorts and a 300-frame profiler window.
+Generate the canonical 91x91/5000 input above and run the current production runtime at 100% staggered motion. This establishes the new Phase-4 reference point. Historical 5K evidence remains context only because it used older source cohorts, a different map input and a 300-frame profiler window.
 
-Do not proceed to larger N until the 5K workload identity and causal profile are validated.
+Terminal A:
+
+```bash
+uv run python -m rotk_env.main \
+  --skip-start \
+  --mode real_time \
+  --scenario _generated_scale_91x91_5000 \
+  --players human_vs_two_ai \
+  --no-hub \
+  --seed 42 \
+  --uncapped \
+  --scale-harness-socket /tmp/star-scale.sock
+```
+
+Terminal B:
+
+```bash
+uv run python tools/scale_driver.py \
+  --socket /tmp/star-scale.sock \
+  density-point \
+  --density 1.0 \
+  --phase staggered \
+  --seed 42 \
+  --phase-seed 42 \
+  --route-steps 12 \
+  --duration 20 \
+  --warmup 5 \
+  --sample-after 7 \
+  --profile /tmp/scale-5k-staggered-profile.json \
+  --output /tmp/scale-5k-staggered.json
+```
+
+Do not proceed to the full frontier sweep until this 5K workload identity and causal profile are validated.
 
 ### 2. C + D frontier sweep
 
@@ -87,7 +166,19 @@ phase = staggered vs synchronized
 
 Only after the density curve is understood, increase resident population N. Keep map/workload identity explicit; do not compare different map footprints as if N were the only changed variable.
 
-## Formal driver
+A later resident-scale study should distinguish at least two experiment families instead of collapsing them:
+
+```text
+A. fixed map footprint, vary resident N
+   isolates resident-population cost (within map capacity)
+
+B. fixed spatial density, grow map footprint with N
+   measures realistic whole-world scaling where map + resident scale together
+```
+
+This distinction is part of D: map footprint and resident population are separate resources.
+
+## Generic formal driver
 
 Terminal A:
 
@@ -130,6 +221,7 @@ Record at minimum:
 ```text
 exact STAR SHA
 map/scenario identity and dimensions
+map generator arguments/SHA when generated
 resident units
 requested and achieved moving density
 phase
