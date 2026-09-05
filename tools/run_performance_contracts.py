@@ -19,6 +19,8 @@ STRUCTURAL_CONTRACTS = [
     "framework/tests/test_performance_measurement_contract.py",
     "framework/tests/test_performance_gate.py",
     "framework/tests/test_static_window_benchmark_entrypoint.py",
+    # Accepted bounded realtime-GC semantics for latency-critical scale windows.
+    "framework/tests/test_realtime_gc_policy.py",
     # Phase-4 scale control must remain deterministic and outside per-frame work.
     "framework/tests/test_scale_harness_contract.py",
     # Render queue should preserve blit batching.
