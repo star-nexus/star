@@ -89,6 +89,9 @@ def _profile_digest(profile: Dict[str, Any]) -> Dict[str, Any]:
         "scale_configured_moving_units",
         "scale_execution_density",
         "scale_motion_phase",
+        "scale_gc_policy",
+        "scale_gc_defer_active",
+        "scale_gc_automatic_enabled",
         "fog_enabled",
         "effect_position_index_changes",
         "vision_dirty_units",
@@ -149,6 +152,7 @@ def _density_point(args: argparse.Namespace) -> int:
             "duration_seconds": args.duration,
             "phase": args.phase,
             "phase_seed": args.phase_seed,
+            "gc_policy": args.gc_policy,
         },
         timeout=args.command_timeout,
     )
@@ -156,8 +160,8 @@ def _density_point(args: argparse.Namespace) -> int:
         _print({"ok": False, "stage": "start", "prepare": prepare, "start": start})
         return 2
 
-    # Planning/startup naturally age out of the profiler. The formal evidence is
-    # the final wall-clock rolling window after sustained production execution.
+    # Planning, kickoff and the realtime_defer safe-point Gen2 collection all age
+    # out of the profiler. Formal evidence is the final wall-clock rolling window.
     time.sleep(args.sample_after)
 
     profile_path = Path(args.profile).expanduser().resolve()
@@ -187,9 +191,12 @@ def _density_point(args: argparse.Namespace) -> int:
     configured_max = _metric_max(profile, "scale_configured_moving_units")
     density_max = _metric_max(profile, "scale_execution_density")
     phase_values = _metric_values(profile, "scale_motion_phase")
+    gc_policy_values = _metric_values(profile, "scale_gc_policy")
     dynamic_required = requested_density > 0.0
     position_max = float(_metric_max(profile, "effect_position_index_changes") or 0.0)
     vision_dirty_max = float(_metric_max(profile, "vision_dirty_units") or 0.0)
+    realtime_defer = args.gc_policy == "realtime_defer"
+    start_gc = start.get("gc_policy") if isinstance(start.get("gc_policy"), dict) else {}
 
     guards = {
         "rolling_window_full": float(profile.get("window_coverage_s") or 0.0) >= 4.5,
@@ -204,6 +211,25 @@ def _density_point(args: argparse.Namespace) -> int:
             and abs(float(density_max) - requested_density) <= 1e-9
         ),
         "profile_phase_matches": isinstance(phase_values, list) and args.phase in phase_values,
+        "gc_policy_metadata_matches": metadata.get("scale_gc_policy") == args.gc_policy,
+        "gc_policy_profile_matches": (
+            isinstance(gc_policy_values, list) and args.gc_policy in gc_policy_values
+        ),
+        "gc_policy_start_matches": start_gc.get("mode") == args.gc_policy,
+        "gc_defer_active_during_window": (
+            not realtime_defer
+            or (
+                _metric_min(profile, "scale_gc_defer_active") == 1.0
+                and _metric_max(profile, "scale_gc_defer_active") == 1.0
+            )
+        ),
+        "gc_automatic_disabled_during_defer": (
+            not realtime_defer
+            or (
+                _metric_min(profile, "scale_gc_automatic_enabled") == 0.0
+                and _metric_max(profile, "scale_gc_automatic_enabled") == 0.0
+            )
+        ),
         "fog_fixed_on": (
             _metric_min(profile, "fog_enabled") == 1.0
             and _metric_max(profile, "fog_enabled") == 1.0
@@ -232,6 +258,7 @@ def _density_point(args: argparse.Namespace) -> int:
             "duration_seconds": args.duration,
             "warmup_seconds": args.warmup,
             "sample_after_seconds": args.sample_after,
+            "gc_policy": args.gc_policy,
         },
         "prepare": prepare,
         "start": start,
@@ -270,6 +297,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     start.add_argument("--duration", type=float, default=20.0)
     start.add_argument("--phase", choices=["staggered", "synchronized"], default="staggered")
     start.add_argument("--phase-seed", type=int, default=42)
+    start.add_argument(
+        "--gc-policy",
+        choices=["auto", "realtime_defer"],
+        default="auto",
+        help="Cyclic-GC policy for an explicit manual start.",
+    )
 
     sub.add_parser("stop")
 
@@ -286,6 +319,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     point.add_argument("--warmup", type=float, default=5.0)
     point.add_argument("--sample-after", type=float, default=7.0)
     point.add_argument("--ready-timeout", type=float, default=30.0)
+    point.add_argument(
+        "--gc-policy",
+        choices=["auto", "realtime_defer"],
+        default="realtime_defer",
+        help="Formal frontier points default to the accepted bounded realtime GC policy.",
+    )
     point.add_argument("--profile", required=True)
     point.add_argument("--output", default=None)
     return parser.parse_args(argv)
@@ -309,6 +348,7 @@ def main(argv=None) -> int:
             "duration_seconds": args.duration,
             "phase": args.phase,
             "phase_seed": args.phase_seed,
+            "gc_policy": args.gc_policy,
         }
         if args.batch_id is not None:
             payload["batch_id"] = args.batch_id
