@@ -74,3 +74,34 @@ def test_movement_consumes_large_delta_across_multiple_segments():
     assert animation.current_target_index == 2
     assert animation.progress == pytest.approx(0.4)
     assert animation.is_moving is True
+
+
+def test_movement_system_lookup_occurs_once_per_frame(monkeypatch):
+    world = World()
+    system = AnimationSystem()
+    system.world = world
+
+    positions = []
+    for row in (0, 1):
+        entity = world.create_entity()
+        world.add_component(entity, HexPosition(col=0, row=row))
+        system.start_unit_movement(entity, [(0, row), (1, row)])
+        position = world.get_component(entity, HexPosition)
+        animation = world.get_component(entity, MovementAnimation)
+        assert position is not None
+        assert animation is not None
+        animation.progress = 1.0
+        positions.append(position)
+
+    lookups = 0
+
+    def fake_get_movement_system():
+        nonlocal lookups
+        lookups += 1
+        return None
+
+    monkeypatch.setattr(system, "_get_movement_system", fake_get_movement_system)
+    system._update_movement_animations(0.0)
+
+    assert lookups == 1
+    assert [(position.col, position.row) for position in positions] == [(1, 0), (1, 1)]

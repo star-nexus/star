@@ -56,6 +56,11 @@ class AnimationSystem(System):
 
     def _update_movement_animations(self, delta_time: float):
         """Update movement animations without losing time at segment boundaries."""
+        # MovementSystem membership is stable for the duration of one synchronous
+        # ECS update. Resolve it once per frame instead of rescanning world.systems
+        # for every moving entity.
+        movement_system = self._get_movement_system()
+
         for entity in (
             self.world.query().with_all(HexPosition, MovementAnimation).entities()
         ):
@@ -78,7 +83,6 @@ class AnimationSystem(System):
             # The epsilon only absorbs floating-point error at an exact boundary
             # (e.g. 60 Hz at 2 tiles/s summing to 0.9999999999999999).
             anim.progress += anim.speed * delta_time
-            movement_system = self._get_movement_system()
 
             while (
                 anim.is_moving
