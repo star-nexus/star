@@ -188,6 +188,8 @@ def _density_point(args: argparse.Namespace) -> int:
     density_max = _metric_max(profile, "scale_execution_density")
     phase_values = _metric_values(profile, "scale_motion_phase")
     dynamic_required = requested_density > 0.0
+    position_max = float(_metric_max(profile, "effect_position_index_changes") or 0.0)
+    vision_dirty_max = float(_metric_max(profile, "vision_dirty_units") or 0.0)
 
     guards = {
         "rolling_window_full": float(profile.get("window_coverage_s") or 0.0) >= 4.5,
@@ -210,14 +212,10 @@ def _density_point(args: argparse.Namespace) -> int:
         "no_key_input": _metric_max(profile, "input_key_down") == 0.0,
         "no_mouse_button_input": _metric_max(profile, "input_mouse_button") == 0.0,
         "no_mouse_wheel_input": _metric_max(profile, "input_mouse_wheel") == 0.0,
-        "position_commits_present": (
-            not dynamic_required
-            or float(_metric_max(profile, "effect_position_index_changes") or 0.0) > 0.0
-        ),
-        "vision_dirty_present": (
-            not dynamic_required
-            or float(_metric_max(profile, "vision_dirty_units") or 0.0) > 0.0
-        ),
+        "position_commits_present": not dynamic_required or position_max > 0.0,
+        "vision_dirty_present": not dynamic_required or vision_dirty_max > 0.0,
+        "zero_density_no_position_commits": dynamic_required or position_max == 0.0,
+        "zero_density_no_vision_dirty": dynamic_required or vision_dirty_max == 0.0,
         "production_animation_path": start.get("production_animation_and_commits") is True,
         "no_pathfinding_during_execution": start.get("pathfinding_during_execution") is False,
     }
