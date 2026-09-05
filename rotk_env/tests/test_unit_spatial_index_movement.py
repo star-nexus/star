@@ -25,6 +25,7 @@ def test_specialized_move_uses_index_record_without_world_component_reads(monkey
     entity = _add_unit(world, Faction.WEI, 0, 0)
     index = rebuild_unit_spatial_index(world)
     living_before = dict(index.living_counts)
+    bucket_before = index.by_entity[entity].bucket
 
     def unexpected_get_component(*_args, **_kwargs):
         raise AssertionError("specialized indexed move must not re-read ECS components")
@@ -34,8 +35,10 @@ def test_specialized_move_uses_index_record_without_world_component_reads(monkey
     assert move_unit_spatial_index(world, entity, 1, 0) is True
     record = index.by_entity[entity]
     assert (record.col, record.row) == (1, 0)
+    assert record.bucket == bucket_before
     assert entity not in index.by_cell_entities.get((0, 0), set())
     assert entity in index.by_cell_entities[(1, 0)]
+    assert entity in index.by_bucket[bucket_before]
     assert index.living_counts == living_before
 
 
@@ -52,6 +55,30 @@ def test_specialized_move_preserves_stacked_cell_counts_and_living_counts():
     assert index.by_cell[(1, 0)][Faction.WEI] == 1
     assert index.by_cell_entities[(0, 0)] == {stationary}
     assert index.by_cell_entities[(1, 0)] == {mover}
+    assert index.living_counts == living_before
+
+
+def test_specialized_move_updates_old_and_new_buckets_once():
+    world = World()
+    entity = _add_unit(world, Faction.WEI, 0, 0)
+    index = rebuild_unit_spatial_index(world)
+    old_bucket = index.by_entity[entity].bucket
+
+    target_col = 1
+    while index._record_for_hex(target_col, 0, Faction.WEI).bucket == old_bucket:
+        target_col += 1
+    new_bucket = index._record_for_hex(target_col, 0, Faction.WEI).bucket
+
+    old_revision = index.bucket_revisions.get(old_bucket, 0)
+    new_revision = index.bucket_revisions.get(new_bucket, 0)
+    living_before = dict(index.living_counts)
+
+    assert move_unit_spatial_index(world, entity, target_col, 0) is True
+
+    assert entity not in index.by_bucket.get(old_bucket, set())
+    assert entity in index.by_bucket[new_bucket]
+    assert index.bucket_revisions[old_bucket] == old_revision + 1
+    assert index.bucket_revisions[new_bucket] == new_revision + 1
     assert index.living_counts == living_before
 
 
