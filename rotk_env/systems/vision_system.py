@@ -213,9 +213,6 @@ class VisionSystem(System):
             vision._last_range = current_range
             vision.dirty = False
 
-            explored = fog.explored_tiles.setdefault(current_faction, set())
-            explored.update(visible_tiles)
-
             self._stat_recomputes += 1
             changed += 1
 
@@ -331,13 +328,22 @@ class VisionSystem(System):
     ) -> Tuple[int, int]:
         counts = self._counts_for(faction)
         visible = fog.faction_vision.setdefault(faction, set())
+        explored = None
         union_added = 0
         added = 0
         for tile in tiles:
             old = counts.get(tile, 0)
             counts[tile] = old + 1
             if old == 0:
+                # Exploration is faction-level monotonic history. A tile can
+                # become newly explored only when faction visibility transitions
+                # from zero observers to at least one observer. Binding history
+                # maintenance to this transition avoids re-inserting every
+                # observer's full visible set on every dirty recompute.
                 visible.add(tile)
+                if explored is None:
+                    explored = fog.explored_tiles.setdefault(faction, set())
+                explored.add(tile)
                 self._record_fog_delta(faction, tile)
                 union_added += 1
             added += 1
