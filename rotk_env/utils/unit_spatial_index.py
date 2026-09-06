@@ -166,59 +166,6 @@ class UnitSpatialIndex:
         self.revision += 1
         return True
 
-    def move_entity(self, entity: int, col: int, row: int) -> bool:
-        """Update one indexed living unit after a position-only commit.
-
-        Movement cannot change faction or liveness, so the hot path reuses the
-        cached record instead of re-reading Unit/HexPosition/UnitCount and avoids
-        the generic remove+reinsert bookkeeping for living counts. Missing
-        entries use the wrapper's generic self-healing fallback.
-        """
-        old = self.by_entity.get(entity)
-        if old is None:
-            return False
-        if (old.col, old.row) == (col, row):
-            return False
-
-        new_record = self._record_for_hex(col, row, old.faction)
-        old_cell_key = (old.col, old.row)
-        new_cell_key = (new_record.col, new_record.row)
-
-        old_cell = self.by_cell.get(old_cell_key)
-        if old_cell is not None:
-            remaining = old_cell.get(old.faction, 0) - 1
-            if remaining > 0:
-                old_cell[old.faction] = remaining
-            else:
-                old_cell.pop(old.faction, None)
-            if not old_cell:
-                self.by_cell.pop(old_cell_key, None)
-
-        old_cell_entities = self.by_cell_entities.get(old_cell_key)
-        if old_cell_entities is not None:
-            old_cell_entities.discard(entity)
-            if not old_cell_entities:
-                self.by_cell_entities.pop(old_cell_key, None)
-
-        new_cell = self.by_cell.setdefault(new_cell_key, {})
-        new_cell[old.faction] = new_cell.get(old.faction, 0) + 1
-        self.by_cell_entities.setdefault(new_cell_key, set()).add(entity)
-
-        if old.bucket != new_record.bucket:
-            old_bucket_entities = self.by_bucket.get(old.bucket)
-            if old_bucket_entities is not None:
-                old_bucket_entities.discard(entity)
-                if not old_bucket_entities:
-                    self.by_bucket.pop(old.bucket, None)
-            self.by_bucket.setdefault(new_record.bucket, set()).add(entity)
-
-        self.by_entity[entity] = new_record
-        self._bump_bucket(old.bucket)
-        if new_record.bucket != old.bucket:
-            self._bump_bucket(new_record.bucket)
-        self.revision += 1
-        return True
-
     def remove(self, entity: int) -> bool:
         old = self.by_entity.pop(entity, None)
         if old is None:
@@ -290,7 +237,7 @@ class UnitSpatialIndex:
 
         With a minimum terrain enter-cost of one, a route costing at most ``R``
         can never depend on occupancy farther than hex distance ``R`` from its
-        start. Effect overlays use this bounded view so their recomputation is
+        start.  Effect overlays use this bounded view so their recomputation is
         O(R^2), not O(total units).
         """
         radius = max(0, int(hex_radius))
@@ -383,7 +330,7 @@ class UnitSpatialIndex:
         """Yield non-empty coarse buckets intersecting a world-pixel rect.
 
         Callers may inspect the returned sets during their synchronous read
-        phase, but must not mutate them. The world update loop is single-threaded,
+        phase, but must not mutate them.  The world update loop is single-threaded,
         so an index update cannot race a renderer iteration.
         """
         min_bx, max_bx, min_by, max_by = self._bucket_bounds_for_world_rect(
@@ -422,16 +369,6 @@ def rebuild_unit_spatial_index(world) -> UnitSpatialIndex:
 def update_unit_spatial_index(world, entity: int) -> bool:
     index = get_unit_spatial_index(world)
     return bool(index and index.upsert_from_world(world, entity))
-
-
-def move_unit_spatial_index(world, entity: int, col: int, row: int) -> bool:
-    """Fast position-only update with generic fallback for a missing cache entry."""
-    index = get_unit_spatial_index(world)
-    if index is None:
-        return False
-    if entity not in index.by_entity:
-        return index.upsert_from_world(world, entity)
-    return index.move_entity(entity, col, row)
 
 
 def remove_unit_from_spatial_index(world, entity: int) -> bool:
