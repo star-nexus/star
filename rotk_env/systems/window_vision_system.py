@@ -4,32 +4,53 @@ The shared :mod:`vision_system` owns the visibility algorithm:
 - dirty-unit work queue;
 - incremental faction tile reference counts;
 - geometry cache keyed by center/range/terrain revision;
-- low-rate audit when UnitSpatialIndex is available.
+- defensive audit semantics for bootstrap and non-indexed worlds.
 
-WindowMovementSystem publishes hex-commit invalidations, and the maintained
-UnitSpatialIndex lets the shared VisionSystem use its low-rate safety audit.
+WindowMovementSystem publishes committed-position invalidations, and the maintained
+UnitSpatialIndex is the production contract for incremental window worlds. The
+window specialization therefore skips the periodic O(Nresident) reconciliation
+scan once that index is installed, while preserving force-all bootstrap and the
+shared non-indexed direct-write safety path.
 
-Window mode uses a bounded capacity with headroom for large maps. The cache does
-not preallocate entries, while headless mode keeps the shared system's smaller
-default.
+Window mode also uses a bounded geometry-cache capacity with headroom for large
+interactive maps. The cache does not preallocate entries, while headless mode
+keeps the shared system's smaller default.
 """
 
 from __future__ import annotations
 
 from typing import FrozenSet
 
+from ..utils.unit_spatial_index import get_unit_spatial_index
 from .vision_system import Hex, VisionSystem as _BaseVisionSystem
 
 _DEFAULT_WINDOW_GEOMETRY_CACHE_MAX_ENTRIES = 16384
 
 
 class VisionSystem(_BaseVisionSystem):
-    """Window VisionSystem with capacity for large interactive maps."""
+    """Window VisionSystem configured for incremental indexed runtime work."""
 
     def __init__(self):
         super().__init__(
             geometry_cache_max_entries=_DEFAULT_WINDOW_GEOMETRY_CACHE_MAX_ENTRIES
         )
+
+    def _audit_all_units(self, *, force_all: bool) -> int:
+        """Keep bootstrap/non-indexed safety without periodic indexed scans.
+
+        The window runtime maintains a UnitSpatialIndex and publishes explicit
+        Vision invalidations for authoritative movement/lifecycle transitions.
+        Attribution at 10K scale found no audit-only semantic discoveries across
+        the canonical indexed workload, while each periodic scan cost about 4ms.
+
+        ``force_all`` remains the bootstrap reconciliation contract. Worlds that
+        do not have a spatial index retain the shared direct-component-write
+        safety behavior. Only the periodic indexed-window reconciliation becomes
+        an O(1) no-op.
+        """
+        if force_all or get_unit_spatial_index(self.world) is None:
+            return super()._audit_all_units(force_all=force_all)
+        return 0
 
     def _visibility_for(self, center: Hex, range_val: int) -> FrozenSet[Hex]:
         """Return cached geometry before consulting terrain on the hit path.
