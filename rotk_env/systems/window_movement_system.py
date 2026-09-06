@@ -8,6 +8,7 @@ from ..components import HexPosition, Unit
 from ..utils.map_query import impassable_terrain
 from ..utils.unit_spatial_index import (
     get_unit_spatial_index,
+    move_unit_spatial_index,
     update_unit_spatial_index,
 )
 from .movement_system import MovementSystem as _BaseMovementSystem
@@ -25,9 +26,14 @@ class MovementSystem(_BaseMovementSystem):
         position = self.world.get_component(entity, HexPosition)
         old = (position.col, position.row) if position is not None else None
         super().commit_hex_position(entity, col, row, arrived=arrived)
-        if old is not None and old != (col, row):
-            mark_vision_dirty(self.world, entity)
-        update_unit_spatial_index(self.world, entity)
+        if old is not None:
+            if old != (col, row):
+                mark_vision_dirty(self.world, entity)
+            move_unit_spatial_index(self.world, entity, col, row)
+        else:
+            # Preserve the generic cache-reconciliation behavior for malformed or
+            # lifecycle-edge entities that do not currently have HexPosition.
+            update_unit_spatial_index(self.world, entity)
 
     def _get_obstacles(
         self, exclude_entity: Optional[int] = None
