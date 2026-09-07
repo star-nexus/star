@@ -60,12 +60,16 @@ class AnimationSystem(System):
         # ECS update. Resolve it once per frame instead of rescanning world.systems
         # for every moving entity.
         movement_system = self._get_movement_system()
+        get_pair = getattr(self.world, "get_component_pair", None)
 
         for entity in (
             self.world.query().with_all(HexPosition, MovementAnimation).entities()
         ):
-            pos = self.world.get_component(entity, HexPosition)
-            anim = self.world.get_component(entity, MovementAnimation)
+            if get_pair is not None:
+                pos, anim = get_pair(entity, HexPosition, MovementAnimation)
+            else:
+                pos = self.world.get_component(entity, HexPosition)
+                anim = self.world.get_component(entity, MovementAnimation)
 
             if not pos or not anim or not anim.is_moving:
                 continue

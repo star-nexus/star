@@ -296,9 +296,15 @@ class World:
         self, entity: Entity, component_type: Type[ComponentType]
     ) -> Optional[ComponentType]:
         """Get a component of the specified type from an entity."""
-        if entity not in self.entities:
-            return None
-        return self.entities[entity].get(component_type)
+        components = self.entities.get(entity)
+        return components.get(component_type) if components is not None else None
+
+    def get_component_pair(self, entity: Entity, first_type, second_type):
+        """Read two components from one entity-row lookup, without retaining it."""
+        components = self.entities.get(entity)
+        if components is None:
+            return None, None
+        return components.get(first_type), components.get(second_type)
 
     def get_all_components(self, entity: Entity) -> List[Component]:
         """Get all components attached to an entity."""

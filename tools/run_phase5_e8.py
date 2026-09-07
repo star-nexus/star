@@ -27,11 +27,12 @@ def run(args):
         raise RuntimeError('commit tracked changes before measurement')
     scenario = ROOT/'rotk_env/maps'/f'{SCENARIO}.json'
     assert hashlib.sha256(scenario.read_bytes()).hexdigest() == MAP_SHA
+    sample_after = args.sample_after if args.sample_after is not None else args.window + 10
     run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + args.label
     output = ROOT/'results/phase5-e8'/run_id
     output.mkdir(parents=True)
     env_extra = {'STAR_SCALE_MINIMAP_UNITS':'off', 'STAR_E8_MODE':args.mode,
-                 'STAR_E8_RUNTIME_SHA':sha, 'STAR_E8_WINDOW':str(args.window)}
+                 'STAR_E8_RUNTIME_SHA':sha, 'STAR_E8_WINDOW':str(args.window), 'STAR_E8_TRACE':str(int(args.trace))}
     manifest = dict(runtime_sha=sha, tooling_sha=tooling, args=vars(args), environment=env_extra,
                     scenario_sha256=MAP_SHA, commands=[], run_id=run_id,
                     uname=list(os.uname()), started_at=datetime.datetime.now().isoformat())
@@ -47,6 +48,7 @@ def run(args):
         try:
             shutil.copy2(scenario,wt/'rotk_env/maps'/scenario.name)
             shutil.copy2(ROOT/'tools/phase5_e8_snapshot.py',wt/'tools/phase5_e8_snapshot.py')
+            shutil.copy2(ROOT/'tools/phase5_e8_trace.py',wt/'tools/phase5_e8_trace.py')
             # uv's shared cache provides the same locked runtime to every worktree.
             subprocess.run(['uv','run','--frozen','python','-c','import pygame, rotk_env.main'],cwd=wt,check=True,stdout=subprocess.DEVNULL)
             for repeat in range(1,args.repeats+1):
@@ -61,8 +63,8 @@ def run(args):
                           '--socket',sock,'--command-timeout','120','density-point',
                           '--density',str(args.density),'--phase','staggered','--seed','42',
                           '--phase-seed',str(args.phase_seed),'--route-steps','12',
-                          '--duration',str(args.window+15),'--warmup','5',
-                          '--sample-after',str(args.window+10),'--ready-timeout','120',
+                          '--duration',str(sample_after+5),'--warmup','5',
+                          '--sample-after',str(sample_after),'--ready-timeout','120',
                           '--gc-policy','realtime_defer','--profile',str(point/'profile.json'),
                           '--output',str(point/'point.json')]
                 manifest['commands'].append(dict(repeat=repeat,cwd=str(wt),env=command,driver=driver))
@@ -72,7 +74,7 @@ def run(args):
                     proc = subprocess.Popen(command,cwd=wt,env=dict(os.environ,**env_extra),stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
                     try:
                         with (point/'driver.log').open('w') as driver_log:
-                            result = subprocess.run(driver,cwd=wt,stdout=driver_log,stderr=subprocess.STDOUT,timeout=args.window+260)
+                            result = subprocess.run(driver,cwd=wt,stdout=driver_log,stderr=subprocess.STDOUT,timeout=sample_after+260)
                         if result.returncode:
                             raise RuntimeError(f'driver failed: {point}/driver.log')
                     finally:
@@ -92,6 +94,8 @@ def run(args):
                     runtime_matches=data['metadata']['e8_runtime_sha']==sha,
                     mode_matches=data['metadata']['e8_mode']==args.mode,
                     aligned=data['sample_count']==data['e8_aligned']['sample_count'])
+                if args.trace:
+                    guards['trace_not_truncated'] = data['e8_trace']['dropped'] == 0
                 (point/'guards.json').write_text(json.dumps(guards,indent=2)+'\n')
                 if not all(guards.values()):
                     raise RuntimeError(f'failed guards: {guards}')
@@ -112,6 +116,8 @@ if __name__=='__main__':
     p.add_argument('--mode',choices=['off','volume','ui'],default='volume')
     p.add_argument('--window',type=float,default=30)
     p.add_argument('--repeats',type=int,default=3)
+    p.add_argument('--sample-after',type=float,default=None)
+    p.add_argument('--trace',action='store_true')
     p.add_argument('--density',type=float,default=1)
     p.add_argument('--phase-seed',type=int,default=42)
     p.add_argument('--label',default='volume')

@@ -131,3 +131,34 @@ returns copies on cache hits; no measurements used that draft. Public reference
 versions now have explicit lifecycle/reset contracts, independent of unrelated
 component changes. Framework + render tests: 83 passed; extra version contracts 2.
 Next: exact-SHA E8-1 vs E8-1+E8-2 off-mode A/B/B/A, then sustained gate.
+
+## E8-2 interleaved result — local KEEP, narrow 30s passes
+
+U-A1 20260908-012630: avg 32.634 / P99 35.650.
+U-B1 20260908-012734: avg 30.235 / P99 33.270.
+U-B2 20260908-012837: avg 30.142 / P99 33.275.
+U-A2 20260908-012942: avg 33.380 / P99 38.075.
+All guards PASS. Two candidate short windows pass but only ~0.06ms headroom.
+Retain exact all-Unit roster reuse as E8-2; sustained validation remains required.
+
+## E8-3 reference-row lookup candidate (not yet measured/retained)
+
+8ms Animation still loops 10K units and individually resolves HexPosition and
+MovementAnimation through repeated entity-row dictionary lookups. Candidate:
+World.get_component removes duplicate membership+getitem row lookup; new
+get_component_pair coalesces two current references; Animation uses it when
+available, preserving adapter fallback and exact iteration/commit semantics.
+This is a narrow API addition, not storage/ECS redesign. A tiny interleaved warm
+lookup probe showed ~0.91 ->0.79ms per 20K get_component calls; that only justifies
+live A/B, not any frame saving claim. Relevant framework/lifecycle/movement tests
+must pass, then E8-2 vs E8-3 exact-SHA A/B/B/A decides retention.
+
+## Sustained recorder design
+
+Keep production profiler's 5s rolling window and 4096 capacity unchanged. A
+bounded experiment-only recorder copies already-completed frame samples after
+profiler finalization, with capacity 20,000 and overflow guard. No section/system
+timers are added; no JSON writes during the run. Final snapshot exports all
+samples. This avoids inflating the production profiler's per-frame percentile
+sorting work to a multi-minute window. Gate analysis excludes startup warmup,
+uses all admitted frames, and reports chronological blocks and breach runs.

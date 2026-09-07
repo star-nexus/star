@@ -110,8 +110,7 @@ def install_volume_metrics():
     AnimationSystem._update_movement_animations = instrument_function(original_move, [
         ('    movement_system = self._get_movement_system()',
          '    e8_active = e8_scanned = e8_commits = e8_completed = 0\n    movement_system = self._get_movement_system()'),
-        ('        pos = self.world.get_component(entity, HexPosition)',
-         '        e8_scanned += 1\n        pos = self.world.get_component(entity, HexPosition)'),
+        ('    ):\n', '    ):\n        e8_scanned += 1\n'),
         ('        anim.progress += anim.speed * delta_time',
          '        e8_active += 1\n        anim.progress += anim.speed * delta_time'),
         ('            target_hex = anim.path[anim.current_target_index]',
@@ -177,13 +176,19 @@ def main():
                         return original(self, *args, **kwargs)
                 return wrapped
             setattr(UIRenderSystem, method, timed(original, method))
+    trace = os.environ.get("STAR_E8_TRACE") == "1"
+    if trace:
+        from tools.phase5_e8_trace import install_trace, export_trace
+        install_trace(perf.PerformanceProfiler)
     original_stats = perf.PerformanceProfiler.get_stats
     def stats(self):
         result = original_stats(self)
         result["e8_aligned"] = export_aligned(self)
+        if trace:
+            result["e8_trace"] = export_trace(self)
         return result
     perf.PerformanceProfiler.get_stats = stats
-    perf.profiler.set_metadata(e8_mode=mode, e8_runtime_sha=actual, e8_window_s=window)
+    perf.profiler.set_metadata(e8_mode=mode, e8_runtime_sha=actual, e8_window_s=window, e8_trace=trace)
     from rotk_env.main import main as env_main
     env_main()
 
