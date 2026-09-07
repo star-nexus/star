@@ -57,7 +57,10 @@ mkdir -p "$RUN_DIR/control" "$RUN_DIR/treatment" "$RUN_DIR/fixtures"
 # Preserve the exact previously-local 10K fixture inside the formal archive ZIP.
 # This does not make it runtime source; both detached worktrees still run BASE_SHA.
 cp "$SCENARIO_FILE" "$RUN_DIR/fixtures/${SCENARIO}.json"
-shasum -a 256 "$RUN_DIR/fixtures/${SCENARIO}.json" > "$RUN_DIR/fixtures/SHA256SUMS"
+(
+    cd "$RUN_DIR"
+    shasum -a 256 "fixtures/${SCENARIO}.json" > "fixtures/SHA256SUMS"
+)
 
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/star-phase5-unitrender-e6.XXXXXX")"
 A_WT="$TMP_ROOT/control"
