@@ -70,11 +70,11 @@ def _install_slotted_record_patch() -> None:
         return
 
     # Execute the exact source-level representation change in the owning module
-    # namespace.  Existing functions resolve UnitSpatialRecord through that
+    # namespace. Existing functions resolve UnitSpatialRecord through that
     # module global at runtime, so all records created after this point use the
-    # slotted frozen dataclass.  The patch is installed before world creation.
+    # slotted frozen dataclass. The patch is installed before world creation.
     exec(
-        """@dataclass(frozen=True, slots=True)\n"
+        "@dataclass(frozen=True, slots=True)\n"
         "class UnitSpatialRecord:\n"
         "    col: int\n"
         "    row: int\n"
