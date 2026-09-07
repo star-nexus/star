@@ -173,7 +173,12 @@ cat "$RUN_DIR/targeted-regressions.log"
 sleep "$COOLDOWN"
 
 run_repeat() {
-  local repeat="$1" point_dir="$RUN_DIR/repeat-${repeat}" cleanup_rc
+  # With `set -u`, dependent local initializers must be split: bash expands the
+  # complete `local` command before assigning `repeat`, so using ${repeat} in a
+  # sibling initializer would otherwise raise "unbound variable".
+  local repeat="$1"
+  local point_dir="$RUN_DIR/repeat-${repeat}"
+  local cleanup_rc
   mkdir -p "$point_dir"
   CURRENT_SOCKET="/tmp/star-phase5-tail-e7-${$}-${repeat}.sock"
   rm -f "$CURRENT_SOCKET"
