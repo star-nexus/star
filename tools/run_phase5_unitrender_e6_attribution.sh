@@ -53,7 +53,12 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
 fi
 
 RUN_DIR="$REPO_ROOT/$RESULTS_ROOT/$SCENARIO/$RUN_ID"
-mkdir -p "$RUN_DIR/control" "$RUN_DIR/treatment"
+mkdir -p "$RUN_DIR/control" "$RUN_DIR/treatment" "$RUN_DIR/fixtures"
+# Preserve the exact previously-local 10K fixture inside the formal archive ZIP.
+# This does not make it runtime source; both detached worktrees still run BASE_SHA.
+cp "$SCENARIO_FILE" "$RUN_DIR/fixtures/${SCENARIO}.json"
+shasum -a 256 "$RUN_DIR/fixtures/${SCENARIO}.json" > "$RUN_DIR/fixtures/SHA256SUMS"
+
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/star-phase5-unitrender-e6.XXXXXX")"
 A_WT="$TMP_ROOT/control"
 B_WT="$TMP_ROOT/treatment"
@@ -130,6 +135,7 @@ cp "$CONTRACT_TEST" "$B_WT/tools/test_phase5_unitrender_e6_geometry_reuse.py"
     echo "execution_order=A50,B50,B100,A100"
     echo "scenario=$SCENARIO"
     echo "scenario_sha256=$scenario_sha"
+    echo "scenario_fixture_archived_in_zip=true"
     echo "seed=$SEED"
     echo "phase_seed=$PHASE_SEED"
     echo "route_steps=$ROUTE_STEPS"
@@ -177,22 +183,46 @@ echo "$CONTRACT_RC" > "$RUN_DIR/treatment-contract-test-exit-code.txt"
 cat "$RUN_DIR/treatment-contract-test.log"
 [[ "$CONTRACT_RC" -eq 0 ]] || { echo "ERROR: treatment contract test failed"; exit "$CONTRACT_RC"; }
 
+TARGETED_TESTS=(
+  rotk_env/tests/test_unit_spatial_index_movement.py
+  rotk_env/tests/test_window_indexed_state.py
+  rotk_env/tests/test_window_unit_render_spatial_cull.py
+  rotk_env/tests/test_window_render_fast_paths.py
+  rotk_env/tests/test_vision_incremental_index.py
+)
+
+set +e
+(
+    cd "$A_WT"
+    uv run --frozen pytest "${TARGETED_TESTS[@]}" -q
+) > "$RUN_DIR/control-targeted-regressions.log" 2>&1
+CONTROL_REGRESSION_RC=$?
+set -e
+echo "$CONTROL_REGRESSION_RC" > "$RUN_DIR/control-targeted-regressions-exit-code.txt"
+cat "$RUN_DIR/control-targeted-regressions.log"
+[[ "$CONTROL_REGRESSION_RC" -eq 0 ]] || { echo "ERROR: control targeted regressions failed"; exit "$CONTROL_REGRESSION_RC"; }
+
 set +e
 (
     cd "$B_WT"
-    uv run --frozen pytest \
-      rotk_env/tests/test_unit_spatial_index_movement.py \
-      rotk_env/tests/test_window_indexed_state.py \
-      rotk_env/tests/test_window_unit_render_spatial_cull.py \
-      rotk_env/tests/test_window_render_fast_paths.py \
-      rotk_env/tests/test_vision_incremental_index.py \
-      -q
-) > "$RUN_DIR/base-targeted-regressions.log" 2>&1
-REGRESSION_RC=$?
+    uv run --frozen python - "${TARGETED_TESTS[@]}" <<'PY'
+import sys
+import pytest
+from tools.phase5_unitrender_e6_geometry_reuse import (
+    _install_geometry_reuse_patch,
+    _verify_source_contract,
+)
+
+_verify_source_contract()
+_install_geometry_reuse_patch()
+raise SystemExit(pytest.main([*sys.argv[1:], "-q"]))
+PY
+) > "$RUN_DIR/treatment-targeted-regressions.log" 2>&1
+TREATMENT_REGRESSION_RC=$?
 set -e
-echo "$REGRESSION_RC" > "$RUN_DIR/base-targeted-regressions-exit-code.txt"
-cat "$RUN_DIR/base-targeted-regressions.log"
-[[ "$REGRESSION_RC" -eq 0 ]] || { echo "ERROR: targeted regressions failed"; exit "$REGRESSION_RC"; }
+echo "$TREATMENT_REGRESSION_RC" > "$RUN_DIR/treatment-targeted-regressions-exit-code.txt"
+cat "$RUN_DIR/treatment-targeted-regressions.log"
+[[ "$TREATMENT_REGRESSION_RC" -eq 0 ]] || { echo "ERROR: treatment targeted regressions failed"; exit "$TREATMENT_REGRESSION_RC"; }
 
 sleep "$COOLDOWN"
 
