@@ -114,3 +114,20 @@ Next narrow attribution: UIRender ~2.9ms; source reveals full Unit roster traver
 per frame to count faction indicators. `ui` launcher mode adds only coarse timers
 around the existing UI calls. Measure before choosing any roster-cache approach;
 preserve all-Unit semantics (including no-position/dead components) and ordering.
+
+## E8-2 UI roster attribution and candidate
+
+UI attribution `20260908-012059-ui-attribution` on E8-1: all guards PASS;
+UIRender 2.947ms, faction indicators 2.908ms. Other UI costs negligible.
+
+Candidate preserves the original all-Unit count and faction insertion order.
+World exposes per-component reference versions (add/replace/remove/destroy/reset).
+UI retains at most last roster's Unit references and faction sequence. Each frame
+reads all current faction fields via C-level map; unchanged sequences reuse ordered
+counts. Thus in-place faction updates remain immediate; no-position/zero-count
+Units remain counted. It does NOT substitute spatial living_counts or suppress UI.
+Initial attempted query-result identity token was rejected in tests because World
+returns copies on cache hits; no measurements used that draft. Public reference
+versions now have explicit lifecycle/reset contracts, independent of unrelated
+component changes. Framework + render tests: 83 passed; extra version contracts 2.
+Next: exact-SHA E8-1 vs E8-1+E8-2 off-mode A/B/B/A, then sustained gate.

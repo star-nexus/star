@@ -50,6 +50,11 @@ class World:
         self._type_to_cache_keys: Dict[Type[Component], Set[QueryKey]] = defaultdict(
             set
         )
+        # Reference snapshots depend on component replacement as well as membership.
+        # Revisions are per type so position/animation churn cannot invalidate a
+        # consumer of Unit metadata. In-place field writes remain live on references.
+        self._component_reference_versions: Dict[Type[Component], int] = defaultdict(int)
+        self._component_reference_epoch = 0
         self._cache_version = 0  # cache version for invalidation tracking
         self._last_cache_cleanup = time.time()
         self._cache_hit_count = 0
@@ -92,6 +97,7 @@ class World:
                 When None, perform a global invalidation.
         """
         if component_types is None:
+            self._component_reference_epoch += 1
             # Global invalidation
             self._query_cache.clear()
             self._cache_key_types.clear()
@@ -104,6 +110,7 @@ class World:
         # at least one of the changed component types.
         keys_to_remove: Set[QueryKey] = set()
         for comp_type in component_types:
+            self._component_reference_versions[comp_type] += 1
             bucket = self._type_to_cache_keys.get(comp_type)
             if bucket:
                 keys_to_remove.update(bucket)
@@ -188,8 +195,18 @@ class World:
             "tracked_types": len(self._type_to_cache_keys),
         }
 
+    def component_reference_version(self, component_type: Type[Component]) -> tuple[int, int]:
+        """Version for a snapshot of references of one component type.
+
+        Changes on add/replace/remove/destroy and explicit global cache resets.
+        In-place field mutations do not change it: snapshot references observe
+        those writes directly. This is not a version for computed field values.
+        """
+        return (self._component_reference_epoch, self._component_reference_versions.get(component_type, 0))
+
     def clear_cache(self) -> None:
         """Manually clear query cache."""
+        self._component_reference_epoch += 1
         self._query_cache.clear()
         self._cache_key_types.clear()
         self._type_to_cache_keys.clear()

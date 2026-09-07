@@ -4,6 +4,8 @@ statistics, help and other UI elements
 """
 
 import pygame
+from collections import Counter
+from operator import attrgetter
 from pathlib import Path
 from framework import System
 from framework.engine import RMS
@@ -36,6 +38,10 @@ class UIRenderSystem(System):
     def initialize(self, world) -> None:
         """Initialize the UI rendering system"""
         self.world = world
+        self._faction_roster_members = None
+        self._faction_roster_units = ()
+        self._faction_roster_values = None
+        self._faction_roster_counts = {}
 
     def subscribe_events(self):
         """Subscribe to events (UI render system doesn't need to subscribe to events)"""
@@ -255,19 +261,49 @@ class UIRenderSystem(System):
             RMS.draw(line_surface, (panel_x + 20, y_offset))
             y_offset += line_height
 
+    def _current_faction_counts(self):
+        """Count all Unit components, preserving live in-place faction changes.
+
+        The World reference version changes on Unit add, remove or replacement.
+        It therefore bounds a snapshot of component references;
+        it is not a cached liveness count or a spatial-index approximation.
+        Read every faction each frame in a C-level map, so in-place writes are
+        visible immediately even though they do not invalidate query membership.
+        Only unchanged faction sequences reuse the previous ordered count map.
+        Retained storage is bounded by the last queried Unit roster.
+        """
+        from ..components import Unit
+
+        if not hasattr(self.world, "component_reference_version"):
+            query = self.world.query().with_component(Unit)
+            # Lightweight/headless adapters need only implement the public API.
+            counts = {}
+            for entity in query.entities():
+                unit = self.world.get_component(entity, Unit)
+                if unit:
+                    counts[unit.faction] = counts.get(unit.faction, 0) + 1
+            return counts
+
+        version = self.world.component_reference_version(Unit)
+        if getattr(self, "_faction_roster_members", None) != version:
+            units = []
+            for entity in self.world.query().with_component(Unit).entities():
+                unit = self.world.get_component(entity, Unit)
+                if unit:
+                    units.append(unit)
+            self._faction_roster_units = tuple(units)
+            self._faction_roster_members = version
+        values = tuple(map(attrgetter("faction"), self._faction_roster_units))
+        if values != getattr(self, "_faction_roster_values", None):
+            self._faction_roster_counts = dict(Counter(values))
+            self._faction_roster_values = values
+        return self._faction_roster_counts
+
     def _render_faction_status_indicators(self):
         """Render faction status indicators for real-time mode"""
         from ..components import Unit
 
-        # Get all factions with units
-        faction_units = {}
-        for entity in self.world.query().with_component(Unit).entities():
-            unit = self.world.get_component(entity, Unit)
-            if unit:
-                faction = unit.faction
-                if faction not in faction_units:
-                    faction_units[faction] = 0
-                faction_units[faction] += 1
+        faction_units = self._current_faction_counts()
 
         # Render faction status indicators
         x_offset = 450
