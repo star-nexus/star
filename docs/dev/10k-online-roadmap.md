@@ -413,3 +413,126 @@ before final merge to main:
   - merge validated production delta
   - delete perf/10k-online after merge
 ```
+
+## 7. Phase 5 active investigation ledger — 2026-09-07
+
+### Retained production baseline
+
+The current production-retained Phase-5 runtime remains:
+
+```text
+17ced8d2ba1725b4d0c1a5458e6c61c06c1e206a
+```
+
+It contains the validated KEEP chain:
+
+```text
+A   Animation MovementSystem lookup elimination
+B   position-specialized spatial-index movement update
+C1  Vision geometry-cache ordering / terrain bypass
+C2a explored-history 0->1 incremental update
+D1  indexed periodic Vision full-audit elimination
+```
+
+No UnitRender investigation after D1 has yet added another production KEEP.
+
+### UnitRender causal chain — E through E5 CLOSED
+
+The moving-dependent UnitRender investigation has narrowed as follows:
+
+```text
+moving-dependent UnitRender growth
+  -> not exact raster duplicate draw
+  -> classification + Cull
+  -> classification candidate does not solve 100% moving frontier
+  -> Cull candidate volume / Fog branch mix / dict-set replay rejected
+  -> spatial first-touch confirmed
+  -> MapRender locality-gap hypothesis rejected
+  -> record fields dominate spatial first-touch
+  -> slots recover only a small fraction; DO_NOT_KEEP
+  -> stable UnitSpatialRecord identity is NOT MATERIAL
+  -> E5-3 field decomposition
+  -> WORLD_COORD_PAYLOAD_FIRST_TOUCH_DOMINANT
+```
+
+E5-3 formal result on the slotted attribution base:
+
+```text
+100% moving:
+  full record-field effect = 0.476 ms
+  world_x/world_y          = 0.375 ms (~78.8%)
+  faction                  = -0.011 ms
+  col/row                  = 0.111 ms
+
+50% moving:
+  world_x/world_y share    = ~79.4%
+```
+
+E5 is therefore CLOSED as **Spatial Structure Decomposition**. Do not continue the stage as E5-4.
+
+### E6 — Derived World-Geometry Reuse — ACTIVE / PREREGISTERED
+
+Active experiment branch:
+
+```text
+experiment/phase5-unitrender-e6-derived-world-geometry-reuse
+```
+
+Runtime control/treatment base:
+
+```text
+17ced8d2ba1725b4d0c1a5458e6c61c06c1e206a
+```
+
+E6 asks only:
+
+> Can Cull materially recover the isolated movement-dependent first-touch cost if pure per-hex derived geometry `(world_x, world_y, bucket)` is long-lived and reused?
+
+Isolation boundary:
+
+```text
+KEEP fresh UnitSpatialRecord identity
+KEEP ordinary production record layout
+KEEP exact Cull implementation
+KEEP spatial bucket/cell/entity containers
+KEEP authoritative HexPosition semantics
+CHANGE only derived geometry payload reuse
+```
+
+Formal treatment is measurement-only. Same `(col,row)` reuses stable `world_x`, `world_y`, and `bucket` payload objects; every refresh still creates a fresh `UnitSpatialRecord`. This keeps E6 orthogonal to the rejected E5-2 stable-record-identity hypothesis.
+
+Counterbalanced formal order:
+
+```text
+A50 -> B50 -> B100 -> A100
+```
+
+Preregistered materiality gates:
+
+```text
+50% moving:  Cull avg saving >= 0.10 ms
+100% moving: Cull avg saving >= 0.20 ms
+UnitRender avg improves at both densities
+position / Vision / Fog rates within +/-2%
+controlled-work avg regression <= 2%
+P99 diagnostic only for this mechanism experiment
+```
+
+The formal snapshot is intentionally late (`sample_after=19s`) so the normal rolling window measures steady route-geometry reuse after the 12-step out-and-back path has already been populated.
+
+Possible attribution decisions are frozen before measurement:
+
+```text
+DERIVED_WORLD_GEOMETRY_REUSE_CANDIDATE_JUSTIFIED
+DERIVED_WORLD_GEOMETRY_REUSE_NOT_MATERIAL
+```
+
+A positive attribution result is **not** production KEEP. Any production candidate must replace the attribution-only visited-hex cache with bounded geometry ownership tied to authoritative map/board lifetime (or another proven bounded representation), then pass exact-production A/B and regressions.
+
+STAR Lab preregistration:
+
+```text
+experiments/2026-09-10k-unitrender-e6-derived-world-geometry-reuse/
+```
+
+`records/performance-frontier.md` remains unchanged until a validated production state actually moves or formally confirms the 10K capacity frontier.
