@@ -1,6 +1,8 @@
 """Production window renderers assembled from the optimized implementations."""
 
-from ..components import Camera, HexPosition
+from framework.engine import RMS
+from ..components import Camera, HexPosition, Unit, UnitCount
+from ..prefabs.config import GameConfig
 from .window_render_systems_base import (
     EffectRenderSystem,
     MapRenderSystem as _BaseMapRenderSystem,
@@ -14,6 +16,46 @@ class UnitRenderSystem(_BaseUnitRenderSystem):
     """Window unit renderer without animation-position dead zones."""
 
     _ANIMATION_POSITION_EPSILON_SQ = 1e-12
+
+    def _render_units_batch(self, visible_units, camera_offset, zoom):
+        """Share texture preparation only during one synchronous render pass."""
+        previous = getattr(self, "_frame_fast_styles", None)
+        self._frame_fast_styles = {}
+        try:
+            return super()._render_units_batch(visible_units, camera_offset, zoom)
+        finally:
+            self._frame_fast_styles = previous
+
+    def _render_single_unit_fast(self, entity, screen_x, screen_y, zoom):
+        styles = getattr(self, "_frame_fast_styles", None)
+        if styles is None:
+            return super()._render_single_unit_fast(entity, screen_x, screen_y, zoom)
+        unit = self.world.get_component(entity, Unit)
+        unit_count = self.world.get_component(entity, UnitCount)
+        if not unit or not unit_count:
+            return
+        base_size = int(GameConfig.HEX_SIZE * zoom)
+        key = (unit.faction, unit.unit_type, base_size)
+        style = styles.get(key)
+        if style is None:
+            texture = self._get_cached_texture(unit.faction, unit.unit_type, base_size)
+            if texture and self.textures_loaded:
+                style = (texture, texture.get_width() // 2, texture.get_height() // 2)
+            else:
+                style = (None, 0, 0)
+            styles[key] = style
+        texture, half_width, half_height = style
+        if texture is not None:
+            # Equivalent to get_rect(center=(int(x), int(y))).topleft, including
+            # negative coordinates and odd dimensions. Keep painter order intact.
+            RMS.draw(texture, (int(screen_x) - half_width, int(screen_y) - half_height))
+        else:
+            unit_radius = int(base_size // 2)
+            color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
+            RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
+            RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
+        if unit_count.current_count < unit_count.max_count:
+            self._render_simple_health_bar(screen_x, screen_y, unit_count, base_size)
 
     def _animation_screen_position(
         self,
