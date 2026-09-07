@@ -83,7 +83,7 @@ experiment/phase5-tail-composition-attribution
 Frozen measurement tooling commit:
 
 ```text
-86bd5ead19243f7731e8af40f16cb2cb0cbd5bc7
+073eb97f4ed43ae40952da9436e3fc89316e95cf
 ```
 
 Canonical command:
