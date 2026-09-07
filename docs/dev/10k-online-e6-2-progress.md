@@ -90,7 +90,7 @@ experiment/phase5-unitrender-e6-2-slotted-composition
 Frozen formal tooling commit:
 
 ```text
-a524e610bdfce7eab37fee3fcf4cff69dac89ab5
+f1bf1c4f8e921287a9fc3c1b76c685f6f551a5e2
 ```
 
 Canonical command:
