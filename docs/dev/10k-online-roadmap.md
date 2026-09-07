@@ -393,7 +393,8 @@ Full Interactive presentation profile
 7. **Separate world capacity from Agent connection/protocol capacity.**
 8. **Use synthetic Agents before real LLM-scale testing.**
 9. **Archive every major new bottleneck / negative result / frontier movement in STAR Lab.**
-10. **Delete this temporary roadmap before the final merge to `main`.**
+10. **Use STAR Lab two-tier artifacts for context-heavy formal runs: Compact Evidence Package + Raw Forensic Package.**
+11. **Delete this temporary roadmap before the final merge to `main`.**
 
 ## 6. Branch lifecycle
 
@@ -470,12 +471,18 @@ E5-3 formal result on the slotted attribution base:
 
 E5 is therefore CLOSED as **Spatial Structure Decomposition**. Do not continue the stage as E5-4.
 
-### E6 — Derived World-Geometry Reuse — ACTIVE / PREREGISTERED
+### E6 — Derived World-Geometry Reuse — ATTRIBUTION VALIDATED
 
-Active experiment branch:
+Formal experiment branch:
 
 ```text
 experiment/phase5-unitrender-e6-derived-world-geometry-reuse
+```
+
+Formal measurement tooling SHA:
+
+```text
+ac68b4e5c50837feb8f978ffe2c2a9dc2caca1df
 ```
 
 Runtime control/treatment base:
@@ -484,7 +491,7 @@ Runtime control/treatment base:
 17ced8d2ba1725b4d0c1a5458e6c61c06c1e206a
 ```
 
-E6 asks only:
+E6 asked only:
 
 > Can Cull materially recover the isolated movement-dependent first-touch cost if pure per-hex derived geometry `(world_x, world_y, bucket)` is long-lived and reused?
 
@@ -499,40 +506,125 @@ KEEP authoritative HexPosition semantics
 CHANGE only derived geometry payload reuse
 ```
 
-Formal treatment is measurement-only. Same `(col,row)` reuses stable `world_x`, `world_y`, and `bucket` payload objects; every refresh still creates a fresh `UnitSpatialRecord`. This keeps E6 orthogonal to the rejected E5-2 stable-record-identity hypothesis.
-
-Counterbalanced formal order:
+Formal run:
 
 ```text
-A50 -> B50 -> B100 -> A100
+run_id: 20260907-203733
+order: A50 -> B50 -> B100 -> A100
+contract: 2 passed
+control targeted regressions: 25 passed
+treatment targeted regressions: 25 passed
+all workload/source guards: PASS
 ```
 
-Preregistered materiality gates:
+Formal result:
 
 ```text
-50% moving:  Cull avg saving >= 0.10 ms
-100% moving: Cull avg saving >= 0.20 ms
-UnitRender avg improves at both densities
-position / Vision / Fog rates within +/-2%
-controlled-work avg regression <= 2%
-P99 diagnostic only for this mechanism experiment
+50% moving
+  controlled avg: 25.412 -> 25.267 ms (-0.57%)
+  Cull avg:       2.076 -> 1.875 ms  saving 0.201 ms
+  UnitRender avg: 9.268 -> 9.134 ms  saving 0.134 ms
+  position rate:  +0.733%
+  Vision rate:    +0.447%
+  Fog delta:      +0.693%
+  decision checks: PASS
+
+100% moving
+  controlled avg: 32.880 -> 32.386 ms (-1.50%)
+  Cull avg:       2.404 -> 1.971 ms  saving 0.433 ms
+  UnitRender avg: 10.242 -> 10.026 ms saving 0.217 ms
+  position rate:  -0.109%
+  Vision rate:    -0.054%
+  Fog delta:      +0.319%
+  decision checks: PASS
 ```
 
-The formal snapshot is intentionally late (`sample_after=19s`) so the normal rolling window measures steady route-geometry reuse after the 12-step out-and-back path has already been populated.
-
-Possible attribution decisions are frozen before measurement:
+Preregistered decision:
 
 ```text
 DERIVED_WORLD_GEOMETRY_REUSE_CANDIDATE_JUSTIFIED
-DERIVED_WORLD_GEOMETRY_REUSE_NOT_MATERIAL
 ```
 
-A positive attribution result is **not** production KEEP. Any production candidate must replace the attribution-only visited-hex cache with bounded geometry ownership tied to authoritative map/board lifetime (or another proven bounded representation), then pass exact-production A/B and regressions.
+This is a strong causal continuation of E5-3: at 50% moving, the E6 Cull recovery (`0.201 ms`) exactly matches the E5-3 `world_x/world_y` attribution (`0.201 ms`). Do not over-interpret the 100% recovery (`0.433 ms`) versus E5-3 `0.375 ms`; the treatment also reuses `bucket` and the excess is small enough to be normal run-level variation.
 
-STAR Lab preregistration:
+**E6 has still added zero production KEEP.** Production remains `17ced8d2...`.
+
+### E6 next step — bounded production geometry ownership
+
+The next engineering question is no longer whether geometry reuse is material. That is validated.
+
+Now determine the narrowest production representation that preserves the reuse benefit while proving bounded lifetime/ownership:
+
+```text
+authoritative map / board geometry lifetime
+        -> bounded per-hex derived world geometry
+        -> records reference long-lived geometry
+        -> exact production-derived controlled A/B
+```
+
+Do not retain the attribution-only unbounded visited-coordinate cache.
+
+Do not reopen:
+
+```text
+record identity
+slots
+by_entity lookup
+candidate volume
+branch mix
+MapRender scheduling
+duplicate raster draw
+```
+
+without a new matching signature.
+
+Required production-candidate validation:
+
+```text
+semantic / regression contract
+bounded ownership proof
+controlled A/B vs production 17ced8d2...
+Cull + UnitRender local metrics
+workload-equivalence guards
+10K canonical 30 Hz revalidation before any frontier update
+```
+
+### Two-tier evidence packaging — adopted
+
+STAR Lab `PROTOCOL.md` v1.2 now defines:
+
+```text
+Compact Evidence Package = default normal review / Agent / LLM artifact
+Raw Forensic Package      = authoritative low-level audit substrate
+```
+
+The canonical E6 rerun entrypoint is:
+
+```bash
+bash tools/run_phase5_unitrender_e6.sh
+```
+
+It emits:
+
+```text
+<run-id>-compact.zip
+<run-id>-raw.zip
+```
+
+with both SHA256 values. Packaging occurs after measurement/analyzer execution and cannot change the preregistered gates.
+
+Formal E6 raw package checksum:
+
+```text
+d4f7bab293ced78ab11231fe0e370fe51a257e1cb95b12666340a7a628819bc4
+```
+
+STAR Lab case:
 
 ```text
 experiments/2026-09-10k-unitrender-e6-derived-world-geometry-reuse/
 ```
+
+Its scientific attribution is validated. Full case CLOSED status waits only for a stable canonical mirror/storage locator for the raw forensic ZIP.
 
 `records/performance-frontier.md` remains unchanged until a validated production state actually moves or formally confirms the 10K capacity frontier.
