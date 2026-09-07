@@ -17,7 +17,7 @@ COMPACT_ZIP="${RUN_DIR}-compact.zip"
 [[ -d "$RUN_DIR" && -f "$LEGACY_ZIP" ]] || { echo "ERROR: missing E7 artifacts"; exit 2; }
 
 mv "$LEGACY_ZIP" "$RAW_ZIP"
-python3 tools/build_compact_evidence_package.py \
+python3 tools/build_phase5_tail_compact.py \
   "$RUN_DIR" --raw-zip "$RAW_ZIP" --output "$COMPACT_ZIP"
 
 RAW_SHA="$(shasum -a 256 "$RAW_ZIP" | awk '{print $1}')"
