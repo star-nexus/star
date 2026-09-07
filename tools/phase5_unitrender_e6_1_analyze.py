@@ -196,12 +196,13 @@ def _print(result: dict[str, Any]) -> None:
         failed = [name for name, ok in c["checks"].items() if not ok]
         print(f"  checks:         {'PASS' if c['pass'] else 'FAIL'}" + (f" ({', '.join(failed)})" if failed else ""))
     gate = result["canonical_30hz_100pct"]
+    comparison = "<=" if gate["pass"] else ">"
     print("-" * 96)
     print(f"DECISION: {result['decision']}")
     print(
         "30Hz canonical @100%: "
         f"{'PASS' if gate['pass'] else 'FAIL'} "
-        f"({gate['controlled_p99_ms']:.3f} ms <= {gate['gate_ms']:.2f} ms)"
+        f"({gate['controlled_p99_ms']:.3f} ms {comparison} {gate['gate_ms']:.2f} ms)"
     )
     print(f"FRONTIER UPDATE CANDIDATE: {result['frontier_update_candidate']}")
 
