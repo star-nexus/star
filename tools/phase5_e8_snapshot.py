@@ -156,7 +156,7 @@ def install_volume_metrics():
 def main():
     import performance_profiler as perf
     mode = os.environ.get("STAR_E8_MODE", "volume")
-    if mode not in {"volume", "off"}:
+    if mode not in {"volume", "off", "ui"}:
         raise ValueError(mode)
     actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     expected = os.environ["STAR_E8_RUNTIME_SHA"]
@@ -166,6 +166,17 @@ def main():
     perf.profiler.sample_window_seconds = window
     if mode == "volume":
         install_volume_metrics()
+    if mode == "ui":
+        from rotk_env.systems.ui_render_system import UIRenderSystem
+        for method in ("_render_faction_status_indicators", "_render_game_info", "_render_stats_panel", "_render_help_panel"):
+            original = getattr(UIRenderSystem, method)
+            def timed(original, method):
+                @functools.wraps(original)
+                def wrapped(self, *args, **kwargs):
+                    with perf.profiler.time_system("e8_ui" + method, category="render"):
+                        return original(self, *args, **kwargs)
+                return wrapped
+            setattr(UIRenderSystem, method, timed(original, method))
     original_stats = perf.PerformanceProfiler.get_stats
     def stats(self):
         result = original_stats(self)

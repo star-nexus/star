@@ -109,7 +109,7 @@ def run(args):
 if __name__=='__main__':
     p=argparse.ArgumentParser()
     p.add_argument('--sha',default=BASE)
-    p.add_argument('--mode',choices=['off','volume'],default='volume')
+    p.add_argument('--mode',choices=['off','volume','ui'],default='volume')
     p.add_argument('--window',type=float,default=30)
     p.add_argument('--repeats',type=int,default=3)
     p.add_argument('--density',type=float,default=1)

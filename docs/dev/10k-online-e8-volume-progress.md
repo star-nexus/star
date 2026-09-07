@@ -98,3 +98,19 @@ Next experiment: instrumentation-off A/B/B/A, 30s complete windows, same scene,
 seed/density/routes. Primary candidate signal: reduced UnitRender cost at matched
 render count. Keep only with controlled-work improvement, unchanged rates/guards,
 no material local regression, followed by longer canonical validation.
+
+## E8-1 interleaved A/B/B/A — retained local improvement, gate still FAIL
+
+A1 20260908-011343: controlled avg 33.514 / p99 36.932; UnitRender@3450cmd 9.720ms.
+B1 20260908-011448: controlled avg 32.757 / p99 36.300; UnitRender@3450cmd 8.998ms.
+B2 20260908-011552: controlled avg 32.828 / p99 36.301; UnitRender@3450cmd 9.057ms.
+A2 20260908-011656: controlled avg 34.082 / p99 37.419; UnitRender@3450cmd 9.871ms.
+All guards pass; commits and Vision ~19998..20000/s, no lost world work. Retain
+E8-1 as a local render-cost improvement (~0.77ms at matched count). No release
+PASS: every candidate P99 >33.33. Current 30s baseline slower/more variable than
+historic E7; do not combine those observations into a false pass.
+
+Next narrow attribution: UIRender ~2.9ms; source reveals full Unit roster traversal
+per frame to count faction indicators. `ui` launcher mode adds only coarse timers
+around the existing UI calls. Measure before choosing any roster-cache approach;
+preserve all-Unit semantics (including no-position/dead components) and ordering.
