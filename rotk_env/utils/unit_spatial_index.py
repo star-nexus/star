@@ -18,9 +18,11 @@ from typing import Dict, Iterable, Optional, Set, Tuple
 from ..components import HexPosition, Unit, UnitCount
 from ..prefabs.config import Faction, GameConfig
 from .hex_utils import HexConverter, HexMath
+from .map_query import board_hexes
 
 Hex = Tuple[int, int]
 Bucket = Tuple[int, int]
+WorldGeometry = Tuple[float, float, Bucket]
 _INDEX_ATTR = "_unit_spatial_index"
 
 
@@ -48,6 +50,13 @@ class UnitSpatialIndex:
         self.by_cell: Dict[Hex, Dict[Faction, int]] = {}
         self.by_cell_entities: Dict[Hex, Set[int]] = {}
         self.by_bucket: Dict[Bucket, Set[int]] = {}
+        # Canonical render-space geometry is pure in (col,row) for a loaded map.
+        # Keep one payload object per board hex so movement refreshes do not make
+        # Cull first-touch fresh world-coordinate floats every time.  The cache is
+        # deliberately disabled for worlds without MapData and cannot grow beyond
+        # the board snapshot captured at rebuild().
+        self._geometry_by_hex: Dict[Hex, WorldGeometry] = {}
+        self._geometry_board_hexes: Optional[Set[Hex]] = None
         # Bucket revisions let local consumers invalidate only when occupancy
         # changed near the region they actually depend on.  Revisions remain
         # even after a bucket becomes empty so an empty -> occupied transition
@@ -56,30 +65,46 @@ class UnitSpatialIndex:
         self.living_counts: Dict[Faction, int] = {}
         self.revision = 0
 
+    def _geometry_for_hex(self, col: int, row: int) -> WorldGeometry:
+        """Return derived world geometry, canonicalized only on the loaded board."""
+        key = (col, row)
+        board = self._geometry_board_hexes
+        if board is not None and key in board:
+            cached = self._geometry_by_hex.get(key)
+            if cached is not None:
+                return cached
+
+        world_x, world_y = self.hex_converter.hex_to_pixel(col, row)
+        world_x = float(world_x)
+        world_y = float(world_y)
+        geometry = (
+            world_x,
+            world_y,
+            (
+                floor(world_x / self.bucket_size),
+                floor(world_y / self.bucket_size),
+            ),
+        )
+        if board is not None and key in board:
+            self._geometry_by_hex[key] = geometry
+        return geometry
+
     def _record_for_hex(
         self, col: int, row: int, faction: Faction
     ) -> UnitSpatialRecord:
-        """Build one derived record, including the render-space center once."""
-        world_x, world_y = self.hex_converter.hex_to_pixel(col, row)
-        bucket = (
-            floor(world_x / self.bucket_size),
-            floor(world_y / self.bucket_size),
-        )
+        """Build one derived record while reusing board-bounded world geometry."""
+        world_x, world_y, bucket = self._geometry_for_hex(col, row)
         return UnitSpatialRecord(
             col=col,
             row=row,
             faction=faction,
-            world_x=float(world_x),
-            world_y=float(world_y),
+            world_x=world_x,
+            world_y=world_y,
             bucket=bucket,
         )
 
     def _bucket_for_hex(self, col: int, row: int) -> Bucket:
-        world_x, world_y = self.hex_converter.hex_to_pixel(col, row)
-        return (
-            floor(world_x / self.bucket_size),
-            floor(world_y / self.bucket_size),
-        )
+        return self._geometry_for_hex(col, row)[2]
 
     def _bump_bucket(self, bucket: Bucket) -> None:
         self.bucket_revisions[bucket] = self.bucket_revisions.get(bucket, 0) + 1
@@ -134,6 +159,8 @@ class UnitSpatialIndex:
         self.by_cell.clear()
         self.by_cell_entities.clear()
         self.by_bucket.clear()
+        self._geometry_by_hex.clear()
+        self._geometry_board_hexes = board_hexes(world)
         self.bucket_revisions.clear()
         self.living_counts.clear()
 
