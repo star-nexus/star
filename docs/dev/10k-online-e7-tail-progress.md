@@ -2,7 +2,7 @@
 
 > Temporary active-work supplement to `docs/dev/10k-online-roadmap.md`. Durable evidence belongs in STAR Lab.
 
-**Date:** 2026-09-07  
+**Date:** 2026-09-08  
 **Status:** ACTIVE / PREREGISTERED — formal three-repeat attribution pending
 
 ## Retained production
@@ -80,11 +80,13 @@ Experiment branch:
 experiment/phase5-tail-composition-attribution
 ```
 
-Frozen measurement tooling commit:
+Frozen measurement tooling commit after pre-measurement runner fix:
 
 ```text
-073eb97f4ed43ae40952da9436e3fc89316e95cf
+33d3715c1310a33bc3b9ff44a8deb7f633bf21d4
 ```
+
+An initial invocation passed the E7 tail contract (`2 passed`) and targeted regressions (`20 passed`) but stopped before `repeat-1` due to a Bash `set -u` dependent-local initializer bug. No performance point was produced and no experimental evidence from that invocation is admitted. The preregistered method and gates are unchanged.
 
 Canonical command:
 
