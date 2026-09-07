@@ -4,11 +4,11 @@
 > Durable evidence and final decisions belong in STAR Lab.
 
 **Date:** 2026-09-07  
-**Status:** ACTIVE / PREREGISTERED — formal composition A/B pending
+**Status:** VALIDATED NEGATIVE / INVESTIGATION CLOSED — Raw mirror pending in STAR Lab
 
-## Current retained production
+## Retained production
 
-E6-1 is KEEP and is the new retained Phase-5 production state:
+Production remains the E6-1 KEEP state:
 
 ```text
 e7ba18b31870577110b591104ef8fa7b4713e43c
@@ -20,138 +20,111 @@ KEEP chain:
 A + B + C1 + C2a + D1 + E6-1
 ```
 
-Formal E6-1 100%-moving result:
+No `slots=True` production candidate is created.
+
+## E6-2 question
+
+E5-1 previously measured a small positive Cull signal from `UnitSpatialRecord slots=True`:
 
 ```text
-controlled p99 = 33.677126 ms
-30 Hz gate     = 33.33 ms
-classification = FAIL by 0.347126 ms
+~0.090 ms @50%
+~0.113 ms @100%
+```
+
+E6-2 tested whether that representation signal remained independently useful after E6-1 removed the dominant world-coordinate payload first-touch mechanism.
+
+This was a composition validation, not a reopening of E5 root-cause attribution.
+
+## Formal run
+
+```text
+run_id: 20260907-231532
+control/treatment runtime: e7ba18b31870577110b591104ef8fa7b4713e43c
+order: A50 -> B50 -> B100 -> A100
+contract: 4 passed
+control targeted regressions: 30 passed
+treatment targeted regressions: 30 passed
+all workload guards: PASS
+```
+
+## Result
+
+```text
+50% moving
+  controlled avg: 24.923 -> 25.245 ms (+1.29%)
+  controlled p99: 30.921 -> 26.466 ms
+  Cull avg:       1.848 -> 1.774 ms  saving=0.074
+  UnitRender avg: 9.005 -> 9.000 ms (-0.05%)
+  Animation avg:  3.397 -> 3.452 ms (+1.64%)
+  FAIL: controlled avg exceeded preregistered +1% ceiling
+
+100% moving
+  controlled avg: 31.930 -> 32.199 ms (+0.84%)
+  controlled p99: 33.506 -> 34.365 ms
+  Cull avg:       1.942 -> 1.889 ms  saving=0.053
+  UnitRender avg: 9.783 -> 9.714 ms (-0.70%)
+  Animation avg:  7.211 -> 7.298 ms (+1.21%)
+  FAIL: Cull saving below preregistered 0.07 ms floor
+```
+
+Decision:
+
+```text
+SLOTTED_RECORD_COMPOSITION_NOT_MATERIAL
+```
+
+## Interpretation
+
+The old E5-1 signal was real but its engineering value is now partially subsumed by E6-1.
+
+Approximate retained Cull signal:
+
+```text
+50%:  0.074 / 0.090 ~= 82%
+100%: 0.053 / 0.113 ~= 47%
+```
+
+The relevant frontier workload is 100% moving, where the remaining signal is too small and P99 moved in the wrong direction.
+
+The large 50% control->treatment P99 decrease is not considered causal: control p50/p95 were lower than treatment and only a few control tail frames raised p99. Local metrics and preregistered average gates take precedence.
+
+## Canonical 30 Hz diagnostic
+
+```text
+100% treatment controlled p99 = 34.364929 ms
+canonical gate                 = 33.33 ms
+classification                 = FAIL
 ```
 
 Performance Frontier remains unchanged.
 
-## Why revisit E5-1 now
-
-E5-1 previously measured a real but partial positive signal from
-`UnitSpatialRecord slots=True`:
+## Production consequence
 
 ```text
-Cull saving ~0.090 ms @50%
-Cull saving ~0.113 ms @100%
+retain e7ba18b31870577110b591104ef8fa7b4713e43c
+do not add slots=True
+do not bundle other rejected UnitSpatialRecord representation tweaks
 ```
 
-It was correctly rejected as the main root solution because the dominant
-first-touch cause was still unknown. E5-3 -> E6 -> E6-1 later established and
-removed the dominant world-coordinate payload mechanism.
+The next Phase-5 step should start from retained E6-1 production and inspect the current 100%-moving system/tail composition rather than continue the slotted-record path.
 
-The current question is therefore new:
+## Artifacts
 
-> Does the old slotted-record representation benefit remain independently useful
-> after composing it with retained E6-1 bounded geometry reuse?
-
-This does not reopen E5 root-cause attribution.
-
-## E6-2 isolation
-
-Control and treatment both run exact retained E6-1 source:
+Compact:
 
 ```text
-e7ba18b31870577110b591104ef8fa7b4713e43c
+20260907-231532-compact.zip
+SHA256 682a02741be2c4002fe815418254f5ac056c06c27e1e8f4dd10130aa40c74bbc
 ```
 
-Treatment only changes the record representation before world construction:
-
-```python
-@dataclass(frozen=True, slots=True)
-class UnitSpatialRecord:
-    ...same fields...
-```
-
-Preserved:
+Raw:
 
 ```text
-E6-1 bounded geometry ownership
-fresh record identity
-record fields / values
-Cull
-spatial containers
-HexPosition authority
-movement / Vision / Fog semantics
+20260907-231532-raw.zip
+SHA256 e6aeee218bd21332819b881f904524ca15c3b3942c5eb4dd0bf867b42023e2c4
 ```
 
-## Frozen tooling
-
-Experiment branch:
-
-```text
-experiment/phase5-unitrender-e6-2-slotted-composition
-```
-
-Frozen formal tooling commit:
-
-```text
-f1bf1c4f8e921287a9fc3c1b76c685f6f551a5e2
-```
-
-Canonical command:
-
-```bash
-bash tools/run_phase5_unitrender_e6_2.sh
-```
-
-Order:
-
-```text
-A50 -> B50 -> B100 -> A100
-```
-
-## Preregistered gates
-
-```text
-position commits/s within ±2%
-Vision changed/s within ±2%
-Fog delta/s within ±2%
-Cull saving >= 0.05 ms @50%
-Cull saving >= 0.07 ms @100%
-UnitRender avg regression <= 1%
-controlled avg regression <= 1%
-Animation avg regression <= 2%
-```
-
-Possible attribution decisions:
-
-```text
-SLOTTED_RECORD_COMPOSITION_CANDIDATE_JUSTIFIED
-SLOTTED_RECORD_COMPOSITION_NOT_MATERIAL
-```
-
-Positive attribution is not production KEEP. If positive, next step is the exact
-one-line source candidate (`slots=True`) followed by source-vs-source validation.
-
-## Canonical gate remains separate
-
-At 10K / 100% moving:
-
-```text
-controlled_work_frame_ms.p99 <= 33.33 ms
-```
-
-is reported as a diagnostic during composition attribution. Frontier movement
-requires validated production source, not an attribution treatment.
-
-## Artifact policy
-
-Canonical runner emits:
-
-```text
-<run-id>-compact.zip
-<run-id>-raw.zip
-```
-
-Compact is the default review / Agent / LLM artifact. Raw remains authoritative
-for forensic re-audit.
-
-## STAR Lab case
+STAR Lab case:
 
 ```text
 experiments/2026-09-10k-unitrender-e6-2-slotted-record-composition/
