@@ -104,13 +104,12 @@ def install_volume_metrics():
         }
         for key, value in metrics.items():
             profiler.set_frame_metric(key, value)
-    UnitRenderSystem._render_units_batch = batch
 
     original_move = AnimationSystem._update_movement_animations
     AnimationSystem._update_movement_animations = instrument_function(original_move, [
         ('    movement_system = self._get_movement_system()',
          '    e8_active = e8_scanned = e8_commits = e8_completed = 0\n    movement_system = self._get_movement_system()'),
-        ('    ):\n', '    ):\n        e8_scanned += 1\n'),
+        ('\n    ):\n', '\n    ):\n        e8_scanned += 1\n'),
         ('        anim.progress += anim.speed * delta_time',
          '        e8_active += 1\n        anim.progress += anim.speed * delta_time'),
         ('            target_hex = anim.path[anim.current_target_index]',
@@ -124,6 +123,7 @@ def install_volume_metrics():
          '        e8_profiler.set_frame_metric(key, value)'),
     ], {"e8_profiler": profiler})
 
+    UnitRenderSystem._render_units_batch = batch
     originals = [(UnitRenderSystem, "_render_units_batch", original_batch),
                  (AnimationSystem, "_update_movement_animations", original_move)]
     for cls, name in ((AnimationSystem, "animation"), (VisionSystem, "vision"), (UnitRenderSystem, "unit")):
