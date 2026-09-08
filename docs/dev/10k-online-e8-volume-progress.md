@@ -182,3 +182,31 @@ Next: freeze tooling, three 60s admitted traces and one 300s admitted trace on
 excluded; all remaining samples included. Check per-frame invariants, full trace
 coverage, aggregate P99, 30s chronological blocks, breach rates and world-work
 rates. Do not treat the final rolling 5s snapshot as the sustained result.
+
+## Three sustained repeats PASS; long run in progress
+
+Tooling 94f8986280ca7c391fa45a854a62c7975cab1658, runtime 88b19fe.
+Run: results/phase5-e8/20260908-081025-gate60. Fixed first 10s exclusion leaves
+65.310 / 65.290 / 65.323 seconds (2152 / 2100 / 2121 samples); driver includes
+its initial warmup in the trace, so admitted coverage exceeds the 60s minimum.
+P99: 32.433365 / 32.441656 / 32.015066ms. All driver and admitted-frame guards
+PASS; all complete 30s blocks PASS. Position/Vision rates ~20000/s.
+Observed breach fractions .604% / .571% / .236%; P99 gate allows individual
+misses. Frame-body P99 33.971 / 33.950 / 33.493ms is separately reported and
+does not meet the controlled-work budget. Repeat 1 descriptive block-bootstrap
+upper bound is 34.09ms, so this is repeated empirical passage, not a statistical
+guarantee for all future windows. Next continuous 300s run is already started:
+results/phase5-e8/20260908-081510-gate300, same runtime/tooling and conditions.
+
+## Continuous 300s FAIL — do not close the gate
+
+305.466s / 9459 samples, all workload guards PASS. Avg 30.694ms, P99 34.520437ms;
+380 breaches (4.017%), longest 17 frames. Later 30s blocks progressively slower:
+first avg29.499 / last31.395ms; commands alternate ~3523/~3444 each 30s throughout.
+Animation7.776->8.646ms, Vision3.346->3.620ms, Unit9.001->9.397ms; UI~.384ms stable.
+This is not explained by growing visible count. Position/Vision throughput remains
+~20000/s; per-frame commits rise as frames slow. Causes of long-run drift are not
+yet established. Next: no-history-recorder long-run control to check observer
+effect; evaluate reuse of live movement component references using E8-2 version
+contracts, with immediate invalidation after synchronous commit callbacks. Preserve
+the failed sustained trace as formal negative evidence. No frontier promotion.

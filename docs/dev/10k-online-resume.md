@@ -20,7 +20,13 @@ Do not change semantics, round gates, or count attribution-only results as relea
 
 ## Baseline and evidence
 
-Retained runtime: `e7ba18b31870577110b591104ef8fa7b4713e43c`.
+Inherited retained runtime: `e7ba18b31870577110b591104ef8fa7b4713e43c`.
+Current candidate: `88b19fe92957ee660f50cc366c5a737cb2dc8ca8` (E8-1/2/3).
+Each local change passed interleaved A/B/B/A. Full regression: 498 passed.
+Sustained tooling: `94f8986280ca7c391fa45a854a62c7975cab1658`.
+Three >=60s traces passed P99 32.433 / 32.442 / 32.015ms; all 30s blocks passed.
+Continuous >=300s trace is in progress under results/phase5-e8/20260908-081510-gate300.
+Final archive/integrity/frontier remain pending; see latest progress note.
 Inherited tooling: `8f79795f1cfc9a843db5091f1672940614e2d0a0`.
 E7 results: `results/phase5-tail-composition/chibi-144k-scale-10000/20260908-001411/`.
 E7: stable UnitRender/Vision/Animation tail contributors; 311-312 samples per run;
@@ -34,7 +40,7 @@ Self-time accounting closure does not exclude scheduler/frequency effects.
 E8 business-volume + dt/commit attribution -> evidence-selected candidate ->
 semantic contracts -> controlled A/B -> sustained canonical gate -> archive.
 Persist source commits, commands, raw aligned series, checksums, negative findings.
-Production remains E6-1 until a candidate is validated. Existing untracked maps,
+No sustained milestone until long-run validation and archive complete. Existing untracked maps,
 results and helper scripts predate this task and must be preserved.
 
 ## Resume rule

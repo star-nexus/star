@@ -26,13 +26,18 @@ def main():
                 if f.is_file() and f.name!='SHA256SUMS': z.write(f,str(f.relative_to(run)))
         for f in sorted(run.glob('repeat-*/profile.json')):
             d=json.loads(f.read_text())
+            point=json.loads((f.parent/'point.json').read_text())
             compact.append(dict(repeat=f.parent.name,samples=d['sample_count'],
               controlled=d['controlled_work_frame_ms'],frame_p99=d['p99_frame_ms'],
               window_s=d['window_coverage_s'],metrics=d['frame_metrics'],sections=d['sections'],
-              guards=json.loads((f.parent/'guards.json').read_text())))
+              guards=json.loads((f.parent/'guards.json').read_text()),
+              point={k:v for k,v in point.items() if k!='profile'},
+              profile_sha256=hashlib.sha256(f.read_bytes()).hexdigest()))
         (LAB/'results'/f'{run.name}-compact.json').write_text(json.dumps(dict(
             manifest=json.loads((run/'manifest.json').read_text()),repeats=compact,
-            raw_path=f'artifacts/{raw.name}',raw_sha256=hashlib.sha256(raw.read_bytes()).hexdigest()),indent=2)+'\n')
+            analyses={f.name:json.loads(f.read_text()) for f in run.glob('*analysis.json')},
+            raw_path=f'artifacts/{raw.name}',raw_size_bytes=raw.stat().st_size,
+            raw_sha256=hashlib.sha256(raw.read_bytes()).hexdigest()),indent=2)+'\n')
     fixture=ROOT/'rotk_env/maps/chibi-144k-scale-10000.json'
     fixture_zip=LAB/'artifacts/scenario.zip'
     if not fixture_zip.exists():
