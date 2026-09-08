@@ -162,3 +162,23 @@ timers are added; no JSON writes during the run. Final snapshot exports all
 samples. This avoids inflating the production profiler's per-frame percentile
 sorting work to a multi-minute window. Gate analysis excludes startup warmup,
 uses all admitted frames, and reports chronological blocks and breach runs.
+
+## E8-3 interleaved result and sustained validation in progress
+
+Exact A=cdd3788e29ff3856059d767e8e18dd3fdcf3098e;
+B=88b19fe92957ee660f50cc366c5a737cb2dc8ca8.
+R-A1 20260908-013438: avg 28.126 / P99 30.144 / Animation 7.305ms.
+R-B1 20260908-013542: avg 27.739 / P99 32.498 / Animation 6.952ms.
+R-B2 20260908-013645: avg 27.687 / P99 29.824 / Animation 6.950ms.
+R-A2 20260908-013747: avg 28.530 / P99 30.736 / Animation 7.441ms.
+All guards PASS, ~19996..19999 position changes/s. Local KEEP: Animation and
+controlled average improve within the interleaved bracket; P99 is mixed (B1 max
+53.950ms). The large earlier-to-later machine-wide speed change is not attributed
+to this code. Full regression: 498 passed in 4.98s, log under
+results/phase5-e8/validation/regression.log.
+
+Next: freeze tooling, three 60s admitted traces and one 300s admitted trace on
+88b19fe, diagnostic mode off, production profiler 5s/4096. Fixed first 10s of trace
+excluded; all remaining samples included. Check per-frame invariants, full trace
+coverage, aggregate P99, 30s chronological blocks, breach rates and world-work
+rates. Do not treat the final rolling 5s snapshot as the sustained result.
