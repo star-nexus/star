@@ -1,7 +1,7 @@
 # E8 — render work volume and dt/commit attribution
 
-Date: 2026-09-08. Status: SUSTAINED GATE OPEN. Inherited runtime: e7ba18b31870577110b591104ef8fa7b4713e43c.
-Latest candidate: 9581084835633e10d80aac849925939bc59b9138 (E8-1/2/3/4).
+Date: 2026-09-08. Status: SUSTAINED COMPLETE-TRACE GATE VALIDATED. Inherited runtime: e7ba18b31870577110b591104ef8fa7b4713e43c.
+Validated runtime: 9581084835633e10d80aac849925939bc59b9138 (E8-1/2/3/4).
 Read the latest entries at the end for current outcomes; earlier entries preserve
 the chronological investigation, including rejected drafts and failed gate runs.
 Recovery entrypoint: `docs/dev/10k-online-resume.md`.
@@ -262,3 +262,34 @@ no Chrome-related frames are subtracted or classified away. This may contribute
 to variability but has not been proven as the cause of any specific slow frame.
 Next three >=60s independent-process repeats at the exact same runtime, followed
 by final archive integrity and milestone only if those pass.
+
+## Closeout — complete sustained traces PASS
+
+Three independent-process confirmations, 20260908-143157-e8-4-gate60, runtime9581084,
+tooling4ccdc4972ded1bbc2d2125f214770d27865792d0:
+
+| Repeat | Seconds | Samples | Avg ms | P99 ms | Breaches |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 65.285074 | 2389 | 25.784004 | 28.984507 | 2 |
+| 2 | 65.301032 | 2342 | 26.310417 | 30.026299 | 9 |
+| 3 | 65.271297 | 2336 | 26.370550 | 29.162605 | 2 |
+
+All workload/trace guards and six full30s blocks PASS. Together with the 305s
+run, all16 full30s blocks pass; the worst block P99 is33.248388ms. Repeats ran in
+a later desktop session; do not attribute their faster averages to another code
+change. No runtime changes occurred after9581084. Tests505 PASS.
+
+KEEP E8-1/2/3/4. Local milestone scale-10k-100pct-30hz-sustained-e8 identifies that
+runtime. This closes the preregistered complete-trace validation for this workload,
+not a guarantee for every future/5s window. Short-window counterexamples remain:
+300s final5s P99 34.745ms; repeat2 final5s37.231ms/max53.484ms. Repeat2 descriptive
+bootstrap upper bound34.138ms also illustrates finite-window uncertainty. Full
+300s frame-body P99 34.033ms is separate from controlled work32.430ms. Chrome was
+not closed and presumed background-load frames were not excluded. Drift and
+sporadic multi-system clusters remain revisit conditions, not proven Chrome/OS
+causes. No native rewrite, delayed world work, or 10K online-Agent claim.
+
+Durable source, raw+compact evidence, checksums, full reproduction and decision:
+/Users/liyang/Developer/star-lab/experiments/2026-09-10k-e8-volume/.
+Recovery: docs/dev/10k-online-resume.md. Lab frontier is a separately labeled
+sustained measurement row; do not replace historical short-window rows.

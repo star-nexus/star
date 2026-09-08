@@ -54,10 +54,18 @@ Do not open a separate 30-vs-60 semantic audit unless measured drift demonstrate
 **2026-09-08 active 10K/100% follow-up:** see
 [`10k-online-resume.md`](10k-online-resume.md) and
 [`10k-online-e8-volume-progress.md`](10k-online-e8-volume-progress.md).
-E6-1 is the inherited baseline. E8-1/2/3 have local A/B improvements but their
-combined 300s P99 is 34.520ms (FAIL); three shorter passes do not close this gate.
-E8-4 versioned movement references have positive local evidence and are undergoing
-sustained validation. The dated investigation ledger below is historical context.
+E6-1 is the inherited baseline. E8-1/2/3 first failed the 300s check (P99 34.520ms).
+Adding E8-4 versioned movement references produces a **validated sustained
+controlled-work pass** at runtime `9581084835633e10d80aac849925939bc59b9138`:
+305.45s P99 **32.430ms**, then three >=60s repeats **28.985/30.026/29.163ms**.
+All workload guards and all16 complete30s blocks pass; 505 regression tests pass.
+Milestone: `scale-10k-100pct-30hz-sustained-e8` (local, not merged/pushed).
+This validates complete sustained traces, not every5s rolling estimate: short
+window counterexamples and 300s frame-body P99 **34.033ms** remain in the evidence.
+Chrome stays open; no presumed interference is removed. Full interactive and
+10K online-Agent sessions remain separate. The next scope is Phase6; Phase7
+architecture rewriting is not required by the measured sustained Core gate.
+The dated investigation ledger below is historical context, not the latest state.
 
 ### Phase 3 — Measurement & Regression Infrastructure — CLOSED
 

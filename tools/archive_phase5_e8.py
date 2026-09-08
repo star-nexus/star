@@ -8,7 +8,7 @@ import shutil
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-LAB=Path('/Users/liyang/Developer/star-lab/experiments/2026-09-10k-e8-volume')
+LAB=ROOT.parent/'star-lab/experiments/2026-09-10k-e8-volume'
 
 
 def main():
