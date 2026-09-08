@@ -228,3 +228,20 @@ and lookup path. No work is delayed. Differential remove/replace/destroy/add/res
 callback tests, in-place updates and world reuse covered. Full regression 505 PASS
 in 3.02s. A test draft incorrectly indexed a set; corrected to list, no runtime
 failure. Next exact-SHA E8-3 vs E8-4 off-mode 30s A/B/B/A before retention.
+
+## E8-4 A/B/B/A — local KEEP, tail requires sustained validation
+
+A=88b19fe92957ee660f50cc366c5a737cb2dc8ca8;
+B=9581084835633e10d80aac849925939bc59b9138; tooling=9581084.
+M-A1 20260908-083203: avg29.172/P99 32.884/Animation7.446ms.
+M-B1 20260908-083307: avg26.800/P99 29.591/Animation5.111ms.
+M-B2 20260908-083411: avg27.253/P99 35.789/Animation5.348ms.
+M-A2 20260908-083515: avg29.810/P99 34.873/Animation7.676ms.
+All guards PASS. Clear local Animation improvement ~2.1-2.6ms, same count/rate
+contracts. B2 has 18 breaches in several clusters, jointly increased MapRender,
+Animation, Vision and Unit self, not an isolated roster symptom; A2 also has 29.
+Do not discard B2 or claim every short window passed. ab-analysis.json preserves
+machine-readable local metrics and descriptive matched-command fits for all runs.
+Next validate B with one complete >=300s trace first, then three >=60s repeats if
+it passes. No threshold/warmup/slow-frame filtering changes. Exact driver/tooling
+manifest and all negative traces remain archived.
