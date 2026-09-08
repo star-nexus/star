@@ -17,6 +17,7 @@ Do not change semantics, round gates, or count attribution-only results as relea
 2. `docs/dev/10k-online-e8-volume-progress.md` (live experiment and next actions).
 3. `/Users/liyang/Developer/star-lab/experiments/2026-09-10k-e8-volume/` (durable evidence).
 4. E6-1/E6-2/E7 progress notes and the main roadmap for history.
+5. `docs/dev/10k-online-next-steps.md` for prioritized follow-up work and completion criteria.
 
 ## Baseline and evidence
 
@@ -64,9 +65,11 @@ component-row queries and movement reference queries. Animation, commits and Fog
 are not deferred. Single-thread Core ENV remains the production architecture.
 Existing untracked maps, results and helper scripts must be preserved.
 
-Next scope is the separately specified Agent data-plane phase, or a new explicit
-short-window/every-frame latency requirement. Do not re-open the closed Cull or
-slots hypotheses without new evidence. Do not count this as 10K online Agents.
+Recommended next: protect/integrate the baseline, then validate Core long-run
+behavior and workload variation before the separately specified Agent data-plane
+phase. See the prioritized follow-up document above. A stricter short-window or
+every-frame requirement must be explicit. Do not re-open the closed Cull or slots
+hypotheses without new evidence. Do not count this as 10K online Agents.
 
 ## Resume rule
 
