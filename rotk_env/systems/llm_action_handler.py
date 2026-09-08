@@ -1047,6 +1047,20 @@ class LLMActionHandler:
 
         print(f"Handling faction state for {observer.value}")
 
+        selected_ids = None
+        if "unit_ids" in params:
+            requested_ids = params["unit_ids"]
+            if not isinstance(requested_ids, list) or any(type(uid) is not int for uid in requested_ids):
+                return self._create_error_response("unit_ids must be a list of integer unit IDs")
+            selected_ids = list(dict.fromkeys(requested_ids))
+            for uid in selected_ids:
+                unit = self.world.get_component(uid, Unit)
+                if unit is None or unit.faction != observer:
+                    return self._create_error_response(
+                        "unit_ids must name existing units of your own faction",
+                        {"error_code": int(ErrorCode.INSUFFICIENT_PERMISSIONS)},
+                    )
+
         faction_units = self._get_faction_units(observer)
         total_units_count = len(faction_units)
         alive_units = [u for u in faction_units if self._is_unit_alive(u)]
@@ -1056,7 +1070,10 @@ class LLMActionHandler:
 
         faction_status = self._get_faction_status(observer)
         units = []
-        for unit_id in alive_units:
+        panel_units = alive_units if selected_ids is None else [
+            uid for uid in selected_ids if self._is_unit_alive(uid)
+        ]
+        for unit_id in panel_units:
             info = self._get_detailed_unit_info(unit_id)
             info.update(self._unit_command_fields(unit_id, agent_id, observer))
             units.append(info)

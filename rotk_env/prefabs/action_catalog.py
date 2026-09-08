@@ -86,7 +86,9 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
         "visible_terrain (type and movement cost) on the same tiles. Fog on = "
         "union of your units' vision; fog off (key 1) = the whole map. Same "
         "rule for human, BOT, and agents. faction must be your own; querying "
-        "another faction is rejected. Orders on units you do not own still fail.",
+        "another faction is rejected. Optional unit_ids selects own-unit panels "
+        "and affordances only; faction totals, shared vision, enemies and terrain "
+        "remain complete. Orders on units you do not own still fail.",
         "query",
         {
             "faction": _p(
@@ -95,6 +97,7 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
                 "Your faction (one of: wei, shu, wu).",
                 enum=_FACTION_ENUM,
             ),
+            "unit_ids": _p("list[int]", False, "Optional own-faction unit IDs; omit for all, [] for no unit panels."),
         },
     ),
     ActionSpec(
