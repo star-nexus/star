@@ -1081,7 +1081,7 @@ class LLMActionHandler:
         fog_lifted = self._is_fog_lifted()
         visible_enemies = self._visible_enemy_units(observer, fog_lifted)
         visible_terrain = self._visible_terrain(observer, fog_lifted)
-        enemy_ids = [e["unit_id"] for e in visible_enemies]
+        enemy_ids = {e["unit_id"] for e in visible_enemies}
         for info in units:
             unit_id = info.get("unit_id")
             if not isinstance(unit_id, int):
@@ -1235,9 +1235,25 @@ class LLMActionHandler:
     ) -> List[int]:
         """``target_id``s where ``attack(unit_id, target)`` succeeds now."""
         combat = self._attack_oracle()
+        if not combat.can_attack(unit_id):
+            return []
+        from ..utils.unit_spatial_index import get_unit_spatial_index
+
+        index = get_unit_spatial_index(self.world)
+        position = self.world.get_component(unit_id, HexPosition)
+        weapon = self.world.get_component(unit_id, Combat)
+        candidates = visible_enemy_ids
+        if index is not None and position is not None and weapon is not None:
+            visible = set(visible_enemy_ids) if not isinstance(visible_enemy_ids, set) else visible_enemy_ids
+            candidates = (
+                target_id
+                for cell in HexMath.hex_in_range(position.col, position.row, max(0, weapon.attack_range))
+                for target_id in index.entities_at_cell(cell)
+                if target_id in visible
+            )
         attackable = [
             target_id
-            for target_id in visible_enemy_ids
+            for target_id in candidates
             if combat.can_attack(unit_id, target_id)
         ]
         attackable.sort()
