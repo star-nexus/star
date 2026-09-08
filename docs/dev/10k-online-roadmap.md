@@ -51,6 +51,14 @@ Do not open a separate 30-vs-60 semantic audit unless measured drift demonstrate
 
 ## 3. Current validated baseline
 
+**2026-09-08 active 10K/100% follow-up:** see
+[`10k-online-resume.md`](10k-online-resume.md) and
+[`10k-online-e8-volume-progress.md`](10k-online-e8-volume-progress.md).
+E6-1 is the inherited baseline. E8-1/2/3 have local A/B improvements but their
+combined 300s P99 is 34.520ms (FAIL); three shorter passes do not close this gate.
+E8-4 versioned movement references have positive local evidence and are undergoing
+sustained validation. The dated investigation ledger below is historical context.
+
 ### Phase 3 — Measurement & Regression Infrastructure — CLOSED
 
 Reusable production measurement plane:

@@ -21,12 +21,15 @@ Do not change semantics, round gates, or count attribution-only results as relea
 ## Baseline and evidence
 
 Inherited retained runtime: `e7ba18b31870577110b591104ef8fa7b4713e43c`.
-Current candidate: `88b19fe92957ee660f50cc366c5a737cb2dc8ca8` (E8-1/2/3).
-Each local change passed interleaved A/B/B/A. Full regression: 498 passed.
+Current candidate: `9581084835633e10d80aac849925939bc59b9138` (E8-1/2/3/4).
+Each local change has positive subsystem A/B/B/A evidence. Full regression: 505 passed.
 Sustained tooling: `94f8986280ca7c391fa45a854a62c7975cab1658`.
 Three >=60s traces passed P99 32.433 / 32.442 / 32.015ms; all 30s blocks passed.
-Continuous >=300s trace is in progress under results/phase5-e8/20260908-081510-gate300.
-Final archive/integrity/frontier remain pending; see latest progress note.
+That E8-3 runtime FAILED >=300s: P99 34.520ms; no-trace late-window control also
+fails. E8-4 reduces Animation ~2.1-2.6ms, but short tails are mixed. Its continuous
+>=300s trace is in progress under results/phase5-e8/20260908-083745-e8-4-gate300.
+If it passes, run three >=60s traces at the same SHA and fixed conditions. All
+earlier evidence is packaged in STAR Lab. Final integrity/frontier remain pending.
 Inherited tooling: `8f79795f1cfc9a843db5091f1672940614e2d0a0`.
 E7 results: `results/phase5-tail-composition/chibi-144k-scale-10000/20260908-001411/`.
 E7: stable UnitRender/Vision/Animation tail contributors; 311-312 samples per run;

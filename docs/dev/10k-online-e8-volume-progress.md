@@ -1,6 +1,9 @@
 # E8 — render work volume and dt/commit attribution
 
-Date: 2026-09-08. Status: DESIGN / IMPLEMENTING. Retained runtime: e7ba18b31870577110b591104ef8fa7b4713e43c.
+Date: 2026-09-08. Status: SUSTAINED GATE OPEN. Inherited runtime: e7ba18b31870577110b591104ef8fa7b4713e43c.
+Latest candidate: 9581084835633e10d80aac849925939bc59b9138 (E8-1/2/3/4).
+Read the latest entries at the end for current outcomes; earlier entries preserve
+the chronological investigation, including rejected drafts and failed gate runs.
 Recovery entrypoint: `docs/dev/10k-online-resume.md`.
 
 ## Preregistered questions
@@ -245,3 +248,17 @@ machine-readable local metrics and descriptive matched-command fits for all runs
 Next validate B with one complete >=300s trace first, then three >=60s repeats if
 it passes. No threshold/warmup/slow-frame filtering changes. Exact driver/tooling
 manifest and all negative traces remain archived.
+
+## E8-4 continuous >=300s PASS; repeat confirmation pending
+
+20260908-083745-e8-4-gate300: runtime9581084, toolingbed4e479859c65e23bf9ce403e381fa03e596d30.
+305.447501s / 10240 admitted frames. Controlled avg28.220838/P99 32.430227ms;
+all full 30s blocks PASS; every workload/trace guard PASS. 64 breaches (.625%),
+longest3; max41.817ms. Position/Vision ~20000/s. Frame-body P99 34.033324ms remains
+separate and does not meet 33.33ms. Descriptive 12s-block bootstrap interval
+[31.458620,33.079021]ms. No samples removed except fixed initial10s.
+User confirms Chrome is running and can sometimes consume CPU. It remains open;
+no Chrome-related frames are subtracted or classified away. This may contribute
+to variability but has not been proven as the cause of any specific slow frame.
+Next three >=60s independent-process repeats at the exact same runtime, followed
+by final archive integrity and milestone only if those pass.
