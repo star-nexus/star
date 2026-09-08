@@ -106,10 +106,13 @@ def install_volume_metrics():
             profiler.set_frame_metric(key, value)
 
     original_move = AnimationSystem._update_movement_animations
+    cached_loop = '    for entity, cached_pos, cached_anim in entries:\n'
+    loop_anchor = (cached_loop if cached_loop in textwrap.dedent(inspect.getsource(original_move))
+                   else '\n    ):\n')
     AnimationSystem._update_movement_animations = instrument_function(original_move, [
         ('    movement_system = self._get_movement_system()',
          '    e8_active = e8_scanned = e8_commits = e8_completed = 0\n    movement_system = self._get_movement_system()'),
-        ('\n    ):\n', '\n    ):\n        e8_scanned += 1\n'),
+        (loop_anchor, loop_anchor + '        e8_scanned += 1\n'),
         ('        anim.progress += anim.speed * delta_time',
          '        e8_active += 1\n        anim.progress += anim.speed * delta_time'),
         ('            target_hex = anim.path[anim.current_target_index]',

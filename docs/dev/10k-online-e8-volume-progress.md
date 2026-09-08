@@ -210,3 +210,21 @@ yet established. Next: no-history-recorder long-run control to check observer
 effect; evaluate reuse of live movement component references using E8-2 version
 contracts, with immediate invalidation after synchronous commit callbacks. Preserve
 the failed sustained trace as formal negative evidence. No frontier promotion.
+
+## Observer control and E8-4 candidate
+
+20260908-082342-long-no-trace-control: same 88b19fe runtime, 310s before snapshot,
+history recorder OFF. Final 5s avg32.406/P99 35.724ms, all guards PASS. This is
+not a full-trace gate, but shows late slowdown also occurs without history
+retention (trace-enabled final5s avg32.274/P99 34.308). No exclusive observer
+explanation and no quantified randomization-based overhead claim.
+
+E8-4 candidate caches (entity, HexPosition, MovementAnimation) references under
+the public per-component reference versions, bounded by last movement roster.
+Live fields remain authoritative; after every movement commit callback, version
+changes force subsequent entries to resolve components live against the original
+entity snapshot. Next frame rebuilds. Missing version API retains original query
+and lookup path. No work is delayed. Differential remove/replace/destroy/add/reset
+callback tests, in-place updates and world reuse covered. Full regression 505 PASS
+in 3.02s. A test draft incorrectly indexed a set; corrected to list, no runtime
+failure. Next exact-SHA E8-3 vs E8-4 off-mode 30s A/B/B/A before retention.

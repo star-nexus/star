@@ -54,6 +54,25 @@ class AnimationSystem(System):
         self._update_effect_animations(delta_time)
         self._update_damage_numbers(delta_time)
 
+    def _movement_entries(self, reference_version):
+        """Snapshot current references while preserving the query's entity order.
+
+        Fields remain live. Membership/replacement revisions rebuild the snapshot;
+        commit callbacks are checked separately before using the next cached row.
+        Storage is bounded by the last movement query, never by elapsed frames.
+        """
+        token = (reference_version(HexPosition), reference_version(MovementAnimation))
+        if (getattr(self, "_movement_entries_world", None) is not self.world
+                or getattr(self, "_movement_entries_token", None) != token):
+            self._movement_entries_cache = tuple(
+                (entity, self.world.get_component(entity, HexPosition),
+                 self.world.get_component(entity, MovementAnimation))
+                for entity in self.world.query().with_all(HexPosition, MovementAnimation).entities()
+            )
+            self._movement_entries_world = self.world
+            self._movement_entries_token = token
+        return self._movement_entries_cache, token
+
     def _update_movement_animations(self, delta_time: float):
         """Update movement animations without losing time at segment boundaries."""
         # MovementSystem membership is stable for the duration of one synchronous
@@ -61,11 +80,18 @@ class AnimationSystem(System):
         # for every moving entity.
         movement_system = self._get_movement_system()
         get_pair = getattr(self.world, "get_component_pair", None)
+        reference_version = getattr(self.world, "component_reference_version", None)
+        entries_valid = reference_version is not None
+        if entries_valid:
+            entries, token = self._movement_entries(reference_version)
+        else:
+            entries = ((entity, None, None) for entity in
+                       self.world.query().with_all(HexPosition, MovementAnimation).entities())
 
-        for entity in (
-            self.world.query().with_all(HexPosition, MovementAnimation).entities()
-        ):
-            if get_pair is not None:
+        for entity, cached_pos, cached_anim in entries:
+            if entries_valid:
+                pos, anim = cached_pos, cached_anim
+            elif get_pair is not None:
                 pos, anim = get_pair(entity, HexPosition, MovementAnimation)
             else:
                 pos = self.world.get_component(entity, HexPosition)
@@ -99,6 +125,14 @@ class AnimationSystem(System):
                     movement_system.commit_hex_position(
                         entity, target_hex[0], target_hex[1], arrived=arrived
                     )
+                    # A synchronous callback may replace/remove another unit's
+                    # components. Keep the original entity snapshot, but resolve
+                    # subsequent rows live just as the uncached loop did.
+                    if entries_valid and (
+                        reference_version(HexPosition) != token[0]
+                        or reference_version(MovementAnimation) != token[1]
+                    ):
+                        entries_valid = False
                 else:
                     pos.col, pos.row = target_hex
 
