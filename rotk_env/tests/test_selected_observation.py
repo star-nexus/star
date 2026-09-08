@@ -121,3 +121,19 @@ def test_indexed_move_destination_and_blockers_match_unindexed_rules():
     world.get_component(b, HexPosition).col = 0
     update_unit_spatial_index(world, b)
     assert destination_occupied(world, (0,0), exclude_entity=a)
+
+
+def test_live_census_counts_and_status_track_in_place_resource_and_death_changes():
+    world, a, b, enemy = setup_world()
+    h = LLMActionHandler(world)
+    params = {'faction':'wei', 'agent_id':'a', 'unit_ids':[]}
+    first = h.handle_faction_state(params)
+    assert (first['total_units'], first['alive_units'], first['actionable_units'], first['state']) == (2, 2, 2, 'active')
+    world.get_component(a, ActionPoints).current_ap = 0
+    world.get_component(b, UnitCount).current_count = 0
+    second = h.handle_faction_state(params)
+    assert (second['total_units'], second['alive_units'], second['actionable_units']) == (2, 1, 0)
+    world.get_component(enemy, UnitCount).current_count = 0
+    assert h.handle_faction_state(params)['state'] == 'victory'
+    world.get_component(a, UnitCount).current_count = 0
+    assert h.handle_faction_state(params)['state'] == 'eliminated'
