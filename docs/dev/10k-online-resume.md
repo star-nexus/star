@@ -24,6 +24,9 @@ Inherited retained runtime: `e7ba18b31870577110b591104ef8fa7b4713e43c`.
 Validated sustained runtime: `9581084835633e10d80aac849925939bc59b9138` (E8-1/2/3/4).
 Each local change has positive subsystem A/B/B/A evidence. Full regression: 505 passed.
 Milestone: `scale-10k-100pct-30hz-sustained-e8` (local; no push/merge performed).
+STAR Lab archive commit: `2dfbb09b4c2fc556bcbe05dadaa1b1fe46c6de89`.
+Integrity: 23 raw archives plus fixture, 50 checksummed evidence files and
+8 exact gate replays verified, including the negative gate results.
 300s tooling: `bed4e479859c65e23bf9ce403e381fa03e596d30`.
 Repeat tooling: `4ccdc4972ded1bbc2d2125f214770d27865792d0`.
 
