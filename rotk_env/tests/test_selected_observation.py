@@ -105,3 +105,19 @@ def test_selected_panel_catalog_survives_reference_client_schema_conversion():
     jsonschema.validate({'faction':'wei', 'unit_ids':[1, 2]}, schema)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({'faction':'wei', 'unit_ids':['1']}, schema)
+
+
+def test_indexed_move_destination_and_blockers_match_unindexed_rules():
+    from rotk_env.utils.map_query import destination_occupied, occupied_cells, path_blockers
+    world, a, b, enemy = setup_world()
+    reference_occupied = occupied_cells(world, exclude_entity=a)
+    reference_blockers = path_blockers(world, Faction.WEI, exclude_entity=a)
+    rebuild_unit_spatial_index(world)
+    assert path_blockers(world, Faction.WEI, exclude_entity=a) == reference_blockers
+    for col in range(-3,4):
+        for row in range(-3,4):
+            assert destination_occupied(world, (col,row), exclude_entity=a) == ((col,row) in reference_occupied)
+    # Excluding one mover must not hide a co-located teammate.
+    world.get_component(b, HexPosition).col = 0
+    update_unit_spatial_index(world, b)
+    assert destination_occupied(world, (0,0), exclude_entity=a)

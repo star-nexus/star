@@ -181,9 +181,25 @@ def path_blockers(
     Friendly-held hexes are absent on purpose (invariant 2). ``faction=None``
     blocks on every unit.
     """
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is not None:
+        _occupied, enemies = index.occupancy_for_mover(exclude_entity, faction)
+        return impassable_terrain(world) | enemies
     return impassable_terrain(world) | _held_by_other(
         unit_cells(world, exclude_entity=exclude_entity), faction
     )
+
+
+def destination_occupied(world, cell: Hex, *, exclude_entity: Optional[int] = None) -> bool:
+    """One destination check, using maintained window occupancy when available."""
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is not None:
+        return any(entity != exclude_entity for entity in index.entities_at_cell(cell))
+    return cell in occupied_cells(world, exclude_entity=exclude_entity)
 
 
 def occupied_cells(world, *, exclude_entity: Optional[int] = None) -> Set[Hex]:
