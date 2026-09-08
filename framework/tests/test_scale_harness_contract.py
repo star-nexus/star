@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import random
 import subprocess
@@ -118,3 +119,17 @@ def test_formal_density_point_defaults_to_accepted_realtime_gc_policy():
 
     assert density_args.gc_policy == "realtime_defer"
     assert manual_args.gc_policy == "auto"
+
+
+def test_profile_snapshot_exports_runtime_stats_without_lab_dependency(tmp_path, monkeypatch):
+    from rotk_env.testing import scale_harness
+
+    stats = {"sample_count": 7, "controlled_work_frame_ms": {"p99": 12.5}}
+    monkeypatch.setattr(
+        scale_harness.profiling, "profiler", SimpleNamespace(get_stats=lambda: stats)
+    )
+    path = tmp_path / "profile.json"
+    reply = ScaleHarnessSystem("/tmp/not-opened.sock")._profile_snapshot({"path": str(path)})
+
+    assert reply == {"ok": True, "path": str(path), "sample_count": 7}
+    assert json.loads(path.read_text()) == stats

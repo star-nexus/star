@@ -23,6 +23,17 @@ STRUCTURAL_CONTRACTS = [
     "framework/tests/test_realtime_gc_policy.py",
     # Phase-4 scale control must remain deterministic and outside per-frame work.
     "framework/tests/test_scale_harness_contract.py",
+    # Retained component-reference and movement fast paths must stay live.
+    "framework/tests/test_component_reference_version.py",
+    "framework/tests/test_component_pair.py",
+    "rotk_env/tests/test_animation_reference_roster.py",
+    "rotk_env/tests/test_ui_faction_roster.py",
+    "rotk_env/tests/test_unit_render_frame_styles.py",
+    "rotk_env/tests/test_unit_spatial_index_geometry_reuse.py",
+    "rotk_env/tests/test_unit_spatial_index_movement.py",
+    "rotk_env/tests/test_vision_explored_transition.py",
+    "rotk_env/tests/test_window_vision_geometry_hit_path.py",
+    "rotk_env/tests/test_window_vision_audit_boundary.py",
     # Render queue should preserve blit batching.
     "framework/tests/test_render_blit_batching.py",
     # One dirty Vision observer must not become an all-observer recompute.

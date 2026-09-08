@@ -352,6 +352,12 @@ python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-
 - [x] Minimal agent–ENV protocol spec for custom architectures (`docs/agent-protocol.md`)
 - [x] Observation + Affordance contract for `get_faction_state` (`docs/observation-affordance.md`)
 
+## Performance measurement
+
+- [Runtime measurement and regression](docs/performance-measurement-and-regression.md)
+- [Production-path movement scale workload](docs/performance-scale-workload.md)
+- [STAR Lab: reproducible performance evidence and engineering records](https://github.com/star-nexus/star-lab)
+
 ## Citation
 
 If you find this project useful in your research, please consider citing:

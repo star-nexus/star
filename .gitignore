@@ -190,3 +190,7 @@ screenshots/
 /test
 settlement_reports/
 error_log_*
+
+# Local measurement output and generated adapter bundles
+/results/
+/rotk_agent/adapters/adapter.zip

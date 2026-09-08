@@ -115,3 +115,10 @@ uv run pytest -q
 uv run python -m compileall -q \
   framework protocol rotk_agent rotk_env performance_profiler.py tools
 ```
+
+## Movement capacity workloads
+
+See [production-path scale workload](performance-scale-workload.md) for the opt-in
+local harness, workload guards and snapshot semantics. Experimental fixtures,
+phase-specific probes and raw evidence are maintained in
+[STAR Lab](https://github.com/star-nexus/star-lab).
