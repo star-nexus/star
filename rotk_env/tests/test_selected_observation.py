@@ -91,3 +91,17 @@ def test_selected_unit_death_and_component_replacement_are_immediate():
     assert h.handle_faction_state(params)['units'] == []
     world.add_component(a, UnitCount(current_count=80, max_count=100))
     assert h.handle_faction_state(params)['units'][0]['unit_status']['current_count'] == 80
+
+
+def test_selected_panel_catalog_survives_reference_client_schema_conversion():
+    from rotk_env.prefabs.action_catalog import GAME_ACTIONS
+    from rotk_agent.core.tools import _env_params_to_json_schema
+    import jsonschema
+
+    spec = next(s for s in GAME_ACTIONS if s.name == 'get_faction_state')
+    schema = _env_params_to_json_schema(spec.parameters, 'observation')
+    assert schema['properties']['unit_ids']['items']['type'] == 'integer'
+    jsonschema.validate({'faction':'wei'}, schema)
+    jsonschema.validate({'faction':'wei', 'unit_ids':[1, 2]}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({'faction':'wei', 'unit_ids':['1']}, schema)

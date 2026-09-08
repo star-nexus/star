@@ -97,7 +97,11 @@ GAME_ACTIONS: Tuple[ActionSpec, ...] = (
                 "Your faction (one of: wei, shu, wu).",
                 enum=_FACTION_ENUM,
             ),
-            "unit_ids": _p("list[int]", False, "Optional own-faction unit IDs; omit for all, [] for no unit panels."),
+            "unit_ids": _p(
+                "array", False,
+                "Optional own-faction unit IDs; omit for all, [] for no unit panels.",
+                items={"type": "integer"},
+            ),
         },
     ),
     ActionSpec(

@@ -127,6 +127,29 @@ include `reachable` (legal `move` targets now) and `attackable` (legal
 `attack` `target_id`s now). Enemies and terrain are observation only. The
 benchmark split is in [`docs/observation-affordance.md`](observation-affordance.md).
 
+An agent controlling several units may pass `unit_ids: [id1, id2, ...]` to
+`get_faction_state`. This selects the own-unit panels and their affordances;
+faction totals, visible enemies and terrain still describe the full shared
+faction view. Omit `unit_ids` for the existing full-faction response; `[]`
+returns no own-unit panels. Duplicate IDs are collapsed in request order.
+Unknown or other-faction IDs reject the entire query. Dead selected units are
+omitted. Ownership still governs actions: reading a teammate's panel does not
+make that unit commandable. Selection is explicit and is not applied by default
+to benchmark runs.
+
+For example, after `claim_units` succeeds for your units:
+
+```python
+state = await client.call("get_faction_state", {
+    "faction": "wei", "unit_ids": controlled_unit_ids,
+})
+```
+
+World ticks and LLM decisions are independent. Pull an observation, allow the
+model to think, and submit its actions while the world continues. A target that
+was legal in that observation may become invalid during model/network latency;
+use the returned outcome and a fresh observation rather than assuming acceptance.
+
 Mutate the board with names from join `game_actions.names` and parameter
 objects from join `docs`. Typical skirmish shapes:
 
