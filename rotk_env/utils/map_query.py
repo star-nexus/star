@@ -229,10 +229,22 @@ def reachable_hexes(
     every hex that currently holds a unit. Occupancy and enemy cells come from
     one `unit_cells` pass so the two sets cannot disagree about where units are.
     """
-    cells = unit_cells(world, exclude_entity=mover)
-    blocked = impassable_terrain(world) | _held_by_other(
-        cells, faction_of(world, mover)
-    )
+    # Window movement already maintains this index at every position commit.
+    # Terrain entry costs are >=1, so a budget R cannot reach a blocker farther
+    # than R hexes. Reuse the same bounded occupancy as the window range overlay.
+    # Unindexed rule worlds retain their authoritative scan path.
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is None:
+        cells = unit_cells(world, exclude_entity=mover)
+        occupied = set(cells)
+        enemies = _held_by_other(cells, faction_of(world, mover))
+    else:
+        occupied, enemies = index.occupancy_for_mover_local(
+            mover, faction_of(world, mover), start, movement_points
+        )
+    blocked = impassable_terrain(world) | enemies
     costs = movement_costs(world)
     within_budget = PathFinding.get_movement_range(
         start,
@@ -241,4 +253,4 @@ def reachable_hexes(
         walkable=board_hexes(world),
         step_cost=lambda pos: costs.get(pos, 999),
     )
-    return within_budget - set(cells)
+    return within_budget - occupied
