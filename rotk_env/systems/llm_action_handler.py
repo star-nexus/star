@@ -1096,10 +1096,10 @@ class LLMActionHandler:
     def _build_faction_public_observation(self, observer):
         context = getattr(self, "_observation_batch_context", None)
         if context:
-            totals, living_counts, actionable, alive = context.census()
+            totals, living_counts, alive = context.census()
             alive_units = alive[observer]
             total_units_count = totals[observer]
-            actionable_units_count = actionable[observer]
+            actionable_units_count = context.actionable(observer, alive_units)
             alive_units_count = len(alive_units)
             faction_status = self._get_faction_status(observer, living_counts=living_counts)
         else:
@@ -1119,7 +1119,7 @@ class LLMActionHandler:
                     ap = self.world.get_component(uid, ActionPoints)
                     actionable_units_count += bool(ap and ap.current_ap > 0)
             alive_units_count = len(alive_units)
-    
+
             faction_status = self._get_faction_status(observer, living_counts=living_counts)
 
         fog_lifted = self._is_fog_lifted()

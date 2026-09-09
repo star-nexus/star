@@ -134,3 +134,48 @@ def test_in_place_changes_between_batches_are_immediate():
     assert second[0]['alive_units'] == 1
     assert second[0]['visible_enemy_units'] == []
     assert second[1]['units'] == []
+
+
+def test_encoding_failure_releases_context_and_stops_prefix(monkeypatch):
+    _, gate, a, *_ = setup()
+    original = gate._process_action_request
+    monkeypatch.setattr(gate, '_process_action_request', lambda **kw: {'success': True, 'bad': object()})
+    result = gate.process_observation_batch([query('a', a)]*2, budget_ms=1000)
+    assert result['consumed'] == 1
+    assert not decode(result)[0]['success']
+    assert gate._observation_batch_context is None
+    monkeypatch.setattr(gate, '_process_action_request', original)
+    assert decode(gate.process_observation_batch([query('a', a)], budget_ms=1000))[0]['success']
+
+
+def test_revision_change_and_business_write_reentry_stop_batch(monkeypatch):
+    from rotk_env.components import UnitCount
+    world, gate, a, *_ = setup()
+    original = gate._process_action_request
+    def revision_change(**kwargs):
+        result = original(**kwargs)
+        world.bump_revision()
+        return result
+    monkeypatch.setattr(gate, '_process_action_request', revision_change)
+    result = gate.process_observation_batch([query('a', a)]*2, budget_ms=1000)
+    assert result['consumed'] == 1 and not decode(result)[0]['success']
+    assert gate._observation_batch_context is None
+    def write_reentry(**kwargs):
+        return original('a', 999, 'move', {'unit_id': a, 'target_position': {'col': 1, 'row': 0}}, send_response=False)
+    monkeypatch.setattr(gate, '_process_action_request', write_reentry)
+    result = gate.process_observation_batch([query('a', a)]*2, budget_ms=1000)
+    assert result['consumed'] == 1 and not decode(result)[0]['success']
+    assert gate._observation_batch_context is None
+
+
+def test_only_requested_faction_action_points_are_materialized():
+    from rotk_env.components import ActionPoints
+    from rotk_env.utils.observation_batch import ObservationBatchContext
+    world, gate, a, b, enemy = setup()
+    context = ObservationBatchContext(gate.action_handler)
+    totals, living, alive = context.census()
+    assert ActionPoints not in context._components
+    assert context.actionable(Faction.WEI, alive[Faction.WEI]) == 2
+    assert set(context._components[ActionPoints]) == {a, b}
+    context.close()
+    assert not context._components and not context._cache

@@ -291,6 +291,6 @@ fields are attached separately. Scratch state is discarded in `finally`, also
 on failure; nothing is reused across batches or world updates. Do not mutate
 world state or run callbacks/concurrent writers during the call. Owner-thread,
 reentry and revision checks catch common misuse; revision alone cannot detect
-arbitrary in-place component edits. `reuse=False` retains the batch boundary
+arbitrary component edits or replacements. `reuse=False` retains the batch boundary
 without caches for controlled comparisons. The ordinary single-request API
 continues to return dictionaries; this entry does not add Protocol/Hub batching.
