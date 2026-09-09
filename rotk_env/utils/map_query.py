@@ -181,9 +181,25 @@ def path_blockers(
     Friendly-held hexes are absent on purpose (invariant 2). ``faction=None``
     blocks on every unit.
     """
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is not None:
+        _occupied, enemies = index.occupancy_for_mover(exclude_entity, faction)
+        return impassable_terrain(world) | enemies
     return impassable_terrain(world) | _held_by_other(
         unit_cells(world, exclude_entity=exclude_entity), faction
     )
+
+
+def destination_occupied(world, cell: Hex, *, exclude_entity: Optional[int] = None) -> bool:
+    """One destination check, using maintained window occupancy when available."""
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is not None:
+        return any(entity != exclude_entity for entity in index.entities_at_cell(cell))
+    return cell in occupied_cells(world, exclude_entity=exclude_entity)
 
 
 def occupied_cells(world, *, exclude_entity: Optional[int] = None) -> Set[Hex]:
@@ -227,12 +243,24 @@ def reachable_hexes(
 
     Path cost within budget (friendly hexes traversable at terrain cost), minus
     every hex that currently holds a unit. Occupancy and enemy cells come from
-    one `unit_cells` pass so the two sets cannot disagree about where units are.
+    the maintained spatial index, or one shared scan in unindexed worlds.
     """
-    cells = unit_cells(world, exclude_entity=mover)
-    blocked = impassable_terrain(world) | _held_by_other(
-        cells, faction_of(world, mover)
-    )
+    # Window movement already maintains this index at every position commit.
+    # Terrain entry costs are >=1, so a budget R cannot reach a blocker farther
+    # than R hexes. Reuse the same bounded occupancy as the window range overlay.
+    # Unindexed rule worlds retain their authoritative scan path.
+    from .unit_spatial_index import get_unit_spatial_index
+
+    index = get_unit_spatial_index(world)
+    if index is None:
+        cells = unit_cells(world, exclude_entity=mover)
+        occupied = set(cells)
+        enemies = _held_by_other(cells, faction_of(world, mover))
+    else:
+        occupied, enemies = index.occupancy_for_mover_local(
+            mover, faction_of(world, mover), start, movement_points
+        )
+    blocked = impassable_terrain(world) | enemies
     costs = movement_costs(world)
     within_budget = PathFinding.get_movement_range(
         start,
@@ -241,4 +269,4 @@ def reachable_hexes(
         walkable=board_hexes(world),
         step_cost=lambda pos: costs.get(pos, 999),
     )
-    return within_budget - set(cells)
+    return within_budget - occupied

@@ -62,6 +62,18 @@ Own-unit AP/MP on the wire are **remaining** points this snapshot
 (`remaining_action_points` / `remaining_movement_points`), not the unit’s caps.
 Manpower is `unit_status.current_count` vs `max_count`.
 
+The optional `get_faction_state.unit_ids` parameter projects **only** the own-unit
+panels: details, `owner`/`commandable`, `reachable` and `attackable`. The default
+remains every own unit. Faction totals/status and the full shared visible-enemy
+and terrain channels are unchanged by selection. This is an explicit observation
+scope, not agent-side compression or a change to Fog rules. Capacity results
+must state whether they use full-faction or selected-unit panels.
+
+World tick rate, observation polling rate, and decision rate are independent.
+A 30Hz world does not imply 30 observations or decisions per second per Agent.
+Selected panels still include the shared channels on every response; selection
+alone does not establish thousand-Agent observation capacity.
+
 Enemy units do **not** carry `reachable` or `attackable`. That would be a
 threat map (a strategy hint). Agents may infer enemy next-step from visible
 positions and terrain.

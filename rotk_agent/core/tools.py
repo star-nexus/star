@@ -214,6 +214,10 @@ def _env_field_to_json(spec: Dict[str, Any]) -> Dict[str, Any]:
             continue
         out[bound] = value
 
+    if json_type == "array":
+        item_spec = spec.get("items")
+        out["items"] = _env_field_to_json(item_spec) if isinstance(item_spec, dict) else {}
+
     nested = spec.get("properties")
     if json_type == "object" or isinstance(nested, dict):
         out["type"] = "object"

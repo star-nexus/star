@@ -1047,16 +1047,46 @@ class LLMActionHandler:
 
         print(f"Handling faction state for {observer.value}")
 
-        faction_units = self._get_faction_units(observer)
-        total_units_count = len(faction_units)
-        alive_units = [u for u in faction_units if self._is_unit_alive(u)]
-        alive_units_count = len(alive_units)
-        actionable_units = [u for u in alive_units if self._can_unit_take_action(u)]
-        actionable_units_count = len(actionable_units)
+        selected_ids = None
+        if "unit_ids" in params:
+            requested_ids = params["unit_ids"]
+            if not isinstance(requested_ids, list) or any(type(uid) is not int for uid in requested_ids):
+                return self._create_error_response("unit_ids must be a list of integer unit IDs")
+            selected_ids = list(dict.fromkeys(requested_ids))
+            for uid in selected_ids:
+                unit = self.world.get_component(uid, Unit)
+                if unit is None or unit.faction != observer:
+                    return self._create_error_response(
+                        "unit_ids must name existing units of your own faction",
+                        {"error_code": int(ErrorCode.INSUFFICIENT_PERMISSIONS)},
+                    )
 
-        faction_status = self._get_faction_status(observer)
+        # One live census supplies panel membership, counts and faction status.
+        # Reading fields here rather than caching computed values also observes
+        # in-place liveness/AP/faction changes between two calls in one revision.
+        total_units_count = actionable_units_count = 0
+        alive_units = []
+        living_counts = {}
+        for uid in self.world.query().with_component(Unit).entities():
+            unit = self.world.get_component(uid, Unit)
+            count = self.world.get_component(uid, UnitCount)
+            own = unit.faction == observer
+            total_units_count += own
+            if count is None or count.current_count <= 0:
+                continue
+            living_counts[unit.faction] = living_counts.get(unit.faction, 0) + 1
+            if own:
+                alive_units.append(uid)
+                ap = self.world.get_component(uid, ActionPoints)
+                actionable_units_count += bool(ap and ap.current_ap > 0)
+        alive_units_count = len(alive_units)
+
+        faction_status = self._get_faction_status(observer, living_counts=living_counts)
         units = []
-        for unit_id in alive_units:
+        panel_units = alive_units if selected_ids is None else [
+            uid for uid in selected_ids if self._is_unit_alive(uid)
+        ]
+        for unit_id in panel_units:
             info = self._get_detailed_unit_info(unit_id)
             info.update(self._unit_command_fields(unit_id, agent_id, observer))
             units.append(info)
@@ -1064,7 +1094,7 @@ class LLMActionHandler:
         fog_lifted = self._is_fog_lifted()
         visible_enemies = self._visible_enemy_units(observer, fog_lifted)
         visible_terrain = self._visible_terrain(observer, fog_lifted)
-        enemy_ids = [e["unit_id"] for e in visible_enemies]
+        enemy_ids = {e["unit_id"] for e in visible_enemies}
         for info in units:
             unit_id = info.get("unit_id")
             if not isinstance(unit_id, int):
@@ -1218,9 +1248,25 @@ class LLMActionHandler:
     ) -> List[int]:
         """``target_id``s where ``attack(unit_id, target)`` succeeds now."""
         combat = self._attack_oracle()
+        if not combat.can_attack(unit_id):
+            return []
+        from ..utils.unit_spatial_index import get_unit_spatial_index
+
+        index = get_unit_spatial_index(self.world)
+        position = self.world.get_component(unit_id, HexPosition)
+        weapon = self.world.get_component(unit_id, Combat)
+        candidates = visible_enemy_ids
+        if index is not None and position is not None and weapon is not None:
+            visible = set(visible_enemy_ids) if not isinstance(visible_enemy_ids, set) else visible_enemy_ids
+            candidates = (
+                target_id
+                for cell in HexMath.hex_in_range(position.col, position.row, max(0, weapon.attack_range))
+                for target_id in index.entities_at_cell(cell)
+                if target_id in visible
+            )
         attackable = [
             target_id
-            for target_id in visible_enemy_ids
+            for target_id in candidates
             if combat.can_attack(unit_id, target_id)
         ]
         attackable.sort()
@@ -2093,7 +2139,9 @@ class LLMActionHandler:
         }
         return resource_values.get(terrain_type, 1)
 
-    def _get_faction_status(self, faction: Faction) -> str:
+    def _get_faction_status(
+        self, faction: Faction, *, living_counts: Optional[Dict[Faction, int]] = None
+    ) -> str:
         """Get faction status: in_battle, victory, defeat, eliminated, active, or draw."""
         # Game over check
         game_state = self.world.get_singleton_component(GameState)
@@ -2117,22 +2165,20 @@ class LLMActionHandler:
                 return "defeat"
 
         # During game, if faction has no living units → eliminated
-        alive_units = [
-            u for u in self._get_faction_units(faction) if self._is_unit_alive(u)
-        ]
-        if not alive_units:
+        if living_counts is None:
+            living_counts = {
+                candidate: sum(bool(self._is_unit_alive(u))
+                    for u in self._get_faction_units(candidate))
+                for candidate in Faction
+            }
+        if not living_counts.get(faction):
             return "eliminated"  # Eliminated
 
         # If other factions have living units, inspect recent battles to infer in_battle
         other_factions_exist = False
         for other_faction in Faction:
             if other_faction != faction:
-                other_alive_units = [
-                    u
-                    for u in self._get_faction_units(other_faction)
-                    if self._is_unit_alive(u)
-                ]
-                if other_alive_units:
+                if living_counts.get(other_faction):
                     other_factions_exist = True
                     break
 

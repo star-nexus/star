@@ -109,12 +109,12 @@ class MovementSystem(System):
 
         effective_movement = movement_points.get_effective_movement(unit_count)
         spendable = movement_points.spendable(unit_count)
-        from ..utils.map_query import occupied_cells, plan_hex_path
+        from ..utils.map_query import destination_occupied, plan_hex_path
 
         # Invariant 1: the destination must be free of units, either faction.
         # Checked before planning so "someone is standing there" is never
         # reported as "no route exists".
-        if target_pos in occupied_cells(self.world, exclude_entity=entity):
+        if destination_occupied(self.world, target_pos, exclude_entity=entity):
             return self._destination_occupied_result(entity, current_pos, target_pos)
 
         # Plan the uncapped cheapest route so terrain cost above remaining MP is
