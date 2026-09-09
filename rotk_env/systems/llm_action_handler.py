@@ -1061,67 +1061,84 @@ class LLMActionHandler:
                         {"error_code": int(ErrorCode.INSUFFICIENT_PERMISSIONS)},
                     )
 
-        # One live census supplies panel membership, counts and faction status.
-        # Reading fields here rather than caching computed values also observes
-        # in-place liveness/AP/faction changes between two calls in one revision.
-        total_units_count = actionable_units_count = 0
-        alive_units = []
-        living_counts = {}
-        for uid in self.world.query().with_component(Unit).entities():
-            unit = self.world.get_component(uid, Unit)
-            count = self.world.get_component(uid, UnitCount)
-            own = unit.faction == observer
-            total_units_count += own
-            if count is None or count.current_count <= 0:
-                continue
-            living_counts[unit.faction] = living_counts.get(unit.faction, 0) + 1
-            if own:
-                alive_units.append(uid)
-                ap = self.world.get_component(uid, ActionPoints)
-                actionable_units_count += bool(ap and ap.current_ap > 0)
-        alive_units_count = len(alive_units)
-
-        faction_status = self._get_faction_status(observer, living_counts=living_counts)
-        units = []
+        alive_units, enemy_ids, public = self._observation_memo(
+            "faction", observer, lambda: self._build_faction_public_observation(observer)
+        )
         panel_units = alive_units if selected_ids is None else [
             uid for uid in selected_ids if self._is_unit_alive(uid)
         ]
-        for unit_id in panel_units:
-            info = self._get_detailed_unit_info(unit_id)
-            info.update(self._unit_command_fields(unit_id, agent_id, observer))
+        units = []
+        for uid in panel_units:
+            base = self._observation_memo(
+                "unit_panel", (observer, uid),
+                lambda: self._build_unit_observation(uid, enemy_ids),
+            )
+            # Nested facts stay private to the synchronous encoder. Permissions
+            # are attached to a fresh wrapper for every authenticated request.
+            info = dict(base)
+            info.update(self._unit_command_fields(uid, agent_id, observer))
             units.append(info)
+        result = {k: v for k, v in public.items()
+                  if k not in ("visible_enemy_units", "visible_terrain")}
+        result["units"] = units
+        result["visible_enemy_units"] = public["visible_enemy_units"]
+        result["visible_terrain"] = public["visible_terrain"]
+        return result
+
+    def _observation_memo(self, kind, key, build):
+        context = getattr(self, "_observation_batch_context", None)
+        return context.memo(kind, key, build) if context else build()
+
+    def _observation_component(self, entity, kind):
+        context = getattr(self, "_observation_batch_context", None)
+        return context.component(entity, kind) if context else self.world.get_component(entity, kind)
+
+    def _build_faction_public_observation(self, observer):
+        context = getattr(self, "_observation_batch_context", None)
+        if context:
+            totals, living_counts, actionable, alive = context.census()
+            alive_units = alive[observer]
+            total_units_count = totals[observer]
+            actionable_units_count = actionable[observer]
+            alive_units_count = len(alive_units)
+            faction_status = self._get_faction_status(observer, living_counts=living_counts)
+        else:
+            total_units_count = actionable_units_count = 0
+            alive_units = []
+            living_counts = {}
+            for uid in self.world.query().with_component(Unit).entities():
+                unit = self.world.get_component(uid, Unit)
+                count = self.world.get_component(uid, UnitCount)
+                own = unit.faction == observer
+                total_units_count += own
+                if count is None or count.current_count <= 0:
+                    continue
+                living_counts[unit.faction] = living_counts.get(unit.faction, 0) + 1
+                if own:
+                    alive_units.append(uid)
+                    ap = self.world.get_component(uid, ActionPoints)
+                    actionable_units_count += bool(ap and ap.current_ap > 0)
+            alive_units_count = len(alive_units)
+    
+            faction_status = self._get_faction_status(observer, living_counts=living_counts)
 
         fog_lifted = self._is_fog_lifted()
-        visible_enemies = self._visible_enemy_units(observer, fog_lifted)
-        visible_terrain = self._visible_terrain(observer, fog_lifted)
-        enemy_ids = {e["unit_id"] for e in visible_enemies}
-        for info in units:
-            unit_id = info.get("unit_id")
-            if not isinstance(unit_id, int):
-                info["reachable"] = []
-                info["attackable"] = []
-                continue
-            info["reachable"] = self._unit_reachable(unit_id)
-            info["attackable"] = self._unit_attackable(unit_id, enemy_ids)
-
-        print(
-            f"[FACTION_STATE] Completed for {observer.value} "
-            f"fog={'disabled' if fog_lifted else 'active'} "
-            f"own={alive_units_count} visible_enemies={len(visible_enemies)}"
-        )
-        return {
-            "success": True,
-            "result": True,
-            "state": faction_status,
+        enemies = self._visible_enemy_units(observer, fog_lifted)
+        return alive_units, {e["unit_id"] for e in enemies}, {
+            "success": True, "result": True, "state": faction_status,
             "faction": observer.value,
             "fog": "disabled" if fog_lifted else "active",
-            "total_units": total_units_count,
-            "alive_units": alive_units_count,
+            "total_units": total_units_count, "alive_units": alive_units_count,
             "actionable_units": actionable_units_count,
-            "units": units,
-            "visible_enemy_units": visible_enemies,
-            "visible_terrain": visible_terrain,
+            "visible_enemy_units": enemies,
+            "visible_terrain": self._visible_terrain(observer, fog_lifted),
         }
+
+    def _build_unit_observation(self, unit_id, enemy_ids):
+        info = self._get_detailed_unit_info(unit_id)
+        info["reachable"] = self._unit_reachable(unit_id)
+        info["attackable"] = self._unit_attackable(unit_id, enemy_ids)
+        return info
 
     def _observer_faction(
         self, agent_id: Optional[str], requested: Faction
@@ -1151,17 +1168,19 @@ class LLMActionHandler:
 
         enemies: List[Dict[str, Any]] = []
         for entity in self.world.query().with_all(Unit, HexPosition).entities():
-            unit = self.world.get_component(entity, Unit)
+            unit = self._observation_component(entity, Unit)
             if not unit or unit.faction == observer:
                 continue
             if not self._is_unit_alive(entity):
                 continue
-            position = self.world.get_component(entity, HexPosition)
+            position = self._observation_component(entity, HexPosition)
             if position is None:
                 continue
             if visible_tiles is not None and (position.col, position.row) not in visible_tiles:
                 continue
-            enemies.append(self._visible_enemy_unit_info(entity, unit, position))
+            enemies.append(self._observation_memo(
+                "enemy_unit", entity,
+                lambda: self._visible_enemy_unit_info(entity, unit, position)))
         return enemies
 
     def _visible_terrain(
@@ -1181,30 +1200,30 @@ class LLMActionHandler:
 
         tiles: List[Dict[str, Any]] = []
         for col, row in sorted(hexes):
-            tile_entity = map_data.tiles.get((col, row))
-            if not tile_entity:
-                continue
-            terrain = self.world.get_component(tile_entity, Terrain)
-            if not terrain:
-                continue
-            from ..components.terrain import effect_for
-
-            terrain_type = (
-                terrain.terrain_type.value
-                if hasattr(terrain.terrain_type, "value")
-                else str(terrain.terrain_type)
+            tile = self._observation_memo(
+                "tile", (col, row),
+                lambda: self._build_terrain_observation(map_data, col, row),
             )
-            effect = effect_for(terrain.terrain_type)
-            tiles.append(
-                {
-                    "col": int(col),
-                    "row": int(row),
-                    "type": terrain_type,
-                    "movement_cost": int(effect.movement_cost),
-                    "passable": effect.movement_cost < 999,
-                }
-            )
+            if tile is not None:
+                tiles.append(tile)
         return tiles
+
+    def _build_terrain_observation(self, map_data, col, row):
+        tile_entity = map_data.tiles.get((col, row))
+        if not tile_entity:
+            return None
+        terrain = self.world.get_component(tile_entity, Terrain)
+        if not terrain:
+            return None
+        from ..components.terrain import effect_for
+
+        terrain_type = (terrain.terrain_type.value
+                        if hasattr(terrain.terrain_type, "value")
+                        else str(terrain.terrain_type))
+        effect = effect_for(terrain.terrain_type)
+        return {"col": int(col), "row": int(row), "type": terrain_type,
+                "movement_cost": int(effect.movement_cost),
+                "passable": effect.movement_cost < 999}
 
     def _unit_reachable(self, unit_id: int) -> List[Dict[str, int]]:
         """Positions where ``move(unit_id, target)`` succeeds on this snapshot."""
@@ -1287,7 +1306,7 @@ class LLMActionHandler:
         self, unit_id: int, unit: Unit, position: HexPosition
     ) -> Dict[str, Any]:
         """What a human would read off a visible enemy sprite: id, type, tile, count."""
-        unit_count = self.world.get_component(unit_id, UnitCount)
+        unit_count = self._observation_component(unit_id, UnitCount)
         unit_type = (
             unit.unit_type.value
             if unit.unit_type and hasattr(unit.unit_type, "value")
@@ -1561,17 +1580,17 @@ class LLMActionHandler:
                     "available_skills": [],
                 }
 
-            unit = self.world.get_component(unit_id, Unit)
-            unit_count = self.world.get_component(unit_id, UnitCount)
-            position = self.world.get_component(unit_id, HexPosition)
-            movement_points = self.world.get_component(unit_id, MovementPoints)
-            combat = self.world.get_component(unit_id, Combat)
-            vision = self.world.get_component(unit_id, Vision)
-            action_points = self.world.get_component(unit_id, ActionPoints)
-            construction_points = self.world.get_component(unit_id, ConstructionPoints)
-            skill_points = self.world.get_component(unit_id, SkillPoints)
-            unit_status = self.world.get_component(unit_id, UnitStatus)
-            unit_skills = self.world.get_component(unit_id, UnitSkills)
+            unit = self._observation_component(unit_id, Unit)
+            unit_count = self._observation_component(unit_id, UnitCount)
+            position = self._observation_component(unit_id, HexPosition)
+            movement_points = self._observation_component(unit_id, MovementPoints)
+            combat = self._observation_component(unit_id, Combat)
+            vision = self._observation_component(unit_id, Vision)
+            action_points = self._observation_component(unit_id, ActionPoints)
+            construction_points = self._observation_component(unit_id, ConstructionPoints)
+            skill_points = self._observation_component(unit_id, SkillPoints)
+            unit_status = self._observation_component(unit_id, UnitStatus)
+            unit_skills = self._observation_component(unit_id, UnitSkills)
 
             if not unit:
                 return {

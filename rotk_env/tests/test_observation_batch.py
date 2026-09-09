@@ -89,3 +89,48 @@ def test_wrong_thread_cannot_enter_world():
     with ThreadPoolExecutor(max_workers=1) as pool:
         with pytest.raises(RuntimeError,match='owner thread'):
             pool.submit(gate.process_observation_batch,[query('a',a)]).result()
+
+
+@pytest.mark.parametrize('fog_enabled', [True, False])
+def test_reuse_is_exact_and_facts_build_once_across_factions(fog_enabled):
+    from rotk_env.components import FogOfWar
+    world, gate, a, b, enemy = setup()
+    fog = world.get_singleton_component(FogOfWar)
+    fog.enabled = fog_enabled
+    fog.faction_vision[Faction.SHU] = set(fog.faction_vision[Faction.WEI])
+    requests = [query('a', a), query('b', a), query('c', enemy, 'shu'), query('a', b)]
+    expected = reference(gate, requests)
+    result = gate.process_observation_batch(requests, budget_ms=1000)
+    assert decode(result) == expected
+    metrics = result['cache_metrics']
+    assert metrics['census_builds'] == 1
+    assert metrics['faction_builds'] == 2
+    assert metrics['faction_hits'] == 2
+    assert metrics['unit_panel_builds'] == 3
+    assert metrics['unit_panel_hits'] == 1
+    assert metrics['tile_hits'] > 0
+    from rotk_env.components import MapData
+    cells = world.get_singleton_component(MapData).tiles
+    queried = set(cells) if not fog_enabled else set(cells).intersection(fog.faction_vision[Faction.WEI])
+    assert metrics['tile_builds'] == len(queried)  # includes cached missing tiles
+    # A subsequent batch starts fresh, even though World.revision did not change.
+    again = gate.process_observation_batch(requests, budget_ms=1000)
+    assert again['cache_metrics'] == metrics
+
+
+def test_in_place_changes_between_batches_are_immediate():
+    from rotk_env.components import ActionPoints, FogOfWar, UnitCount
+    world, gate, a, b, enemy = setup()
+    requests = [query('a', a), query('b', b)]
+    first = decode(gate.process_observation_batch(requests, budget_ms=1000))
+    revision = world.revision
+    world.get_component(a, ActionPoints).current_ap = 0
+    world.get_component(b, UnitCount).current_count = 0
+    world.get_singleton_component(FogOfWar).faction_vision[Faction.WEI].clear()
+    assert world.revision == revision
+    second = decode(gate.process_observation_batch(requests, budget_ms=1000))
+    assert second == reference(gate, requests)
+    assert second != first
+    assert second[0]['alive_units'] == 1
+    assert second[0]['visible_enemy_units'] == []
+    assert second[1]['units'] == []

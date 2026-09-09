@@ -270,3 +270,27 @@ Compact rows (not the wire):
 - Use the latest `get_faction_state` result. Packs with both masks (D, F):
   `Move only to reachable; attack only attackable.` Packs with one mask keep
   only that half.
+
+### Local synchronous read batches
+
+An ENV owner-thread caller can use `LLMSystem.process_observation_batch(requests,
+budget_ms=12, max_requests=32, reuse=True)`. Each request contains `agent_id`,
+`action_id` and the usual `get_faction_state` `params`. Registration, faction,
+selection and command permission checks remain the ordinary business gates.
+
+The method consumes an ordered prefix and returns `consumed`, independent UTF-8
+JSON `responses[*].payload` bytes, diagnostic `cache_metrics`, and `finished_at`.
+Only observations may enter this API. Callers must retain the unconsumed suffix,
+never reorder reads across actions, and charge encoding and client consumption
+to their frame budget. The time budget is checked between requests: one request
+can exceed it. All responses become available when the batch returns.
+
+Within that synchronous call, faction public views, unit panels, basic component
+lookups and terrain facts are built lazily and reused. Each Agent's command
+fields are attached separately. Scratch state is discarded in `finally`, also
+on failure; nothing is reused across batches or world updates. Do not mutate
+world state or run callbacks/concurrent writers during the call. Owner-thread,
+reentry and revision checks catch common misuse; revision alone cannot detect
+arbitrary in-place component edits. `reuse=False` retains the batch boundary
+without caches for controlled comparisons. The ordinary single-request API
+continues to return dictionaries; this entry does not add Protocol/Hub batching.
