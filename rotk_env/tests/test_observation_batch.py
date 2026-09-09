@@ -32,13 +32,14 @@ def reference(gate, requests):
         'get_faction_state',dict(r['params']),send_response=False) for r in requests]
 
 
-def test_batch_gate_and_independent_bytes_match_single_queries(monkeypatch):
+@pytest.mark.parametrize("reuse", [False, True])
+def test_batch_gate_and_independent_bytes_match_single_queries(monkeypatch, reuse):
     monkeypatch.setattr("rotk_env.systems.llm_system.time.time", lambda: 1234.0)
     world, gate, a, b, enemy = setup()
     requests = [query('a',a), query('b',a),query('c',enemy,'shu'),
                 query('a',enemy),query('unknown',a),query('b',b,'shu')]
     expected = reference(gate,requests)
-    result = gate.process_observation_batch(requests,budget_ms=1000,reuse=False)
+    result = gate.process_observation_batch(requests,budget_ms=1000,reuse=reuse)
     assert result['consumed']==len(requests)
     assert decode(result)==expected
     assert expected[0]['units'][0]['commandable']
@@ -179,3 +180,37 @@ def test_only_requested_faction_action_points_are_materialized():
     assert set(context._components[ActionPoints]) == {a, b}
     context.close()
     assert not context._components and not context._cache
+
+
+@pytest.mark.parametrize('change', ['position', 'mp', 'faction', 'ownership', 'replace', 'destroy'])
+def test_other_world_changes_between_batches_match_uncached(change):
+    from rotk_env.components import HexPosition, MovementPoints, TeamCoordination, Unit, UnitCount
+    world, gate, a, b, enemy = setup()
+    requests = [query('a', a), query('b', a), query('c', enemy, 'shu')]
+    # Query the full faction after membership changes, avoiding invalid selections.
+    if change in ('faction', 'destroy'):
+        for request in requests:
+            request['params'].pop('unit_ids')
+    first = decode(gate.process_observation_batch(requests, budget_ms=1000))
+    if change == 'position':
+        world.get_component(a, HexPosition).col = 1
+    elif change == 'mp':
+        world.get_component(a, MovementPoints).current_mp = 0
+    elif change == 'faction':
+        world.get_component(a, Unit).faction = Faction.SHU
+    elif change == 'ownership':
+        world.get_singleton_component(TeamCoordination).claim_units('b', [a], exclusive=False)
+    elif change == 'replace':
+        world.add_component(a, UnitCount(current_count=25, max_count=100))
+    else:
+        world.destroy_entity(a)
+    second = decode(gate.process_observation_batch(requests, budget_ms=1000))
+    assert second == reference(gate, requests)
+    assert second != first
+
+
+def test_empty_batch_does_not_build_observation_facts():
+    _, gate, *_ = setup()
+    result = gate.process_observation_batch([], budget_ms=1000)
+    assert result['consumed'] == 0
+    assert result['cache_metrics'] == {}

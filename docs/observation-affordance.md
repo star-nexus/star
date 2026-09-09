@@ -294,3 +294,10 @@ reentry and revision checks catch common misuse; revision alone cannot detect
 arbitrary component edits or replacements. `reuse=False` retains the batch boundary
 without caches for controlled comparisons. The ordinary single-request API
 continues to return dictionaries; this entry does not add Protocol/Hub batching.
+
+Batch reuse reduces repeated construction, not the amount of information sent:
+each response still contains its complete public view and selected panels.
+If the first query consumes the budget, reuse may provide no benefit and its
+preparation can cost more than a single query. Measure complete frame time and
+request backlog for the intended workload; a high cache hit count alone does
+not establish real-time capacity.
