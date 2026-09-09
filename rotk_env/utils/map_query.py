@@ -243,7 +243,7 @@ def reachable_hexes(
 
     Path cost within budget (friendly hexes traversable at terrain cost), minus
     every hex that currently holds a unit. Occupancy and enemy cells come from
-    one `unit_cells` pass so the two sets cannot disagree about where units are.
+    the maintained spatial index, or one shared scan in unindexed worlds.
     """
     # Window movement already maintains this index at every position commit.
     # Terrain entry costs are >=1, so a budget R cannot reach a blocker farther

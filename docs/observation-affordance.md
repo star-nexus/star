@@ -69,6 +69,11 @@ and terrain channels are unchanged by selection. This is an explicit observation
 scope, not agent-side compression or a change to Fog rules. Capacity results
 must state whether they use full-faction or selected-unit panels.
 
+World tick rate, observation polling rate, and decision rate are independent.
+A 30Hz world does not imply 30 observations or decisions per second per Agent.
+Selected panels still include the shared channels on every response; selection
+alone does not establish thousand-Agent observation capacity.
+
 Enemy units do **not** carry `reachable` or `attackable`. That would be a
 threat map (a strategy hint). Agents may infer enemy next-step from visible
 positions and terrain.
