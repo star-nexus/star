@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import time
+import threading
+import math
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 
@@ -112,6 +114,10 @@ class ActionExecutor:
         Returns:
             Dict containing the execution result
         """
+        batch = getattr(self.llm_system, '_observation_batch_context', None)
+        if batch is not None and request.action_name != 'get_faction_state':
+            batch.invalidated = True
+            raise RuntimeError("World actions cannot execute inside an observation batch")
         result: Optional[Dict[str, Any]] = None
         try:
             result = self._dispatch(request.action_name, request.parameters)
@@ -327,6 +333,8 @@ class LLMSystem(System):
 
         # Initialize delegation objects. Handler shares this observation
         # instance so named queries hit the revision cache.
+        self._observation_owner_thread = threading.get_ident()
+        self._observation_batch_context = None
         self.observation_system = LLMObservationSystem(world)
         self.action_handler = LLMActionHandler(
             world, observation_system=self.observation_system
@@ -1346,6 +1354,86 @@ class LLMSystem(System):
         pass
 
     # === ENV methods ===
+    def process_observation_batch(
+        self, requests: List[Dict[str, Any]], *, budget_ms: float = 12.0,
+        max_requests: int = 32, reuse: bool = True,
+    ) -> Dict[str, Any]:
+        """Encode an ordered prefix of local queries in one synchronous read batch.
+
+        Caller-provided identities must come from the trusted ENV scheduler.
+        This is not a wire action or a replacement for transport authentication.
+        Unconsumed requests retain their original order/deadlines at the caller.
+        Returned bytes own their data; no cached object escapes the batch.
+        """
+        from ..utils.observation_batch import ObservationBatchContext
+        if threading.get_ident() != self._observation_owner_thread:
+            raise RuntimeError("Observation batches must run on the ENV owner thread")
+        active = self._observation_batch_context
+        if active is not None:
+            active.invalidated = True
+            raise RuntimeError("Observation batches cannot be nested")
+        if type(max_requests) is not int or not 1 <= max_requests <= 32:
+            raise ValueError("max_requests must be an integer from 1 to 32")
+        if not isinstance(requests, (list, tuple)):
+            raise TypeError("requests must be a finite list or tuple")
+        if not isinstance(budget_ms, (int, float)) or not math.isfinite(budget_ms) or budget_ms < 0:
+            raise ValueError("budget_ms must be finite and nonnegative")
+        prefix = requests[:max_requests]
+        for request in prefix:
+            if not isinstance(request, dict) or request.get('action', 'get_faction_state') != 'get_faction_state':
+                raise ValueError("An observation batch accepts only get_faction_state")
+        started = time.perf_counter()
+        # Initialization is outside the immutable game-state interval.
+        if prefix and self.world.get_singleton_component(GameStats) is None:
+            self.world.add_singleton_component(GameStats())
+        context = ObservationBatchContext(self.action_handler, reuse=reuse)
+        responses = []
+        self._observation_batch_context = context
+        self.action_handler._observation_batch_context = context if reuse else None
+        try:
+            for request in prefix:
+                if (time.perf_counter() - started) * 1000 >= budget_ms:
+                    break
+                begin = time.perf_counter()
+                params = request.get('params', {})
+                try:
+                    if not isinstance(params, dict):
+                        result = self._create_system_error_response(
+                            'get_faction_state', 'params must be a dictionary', 2007)
+                    else:
+                        result = self._process_action_request(
+                            agent_id=request.get('agent_id'), action_id=request.get('action_id'),
+                            action='get_faction_state', params=dict(params), send_response=False)
+                except Exception as exc:
+                    context.invalidated = True
+                    result = self._create_system_error_response(
+                        'get_faction_state', str(exc), ErrorCode.INTERNAL_ERROR)
+                if context.invalidated or self.world.revision != context.revision:
+                    context.invalidated = True
+                    result = self._create_system_error_response(
+                        'get_faction_state', 'World changed or reentered during observation batch',
+                        ErrorCode.INTERNAL_ERROR)
+                constructed = time.perf_counter()
+                try:
+                    payload = json.dumps(result, separators=(',', ':'), ensure_ascii=False).encode()
+                except Exception as exc:
+                    context.invalidated = True
+                    result = self._create_system_error_response(
+                        'get_faction_state', f'Observation encoding failed: {exc}', ErrorCode.INTERNAL_ERROR)
+                    payload = json.dumps(result, separators=(',', ':'), ensure_ascii=False).encode()
+                responses.append({'agent_id': request.get('agent_id'), 'action_id': request.get('action_id'),
+                    'payload': payload, 'started_at': begin,
+                    'build_ms': (constructed - begin) * 1000,
+                    'encode_ms': (time.perf_counter() - constructed) * 1000})
+                if context.invalidated or result.get('error_code') == int(ErrorCode.INTERNAL_ERROR):
+                    break
+        finally:
+            self.action_handler._observation_batch_context = None
+            self._observation_batch_context = None
+            context.close()
+        return {'consumed': len(responses), 'responses': responses,
+                'cache_metrics': dict(context.metrics), 'finished_at': time.perf_counter()}
+
     def _process_action_request(
         self,
         agent_id: Optional[str],
@@ -1356,6 +1444,10 @@ class LLMSystem(System):
         send_response: bool,
     ) -> Dict[str, Any]:
         """Core routine to validate, execute and optionally respond to an action."""
+        batch = getattr(self, '_observation_batch_context', None)
+        if batch is not None and (action != 'get_faction_state' or send_response):
+            batch.invalidated = True
+            raise RuntimeError("Only local observations may run inside an observation batch")
         start_time = time.time()
         standardized_result: Dict[str, Any] | None = None
 
