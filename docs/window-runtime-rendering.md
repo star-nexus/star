@@ -66,6 +66,24 @@ semantics.
 
 ## Render submission
 
+Coordinate labels (key `0`) retain one font size, the current view's label
+surfaces, and one viewport overlay. An unchanged camera/cull submits one blit
+without projecting tiles or rasterizing text again. Camera, zoom, orientation,
+viewport, or cull changes rebuild the overlay; overlapping labels at the same
+font size are reused and labels outside the new cull are released. The culler
+publishes immutable sets, allowing constant-time identity checks on steady
+frames. Below zoom 0.3 the existing coordinate visibility rule still applies.
+Overlay pixel composition still scales with viewport area; a changed view takes
+work proportional to visible tiles, not all resident units.
+
+Damage, MISS, and CRIT text retain one raster per active effect after it first
+enters the viewport. Each effect has its own alpha surface, so concurrent texts
+at different ages fade independently. Frame work scans active effects, reuses
+text extents/pixels, and skips offscreen blits; component replacement or changes
+to text, color, or font invalidate the raster. Cache entries disappear when an
+effect expires or is removed. Camera projection, floating trajectories, damage,
+and cooldown rules are unchanged.
+
 `RenderEngine` preserves layer and command order. Consecutive plain blits are
 submitted through `pygame.Surface.blits`; custom drawing commands and blits
 with source areas or special flags remain ordering barriers.

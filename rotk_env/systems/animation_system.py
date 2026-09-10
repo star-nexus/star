@@ -33,6 +33,7 @@ class AnimationSystem(System):
             GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION
         )
         self.damage_font = None
+        self._damage_text_cache = {}
 
     def initialize(self, world: World) -> None:
         self.world = world
@@ -42,6 +43,7 @@ class AnimationSystem(System):
         self.font_file_path = Path("rotk_env/assets/fonts/sh.otf")
         self.damage_font = pygame.font.Font(self.font_file_path, 24)
         self.font_dict = {}
+        self._damage_text_cache.clear()
 
     def subscribe_events(self):
         pass
@@ -189,15 +191,20 @@ class AnimationSystem(System):
             self.world.destroy_entity(entity)
 
     def render_damage_numbers(self):
-        """Render damage numbers"""
+        """Reuse per-effect text pixels; scan only active effects and cull blits."""
         if not self.damage_font:
+            self._damage_text_cache.clear()
             return
 
         camera = self.world.get_singleton_component(Camera)
         if not camera:
+            self._damage_text_cache.clear()
             return
 
         camera_offset = camera.get_offset()
+        width, height = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
+        previous = self._damage_text_cache
+        current = {}
 
         for entity in self.world.query().with_all(DamageNumber).entities():
             damage_num = self.world.get_component(entity, DamageNumber)
@@ -211,10 +218,15 @@ class AnimationSystem(System):
             if alpha <= 0:
                 continue
 
-            # Create color with alpha
-            color = (*damage_num.color, alpha)
+            screen_x = int(damage_num.position[0] + camera_offset[0])
+            screen_y = int(damage_num.position[1] + camera_offset[1])
+            cached = previous.get(entity)
+            if screen_x >= width or screen_y >= height:
+                # No font/size/raster work for a new effect beyond these edges.
+                if cached is not None and cached[0] is damage_num:
+                    current[entity] = cached
+                continue
 
-            # Render text
             text = damage_num.text
 
             # Create a font for the given size if needed
@@ -234,17 +246,28 @@ class AnimationSystem(System):
                 except:
                     font_to_use = self.damage_font
 
-            text_surface = font_to_use.render(text, True, damage_num.color)
+            signature = (text, tuple(damage_num.color), font_to_use)
+            if (cached is None or cached[0] is not damage_num
+                    or cached[1] != signature):
+                cached = (damage_num, signature, font_to_use.size(text), None)
+            current[entity] = cached
+            text_width, text_height = cached[2]
+            if screen_x + text_width <= 0 or screen_y + text_height <= 0:
+                continue
 
-            # Apply alpha
-            if alpha < 255:
-                text_surface.set_alpha(alpha)
-
-            # Calculate screen position
-            screen_x = damage_num.position[0] + camera_offset[0]
-            screen_y = damage_num.position[1] + camera_offset[1]
+            text_surface = cached[3]
+            if text_surface is None:
+                text_surface = font_to_use.render(text, True, damage_num.color)
+                current[entity] = (damage_num, signature, cached[2], text_surface)
+            # Each effect owns its surface: two CRITs at different ages must
+            # never overwrite each other's alpha in the deferred render queue.
+            text_surface.set_alpha(alpha)
 
             RMS.draw(text_surface, (screen_x, screen_y))
+
+        # Replaced components, expired effects and external deletions disappear
+        # here without an all-resident query or a growing historical cache.
+        self._damage_text_cache = current
 
     def get_unit_render_position(self, entity: int) -> Optional[Tuple[float, float]]:
         """Get the render position of a unit (accounting for movement and attack animations)"""

@@ -12,7 +12,7 @@ import pygame
 import os
 import random
 import math
-from typing import Tuple, Set, List, Dict, Optional
+from typing import Tuple, Set, FrozenSet, List, Dict, Optional
 from framework import System
 from framework.engine import RMS
 from ..components import (
@@ -45,7 +45,7 @@ class MapRenderSystem(System):
         self.texture_loaded = False
 
         # Performance caches
-        self.visible_tiles_cache: Set[Tuple[int, int]] = set()
+        self.visible_tiles_cache: FrozenSet[Tuple[int, int]] = frozenset()
         self.last_camera_pos = (0, 0)
         self.last_zoom = 1.0
         self.last_viewport_size = (0, 0)
@@ -59,13 +59,24 @@ class MapRenderSystem(System):
         # Stats (debug)
         self.frame_count = 0
         self.render_calls_saved = 0
+        self._reset_coordinate_cache()
 
         print("[Integrated] Map Render System initialized - performance + features")
 
     def initialize(self, world) -> None:
         """Initialize the map render system and preload textures."""
         self.world = world
+        self._reset_coordinate_cache()
         self._load_terrain_textures()
+
+    def _reset_coordinate_cache(self):
+        # One viewport, one font size, and labels from that viewport only.
+        self._coordinate_font_size = None
+        self._coordinate_font = None
+        self._coordinate_labels = {}
+        self._coordinate_view_key = None
+        self._coordinate_view_tiles = None
+        self._coordinate_overlay = None
 
     def _load_terrain_textures(self) -> None:
         """Load terrain textures from assets if available; fallback to color fills."""
@@ -197,7 +208,7 @@ class MapRenderSystem(System):
             self.hex_converter = HexConverter(GameConfig.HEX_SIZE, orientation)
             # Shape and screen-space positions both changed.
             self.tile_texture_cache.clear()
-            self.visible_tiles_cache.clear()
+            self.visible_tiles_cache = frozenset()
             self.last_camera_pos = (float("inf"), float("inf"))
             self.last_zoom = float("inf")
             self.last_viewport_size = (0, 0)
@@ -243,7 +254,7 @@ class MapRenderSystem(System):
 
     def _get_visible_tiles_smart(
         self, camera_offset: List[float], zoom: float
-    ) -> Set[Tuple[int, int]]:
+    ) -> FrozenSet[Tuple[int, int]]:
         """Return tiles whose centers fall inside the padded viewport.
 
         The previous implementation first guessed a rectangular q/r search area
@@ -272,7 +283,7 @@ class MapRenderSystem(System):
 
         map_data = self.world.get_singleton_component(MapData)
         if not map_data:
-            return set()
+            return frozenset()
 
         # Bounds are expressed in world pixels. The margin is specified in
         # screen pixels, so divide it by zoom together with the viewport.
@@ -294,12 +305,12 @@ class MapRenderSystem(System):
                 visible_tiles.add((q, r))
 
         # Update caches. Viewport size matters because the window is resizable.
-        self.visible_tiles_cache = visible_tiles
+        self.visible_tiles_cache = frozenset(visible_tiles)
         self.last_camera_pos = current_camera_pos
         self.last_zoom = zoom
         self.last_viewport_size = viewport_size
 
-        return visible_tiles
+        return self.visible_tiles_cache
 
     def _render_map_optimized(
         self,
@@ -680,53 +691,66 @@ class MapRenderSystem(System):
         camera_offset: List[float],
         zoom: float = 1.0,
     ):
-        """Render coordinates overlay for visible tiles only."""
+        """One cached overlay blit for an unchanged view; rebuild on view change."""
         ui_state = self.world.get_singleton_component(UIState)
-        if not ui_state or not ui_state.show_coordinates:
+        if not ui_state or not ui_state.show_coordinates or zoom < 0.3:
+            return
+        if not visible_tiles:
+            self._reset_coordinate_cache()
             return
 
-        # Font size adapts to zoom
+        viewport = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+        view_key = (tuple(camera_offset), zoom, viewport,
+                    self.hex_converter.orientation, self.hex_converter.size,
+                    len(visible_tiles))
+        # The culler replaces its immutable set on recull.
+        # Retain the set itself so identity cannot be recycled. No per-frame
+        # tile hashing/copying is needed while the camera and cull are unchanged.
+        if (self._coordinate_view_key == view_key
+                and self._coordinate_view_tiles is visible_tiles):
+            RMS.draw(self._coordinate_overlay, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
+            return
+
         font_size = max(10, int(12 * zoom))
+        if self._coordinate_font_size != font_size:
+            try:
+                self._coordinate_font = pygame.font.Font(None, font_size)
+            except (pygame.error, OSError):
+                self._coordinate_font = pygame.font.SysFont("arial", font_size)
+            self._coordinate_font_size = font_size
+            self._coordinate_labels.clear()
 
-        # Avoid showing unreadable labels at very small zoom
-        if zoom < 0.3:
-            return
-
-        # Iterate visible tiles and draw coordinate labels
+        overlay = pygame.Surface(viewport, pygame.SRCALPHA)
+        labels = {}
         for q, r in visible_tiles:
-            # Compute hex center on screen
             world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
             center_x = (world_x * zoom) + camera_offset[0]
             center_y = (world_y * zoom) + camera_offset[1]
+            label = self._coordinate_labels.get((q, r))
+            if label is None:
+                label = self._coordinate_label_surface(f"({q},{r})")
+            labels[(q, r)] = label
+            overlay.blit(label, label.get_rect(center=(int(center_x), int(center_y))),
+                         special_flags=pygame.BLEND_PREMULTIPLIED)
 
-            # Text string
-            coord_text = f"({q},{r})"
+        self._coordinate_labels = labels
+        self._coordinate_overlay = overlay
+        self._coordinate_view_key = view_key
+        self._coordinate_view_tiles = visible_tiles
+        RMS.draw(overlay, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
 
-            # Draw label
-            self._render_coordinate_text(coord_text, center_x, center_y, font_size)
-
-    def _render_coordinate_text(self, text: str, x: float, y: float, font_size: int):
-        """Render a coordinate label with simple 4-direction outline."""
-        # Create font (fallback to system if default fails)
-        try:
-            font = pygame.font.Font(None, font_size)
-        except:
-            font = pygame.font.SysFont("arial", font_size)
-
-        # Colors
-        text_color = (255, 255, 255)  # white
-        outline_color = (0, 0, 0)  # black outline
-
-        # Main surface
-        text_surface = font.render(text, True, text_color)
-        text_rect = text_surface.get_rect(center=(int(x), int(y)))
-
-        # Draw outline in 4 directions
-        for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            outline_surface = font.render(text, True, outline_color)
-            outline_rect = text_rect.copy()
-            outline_rect.move_ip(dx, dy)
-            RMS.draw(outline_surface, outline_rect.topleft)
-
-        # Draw main text
-        RMS.draw(text_surface, text_rect.topleft)
+    def _coordinate_label_surface(self, text: str):
+        """Rasterize each color once and compose the original four-way outline."""
+        # Premultiplied alpha keeps antialiased edges correct through both
+        # composition stages (label -> overlay -> framebuffer).
+        # Copy first: SDL_ttf may return padded rows; pygame 2.6.1's premultiply
+        # path on this platform requires tightly packed rows for correct pixels.
+        foreground = self._coordinate_font.render(text, True, (255, 255, 255)).copy().premul_alpha()
+        outline = self._coordinate_font.render(text, True, (0, 0, 0)).copy().premul_alpha()
+        label = pygame.Surface((foreground.get_width()+2, foreground.get_height()+2),
+                               pygame.SRCALPHA)
+        for surface, position in [(outline, (0, 0)), (outline, (0, 2)),
+                                  (outline, (2, 0)), (outline, (2, 2)),
+                                  (foreground, (1, 1))]:
+            label.blit(surface, position, special_flags=pygame.BLEND_PREMULTIPLIED)
+        return label
