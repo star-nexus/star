@@ -36,6 +36,9 @@ STRUCTURAL_CONTRACTS = [
     "rotk_env/tests/test_window_vision_audit_boundary.py",
     # Render queue should preserve blit batching.
     "framework/tests/test_render_blit_batching.py",
+    # Steady coordinate views do no per-tile work; text caches preserve pixels,
+    # independent fades, culling, invalidation and bounded active retention.
+    "rotk_env/tests/test_text_render_cache.py",
     # One dirty Vision observer must not become an all-observer recompute.
     "rotk_env/tests/test_vision_incremental_index.py::test_mark_dirty_updates_only_changed_unit_and_keeps_explored_history",
     # The validated large-window Vision working-set headroom must not regress to 4096.

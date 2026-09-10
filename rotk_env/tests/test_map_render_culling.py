@@ -48,6 +48,8 @@ def test_zoomed_panned_large_map_keeps_on_screen_upper_tiles(monkeypatch):
 
     visible = renderer._get_visible_tiles_smart(camera_offset, zoom)
     assert (0, 10) in visible
+    assert isinstance(visible, frozenset)
+    assert renderer._get_visible_tiles_smart(camera_offset, zoom) is visible
 
 
 def test_viewport_resize_invalidates_visible_tile_cache(monkeypatch):
