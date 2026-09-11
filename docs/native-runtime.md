@@ -2,8 +2,10 @@
 
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
-**R1 is not a playable Rust backend.** Movement, combat, observation and the window
-handoff are subsequent phase gates. There is no silent backend fallback.
+**The Rust backend is not yet playable.** R2 is in progress: native movement,
+resource recovery and the combat calculation have differential contract tests.
+The complete statistics/Fog/permissions/observation loop and the window handoff
+are still pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -49,6 +51,25 @@ are isolated and restored. The native world never retains Python component
 references. Imported component columns currently preserve cold initial state;
 typed gameplay computation is added in R2/R3. `export_state` is a diagnostic
 operation, not a per-frame synchronization mechanism.
+
+The R2 intermediate implementation includes dynamic unit occupancy and stable
+A* ties, instantaneous rule-mode movement and animated dummy/window movement,
+and the existing severe-headcount-loss MP rule. Movement advances only active
+units. AP/MP/skill cooldowns use versioned deadline buckets; an imported scene
+preserves the scheduler ledger, including superseded tasks and pending MP spends.
+Paused simulation time never advances recovery. Repeated AP spends preserve the
+active cadence; MP recovery restarts at the next advancing recovery boundary.
+
+Private `_movement_probe_json`, `_resource_probe_json` and `_combat_probe_json`
+methods exist only for differential tests. They are **not Agent action APIs**:
+they have no registration/claim authorization boundary. The combat probe currently
+supports rule mode and the fallback statistics path; presentation combat entities
+and normal statistics subscribers remain pending. Do not route Agents through
+these probes or use them for a capacity claim. `gameplay_ready` remains false.
+
+The initialization codec preserves the difference between `UnitState` enum values
+and historical raw status strings, since Python's coefficient lookup distinguishes
+them. It does not normalize or rebalance those rules during migration.
 
 `step(dt)` advances the simulation clock from dt. Its optional wall timestamp is
 external metadata, never the source of CD/recovery elapsed time. Clock changes

@@ -23,7 +23,12 @@ def encode(value):
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if dataclasses.is_dataclass(value):
-        return {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        out = {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        # UnitState is an Enum, not str. Existing coefficient lookup distinguishes
+        # it from the legacy raw string; preserve that distinction in native state.
+        if type(value).__name__ == 'UnitStatus' and isinstance(value.current_status, Enum):
+            out['current_status_is_enum'] = True
+        return out
     if isinstance(value, dict):
         pairs = [[encode(k), encode(v)] for k, v in value.items()]
         if all(isinstance(k, str) for k, _ in pairs):
@@ -45,6 +50,25 @@ def rng_state(rng: random.Random):
     return {'words': list(words[:-1]), 'index': words[-1], 'gauss_next': gaussian}
 
 
+def export_recovery(system):
+    """Import active deadlines too: resetting at a handoff would change CD."""
+    def queue(kind):
+        return {'buckets': [[due, [list(entry) for entry in entries]]
+                            for due, entries in sorted(getattr(system, f'_{kind}_buckets').items())],
+                'active': [[uid, list(value)] for uid, value in sorted(getattr(system, f'_{kind}_due').items())],
+                'versions': [[uid, v] for uid, v in sorted(getattr(system, f'_{kind}_versions').items())]}
+    result = {'enabled': system.enabled, 'ap_interval': system.ap_recovery_interval,
+              'ap_amount': system.ap_recovery_amount, 'mp_interval': system.mp_recovery_interval,
+              'skill_interval': system.skill_cooldown_interval,
+              'last': system._last_game_elapsed, 'known': system._known_entity_counter,
+              'mp_pending': sorted(system._mp_pending_detection)}
+    for kind in ('ap', 'mp', 'skill'):
+        result[kind] = queue(kind)
+        result[f'{kind}_elapsed'] = {str(k): v for k, v in getattr(system, f'{kind}_elapsed').items()}
+    result['mp_last_points'] = {str(k): v for k, v in system.mp_last_points.items()}
+    return result
+
+
 def export_initial_state(world, *, display='none'):
     from rotk_env.components import GameTime, RngService
     from rotk_env.prefabs.config import GameConfig
@@ -61,13 +85,19 @@ def export_initial_state(world, *, display='none'):
         entities.append({'id': entity, 'components': kept})
     singletons = {t.__name__: encode(c) for t, c in world._singleton_components.items()
                   if t.__name__ not in PRESENTATION and t is not RngService}
+    from rotk_env.systems.resource_recovery_system import get_resource_recovery_system
+    recovery = get_resource_recovery_system(world)
+    systems = {'ResourceRecoverySystem': export_recovery(recovery)} if recovery is not None else {}
     return {'schema': SCHEMA_VERSION, 'oracle': ORACLE_VERSION, 'display': display,
             'mode': clock.current_mode.value, 'seed': str(rng.seed), 'seed_source': rng.source,
             'entity_counter': world.entity_counter, 'entities': entities, 'singletons': singletons,
+            'systems': systems,
             'clock': {'elapsed': clock.game_elapsed_time, 'time_scale': clock.time_scale,
                       'paused': clock.paused, 'realtime': clock.is_real_time(), 'tick': 0},
             'rng': {name: rng_state(stream) for name, stream in rng._rngs.items()},
-            'rules': {'terrain_effects': encode(GameConfig.TERRAIN_EFFECTS),
+            'rules': {'hex_size': GameConfig.HEX_SIZE,
+                      'hex_orientation': GameConfig.HEX_ORIENTATION.value,
+                      'terrain_effects': encode(GameConfig.TERRAIN_EFFECTS),
                       'terrain_coefficients': encode(GameConfig.TERRAIN_COEFFICIENTS),
                       'state_coefficients': encode(GameConfig.STATE_COEFFICIENTS),
                       'unit_stats': encode(GameConfig.UNIT_STATS)}}

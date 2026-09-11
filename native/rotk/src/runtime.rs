@@ -1,4 +1,9 @@
-use crate::RULES_VERSION;
+use crate::{
+    RULES_VERSION,
+    components::{self, Headcount, Movement, Position, UnitInfo},
+    recovery::Recovery,
+    spatial::Spatial,
+};
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -36,6 +41,8 @@ pub struct SceneSpec {
     pub clock: SimClock,
     pub rng: BTreeMap<String, RandomState>,
     pub rules: Value,
+    #[serde(default)]
+    pub systems: BTreeMap<String, Value>,
 }
 
 pub struct Runtime {
@@ -43,11 +50,17 @@ pub struct Runtime {
     pub clock: SimClock,
     pub rng: DomainRng,
     pub singletons: BTreeMap<String, Value>,
-    config: SceneSpec,
+    pub(crate) config: SceneSpec,
+    pub spatial: Spatial,
+    pub(crate) moving: BTreeSet<u64>,
+    pub(crate) vision_dirty: BTreeSet<u64>,
+    pub recovery: Option<Recovery>,
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
-    presentation_dirty: BTreeSet<u64>,
+    pub(crate) presentation_dirty: BTreeSet<u64>,
+    pub(crate) presentation_removed: Vec<u64>,
+    pub(crate) events: Vec<Value>,
 }
 
 impl Runtime {
@@ -89,11 +102,12 @@ impl Runtime {
         config.seed = star_core::rng::canonical_seed(&config.seed)?;
         let mut world = OrderedWorld::new(config.entity_counter);
         let mut presentation_dirty = BTreeSet::new();
-        for spec in std::mem::take(&mut config.entities) {
+        for mut spec in std::mem::take(&mut config.entities) {
             let entity = world.import(spec.id)?;
             if spec.components.contains_key("Unit") {
                 presentation_dirty.insert(spec.id);
             }
+            components::import(&mut world.ecs, entity, &mut spec.components)?;
             world
                 .ecs
                 .entity_mut(entity)
@@ -101,8 +115,32 @@ impl Runtime {
         }
         let singletons = std::mem::take(&mut config.singletons);
         let clock = config.clock.clone();
+        let spatial = Spatial::build(&world, &singletons, &config.rules, &config.display)?;
+        let recovery = config
+            .systems
+            .remove("ResourceRecoverySystem")
+            .map(serde_json::from_value::<Recovery>)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        if let Some(r) = &recovery {
+            r.validate(world.next_id())?;
+        }
+        let moving = world
+            .ordered()
+            .filter_map(|(id, e)| {
+                world
+                    .ecs
+                    .get::<Movement>(e)
+                    .filter(|m| m.is_moving)
+                    .map(|_| id)
+            })
+            .collect();
         Ok(Self {
             world,
+            spatial,
+            moving,
+            vision_dirty: BTreeSet::new(),
+            recovery,
             clock,
             rng,
             singletons,
@@ -111,6 +149,8 @@ impl Runtime {
             revision: 0,
             threads,
             presentation_dirty,
+            presentation_removed: Vec::new(),
+            events: Vec::new(),
         })
     }
 
@@ -125,6 +165,8 @@ impl Runtime {
             clock["game_elapsed_time"] = json!(self.clock.elapsed);
             clock["last_update_time"] = json!(wall_time);
         }
+        self.advance_movement(dt);
+        self.advance_recovery();
         self.revision = revision;
         Ok(())
     }
@@ -151,40 +193,46 @@ impl Runtime {
         out.entities = self
             .world
             .ordered()
-            .map(|(id, e)| EntitySpec {
-                id,
-                components: self
+            .map(|(id, e)| {
+                let mut cold = self
                     .world
                     .ecs
                     .get::<InitialComponents>(e)
                     .expect("imported components")
                     .0
-                    .clone(),
+                    .clone();
+                components::export(&self.world.ecs, e, &mut cold);
+                EntitySpec {
+                    id,
+                    components: cold,
+                }
             })
             .collect();
         out.singletons = self.singletons.clone();
         out.rng = self.rng.states();
+        if let Some(recovery) = &self.recovery {
+            out.systems.insert(
+                "ResourceRecoverySystem".into(),
+                serde_json::to_value(recovery).expect("validated recovery"),
+            );
+        }
         out
     }
     pub fn presentation(&mut self) -> Value {
         let mut units = Vec::with_capacity(self.presentation_dirty.len());
         for id in std::mem::take(&mut self.presentation_dirty) {
             if let Some(entity) = self.world.entity(id) {
-                let c = &self
-                    .world
-                    .ecs
-                    .get::<InitialComponents>(entity)
-                    .expect("components")
-                    .0;
-                units.push(json!({"id": id, "position": c.get("HexPosition"),
-                    "unit": c.get("Unit"), "count": c.get("UnitCount")}));
+                units.push(json!({"id": id, "position": self.world.ecs.get::<Position>(entity),
+                    "unit": self.world.ecs.get::<UnitInfo>(entity), "count": self.world.ecs.get::<Headcount>(entity),
+                    "movement": self.world.ecs.get::<Movement>(entity)}));
             }
         }
         json!({"epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
-               "units": units, "removed": [], "events": []})
+               "units": units, "removed": std::mem::take(&mut self.presentation_removed),
+               "events": std::mem::take(&mut self.events)})
     }
     pub fn diagnostics(&self) -> Value {
-        json!({"stage": "R1", "gameplay_ready": false, "epoch": self.epoch,
+        json!({"stage": "R2-in-progress", "gameplay_ready": false, "epoch": self.epoch,
             "revision": self.revision, "threads": self.threads, "clock": self.clock,
             "entities": self.world.ordered().count(), "rules_version": RULES_VERSION})
     }
