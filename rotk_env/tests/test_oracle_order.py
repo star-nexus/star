@@ -7,6 +7,28 @@ from rotk_env.tests.test_faction_state_affordances import _world, _spawn
 from rotk_env.utils.hex_utils import HexMath, PathFinding
 
 
+def test_skill_list_order_is_independent_of_python_hash_seed():
+    import json
+    import os
+    import subprocess
+    import sys
+    code = '''
+import json
+from rotk_env.components import UnitSkills
+from rotk_env.prefabs.config import Faction
+from rotk_env.systems.llm_action_handler import LLMActionHandler
+from rotk_env.tests.test_faction_state_affordances import _world, _spawn
+world = _world()
+uid = _spawn(world, faction=Faction.WEI, col=0, row=0)
+world.add_component(uid, UnitSkills(available_skills={'hide','charge','rockslide','arrow_evasion'}))
+print(json.dumps(LLMActionHandler(world)._get_detailed_unit_info(uid)['available_skills']))
+'''
+    for seed in ('1', '99'):
+        output = subprocess.check_output([sys.executable, '-c', code],
+                                         env={**os.environ, 'PYTHONHASHSEED': seed}, text=True)
+        assert json.loads(output.splitlines()[-1]) == ['arrow_evasion','charge','hide','rockslide']
+
+
 def test_faction_lists_use_ids_and_explicit_selection_keeps_request_order():
     world = _world()
     world.entity_counter = 61

@@ -1776,9 +1776,9 @@ class LLMActionHandler:
                         hasattr(unit_skills, "available_skills")
                         and unit_skills.available_skills
                     ):
-                        available_skills = [
+                        available_skills = sorted(
                             str(skill) for skill in unit_skills.available_skills
-                        ]
+                        )
                 except (AttributeError, ValueError, TypeError):
                     available_skills = []
 
