@@ -109,7 +109,7 @@ class StatisticsSystem(System):
 
         # Record observation data for each unit
         for entity in (
-            self.world.query().with_all(Unit, UnitCount, HexPosition).entities()
+            self.world.query().with_all(Unit, UnitCount, HexPosition).ordered_entities()
         ):
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
@@ -197,7 +197,7 @@ class StatisticsSystem(System):
             visibility_tracker.faction_visible_units[faction].clear()
 
         # Update visibility for each unit
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
+        for entity in self.world.query().with_all(Unit, HexPosition).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             position = self.world.get_component(entity, HexPosition)
 
@@ -239,7 +239,7 @@ class StatisticsSystem(System):
 
         visibility_record = {
             "timestamp": current_time,
-            "visible_to": list(visible_to),
+            "visible_to": sorted(visible_to, key=lambda faction: faction.value),
             "newly_spotted": False,
             "lost_sight": False,
         }
@@ -269,7 +269,7 @@ class StatisticsSystem(System):
 
         # Count units and positions controlled by each faction
         for entity in (
-            self.world.query().with_all(Unit, HexPosition, UnitCount).entities()
+            self.world.query().with_all(Unit, HexPosition, UnitCount).ordered_entities()
         ):
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
@@ -887,7 +887,7 @@ class StatisticsSystem(System):
     def _collect_unit_statistics(self) -> Dict:
         """Collect unit statistics information"""
         unit_stats_summary = {}
-        for entity in self.world.query().with_all(Unit, UnitStatistics).entities():
+        for entity in self.world.query().with_all(Unit, UnitStatistics).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             unit_stats = self.world.get_component(entity, UnitStatistics)
 

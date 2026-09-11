@@ -323,7 +323,7 @@ class UnitRenderSystem(System):
         # ECS query timing (if profiling)
         ecs_start = time.time() if self.enable_profiler else None
         entities = list(
-            self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+            self.world.query().with_all(HexPosition, Unit, UnitCount).ordered_entities()
         )
         if self.enable_profiler:
             ecs_time = time.time() - ecs_start
@@ -959,7 +959,7 @@ class UnitRenderSystem(System):
 
         units_in_hex = []
         for entity in (
-            self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+            self.world.query().with_all(HexPosition, Unit, UnitCount).ordered_entities()
         ):
             if not self._is_unit_visible(entity):
                 continue

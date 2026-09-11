@@ -388,7 +388,7 @@ class EffectRenderSystem(System):
 
     def _get_enemy_unit_at_position(self, position: Tuple[int, int], friendly_faction):
         """Get the enemy unit entity at the specified tile position, if any"""
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
 
@@ -404,7 +404,7 @@ class EffectRenderSystem(System):
 
     def _render_attack_effects(self, camera_offset: List[float], zoom: float = 1.0):
         """Render active attack visual effects"""
-        for entity in self.world.query().with_all(EffectAnimation).entities():
+        for entity in self.world.query().with_all(EffectAnimation).ordered_entities():
             effect = self.world.get_component(entity, EffectAnimation)
             if not effect or not effect.is_playing:
                 continue
@@ -575,7 +575,7 @@ class EffectRenderSystem(System):
     def _render_attack_indicators(self, camera_offset: List[float], zoom: float = 1.0):
         """Render attack aim-line indicators"""
         for entity in (
-            self.world.query().with_all(HexPosition, AttackAnimation).entities()
+            self.world.query().with_all(HexPosition, AttackAnimation).ordered_entities()
         ):
             attack_anim = self.world.get_component(entity, AttackAnimation)
             if (
@@ -722,7 +722,7 @@ class EffectRenderSystem(System):
 
     def _render_projectiles(self, camera_offset: List[float], zoom: float = 1.0):
         """Render all active projectiles"""
-        for entity in self.world.query().with_all(ProjectileAnimation).entities():
+        for entity in self.world.query().with_all(ProjectileAnimation).ordered_entities():
             projectile = self.world.get_component(entity, ProjectileAnimation)
             if not projectile or not projectile.is_flying:
                 continue

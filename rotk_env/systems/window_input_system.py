@@ -173,7 +173,7 @@ class InputHandlingSystem(BaseInputHandlingSystem):
     def _get_unit_at_position(self, hex_pos: Tuple[int, int]) -> Optional[int]:
         """Prefer a visible HUMAN token when several entities share one hex."""
         candidates = []
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             position = self.world.get_component(entity, HexPosition)
             if position is None or (position.col, position.row) != hex_pos:
                 continue
@@ -204,7 +204,7 @@ class InputHandlingSystem(BaseInputHandlingSystem):
         animation_system = self._get_animation_system_for_pick()
         best = None
         best_key = None
-        entities = self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+        entities = self.world.query().with_all(HexPosition, Unit, UnitCount).ordered_entities()
         for entity in entities:
             count = self.world.get_component(entity, UnitCount)
             if count is not None and count.current_count <= 0:

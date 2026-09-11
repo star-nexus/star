@@ -126,7 +126,8 @@ class ResourceRecoverySystem(System):
 
         # Detect MP spends at the recovery boundary. Pending entries invalidate
         # any superseded recovery task.
-        pending_mp = tuple(self._mp_pending_detection)
+        # A boundary consumes simultaneous spends in external entity-ID order.
+        pending_mp = sorted(self._mp_pending_detection)
         self._mp_pending_detection.clear()
         for entity in pending_mp:
             movement_points = self.world.get_component(entity, MovementPoints)
@@ -269,13 +270,13 @@ class ResourceRecoverySystem(System):
 
     def _bootstrap_active_resources(self) -> None:
         """One initialization audit for pre-existing depleted resources."""
-        for entity in self.world.query().with_component(ActionPoints).entities():
+        for entity in self.world.query().with_component(ActionPoints).ordered_entities():
             self._register_initial_entity(entity, include_ap=True)
 
-        for entity in self.world.query().with_component(MovementPoints).entities():
+        for entity in self.world.query().with_component(MovementPoints).ordered_entities():
             self._register_initial_entity(entity, include_mp=True)
 
-        for entity in self.world.query().with_component(SkillPoints).entities():
+        for entity in self.world.query().with_component(SkillPoints).ordered_entities():
             self._register_initial_entity(entity, include_skill=True)
 
     def _register_initial_entity(

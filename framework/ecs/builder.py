@@ -114,7 +114,8 @@ class QueryBuilder:
             self._required_components | self._excluded_components
         )
         self._world._cache_query_result(
-            cache_key, result_entities, touched_types=touched_types
+            cache_key, result_entities, touched_types=touched_types,
+            depends_on_population=not self._required_components,
         )
 
         return self._entities
@@ -155,10 +156,25 @@ class QueryBuilder:
         """获取所有匹配的实体ID"""
         return self._compute_entities().copy()
 
+    def ordered_entities(self) -> Tuple[Entity, ...]:
+        """Canonical entity order, cached until matching membership invalidates.
+
+        Unlike the historical set API this is also safe to reuse after a world
+        mutation: a retained builder consults the world's current cache first.
+        Callers cannot mutate the returned tuple or the membership index.
+        """
+        key = self._generate_cache_key()
+        ordered = self._world._ordered_query_cache.get(key)
+        if ordered is None:
+            self._entities = None
+            ordered = tuple(sorted(self._compute_entities()))
+            self._world._ordered_query_cache[key] = ordered
+        return ordered
+
     def first(self) -> Optional[Entity]:
         """获取第一个匹配的实体"""
-        entities = self._compute_entities()
-        return next(iter(entities)) if entities else None
+        entities = self.ordered_entities()
+        return entities[0] if entities else None
 
     def count(self) -> int:
         """获取匹配实体的数量"""
@@ -170,7 +186,7 @@ class QueryBuilder:
 
     def for_each(self, func) -> None:
         """对每个匹配的实体执行函数"""
-        for entity in self._compute_entities():
+        for entity in self.ordered_entities():
             func(entity)
 
     def get_components(self, entity: Entity) -> List[Component]:
@@ -193,7 +209,7 @@ class QueryBuilder:
         self,
     ) -> Iterator[Tuple[Entity, List[Component]]]:
         """迭代所有匹配的实体和其组件"""
-        for entity in self._compute_entities():
+        for entity in self.ordered_entities():
             components = self._world.get_all_components(entity)
             yield entity, components
 
@@ -201,7 +217,7 @@ class QueryBuilder:
         self, component_type: Type[ComponentType]
     ) -> Iterator[Tuple[Entity, ComponentType]]:
         """迭代所有匹配的实体和指定类型的组件"""
-        for entity in self._compute_entities():
+        for entity in self.ordered_entities():
             component = self._world.get_component(entity, component_type)
             if component:
                 yield entity, component
@@ -222,7 +238,7 @@ class QueryBuilder:
                 # 处理位置和速度组件
                 pass
         """
-        for entity in self._compute_entities():
+        for entity in self.ordered_entities():
             components = []
             skip_entity = False
 

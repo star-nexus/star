@@ -788,7 +788,7 @@ class CombatSystem(System):
             stats.faction_stats[unit.faction]["losses"] += 1
 
         # Remove from player's unit list
-        for player_entity in self.world.query().with_component(Player).entities():
+        for player_entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(player_entity, Player)
             if player and player.faction == unit.faction:
                 player.units.discard(entity)

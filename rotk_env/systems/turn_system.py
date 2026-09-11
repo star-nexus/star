@@ -96,7 +96,7 @@ class TurnSystem(System):
     def _switch_to_next_faction(self):
         """Advance to the next faction in rotation."""
         game_state = self.world.get_singleton_component(GameState)
-        players = list(self.world.query().with_component(Player).entities())
+        players = list(self.world.query().with_component(Player).ordered_entities())
 
         if not players:
             return
@@ -145,7 +145,7 @@ class TurnSystem(System):
 
     def _reset_unit_actions(self):
         """Reset AP/MP and tick status at the start of a new round."""
-        for entity in self.world.query().with_component(MovementPoints).entities():
+        for entity in self.world.query().with_component(MovementPoints).ordered_entities():
             movement = self.world.get_component(entity, MovementPoints)
             unit_count = self.world.get_component(entity, UnitCount)
             action_points = self.world.get_component(entity, ActionPoints)
@@ -158,7 +158,7 @@ class TurnSystem(System):
             if action_points:
                 action_points.reset()
 
-        for entity in self.world.query().with_component(UnitStatus).entities():
+        for entity in self.world.query().with_component(UnitStatus).ordered_entities():
             unit_status = self.world.get_component(entity, UnitStatus)
             if not unit_status:
                 continue
@@ -174,7 +174,7 @@ class TurnSystem(System):
     def _start_next_turn(self):
         """Start the next turn with a full reset (used at game start, etc.)."""
         game_state = self.world.get_singleton_component(GameState)
-        players = list(self.world.query().with_component(Player).entities())
+        players = list(self.world.query().with_component(Player).ordered_entities())
 
         if not players:
             return

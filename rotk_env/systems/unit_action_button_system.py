@@ -158,7 +158,7 @@ class UnitActionButtonSystem(System):
         unit = self.world.get_component(unit_entity, Unit)
         if not unit:
             return False
-        for entity in self.world.query().with_component(Player).entities():
+        for entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == unit.faction:
                 return player.player_type == PlayerType.HUMAN

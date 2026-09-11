@@ -165,7 +165,7 @@ class UIButtonSystem(System):
         mouse_x, mouse_y = input_state.mouse_pos
 
         # Update hover state for all buttons
-        for entity in self.world.query().with_component(UIButton).entities():
+        for entity in self.world.query().with_component(UIButton).ordered_entities():
             button = self.world.get_component(entity, UIButton)
             if not button or not button.is_enabled or not button.is_visible:
                 continue
@@ -190,7 +190,7 @@ class UIButtonSystem(System):
         mouse_x, mouse_y = input_state.mouse_pos
 
         # Check clicked buttons
-        for entity in self.world.query().with_component(UIButton).entities():
+        for entity in self.world.query().with_component(UIButton).ordered_entities():
             button = self.world.get_component(entity, UIButton)
             if not button or not button.is_enabled or not button.is_visible:
                 continue
@@ -268,7 +268,7 @@ class UIButtonSystem(System):
 
     def _render_buttons(self):
         """Render all buttons"""
-        for entity in self.world.query().with_component(UIButton).entities():
+        for entity in self.world.query().with_component(UIButton).ordered_entities():
             button = self.world.get_component(entity, UIButton)
             if not button or not button.is_visible:
                 continue

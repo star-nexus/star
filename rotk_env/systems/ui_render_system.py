@@ -278,7 +278,7 @@ class UIRenderSystem(System):
             query = self.world.query().with_component(Unit)
             # Lightweight/headless adapters need only implement the public API.
             counts = {}
-            for entity in query.entities():
+            for entity in query.ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 if unit:
                     counts[unit.faction] = counts.get(unit.faction, 0) + 1
@@ -287,7 +287,7 @@ class UIRenderSystem(System):
         version = self.world.component_reference_version(Unit)
         if getattr(self, "_faction_roster_members", None) != version:
             units = []
-            for entity in self.world.query().with_component(Unit).entities():
+            for entity in self.world.query().with_component(Unit).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 if unit:
                     units.append(unit)
@@ -329,7 +329,7 @@ class UIRenderSystem(System):
 
         # Get all factions
         all_factions = set()
-        for entity in self.world.query().with_component(Unit).entities():
+        for entity in self.world.query().with_component(Unit).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             if unit:
                 all_factions.add(unit.faction)

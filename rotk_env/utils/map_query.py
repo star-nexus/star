@@ -133,7 +133,7 @@ def unit_cells(world, *, exclude_entity: Optional[int] = None) -> Dict[Hex, Set[
     disagree about where the units are.
     """
     cells: Dict[Hex, Set[Faction]] = {}
-    for entity in world.query().with_all(HexPosition, Unit).entities():
+    for entity in world.query().with_all(HexPosition, Unit).ordered_entities():
         if exclude_entity is not None and entity == exclude_entity:
             continue
         pos = world.get_component(entity, HexPosition)

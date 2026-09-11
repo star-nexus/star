@@ -75,7 +75,7 @@ class TerritorySystem(System):
         """Update capture actions."""
         entities_to_remove = []
 
-        for entity in self.world.query().with_all(CaptureAction).entities():
+        for entity in self.world.query().with_all(CaptureAction).ordered_entities():
             capture_action = self.world.get_component(entity, CaptureAction)
             if not capture_action or capture_action.completed:
                 continue

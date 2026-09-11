@@ -305,7 +305,7 @@ class LLMObservationSystem:
 
             # Get all units of the faction
             faction_units = []
-            for entity in self.world.query().with_all(Unit).entities():
+            for entity in self.world.query().with_all(Unit).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 if unit and unit.faction == faction:
                     unit_obs = self._get_unit_summary(entity, include_hidden)
@@ -317,7 +317,7 @@ class LLMObservationSystem:
 
             # Collect vision ranges of all friendly units
             for entity in (
-                self.world.query().with_all(Unit, Vision, HexPosition).entities()
+                self.world.query().with_all(Unit, Vision, HexPosition).ordered_entities()
             ):
                 unit = self.world.get_component(entity, Unit)
                 if unit and unit.faction == faction:
@@ -325,7 +325,7 @@ class LLMObservationSystem:
                     visible_positions.update(visible_area)
 
             # Get enemy units within visible area
-            for entity in self.world.query().with_all(Unit, HexPosition).entities():
+            for entity in self.world.query().with_all(Unit, HexPosition).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 position = self.world.get_component(entity, HexPosition)
                 if (
@@ -360,7 +360,7 @@ class LLMObservationSystem:
     def _get_godview_observation(self) -> Dict[str, Any]:
         """Get god-view observation data (omniscient view)"""
         all_units = []
-        for entity in self.world.query().with_all(Unit).entities():
+        for entity in self.world.query().with_all(Unit).ordered_entities():
             unit_info = self._get_unit_summary(entity, include_hidden=True)
             all_units.append(unit_info)
 
@@ -412,7 +412,7 @@ class LLMObservationSystem:
             visible = set(fog_of_war.faction_vision[faction])
         else:
             visible = set()
-            for entity in self.world.query().with_all(Unit, Vision, HexPosition).entities():
+            for entity in self.world.query().with_all(Unit, Vision, HexPosition).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 if unit and unit.faction == faction:
                     visible.update(self._get_visible_area(entity))
@@ -468,7 +468,7 @@ class LLMObservationSystem:
         """Get units within the visible area."""
         visible_units = []
 
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
+        for entity in self.world.query().with_all(Unit, HexPosition).ordered_entities():
             if entity == observer_id:  # Skip the observer itself
                 continue
 
@@ -666,7 +666,7 @@ class LLMObservationSystem:
             if tile is not None:
                 return self.world.get_component(tile, TerritoryControl)
         for entity in (
-            self.world.query().with_all(TerritoryControl, HexPosition).entities()
+            self.world.query().with_all(TerritoryControl, HexPosition).ordered_entities()
         ):
             position = self.world.get_component(entity, HexPosition)
             if position is not None and position.col == col and position.row == row:
@@ -692,7 +692,7 @@ class LLMObservationSystem:
             "total_units": len(
                 [
                     e
-                    for e in self.world.query().with_all(Unit).entities()
+                    for e in self.world.query().with_all(Unit).ordered_entities()
                     if self.world.get_component(e, Unit).faction == faction
                 ]
             ),
@@ -701,7 +701,7 @@ class LLMObservationSystem:
                     e
                     for e in self.world.query()
                     .with_all(Unit, MovementPoints)
-                    .entities()
+                    .ordered_entities()
                     if (
                         self.world.get_component(e, Unit).faction == faction
                         and self.world.get_component(e, MovementPoints).current_mp > 0
@@ -711,7 +711,7 @@ class LLMObservationSystem:
             "wounded_units": len(
                 [
                     e
-                    for e in self.world.query().with_all(Unit, UnitCount).entities()
+                    for e in self.world.query().with_all(Unit, UnitCount).ordered_entities()
                     if (
                         self.world.get_component(e, Unit).faction == faction
                         and self.world.get_component(e, UnitCount).current_count
@@ -729,7 +729,7 @@ class LLMObservationSystem:
         strategic_points: List[Dict[str, Any]] = []
 
         for entity in (
-            self.world.query().with_all(TerritoryControl, HexPosition).entities()
+            self.world.query().with_all(TerritoryControl, HexPosition).ordered_entities()
         ):
             control = self.world.get_component(entity, TerritoryControl)
             position = self.world.get_component(entity, HexPosition)
@@ -754,7 +754,7 @@ class LLMObservationSystem:
             "controlled_tiles": controlled,
             "fortified_tiles": fortified,
             "contested_tiles": len(contested),
-            "strategic_points": strategic_points,
+            "strategic_points": sorted(strategic_points, key=lambda p: (p['col'], p['row'])),
         }
 
     def _capturer_faction(self, unit_id: Optional[int]) -> Optional[Faction]:
@@ -772,7 +772,7 @@ class LLMObservationSystem:
         from ..components.terrain import effect_for
 
         tiles = []
-        for entity in self.world.query().with_all(Tile, HexPosition).entities():
+        for entity in self.world.query().with_all(Tile, HexPosition).ordered_entities():
             position = self.world.get_component(entity, HexPosition)
             tile = self.world.get_component(entity, Tile)
             terrain = self.world.get_component(entity, Terrain)
@@ -795,6 +795,7 @@ class LLMObservationSystem:
 
             tiles.append(tile_info)
 
+        tiles.sort(key=lambda tile: (tile['position']['col'], tile['position']['row']))
         return {"tiles": tiles}
 
     def _get_global_statistics(self) -> Dict[str, Any]:

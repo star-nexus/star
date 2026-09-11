@@ -487,7 +487,7 @@ class MapRenderSystem(System):
         current_faction = game_state.current_player
 
         # Draw a vision circle for each friendly unit
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             position = self.world.get_component(entity, HexPosition)
 

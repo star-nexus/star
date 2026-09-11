@@ -1106,7 +1106,7 @@ class LLMActionHandler:
             total_units_count = actionable_units_count = 0
             alive_units = []
             living_counts = {}
-            for uid in self.world.query().with_component(Unit).entities():
+            for uid in self.world.query().with_component(Unit).ordered_entities():
                 unit = self.world.get_component(uid, Unit)
                 count = self.world.get_component(uid, UnitCount)
                 own = unit.faction == observer
@@ -1167,7 +1167,7 @@ class LLMActionHandler:
             visible_tiles = set(fog.faction_vision.get(observer, set())) if fog else set()
 
         enemies: List[Dict[str, Any]] = []
-        for entity in self.world.query().with_all(Unit, HexPosition).entities():
+        for entity in self.world.query().with_all(Unit, HexPosition).ordered_entities():
             unit = self._observation_component(entity, Unit)
             if not unit or unit.faction == observer:
                 continue
@@ -1871,7 +1871,7 @@ class LLMActionHandler:
     def _get_faction_units(self, faction: Faction) -> List[int]:
         """Get all unit IDs belonging to a faction."""
         units = []
-        for entity in self.world.query().with_component(Unit).entities():
+        for entity in self.world.query().with_component(Unit).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             if unit and unit.faction == faction:
                 units.append(entity)
@@ -1958,7 +1958,7 @@ class LLMActionHandler:
         # Fallback: obtain current player via GameState
         game_state = self.world.get_singleton_component(GameState)
         if game_state:
-            for entity in self.world.query().with_component(Player).entities():
+            for entity in self.world.query().with_component(Player).ordered_entities():
                 player = self.world.get_component(entity, Player)
                 if player and player.faction == game_state.current_player:
                     return player
@@ -2070,7 +2070,7 @@ class LLMActionHandler:
     def _get_units_at_position(self, position: Tuple[int, int]) -> List[Dict[str, Any]]:
         """Get all units at a given position."""
         units = []
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
 

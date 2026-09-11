@@ -259,7 +259,7 @@ class PanelRenderSystem(System):
             RMS.circle(color, (int(mini_x), int(mini_y)), 1)
 
         # Render units
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
 

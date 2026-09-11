@@ -355,7 +355,7 @@ class FastUnitRenderSystem(UnitRenderSystem):
         )
 
         visible_units: List[int] = []
-        entities = self.world.query().with_all(HexPosition, Unit, UnitCount).entities()
+        entities = self.world.query().with_all(HexPosition, Unit, UnitCount).ordered_entities()
         for entity in entities:
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
@@ -393,7 +393,7 @@ class FastEffectRenderSystem(EffectRenderSystem):
         # One O(units) position index replaces attack-range O(tiles * units)
         # scans in the inherited renderer.
         index: Dict[Tuple[int, int], List[Tuple[int, object]]] = {}
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
             if pos is not None and unit is not None:
@@ -422,7 +422,7 @@ class FastEffectRenderSystem(EffectRenderSystem):
                     pos.row,
                     getattr(unit.faction, "value", str(unit.faction)),
                 )
-                for entity in self.world.query().with_all(HexPosition, Unit).entities()
+                for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities()
                 for pos in [self.world.get_component(entity, HexPosition)]
                 for unit in [self.world.get_component(entity, Unit)]
                 if pos is not None and unit is not None

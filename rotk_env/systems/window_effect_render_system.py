@@ -43,7 +43,7 @@ class EffectRenderSystem(FastEffectRenderSystem):
             return index.enemy_at_cell(position, friendly_faction)
 
         # Isolated worlds may omit the shared index, so retain scan semantics.
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             pos = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
             if (

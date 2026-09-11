@@ -44,6 +44,9 @@ class World:
         # cached query depends on, so we can do *selective* invalidation
         # (only evict cache entries that actually touch the changed types).
         self._query_cache: Dict[QueryKey, Set[Entity]] = {}
+        # Immutable canonical order, sharing the membership cache's lifetime.
+        self._ordered_query_cache: Dict[QueryKey, tuple[Entity, ...]] = {}
+        self._population_query_keys: Set[QueryKey] = set()
         self._cache_key_types: Dict[QueryKey, FrozenSet[Type[Component]]] = {}
         # Reverse index: component_type -> set(cache_key). Lets selective
         # invalidation run in O(types_changed) instead of O(cache_size).
@@ -79,6 +82,8 @@ class World:
     def _drop_cache_entry(self, cache_key: QueryKey) -> None:
         """Internal helper: remove a cache entry from all three indices."""
         self._query_cache.pop(cache_key, None)
+        self._ordered_query_cache.pop(cache_key, None)
+        self._population_query_keys.discard(cache_key)
         touched = self._cache_key_types.pop(cache_key, None)
         if touched:
             for comp_type in touched:
@@ -100,6 +105,8 @@ class World:
             self._component_reference_epoch += 1
             # Global invalidation
             self._query_cache.clear()
+            self._ordered_query_cache.clear()
+            self._population_query_keys.clear()
             self._cache_key_types.clear()
             self._type_to_cache_keys.clear()
             self._cache_version += 1
@@ -152,6 +159,7 @@ class World:
         cache_key: QueryKey,
         result: Set[Entity],
         touched_types: Optional[FrozenSet[Type[Component]]] = None,
+        depends_on_population: bool = False,
     ) -> None:
         """Store query result in cache.
 
@@ -170,6 +178,8 @@ class World:
             self._drop_cache_entry(cache_key)
 
         self._query_cache[cache_key] = result.copy()
+        if depends_on_population:
+            self._population_query_keys.add(cache_key)
         if touched_types:
             signature = frozenset(touched_types)
             self._cache_key_types[cache_key] = signature
@@ -208,6 +218,8 @@ class World:
         """Manually clear query cache."""
         self._component_reference_epoch += 1
         self._query_cache.clear()
+        self._ordered_query_cache.clear()
+        self._population_query_keys.clear()
         self._cache_key_types.clear()
         self._type_to_cache_keys.clear()
         self._cache_version += 1
@@ -227,8 +239,9 @@ class World:
         self.entities[entity_id] = {}
         self.entity_counter += 1
 
-        # Creating an empty entity doesn't impact most cached queries,
-        # so cache invalidation is not required here.
+        # Empty entities only affect all-entity and exclusion-only queries.
+        for key in tuple(self._population_query_keys):
+            self._drop_cache_entry(key)
 
         return entity_id
 
@@ -250,6 +263,8 @@ class World:
 
         # Delete entity
         del self.entities[entity]
+        for key in tuple(self._population_query_keys):
+            self._drop_cache_entry(key)
 
         # Invalidate caches involving these component types
         self._invalidate_cache(component_types)
@@ -406,6 +421,9 @@ class World:
         self._component_to_entities.clear()
         self._singleton_components.clear()
         self._query_cache.clear()
+        self._ordered_query_cache.clear()
+        self._population_query_keys.clear()
+        self._component_reference_epoch += 1
         self._cache_key_types.clear()
         self._type_to_cache_keys.clear()
         self.systems.clear()

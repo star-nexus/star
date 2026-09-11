@@ -107,7 +107,7 @@ class GameScene(Scene):
         # Attach workload context to profiler snapshots so timing reports remain
         # interpretable across maps and player configurations.
         map_data = self.world.get_singleton_component(MapData)
-        initial_units = len(self.world.query().with_component(Unit).entities())
+        initial_units = len(self.world.query().with_component(Unit).ordered_entities())
         mode_label = (
             self.game_mode.value if hasattr(self.game_mode, "value") else str(self.game_mode)
         )
@@ -214,7 +214,7 @@ class GameScene(Scene):
             faction_total = 0
             faction_surviving = 0
 
-            for entity in self.world.query().with_component(Unit).entities():
+            for entity in self.world.query().with_component(Unit).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 unit_count = self.world.get_component(entity, UnitCount)
 

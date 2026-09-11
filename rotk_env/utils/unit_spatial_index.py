@@ -164,7 +164,7 @@ class UnitSpatialIndex:
         self.bucket_revisions.clear()
         self.living_counts.clear()
 
-        for entity in world.query().with_all(Unit, HexPosition, UnitCount).entities():
+        for entity in world.query().with_all(Unit, HexPosition, UnitCount).ordered_entities():
             unit = world.get_component(entity, Unit)
             pos = world.get_component(entity, HexPosition)
             count = world.get_component(entity, UnitCount)

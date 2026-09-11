@@ -129,7 +129,7 @@ class TeamCoordination(SingletonComponent):
         """Release ownership of `unit_ids` (or all of agent's units when None)."""
         released: List[int] = []
         if unit_ids is None:
-            unit_ids = [uid for uid, owner in self.unit_owners.items() if owner == agent_id]
+            unit_ids = sorted(uid for uid, owner in self.unit_owners.items() if owner == agent_id)
         for uid in unit_ids:
             if self.unit_owners.get(uid) == agent_id:
                 del self.unit_owners[uid]

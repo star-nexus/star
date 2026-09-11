@@ -1101,7 +1101,7 @@ class LLMSystem(System):
             registered = []
             if stats and hasattr(stats, 'registered_factions'):
                 try:
-                    registered = [f.value for f in stats.registered_factions]
+                    registered = sorted(f.value for f in stats.registered_factions)
                 except Exception:
                     registered = []
 

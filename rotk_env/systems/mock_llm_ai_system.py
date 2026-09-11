@@ -85,7 +85,7 @@ class MockLLMAISystem(System):
         """Real-time AI decision logic."""
         # Collect AI players
         ai_players = []
-        for entity in self.world.query().with_all(Player, AIControlled).entities():
+        for entity in self.world.query().with_all(Player, AIControlled).ordered_entities():
             ai_players.append(entity)
 
         # Execute decisions per AI player
@@ -100,7 +100,7 @@ class MockLLMAISystem(System):
         if not game_state or not game_state.current_player:
             return None
 
-        for entity in self.world.query().with_component(Player).entities():
+        for entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == game_state.current_player:
                 return entity
@@ -404,7 +404,7 @@ class MockLLMAISystem(System):
         if not enemy_targets and movement_points > 0:
             # Collect occupied positions to avoid collisions
             occupied_positions = set()
-            for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
                 pos = self.world.get_component(entity, HexPosition)
                 if pos:
                     occupied_positions.add((pos.col, pos.row))
@@ -459,7 +459,7 @@ class MockLLMAISystem(System):
         if strategic_positions and movement_points > 0:
             # Collect occupied positions
             occupied_positions = set()
-            for entity in self.world.query().with_all(HexPosition, Unit).entities():
+            for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
                 pos = self.world.get_component(entity, HexPosition)
                 if pos:
                     occupied_positions.add((pos.col, pos.row))

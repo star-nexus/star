@@ -69,7 +69,7 @@ class AnimationSystem(System):
             self._movement_entries_cache = tuple(
                 (entity, self.world.get_component(entity, HexPosition),
                  self.world.get_component(entity, MovementAnimation))
-                for entity in self.world.query().with_all(HexPosition, MovementAnimation).entities()
+                for entity in self.world.query().with_all(HexPosition, MovementAnimation).ordered_entities()
             )
             self._movement_entries_world = self.world
             self._movement_entries_token = token
@@ -88,7 +88,7 @@ class AnimationSystem(System):
             entries, token = self._movement_entries(reference_version)
         else:
             entries = ((entity, None, None) for entity in
-                       self.world.query().with_all(HexPosition, MovementAnimation).entities())
+                       self.world.query().with_all(HexPosition, MovementAnimation).ordered_entities())
 
         for entity, cached_pos, cached_anim in entries:
             if entries_valid:
@@ -170,7 +170,7 @@ class AnimationSystem(System):
         """Update damage number display"""
         entities_to_remove = []
 
-        for entity in self.world.query().with_all(DamageNumber).entities():
+        for entity in self.world.query().with_all(DamageNumber).ordered_entities():
             damage_num = self.world.get_component(entity, DamageNumber)
             if not damage_num:
                 continue
@@ -206,7 +206,7 @@ class AnimationSystem(System):
         previous = self._damage_text_cache
         current = {}
 
-        for entity in self.world.query().with_all(DamageNumber).entities():
+        for entity in self.world.query().with_all(DamageNumber).ordered_entities():
             damage_num = self.world.get_component(entity, DamageNumber)
             if not damage_num:
                 continue
@@ -407,7 +407,7 @@ class AnimationSystem(System):
         entities_to_complete = []
 
         for entity in (
-            self.world.query().with_all(HexPosition, AttackAnimation).entities()
+            self.world.query().with_all(HexPosition, AttackAnimation).ordered_entities()
         ):
             pos = self.world.get_component(entity, HexPosition)
             anim = self.world.get_component(entity, AttackAnimation)
@@ -531,7 +531,7 @@ class AnimationSystem(System):
         """Update all active effect animations."""
         entities_to_remove = []
 
-        for entity in self.world.query().with_all(EffectAnimation).entities():
+        for entity in self.world.query().with_all(EffectAnimation).ordered_entities():
             effect = self.world.get_component(entity, EffectAnimation)
             if not effect or not effect.is_playing:
                 continue
@@ -550,7 +550,7 @@ class AnimationSystem(System):
         """Update all active projectile animations."""
         entities_to_remove = []
 
-        for entity in self.world.query().with_all(ProjectileAnimation).entities():
+        for entity in self.world.query().with_all(ProjectileAnimation).ordered_entities():
             projectile = self.world.get_component(entity, ProjectileAnimation)
             if not projectile or not projectile.is_flying:
                 continue

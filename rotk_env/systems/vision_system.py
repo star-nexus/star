@@ -138,7 +138,8 @@ class VisionSystem(System):
                 ):
                     audit_scanned = self._audit_all_units(force_all=False)
 
-        dirty = tuple(self._dirty)
+        # Only changed units are ordered; never sort the resident population.
+        dirty = sorted(self._dirty)
         self._dirty.clear()
 
         changed = 0
@@ -245,7 +246,7 @@ class VisionSystem(System):
         """
         self._terrain_revision += 1
         self._geometry_cache.clear()
-        for entity in self.world.query().with_component(Vision).entities():
+        for entity in self.world.query().with_component(Vision).ordered_entities():
             vision = self.world.get_component(entity, Vision)
             if vision is not None:
                 vision.dirty = True
@@ -279,7 +280,7 @@ class VisionSystem(System):
         and every tick in worlds that may mutate HexPosition directly.
         """
         current_entities: Set[int] = set()
-        for entity in self.world.query().with_all(HexPosition, Vision, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Vision, Unit).ordered_entities():
             current_entities.add(entity)
             position = self.world.get_component(entity, HexPosition)
             vision = self.world.get_component(entity, Vision)

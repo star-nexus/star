@@ -400,7 +400,7 @@ class _SkirmishAssembler:
         return unit_entity
 
     def _get_player_entity(self, faction: Faction) -> Optional[int]:
-        for entity in self.world.query().with_component(Player).entities():
+        for entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == faction:
                 return entity

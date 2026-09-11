@@ -148,7 +148,7 @@ class UnitRenderSystem(FastUnitRenderSystem):
         index = {}
         for entity in self.world.query().with_all(
             HexPosition, Unit, UnitCount
-        ).entities():
+        ).ordered_entities():
             position = self.world.get_component(entity, HexPosition)
             unit = self.world.get_component(entity, Unit)
             if position is None or unit is None:

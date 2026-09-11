@@ -226,7 +226,7 @@ class InputHandlingSystem(System):
 
     def _is_human_controlled_faction(self, faction: Faction) -> bool:
         """Return whether ``faction`` belongs to a local HUMAN player slot."""
-        for entity in self.world.query().with_component(Player).entities():
+        for entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == faction:
                 return player.player_type == PlayerType.HUMAN
@@ -384,7 +384,7 @@ class InputHandlingSystem(System):
 
     def _get_unit_at_position(self, hex_pos: Tuple[int, int]) -> Optional[int]:
         """Get unit entity at given hex, if any."""
-        for entity in self.world.query().with_all(HexPosition, Unit).entities():
+        for entity in self.world.query().with_all(HexPosition, Unit).ordered_entities():
             position = self.world.get_component(entity, HexPosition)
             if position and (position.col, position.row) == hex_pos:
                 return entity
@@ -498,7 +498,7 @@ class InputHandlingSystem(System):
 
     def _faction_exists(self, faction: Faction) -> bool:
         """Check whether a faction exists in current game."""
-        for entity in self.world.query().with_component(Player).entities():
+        for entity in self.world.query().with_component(Player).ordered_entities():
             player = self.world.get_component(entity, Player)
             if player and player.faction == faction:
                 return True

@@ -41,7 +41,7 @@ class GameOverPolicy:
 
     def living_factions(self) -> Set[Faction]:
         living: Set[Faction] = set()
-        for entity in self.world.query().with_all(Unit, UnitCount).entities():
+        for entity in self.world.query().with_all(Unit, UnitCount).ordered_entities():
             unit = self.world.get_component(entity, Unit)
             unit_count = self.world.get_component(entity, UnitCount)
             if unit and unit_count and unit_count.current_count > 0:

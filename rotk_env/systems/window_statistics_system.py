@@ -74,10 +74,10 @@ class StatisticsSystem(_BaseStatisticsSystem):
             "statistics_cycle_snapshot", category="work"
         ):
             observation_entities = list(
-                self.world.query().with_all(Unit, UnitCount, HexPosition).entities()
+                self.world.query().with_all(Unit, UnitCount, HexPosition).ordered_entities()
             )
             visibility_entities = list(
-                self.world.query().with_all(Unit, HexPosition).entities()
+                self.world.query().with_all(Unit, HexPosition).ordered_entities()
             )
 
         self._cycle = {

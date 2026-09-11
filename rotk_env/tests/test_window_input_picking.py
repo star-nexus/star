@@ -30,6 +30,9 @@ class _Query:
     def entities(self):
         return list(self._entities)
 
+    def ordered_entities(self):
+        return tuple(sorted(self._entities))
+
 
 class _World:
     def __init__(self):

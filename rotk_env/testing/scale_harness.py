@@ -513,7 +513,7 @@ class ScaleHarnessSystem(System):
 
     def _living_units(self) -> List[int]:
         living = []
-        for entity in self.world.query().with_all(Unit, HexPosition, UnitCount).entities():
+        for entity in self.world.query().with_all(Unit, HexPosition, UnitCount).ordered_entities():
             count = self.world.get_component(entity, UnitCount)
             if count is not None and count.current_count > 0:
                 living.append(entity)
@@ -521,7 +521,7 @@ class ScaleHarnessSystem(System):
 
     def _active_moving_units(self) -> int:
         active = 0
-        for entity in self.world.query().with_component(MovementAnimation).entities():
+        for entity in self.world.query().with_component(MovementAnimation).ordered_entities():
             anim = self.world.get_component(entity, MovementAnimation)
             if anim is not None and anim.is_moving:
                 active += 1

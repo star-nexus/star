@@ -38,7 +38,7 @@ class ObservationBatchContext:
             alive = defaultdict(list)
             units, counts = self._components[Unit], self._components[UnitCount]
             get_component = self.world.get_component
-            for uid in self.world.query().with_component(Unit).entities():
+            for uid in self.world.query().with_component(Unit).ordered_entities():
                 unit = units[uid] = get_component(uid, Unit)
                 count = counts[uid] = get_component(uid, UnitCount)
                 totals[unit.faction] += 1

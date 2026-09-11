@@ -128,7 +128,7 @@ class AnimationSystem(BaseAnimationSystem):
     def _update_damage_numbers(self, delta_time: float):
         """Advance world-space trajectories, then project them for this zoom."""
         entities_to_remove = []
-        entities = self.world.query().with_all(DamageNumber).entities()
+        entities = self.world.query().with_all(DamageNumber).ordered_entities()
 
         for entity in entities:
             damage_num = self.world.get_component(entity, DamageNumber)

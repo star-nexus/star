@@ -335,7 +335,7 @@ class SettlementReportSystem(System):
             total_units = initial_counts.get(faction, 0)
             
             # Count surviving units currently in world
-            for entity in self.world.query().with_component(Unit).entities():
+            for entity in self.world.query().with_component(Unit).ordered_entities():
                 unit = self.world.get_component(entity, Unit)
                 unit_count = self.world.get_component(entity, UnitCount)
                 
