@@ -24,8 +24,8 @@ def encode(value):
         return value
     if dataclasses.is_dataclass(value):
         out = {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
-        # Some existing systems attach public authority fields after construction
-        # (notably GameStats agent/faction registration). Do not drop them at load.
+        # Preserve public extension fields attached after construction as well
+        # as the declared fields (which already include Agent registration).
         # Private derived map/query caches are deliberately not transferred.
         out.update({name: encode(item) for name, item in vars(value).items()
                     if name not in out and not name.startswith('_')})

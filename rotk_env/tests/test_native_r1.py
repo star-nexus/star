@@ -43,7 +43,7 @@ def test_initial_state_is_owned_and_matches_python(initial):
             fn()
 
 
-def test_public_runtime_registration_fields_survive_import():
+def test_registration_and_public_extension_fields_survive_import():
     from rotk_env.components import GameStats
     from rotk_env.prefabs.config import Faction
     world=build_skirmish_world(mode='real_time',scenario='chibi-small',seed=42,display='none')
@@ -52,8 +52,10 @@ def test_public_runtime_registration_fields_survive_import():
         stats.agent_id_to_faction={'agent-one':Faction.WEI}
         stats.registered_factions={Faction.WEI}
         stats.expected_llm_stats_count=1
+        stats.runtime_extension={'example':'public field added after construction'}
         initial=export_initial_state(world)
         assert initial['singletons']['GameStats']['agent_id_to_faction']=={'agent-one':'wei'}
+        assert initial['singletons']['GameStats']['runtime_extension']==stats.runtime_extension
         with RustRuntime(initial) as r:
             assert r.export_state()==initial
     finally:
