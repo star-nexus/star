@@ -1,0 +1,16 @@
+[package]
+name = "star-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+star-core = { path = "../core" }
+star-rotk = { path = "../rotk" }
+pyo3.workspace = true
+serde_json.workspace = true
