@@ -57,6 +57,9 @@ impl NativeRuntime {
     fn set_clock(&self, py: Python<'_>, paused: bool, time_scale: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.set_clock(paused, time_scale))
     }
+    fn _set_wall_metadata(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
+        self.with_runtime(py, |r| r.set_wall_metadata(wall_time))
+    }
     fn export_state_json(&self, py: Python<'_>) -> PyResult<String> {
         self.with_runtime(py, |r| {
             serde_json::to_string(&r.export()).map_err(|e| e.to_string())
@@ -75,6 +78,21 @@ impl NativeRuntime {
                 .map_err(|_| PyRuntimeError::new_err("native runtime is poisoned"))?
                 .take();
             Ok(())
+        })
+    }
+    /// Internal differential harness, never advertised as an Agent action gate.
+    fn _vision_probe_json(&self, py: Python<'_>, operations_json: String) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let ops: Vec<Value> =
+                serde_json::from_str(&operations_json).map_err(|e| e.to_string())?;
+            let mut results = Vec::new();
+            for op in ops {
+                let revision = r.revision.checked_add(1).ok_or("revision exhausted")?;
+                let result = r.vision_probe(&op);
+                r.revision = revision;
+                results.push(result?);
+            }
+            Ok(json!(results).to_string())
         })
     }
     /// Internal differential harness, never advertised as an Agent action gate.

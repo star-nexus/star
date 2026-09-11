@@ -161,6 +161,8 @@ pub fn import(
     take!("SkillPoints", SkillPoints);
     take!("Combat", CombatStats);
     take!("CombatRoll", CombatRoll);
+    take!("Vision", crate::vision::Vision);
+    take!("UnitObservation", crate::statistics::UnitObservation);
     take!("UnitStatus", Status);
     take!("MovementAnimation", Movement);
     Ok(())
@@ -185,6 +187,8 @@ pub fn export(world: &World, e: Entity, cold: &mut BTreeMap<String, Value>) {
     put!("SkillPoints", SkillPoints);
     put!("Combat", CombatStats);
     put!("CombatRoll", CombatRoll);
+    put!("Vision", crate::vision::Vision);
+    put!("UnitObservation", crate::statistics::UnitObservation);
     put!("UnitStatus", Status);
     put!("MovementAnimation", Movement);
 }

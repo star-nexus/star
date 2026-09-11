@@ -43,6 +43,23 @@ def test_initial_state_is_owned_and_matches_python(initial):
             fn()
 
 
+def test_public_runtime_registration_fields_survive_import():
+    from rotk_env.components import GameStats
+    from rotk_env.prefabs.config import Faction
+    world=build_skirmish_world(mode='real_time',scenario='chibi-small',seed=42,display='none')
+    try:
+        stats=world.get_singleton_component(GameStats)
+        stats.agent_id_to_faction={'agent-one':Faction.WEI}
+        stats.registered_factions={Faction.WEI}
+        stats.expected_llm_stats_count=1
+        initial=export_initial_state(world)
+        assert initial['singletons']['GameStats']['agent_id_to_faction']=={'agent-one':'wei'}
+        with RustRuntime(initial) as r:
+            assert r.export_state()==initial
+    finally:
+        world.reset()
+
+
 @pytest.mark.parametrize('mode', ['real_time', 'turn_based'])
 @pytest.mark.parametrize('fps', [24, 30])
 def test_clock_matches_python_with_pause_and_time_scale(mode, fps):

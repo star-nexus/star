@@ -225,9 +225,10 @@ impl Runtime {
         });
         let terrain_effects = json!({"attacker_terrain_bonus":self.terrain_bonus(a,"attack_bonus"),
             "target_terrain_defense":self.terrain_bonus(t,"defense_bonus")});
-        self.record_fallback_combat(a, t, damage);
+        self.record_combat(a, t, damage, new_count <= 0);
         self.events.push(json!({"type":"BattleEvent","fields":{"attacker_entity":a,"target_entity":t,"damage":damage}}));
         if new_count <= 0 {
+            self.record_death(t, a);
             self.remove_combat_unit(t);
             log.push(format!("{tf} unit destroyed!"));
         }
@@ -240,7 +241,7 @@ impl Runtime {
             "combat_log":log,"pre_battle_state":{"attacker_count":attacker_count,"target_count":old_count,"attacker_ap":ap},
             "post_battle_state":{"attacker_count":attacker_count,"target_count":new_count,"attacker_ap":ap-1},"action_points_consumed":1}}))
     }
-    fn record_fallback_combat(&mut self, a: u64, t: u64, damage: i64) {
+    pub(crate) fn record_fallback_combat(&mut self, a: u64, t: u64, damage: i64) {
         let af = self.component::<UnitInfo>(a).unwrap().faction.clone();
         let tf = self.component::<UnitInfo>(t).unwrap().faction.clone();
         let turn = self

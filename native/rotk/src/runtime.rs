@@ -55,6 +55,11 @@ pub struct Runtime {
     pub(crate) moving: BTreeSet<u64>,
     pub(crate) vision_dirty: BTreeSet<u64>,
     pub recovery: Option<Recovery>,
+    pub(crate) vision: Option<crate::vision::VisionSystem>,
+    pub(crate) fog: Option<crate::vision::Fog>,
+    pub(crate) statistics: Option<crate::statistics::StatisticsSystem>,
+    pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
+    pub(crate) wall_time: f64,
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
@@ -113,9 +118,44 @@ impl Runtime {
                 .entity_mut(entity)
                 .insert(InitialComponents(spec.components));
         }
-        let singletons = std::mem::take(&mut config.singletons);
+        let mut singletons = std::mem::take(&mut config.singletons);
         let clock = config.clock.clone();
+        let wall_time = singletons["GameTime"]["last_update_time"]
+            .as_f64()
+            .ok_or("invalid wall metadata")?;
+        let statistics = config
+            .systems
+            .remove("StatisticsSystem")
+            .map(serde_json::from_value::<crate::statistics::StatisticsSystem>)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        if statistics.as_ref().is_some_and(|s| {
+            s.batch_size == 0
+                || !s.last_update_time.is_finite()
+                || !s.observation_interval.is_finite()
+                || s.observation_interval < 0.
+        }) {
+            return Err("invalid statistics sampler".into());
+        }
+        let visibility_tracker = singletons
+            .remove("VisibilityTracker")
+            .map(serde_json::from_value::<crate::statistics::VisibilityTracker>)
+            .transpose()
+            .map_err(|e| e.to_string())?;
         let spatial = Spatial::build(&world, &singletons, &config.rules, &config.display)?;
+        let fog = singletons
+            .remove("FogOfWar")
+            .map(serde_json::from_value::<crate::vision::Fog>)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let vision = config
+            .systems
+            .remove("VisionSystem")
+            .map(serde_json::from_value::<crate::vision::VisionState>)
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .map(crate::vision::VisionSystem::restore)
+            .transpose()?;
         let recovery = config
             .systems
             .remove("ResourceRecoverySystem")
@@ -141,6 +181,11 @@ impl Runtime {
             moving,
             vision_dirty: BTreeSet::new(),
             recovery,
+            vision,
+            fog,
+            statistics,
+            visibility_tracker,
+            wall_time,
             clock,
             rng,
             singletons,
@@ -161,12 +206,16 @@ impl Runtime {
         }
         let revision = self.revision.checked_add(1).ok_or("revision exhausted")?;
         self.clock.step(dt)?;
+        self.wall_time = wall_time;
+        self.revision = revision;
         if let Some(clock) = self.singletons.get_mut("GameTime") {
             clock["game_elapsed_time"] = json!(self.clock.elapsed);
             clock["last_update_time"] = json!(wall_time);
         }
+        self.advance_statistics(dt)?;
         self.advance_movement(dt);
         self.advance_recovery();
+        self.advance_vision();
         self.revision = revision;
         Ok(())
     }
@@ -209,12 +258,32 @@ impl Runtime {
             })
             .collect();
         out.singletons = self.singletons.clone();
+        if let Some(tracker) = &self.visibility_tracker {
+            out.singletons.insert(
+                "VisibilityTracker".into(),
+                serde_json::to_value(tracker).unwrap(),
+            );
+        }
+        if let Some(stats) = &self.statistics {
+            out.systems.insert(
+                "StatisticsSystem".into(),
+                serde_json::to_value(stats).unwrap(),
+            );
+        }
+        if let Some(fog) = &self.fog {
+            out.singletons
+                .insert("FogOfWar".into(), serde_json::to_value(fog).unwrap());
+        }
         out.rng = self.rng.states();
         if let Some(recovery) = &self.recovery {
             out.systems.insert(
                 "ResourceRecoverySystem".into(),
                 serde_json::to_value(recovery).expect("validated recovery"),
             );
+        }
+        if let Some(vision) = &self.vision {
+            out.systems
+                .insert("VisionSystem".into(), vision.export(&self.vision_dirty));
         }
         out
     }
@@ -235,5 +304,12 @@ impl Runtime {
         json!({"stage": "R2-in-progress", "gameplay_ready": false, "epoch": self.epoch,
             "revision": self.revision, "threads": self.threads, "clock": self.clock,
             "entities": self.world.ordered().count(), "rules_version": RULES_VERSION})
+    }
+    pub fn set_wall_metadata(&mut self, time: f64) -> Result<(), String> {
+        if !time.is_finite() {
+            return Err("wall metadata must be finite".into());
+        }
+        self.wall_time = time;
+        Ok(())
     }
 }

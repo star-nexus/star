@@ -3,9 +3,9 @@
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 **The Rust backend is not yet playable.** R2 is in progress: native movement,
-resource recovery and the combat calculation have differential contract tests.
-The complete statistics/Fog/permissions/observation loop and the window handoff
-are still pending. There is no silent backend fallback.
+resource recovery, combat, Fog and statistics have differential contract tests.
+The complete permissions/Agent observation loop and the window handoff are still
+pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -60,12 +60,22 @@ preserves the scheduler ledger, including superseded tasks and pending MP spends
 Paused simulation time never advances recovery. Repeated AP spends preserve the
 active cadence; MP recovery restarts at the next advancing recovery boundary.
 
-Private `_movement_probe_json`, `_resource_probe_json` and `_combat_probe_json`
+Private `_movement_probe_json`, `_resource_probe_json`, `_combat_probe_json`
+and `_vision_probe_json`
 methods exist only for differential tests. They are **not Agent action APIs**:
 they have no registration/claim authorization boundary. The combat probe currently
-supports rule mode and the fallback statistics path; presentation combat entities
-and normal statistics subscribers remain pending. Do not route Agents through
+supports rule mode with normal or fallback statistics; presentation combat entities
+remain pending. Do not route Agents through
 these probes or use them for a capacity claim. `gameplay_ready` remains false.
+
+Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
+exploration and geometry-cache ordering. Death invalidation is consumed at the
+next vision update, matching Python. Statistics retain ordinary periodic sampling
+and the window's bounded multi-frame cycle, including reset partway through a
+cycle. Their historical wall timestamps are injected metadata; resource cooldowns
+still advance only from simulation time. The bootstrap codec also preserves
+public runtime attributes attached to dataclasses, including Agent registration
+metadata. Fog presentation deltas and the actual window integration are pending.
 
 The initialization codec preserves the difference between `UnitState` enum values
 and historical raw status strings, since Python's coefficient lookup distinguishes

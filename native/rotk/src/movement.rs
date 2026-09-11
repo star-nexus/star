@@ -250,9 +250,9 @@ impl Runtime {
             p.col = goal.0;
             p.row = goal.1;
             self.spatial.moved(id, start, goal);
-            self.vision_dirty.insert(id);
         }
         self.presentation_dirty.insert(id);
+        self.record_movement(id, start, goal);
         json!({"success":true,"path":path,"cost":cost,"from":start,"to":goal,"animated":animated})
     }
 
@@ -295,7 +295,7 @@ impl Runtime {
                 position.col = target.0;
                 position.row = target.1;
                 self.spatial.moved(id, old, target);
-                if old != target {
+                if old != target && self.config.display == "window" {
                     self.vision_dirty.insert(id);
                 }
                 anim.current_target_index += 1;

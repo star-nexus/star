@@ -24,6 +24,11 @@ def encode(value):
         return value
     if dataclasses.is_dataclass(value):
         out = {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        # Some existing systems attach public authority fields after construction
+        # (notably GameStats agent/faction registration). Do not drop them at load.
+        # Private derived map/query caches are deliberately not transferred.
+        out.update({name: encode(item) for name, item in vars(value).items()
+                    if name not in out and not name.startswith('_')})
         # UnitState is an Enum, not str. Existing coefficient lookup distinguishes
         # it from the legacy raw string; preserve that distinction in native state.
         if type(value).__name__ == 'UnitStatus' and isinstance(value.current_status, Enum):
@@ -69,6 +74,24 @@ def export_recovery(system):
     return result
 
 
+def export_vision(system):
+    from rotk_env.utils.unit_spatial_index import get_unit_spatial_index
+    return {'enabled': system.enabled, 'window': type(system).__module__.endswith('window_vision_system'),
+            'indexed': get_unit_spatial_index(system.world) is not None,
+            'audit_interval': system._AUDIT_EVERY_FRAMES, 'frames': system._frames,
+            'bootstrapped': system._bootstrapped, 'last_fog_enabled': system._last_fog_enabled,
+            'terrain_revision': system._terrain_revision, 'capacity': system._geometry_cache_max_entries,
+            'dirty': sorted(system._dirty),
+            'unit_visibility': {str(uid): encode(cells) for uid, cells in system._unit_visibility.items()},
+            'unit_faction': {str(uid): f.value for uid, f in system._unit_faction.items()},
+            'counts': {f.value: [[list(cell), n] for cell, n in sorted(counts.items())]
+                       for f, counts in system._faction_tile_counts.items()},
+            'geometry': [[encode(key), encode(cells)] for key, cells in system._geometry_cache.items()],
+            'recomputes': system._stat_recomputes, 'cache_hits': system._stat_cache_hits,
+            'geometry_hits': system._stat_geometry_hits, 'geometry_misses': system._stat_geometry_misses,
+            'geometry_evictions': system._stat_geometry_evictions}
+
+
 def export_initial_state(world, *, display='none'):
     from rotk_env.components import GameTime, RngService
     from rotk_env.prefabs.config import GameConfig
@@ -88,6 +111,23 @@ def export_initial_state(world, *, display='none'):
     from rotk_env.systems.resource_recovery_system import get_resource_recovery_system
     recovery = get_resource_recovery_system(world)
     systems = {'ResourceRecoverySystem': export_recovery(recovery)} if recovery is not None else {}
+    vision = next((s for s in world.systems if type(s).__name__ == 'VisionSystem'), None)
+    if vision is not None:
+        systems['VisionSystem'] = export_vision(vision)
+    statistics = next((s for s in world.systems if type(s).__name__ == 'StatisticsSystem'), None)
+    if statistics is not None:
+        from rotk_env.utils.unit_spatial_index import get_unit_spatial_index
+        window = type(statistics).__module__.endswith('window_statistics_system')
+        systems['StatisticsSystem'] = {
+            'enabled': statistics.enabled, 'window': window,
+            'indexed': get_unit_spatial_index(world) is not None,
+            'last_update_time': statistics.last_update_time,
+            'observation_interval': statistics.observation_interval,
+            'batch_size': getattr(statistics, 'batch_size', 128),
+            'history_limit': getattr(statistics, 'OBSERVATION_HISTORY_LIMIT', 10000),
+            'visibility_limit': getattr(statistics, 'VISIBILITY_HISTORY_LIMIT', 100),
+            'cycle': encode(getattr(statistics, '_cycle', None)),
+        }
     return {'schema': SCHEMA_VERSION, 'oracle': ORACLE_VERSION, 'display': display,
             'mode': clock.current_mode.value, 'seed': str(rng.seed), 'seed_source': rng.source,
             'entity_counter': world.entity_counter, 'entities': entities, 'singletons': singletons,
