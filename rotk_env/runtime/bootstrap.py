@@ -11,7 +11,7 @@ import math
 import random
 
 SCHEMA_VERSION = 1
-ORACLE_VERSION = 'python-r0-78cc8da'
+ORACLE_VERSION = 'python-r0b-17b1776'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
 
@@ -33,6 +33,9 @@ def encode(value):
         # it from the legacy raw string; preserve that distinction in native state.
         if type(value).__name__ == 'UnitStatus' and isinstance(value.current_status, Enum):
             out['current_status_is_enum'] = True
+        if type(value).__name__ == 'TeamCoordination':
+            out['inbox_maxlen'] = {k: q.maxlen for k, q in value.team_inboxes.items()}
+            out['history_maxlen'] = {k: q.maxlen for k, q in value.team_history.items()}
         return out
     if isinstance(value, dict):
         pairs = [[encode(k), encode(v)] for k, v in value.items()]

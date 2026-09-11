@@ -3,9 +3,9 @@
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 **The Rust backend is not yet playable.** R2 is in progress: native movement,
-resource recovery, combat, Fog and statistics have differential contract tests.
-The complete permissions/Agent observation loop and the window handoff are still
-pending. There is no silent backend fallback.
+resource recovery, combat, Fog, statistics, team state and faction projections
+have differential contract tests. The authenticated Agent dispatcher, full game
+lifecycle and window handoff are still pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -67,6 +67,20 @@ they have no registration/claim authorization boundary. The combat probe current
 supports rule mode with normal or fallback statistics; presentation combat entities
 remain pending. Do not route Agents through
 these probes or use them for a capacity claim. `gameplay_ready` remains false.
+
+`_team_probe_json` and `_observation_probe_json` also exercise internal contracts
+only. Team ownership has a reverse index for release-all; existing inboxes retain
+their original FIFO capacity across import/reset. Faction queries share census,
+unit panels, enemy facts and terrain only within one immutable runtime borrow.
+Per-request owner/commandable fields are assembled separately. A later call starts
+a fresh batch, so a move/query/attack sequence cannot reuse a pre-move snapshot.
+The current projection still clones response trees and performs some full scans;
+no 5K/10K throughput or parallel speedup is claimed.
+
+The current native rules marker is `python-r0b-17b1776`. R0b adds lexical ordering
+for available skill names, omitted by the initial R0 normalization. Old oracle
+tags and historical extension wheels remain reproducible; mixing an old wheel
+with the current Python adapter fails its explicit rules-version check.
 
 Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
 exploration and geometry-cache ordering. Death invalidation is consumed at the

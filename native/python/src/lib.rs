@@ -121,6 +121,24 @@ impl NativeRuntime {
             Ok(json!(results).to_string())
         })
     }
+    /// Internal component probe; does not authorize Agent actions.
+    fn _team_probe_json(&self, py: Python<'_>, operations_json: String) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let ops: Vec<Value> =
+                serde_json::from_str(&operations_json).map_err(|e| e.to_string())?;
+            Ok(json!(r.team_probe(ops)?).to_string())
+        })
+    }
+    /// Handler-level differential probe, not the authenticated Agent interface.
+    fn _observation_probe_json(&self, py: Python<'_>, parameters_json: String) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let requests: Vec<Value> =
+                serde_json::from_str(&parameters_json).map_err(|e| e.to_string())?;
+            let mut batch = star_rotk::observation::ObservationBatch::new(r);
+            let results: Vec<_> = requests.iter().map(|p| batch.faction_state(p)).collect();
+            Ok(json!({"results":results,"metrics":batch.metrics}).to_string())
+        })
+    }
     /// Internal differential harness, never advertised as an Agent action gate.
     fn _resource_probe_json(&self, py: Python<'_>, operations_json: String) -> PyResult<String> {
         use star_rotk::components::{ActionPoints, SkillPoints};

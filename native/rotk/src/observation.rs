@@ -1,0 +1,342 @@
+//! Read-only faction projection. A borrow scopes all caches to one write-free batch.
+use crate::{
+    components::{ActionPoints, CombatStats, Headcount, MovePoints, Position, Status, UnitInfo},
+    hex::Hex,
+    runtime::{InitialComponents, Runtime},
+    vision::Vision,
+};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+#[derive(Default)]
+struct Census {
+    totals: BTreeMap<String, usize>,
+    alive: BTreeMap<String, Vec<u64>>,
+    actionable: BTreeMap<String, usize>,
+}
+struct FactionFacts {
+    alive: Vec<u64>,
+    enemies: BTreeSet<u64>,
+    public: Value,
+}
+#[derive(Default, serde::Serialize)]
+pub struct Metrics {
+    census_builds: usize,
+    faction_builds: usize,
+    panel_builds: usize,
+    enemy_builds: usize,
+    tile_builds: usize,
+}
+pub struct ObservationBatch<'a> {
+    runtime: &'a Runtime,
+    census: Option<Census>,
+    factions: HashMap<String, FactionFacts>,
+    panels: HashMap<u64, Value>,
+    enemies: HashMap<u64, Value>,
+    tiles: HashMap<Hex, Value>,
+    pub metrics: Metrics,
+}
+pub fn error(message: &str) -> Value {
+    json!({"success":false,"result":false,"details":message,"message":message})
+}
+impl<'a> ObservationBatch<'a> {
+    pub fn new(runtime: &'a Runtime) -> Self {
+        Self {
+            runtime,
+            census: None,
+            factions: HashMap::new(),
+            panels: HashMap::new(),
+            enemies: HashMap::new(),
+            tiles: HashMap::new(),
+            metrics: Metrics::default(),
+        }
+    }
+    fn census(&mut self) {
+        if self.census.is_some() {
+            return;
+        }
+        self.metrics.census_builds += 1;
+        let r = self.runtime;
+        let mut c = Census::default();
+        for (id, e) in r.world.ordered() {
+            let Some(u) = r.world.ecs.get::<UnitInfo>(e) else {
+                continue;
+            };
+            *c.totals.entry(u.faction.clone()).or_default() += 1;
+            if r.world
+                .ecs
+                .get::<Headcount>(e)
+                .is_some_and(|n| n.current_count > 0)
+            {
+                c.alive.entry(u.faction.clone()).or_default().push(id);
+                if r.world
+                    .ecs
+                    .get::<ActionPoints>(e)
+                    .is_some_and(|p| p.current_ap > 0)
+                {
+                    *c.actionable.entry(u.faction.clone()).or_default() += 1;
+                }
+            }
+        }
+        self.census = Some(c);
+    }
+    fn faction_status(&self, faction: &str) -> &'static str {
+        let r = self.runtime;
+        if let Some(g) = r.singletons.get("GameState")
+            && g["game_over"].as_bool() == Some(true)
+        {
+            return if g["winner"].as_str() == Some(faction) {
+                "victory"
+            } else if g["winner"].is_null() {
+                "draw"
+            } else {
+                "defeat"
+            };
+        }
+        if let Some(winner) = r
+            .singletons
+            .get("Winner")
+            .and_then(|w| w["faction"].as_str())
+        {
+            return if winner == faction {
+                "victory"
+            } else {
+                "defeat"
+            };
+        }
+        let c = self.census.as_ref().unwrap();
+        if c.alive.get(faction).is_none_or(Vec::is_empty) {
+            return "eliminated";
+        }
+        if !c
+            .alive
+            .iter()
+            .any(|(f, ids)| f != faction && !ids.is_empty())
+        {
+            return "victory";
+        }
+        if r.singletons
+            .get("BattleLog")
+            .and_then(|b| b["entries"].as_array())
+            .is_some_and(|entries| {
+                entries.iter().rev().take(3).any(|e| {
+                    e["attacker_faction"].as_str() == Some(faction)
+                        || e["defender_faction"].as_str() == Some(faction)
+                })
+            })
+        {
+            return "in_battle";
+        }
+        "active"
+    }
+    fn faction(&mut self, faction: &str) {
+        if self.factions.contains_key(faction) {
+            return;
+        }
+        self.census();
+        self.metrics.faction_builds += 1;
+        let r = self.runtime;
+        let lifted = r.fog.as_ref().is_none_or(|f| !f.enabled);
+        let visible = r.fog.as_ref().and_then(|f| f.faction_vision.get(faction));
+        let mut enemy_ids = BTreeSet::new();
+        let mut enemies = vec![];
+        for (id, e) in r.world.ordered() {
+            let (Some(u), Some(p), Some(n)) = (
+                r.world.ecs.get::<UnitInfo>(e),
+                r.world.ecs.get::<Position>(e),
+                r.world.ecs.get::<Headcount>(e),
+            ) else {
+                continue;
+            };
+            if u.faction == faction
+                || n.current_count <= 0
+                || (!lifted && visible.is_none_or(|v| !v.contains(&p.hex())))
+            {
+                continue;
+            }
+            enemy_ids.insert(id);
+            let fact = self.enemies.entry(id).or_insert_with(|| {
+                self.metrics.enemy_builds += 1;
+                json!({"unit_id":id,"unit_type":u.unit_type,"faction":u.faction,
+                    "position":{"col":p.col,"row":p.row},"unit_status":{"current_count":n.current_count}})
+            });
+            enemies.push(fact.clone());
+        }
+        let mut terrain = vec![];
+        let cells: BTreeSet<_> = r
+            .spatial
+            .tiles
+            .keys()
+            .copied()
+            .filter(|cell| lifted || visible.is_some_and(|v| v.contains(cell)))
+            .collect();
+        for cell in cells {
+            let tile = &r.spatial.tiles[&cell];
+            // Preserve historical falsy external ID zero lookup.
+            if tile.entity == 0 || !tile.has_terrain {
+                continue;
+            }
+            terrain.push(self.tiles.entry(cell).or_insert_with(|| {
+                self.metrics.tile_builds += 1;
+                json!({"col":cell.0,"row":cell.1,"type":tile.terrain,"movement_cost":tile.cost,"passable":tile.cost<999})
+            }).clone());
+        }
+        let c = self.census.as_ref().unwrap();
+        let alive = c.alive.get(faction).cloned().unwrap_or_default();
+        let public = json!({"success":true,"result":true,"state":self.faction_status(faction),"faction":faction,
+            "fog":if lifted {"disabled"} else {"active"}, "total_units":c.totals.get(faction).copied().unwrap_or(0),
+            "alive_units":alive.len(),"actionable_units":c.actionable.get(faction).copied().unwrap_or(0),
+            "visible_enemy_units":enemies,"visible_terrain":terrain});
+        self.factions.insert(
+            faction.into(),
+            FactionFacts {
+                alive,
+                enemies: enemy_ids,
+                public,
+            },
+        );
+    }
+    fn panel(&mut self, id: u64, faction: &str) {
+        if self.panels.contains_key(&id) {
+            return;
+        }
+        self.metrics.panel_builds += 1;
+        let r = self.runtime;
+        let e = r.world.entity(id).expect("validated panel entity");
+        let unit = r.world.ecs.get::<UnitInfo>(e).unwrap();
+        let count = r.world.ecs.get::<Headcount>(e).unwrap();
+        let p = r.world.ecs.get::<Position>(e);
+        let combat = r.world.ecs.get::<CombatStats>(e);
+        let mp = r.world.ecs.get::<MovePoints>(e);
+        let ap = r.world.ecs.get::<ActionPoints>(e);
+        let vision = r.world.ecs.get::<Vision>(e);
+        let status = r.world.ecs.get::<Status>(e);
+        let mut properties = json!({"attack_range":combat.map_or(1,|c| c.attack_range),
+            "attack_power":combat.map_or(10,|c| c.base_attack),"vision_range":vision.map_or(2,|v| v.range)});
+        if let Some(c) = combat {
+            properties["defense"] = json!(c.base_defense);
+        }
+        let mut skills: Vec<String> = r
+            .world
+            .ecs
+            .get::<InitialComponents>(e)
+            .and_then(|c| c.0.get("UnitSkills"))
+            .and_then(|s| {
+                s["available_skills"]
+                    .as_array()
+                    .or_else(|| s["available_skills"]["$set"].as_array())
+            })
+            .into_iter()
+            .flatten()
+            .map(|s| {
+                s.as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| s.to_string())
+            })
+            .collect();
+        skills.sort();
+        let enemy_ids = &self.factions[faction].enemies;
+        let attackable: Vec<_> = enemy_ids
+            .iter()
+            .copied()
+            .filter(|&enemy| r.can_attack(id, Some(enemy)))
+            .collect();
+        let reachable: Vec<_> = r
+            .reachable(id)
+            .iter()
+            .map(|p| json!({"col":p.0,"row":p.1}))
+            .collect();
+        let info = json!({"unit_id":id,"unit_type":unit.unit_type,"faction":unit.faction,
+            "position":{"col":p.map_or(0,|p| p.col),"row":p.map_or(0,|p| p.row)},
+            "unit_status":{"current_count":count.current_count,"max_count":count.max_count,"health_percentage":count.ratio()*100.,
+                "morale":status.filter(|s| !s.current_status.is_empty()).map_or("normal",|s| s.current_status.as_str()),"fatigue":"none"},
+            "capabilities":{"properties":properties,"unit_resources":{"remaining_action_points":ap.map_or(0,|a| a.current_ap),
+                "remaining_movement_points":mp.map_or(0,|m| m.current_mp)}},"available_skills":skills,
+            "reachable":reachable,"attackable":attackable});
+        self.panels.insert(id, info);
+    }
+    /// Handler-level projection; trusted identity is checked by the action dispatcher.
+    pub fn faction_state(&mut self, params: &Value) -> Value {
+        let r = self.runtime;
+        let requested = &params["faction"];
+        if !crate::codec::truthy(requested) {
+            return error("faction parameter required");
+        }
+        let faction = match requested.as_str() {
+            Some(f @ ("wei" | "shu" | "wu")) => f,
+            _ => {
+                return error(&format!(
+                    "Invalid faction: {}",
+                    requested
+                        .as_str()
+                        .map(String::from)
+                        .unwrap_or_else(|| requested.to_string())
+                ));
+            }
+        };
+        let agent = params["agent_id"].as_str().filter(|a| !a.is_empty());
+        let mapped = agent.and_then(|a| {
+            r.singletons
+                .get("GameStats")
+                .and_then(|s| s["agent_id_to_faction"][a].as_str())
+        });
+        if let Some(observer) = mapped.filter(|o| *o != faction) {
+            let mut result = error(&format!(
+                "Agent is registered to {observer}; get_faction_state only reports that faction's screen. Visible enemies are in visible_enemy_units."
+            ));
+            result["error_code"] = json!(2005);
+            result["registered_faction"] = json!(observer);
+            result["requested_faction"] = json!(faction);
+            return result;
+        }
+        let selected = if let Some(ids) = params.get("unit_ids") {
+            let Some(ids) = ids.as_array() else {
+                return error("unit_ids must be a list of integer unit IDs");
+            };
+            if ids.iter().any(|id| !id.is_i64() && !id.is_u64()) {
+                return error("unit_ids must be a list of integer unit IDs");
+            }
+            let mut seen = BTreeSet::new();
+            let mut ordered = vec![];
+            for id in ids {
+                let uid = id.as_u64();
+                if uid
+                    .and_then(|id| r.world.entity(id))
+                    .and_then(|e| r.world.ecs.get::<UnitInfo>(e))
+                    .is_none_or(|u| u.faction != faction)
+                {
+                    let mut result = error("unit_ids must name existing units of your own faction");
+                    result["error_code"] = json!(2005);
+                    return result;
+                }
+                let uid = uid.unwrap();
+                if seen.insert(uid)
+                    && r.world
+                        .entity(uid)
+                        .and_then(|e| r.world.ecs.get::<Headcount>(e))
+                        .is_some_and(|n| n.current_count > 0)
+                {
+                    ordered.push(uid);
+                }
+            }
+            Some(ordered)
+        } else {
+            None
+        };
+        self.faction(faction);
+        let ids = selected.unwrap_or_else(|| self.factions[faction].alive.clone());
+        let mut units = vec![];
+        for id in ids {
+            self.panel(id, faction);
+            let mut panel = self.panels[&id].clone();
+            let owner = r.team.as_ref().and_then(|t| t.owner(id));
+            panel["owner"] = json!(owner);
+            panel["commandable"] =
+                json!(agent.is_none() || owner.is_none_or(|owner| Some(owner) == agent));
+            units.push(panel);
+        }
+        let mut result = self.factions[faction].public.clone();
+        result["units"] = json!(units);
+        result
+    }
+}

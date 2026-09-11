@@ -60,6 +60,7 @@ pub struct Runtime {
     pub(crate) statistics: Option<crate::statistics::StatisticsSystem>,
     pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
     pub(crate) wall_time: f64,
+    pub(crate) team: Option<crate::team::Team>,
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
@@ -119,6 +120,13 @@ impl Runtime {
                 .insert(InitialComponents(spec.components));
         }
         let mut singletons = std::mem::take(&mut config.singletons);
+        let team = singletons
+            .remove("TeamCoordination")
+            .map(serde_json::from_value::<crate::team::TeamState>)
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .map(crate::team::Team::restore)
+            .transpose()?;
         let clock = config.clock.clone();
         let wall_time = singletons["GameTime"]["last_update_time"]
             .as_f64()
@@ -186,6 +194,7 @@ impl Runtime {
             statistics,
             visibility_tracker,
             wall_time,
+            team,
             clock,
             rng,
             singletons,
@@ -258,6 +267,12 @@ impl Runtime {
             })
             .collect();
         out.singletons = self.singletons.clone();
+        if let Some(team) = &self.team {
+            out.singletons.insert(
+                "TeamCoordination".into(),
+                serde_json::to_value(&team.state).unwrap(),
+            );
+        }
         if let Some(tracker) = &self.visibility_tracker {
             out.singletons.insert(
                 "VisibilityTracker".into(),
