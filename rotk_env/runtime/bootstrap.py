@@ -10,7 +10,8 @@ from enum import Enum
 import math
 import random
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+NATIVE_API_VERSION = 2
 ORACLE_VERSION = 'python-r0b-17b1776'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 

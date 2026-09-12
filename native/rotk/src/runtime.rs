@@ -55,6 +55,7 @@ pub struct Runtime {
     pub(crate) config: SceneSpec,
     pub spatial: Spatial,
     pub(crate) living: crate::lifecycle::LivingFactions,
+    pub(crate) players: Vec<(u64, String)>,
     pub(crate) moving: BTreeSet<u64>,
     pub(crate) vision_dirty: BTreeSet<u64>,
     pub recovery: Option<Recovery>,
@@ -75,7 +76,7 @@ pub struct Runtime {
 impl Runtime {
     pub fn from_json(payload: &str, threads: usize, epoch: u64) -> Result<Self, String> {
         let mut config: SceneSpec = serde_json::from_str(payload).map_err(|e| e.to_string())?;
-        if config.schema != 1 || config.oracle != RULES_VERSION {
+        if config.schema != crate::SCHEMA_VERSION || config.oracle != RULES_VERSION {
             return Err("unsupported scene schema or oracle".into());
         }
         if ![1, 2, 4].contains(&threads) {
@@ -187,8 +188,18 @@ impl Runtime {
             })
             .collect();
         let living = crate::lifecycle::LivingFactions::build(&world);
+        // Player membership/faction only changes through scene reset today.
+        let players = world
+            .ordered()
+            .filter_map(|(id, e)| {
+                world.ecs.get::<InitialComponents>(e)?.0.get("Player")?["faction"]
+                    .as_str()
+                    .map(|f| (id, f.to_string()))
+            })
+            .collect();
         Ok(Self {
             living,
+            players,
             world,
             spatial,
             moving,
@@ -342,6 +353,7 @@ impl Runtime {
     pub fn diagnostics(&self) -> Value {
         json!({"stage": "R2-in-progress", "gameplay_ready": false, "epoch": self.epoch,
             "revision": self.revision, "threads": self.threads, "clock": self.clock,
+            "api_version": crate::API_VERSION, "schema_version": crate::SCHEMA_VERSION,
             "entities": self.world.ordered().count(), "living_units": self.living.all.values().sum::<usize>(),
             "living_by_faction": self.living.all, "moving_units": self.moving.len(), "rules_version": RULES_VERSION})
     }

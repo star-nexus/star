@@ -4,7 +4,7 @@ use crate::{
     components::{ActionPoints, CombatStats, Headcount, MovePoints, Position, UnitInfo},
     hex,
     observation::error,
-    runtime::{InitialComponents, Runtime},
+    runtime::Runtime,
 };
 use serde_json::{Value, json};
 
@@ -45,18 +45,7 @@ impl Runtime {
         {
             return None;
         }
-        let current = self
-            .singletons
-            .get("GameState")
-            .and_then(|g| g["current_player"].as_str());
-        let player = self.world.ordered().find_map(|(_, e)| {
-            self.world
-                .ecs
-                .get::<InitialComponents>(e)
-                .and_then(|c| c.0.get("Player"))
-                .filter(|p| p["faction"].as_str() == current)
-        });
-        let Some(faction) = player.and_then(|p| p["faction"].as_str()) else {
+        let Some(faction) = self.current_player_faction() else {
             return Some(extra(
                 "Unable to determine current player",
                 json!({"unit_id":uid,"action":action}),

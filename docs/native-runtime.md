@@ -83,21 +83,21 @@ The caller supplies trusted `agent_id` separately from action parameters; a Hub
 adapter must derive it from the authenticated connection. The local API does not
 authenticate a network peer or connect Hub. Supported requests currently include
 registration, claim/release, list/broadcast/read team messages, action discovery,
-move, attack and `get_faction_state`. Attack presentation is still rule-mode only.
+move, attack, `end_turn` and `get_faction_state`. Attack presentation is still rule-mode only.
 Other configured gameplay verbs fail explicitly until their migration is complete.
 
 ```python
 from rotk_env.runtime.native import ActionRequest
 
-# With a RustRuntime created as above:
-result = runtime.execute_action("register_agent_info", {
-    "faction": "wei", "provider": "synthetic", "model_id": "fake",
-    "base_url": "http://local",
-}, agent_id="agent-1")
-responses = runtime.execute_actions([
-    ActionRequest("agent-1", "get_faction_state", {"faction": "wei"}),
-    ActionRequest("agent-1", "get_faction_state", {"faction": "wei", "unit_ids": []}),
-])
+with RustRuntime(initial) as runtime:
+    result = runtime.execute_action("register_agent_info", {
+        "faction": "wei", "provider": "synthetic", "model_id": "fake",
+        "base_url": "http://local",
+    }, agent_id="agent-1")
+    responses = runtime.execute_actions([
+        ActionRequest("agent-1", "get_faction_state", {"faction": "wei"}),
+        ActionRequest("agent-1", "get_faction_state", {"faction": "wei", "unit_ids": []}),
+    ])
 ```
 
 Batch requests execute in supplied order, without waiting to collect more work.
@@ -120,8 +120,12 @@ backend change or capacity acceptance from this interface checkpoint.
 
 The current native rules marker is `python-r0b-17b1776`. R0b adds lexical ordering
 for available skill names, omitted by the initial R0 normalization. Old oracle
-tags and historical extension wheels remain reproducible; mixing an old wheel
-with the current Python adapter fails its explicit rules-version check.
+tags and historical extension wheels remain reproducible at their recorded source.
+The runtime now has API version2 and scene schema2 in addition to the rules marker.
+The current Python adapter rejects extensions without the matching API marker;
+scene schema1 is rejected on import/reset. This prevents older R2 kernels from
+silently ignoring newly introduced lifecycle metadata. Rebuild after source changes;
+experimental historical traces must use their exact source and wheel.
 
 Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
 exploration and geometry-cache ordering. Death invalidation is consumed at the
@@ -137,8 +141,13 @@ annihilation, one remaining faction, then timeout (in that precedence). Realtime
 timeout uses simulation elapsed seconds. Derived living-faction counts are built on
 import/reset and updated on death, so this check does not scan all Units each frame.
 The window index's position requirement is retained. GameTimeSystem/AnimationSystem
-and lifecycle enabled flags survive import. Turn-clock synchronization is included;
-turn handoff/reset actions and settlement orchestration are still pending.
+and lifecycle enabled flags survive import. Agent `end_turn` rotates factions and resets AP/MP/status only on round rollover.
+The trusted Framework method `finish_human_turn` preserves the human reset-before-
+check path. Turn statistics, battle logs and TurnStartEvent keep their old order;
+the GameTime round number synchronizes on the next tick. Cooldown/skill behavior
+is not rebalanced. Settlement orchestration and actual window input handoff remain
+pending. The small Player lookup table is derived on import/reset; future commands
+that change Player membership/faction must also update it.
 
 The initialization codec preserves the difference between `UnitState` enum values
 and historical raw status strings, since Python's coefficient lookup distinguishes

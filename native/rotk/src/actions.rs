@@ -493,6 +493,9 @@ impl Runtime {
             "get_faction_state" if self.allowed_actions().iter().any(|n| n == action) => {
                 ObservationBatch::new(self).faction_state(params)
             }
+            "end_turn" if self.allowed_actions().iter().any(|n| n == action) => {
+                self.handle_end_turn(params)
+            }
             "move" if self.allowed_actions().iter().any(|n| n == action) => {
                 self.handle_move(params)
             }

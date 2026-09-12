@@ -462,6 +462,98 @@ impl Runtime {
         let scroll = entries.len().saturating_sub(visible);
         log["scroll_offset"] = json!(scroll);
     }
+    pub(crate) fn record_turn_change_native(&mut self, previous: Option<&str>, next: &str) {
+        if self.statistics.is_none() {
+            return;
+        }
+        let Some(state) = self.singletons.get("GameState") else {
+            return;
+        };
+        let turn = state["turn_number"].clone();
+        let mode = state["game_mode"].clone();
+        if let Some(stats) = self.singletons.get_mut("GameStats") {
+            let timestamp = stats["total_game_time"].clone();
+            stats["turn_history"].as_array_mut().expect("turn history").push(json!({
+                "turn_number":turn,"previous_faction":previous,"new_faction":next,"game_mode":mode,"timestamp":timestamp}));
+        }
+        if let Some(mode) = self.singletons.get_mut("GameModeStatistics")
+            && mode["current_mode"] == "turn_based"
+        {
+            let started = mode["current_turn_start_time"].as_f64().unwrap_or(0.);
+            let actions = mode["actions_this_turn"].clone();
+            let stats = &mut mode["turn_based_stats"];
+            if let Some(previous) = previous.filter(|_| started > 0.) {
+                let duration = self.wall_time - started;
+                bump(stats, "total_turns", 1);
+                stats["turn_durations"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!(duration));
+                let times = stats["faction_turn_times"]
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(previous)
+                    .or_insert(json!([]));
+                times.as_array_mut().unwrap().push(json!(duration));
+                let values = stats["turn_durations"].as_array().unwrap();
+                let mut sum = 0_f64;
+                let mut correction = 0_f64;
+                let mut longest = f64::NEG_INFINITY;
+                let mut shortest = f64::INFINITY;
+                for value in values {
+                    let x = value.as_f64().expect("finite turn duration");
+                    let t = sum + x;
+                    correction += if sum.abs() >= x.abs() {
+                        (sum - t) + x
+                    } else {
+                        (x - t) + sum
+                    };
+                    sum = t;
+                    longest = longest.max(x);
+                    shortest = shortest.min(x);
+                }
+                // CPython 3.13 float sum uses Neumaier compensation and only
+                // applies a finite nonzero residual (Python/bltinmodule.c).
+                if correction != 0. && correction.is_finite() {
+                    sum += correction;
+                }
+                let average = sum / values.len() as f64;
+                stats["average_turn_duration"] = json!(average);
+                stats["longest_turn"] = json!(longest);
+                stats["shortest_turn"] = json!(shortest);
+                let number = stats["total_turns"].clone();
+                let counts = &mut stats["actions_per_turn"];
+                if counts.get("$map").is_none() {
+                    *counts = json!({"$map":[]});
+                }
+                let pairs = counts["$map"].as_array_mut().unwrap();
+                if let Some(pair) = pairs.iter_mut().find(|pair| pair[0] == number) {
+                    pair[1] = actions;
+                } else {
+                    pairs.push(json!([number, actions]));
+                }
+                pairs.sort_by_cached_key(|pair| pair[0].to_string());
+            }
+            stats["faction_turn_times"]
+                .as_object_mut()
+                .unwrap()
+                .entry(next)
+                .or_insert(json!([]));
+            mode["current_turn_start_time"] = json!(self.wall_time);
+            mode["actions_this_turn"] = json!(0);
+        }
+        if let Some(stats) = self.singletons.get_mut("GameStats") {
+            faction_stats(stats, next);
+        }
+        let message = previous.map_or_else(
+            || format!("{next} turn started"),
+            |p| format!("{p} turn ended, {next} turn started"),
+        );
+        self.battle_log(message, "turn", next, [255, 255, 100], None);
+        if let Some(stats) = self.singletons.get_mut("GameStats") {
+            bump(faction_stats(stats, next), "turns_played", 1);
+        }
+    }
     fn record_mode_action(&mut self, faction: &str, kind: &str) {
         let Some(mode) = self.singletons.get_mut("GameModeStatistics") else {
             return;

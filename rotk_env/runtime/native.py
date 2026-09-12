@@ -5,18 +5,22 @@ import time
 from dataclasses import dataclass
 from typing import Any
 from rotk_env.components.agent_info import AgentInfoRegistry
-from .bootstrap import ORACLE_VERSION
+from .bootstrap import ORACLE_VERSION, NATIVE_API_VERSION
 
 _UNSET = object()
 
 
 def load_native():
     try:
+        import star_native
         from star_native import NativeRuntime, RULES_VERSION
     except ImportError as exc:
         raise RuntimeError('Rust backend is unavailable. Install star-native (developer: uv sync --extra native).') from exc
     if RULES_VERSION != ORACLE_VERSION:
         raise RuntimeError(f'Rust rules version mismatch: {RULES_VERSION}; expected {ORACLE_VERSION}')
+    actual_api = getattr(star_native, 'API_VERSION', None)
+    if actual_api != NATIVE_API_VERSION:
+        raise RuntimeError(f'Rust API version mismatch: {actual_api}; expected {NATIVE_API_VERSION}. Rebuild/install the matching star-native wheel.')
     return NativeRuntime
 
 
@@ -81,6 +85,10 @@ class RustRuntime:
         if unit_ids is not _UNSET:
             parameters["unit_ids"] = unit_ids
         return self.execute_action("get_faction_state", parameters, agent_id=agent_id, wall_time=wall_time)
+
+    def finish_human_turn(self, *, wall_time=None):
+        """Trusted Framework input, with the legacy human reset-before-check semantics."""
+        self._native.finish_human_turn(time.time() if wall_time is None else wall_time)
 
     def set_clock(self, *, paused, time_scale=1.0):
         self._native.set_clock(paused, time_scale)

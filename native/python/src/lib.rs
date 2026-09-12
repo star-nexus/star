@@ -54,6 +54,10 @@ impl NativeRuntime {
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
+    /// Trusted Framework keyboard/menu input; not an Agent wire verb.
+    fn finish_human_turn(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
+        self.with_runtime(py, |r| r.finish_human_turn(wall_time))
+    }
     fn set_clock(&self, py: Python<'_>, paused: bool, time_scale: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.set_clock(paused, time_scale))
     }
@@ -302,6 +306,7 @@ impl NativeRuntime {
 
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("API_VERSION", star_rotk::API_VERSION)?;
     m.add("RULES_VERSION", star_rotk::RULES_VERSION)?;
     m.add_class::<NativeRuntime>()?;
     Ok(())
