@@ -2,11 +2,12 @@
 
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
-**The Rust backend is not yet playable.** R2 is in progress: native movement,
+**The Rust backend is not yet playable.** R3 is in progress: native movement,
 resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
-move/attack/faction-query dispatch are connected. Full game lifecycle, remaining
-actions and window handoff are still pending. There is no silent backend fallback.
+move/attack/faction-query dispatch, world termination and faction turn handoff
+are connected. Remaining observation variants, settlement and window handoff
+are still pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -83,7 +84,7 @@ The caller supplies trusted `agent_id` separately from action parameters; a Hub
 adapter must derive it from the authenticated connection. The local API does not
 authenticate a network peer or connect Hub. Supported requests currently include
 registration, claim/release, list/broadcast/read team messages, action discovery,
-move, attack, `end_turn` and `get_faction_state`. Attack presentation is still rule-mode only.
+move, attack, rest, occupy, fortify, skill, `end_turn` and `get_faction_state`. Attack presentation is still rule-mode only.
 Other configured gameplay verbs fail explicitly until their migration is complete.
 
 ```python
@@ -121,10 +122,10 @@ backend change or capacity acceptance from this interface checkpoint.
 The current native rules marker is `python-r0b-17b1776`. R0b adds lexical ordering
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
-The runtime now has API version2 and scene schema2 in addition to the rules marker.
+The runtime now has API version3 and scene schema3 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
-scene schema1 is rejected on import/reset. This prevents older R2 kernels from
-silently ignoring newly introduced lifecycle metadata. Rebuild after source changes;
+scene schemas1/2 are rejected on import/reset. This prevents older R2 kernels from
+silently ignoring newly introduced lifecycle or territory metadata. Rebuild after source changes;
 experimental historical traces must use their exact source and wheel.
 
 Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
@@ -172,3 +173,28 @@ replacement for Python's unrestricted `random` module.
 See [ordering contract](runtime-determinism.md),
 [PyO3 detachment](https://pyo3.rs/v0.29.2/parallelism) and
 [Bevy ECS](https://docs.rs/bevy_ecs/0.19.1/bevy_ecs/).
+
+The remaining unit-action dispatch preserves the current Python rules, including
+legacy behavior that must be fixed separately from this migration:
+
+- Rest increments the wait streak, clears enum confusion on the second wait, and
+  does not consume AP or restore SP. A raw status string stays distinct.
+- Agent occupy immediately changes the current/adjacent tile owner and spends one
+  AP. The Framework `start_capture(unit_id, (col, row))` creates a separate timed
+  capture task. It completes on a later update, using simulation time in realtime
+  and one update in turn mode; city task metadata says two AP but consumes one.
+- Fortification checks AP/CP, spends them only in turn mode, and builds level one.
+  The handler reports one AP less than the resulting state. There is no added range
+  check or upgrade rule. Territory bonuses participate in combat when its system
+  is installed, even if updates are disabled.
+- The existing terrain-skill helper returns `success`, but its caller checks
+  `result`. Valid terrain therefore returns `Skill execution failed` without
+  AP/SP/cooldown effects. The Rust version preserves this mismatch; it does not
+  claim to add working terrain skills.
+
+Territory components and capture entities are Rust-owned. Unfinished capture IDs
+form an ordered active set, rebuilt on reset, so the capture update is O(active).
+A vanished capturing unit removes its task without clearing the tile's capture
+marker, as in Python. A unit moving away cancels the marker. Existing completed
+capture entities remain inert. Actual window buttons will be wired in the later
+presentation handoff. These contracts do not constitute a capacity measurement.

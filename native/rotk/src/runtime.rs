@@ -57,6 +57,7 @@ pub struct Runtime {
     pub(crate) living: crate::lifecycle::LivingFactions,
     pub(crate) players: Vec<(u64, String)>,
     pub(crate) moving: BTreeSet<u64>,
+    pub(crate) capturing: BTreeSet<u64>,
     pub(crate) vision_dirty: BTreeSet<u64>,
     pub recovery: Option<Recovery>,
     pub(crate) vision: Option<crate::vision::VisionSystem>,
@@ -188,6 +189,16 @@ impl Runtime {
             })
             .collect();
         let living = crate::lifecycle::LivingFactions::build(&world);
+        let capturing = world
+            .ordered()
+            .filter_map(|(id, e)| {
+                world
+                    .ecs
+                    .get::<components::CaptureAction>(e)
+                    .filter(|c| !c.completed)
+                    .map(|_| id)
+            })
+            .collect();
         // Player membership/faction only changes through scene reset today.
         let players = world
             .ordered()
@@ -203,6 +214,7 @@ impl Runtime {
             world,
             spatial,
             moving,
+            capturing,
             vision_dirty: BTreeSet::new(),
             recovery,
             vision,
@@ -260,6 +272,7 @@ impl Runtime {
         self.advance_recovery();
         self.advance_lifecycle();
         self.advance_vision();
+        self.advance_captures()?;
         self.revision = revision;
         Ok(())
     }
@@ -351,7 +364,7 @@ impl Runtime {
                "events": std::mem::take(&mut self.events)})
     }
     pub fn diagnostics(&self) -> Value {
-        json!({"stage": "R2-in-progress", "gameplay_ready": false, "epoch": self.epoch,
+        json!({"stage": "R3-in-progress", "gameplay_ready": false, "epoch": self.epoch,
             "revision": self.revision, "threads": self.threads, "clock": self.clock,
             "api_version": crate::API_VERSION, "schema_version": crate::SCHEMA_VERSION,
             "entities": self.world.ordered().count(), "living_units": self.living.all.values().sum::<usize>(),

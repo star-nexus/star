@@ -90,6 +90,10 @@ class RustRuntime:
         """Trusted Framework input, with the legacy human reset-before-check semantics."""
         self._native.finish_human_turn(time.time() if wall_time is None else wall_time)
 
+    def start_capture(self, unit_id, position, *, wall_time=None):
+        """Trusted Framework input for timed capture; Agent occupy is immediate."""
+        return self._native.start_capture(unit_id, position, time.time() if wall_time is None else wall_time)
+
     def set_clock(self, *, paused, time_scale=1.0):
         self._native.set_clock(paused, time_scale)
 

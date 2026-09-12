@@ -10,8 +10,8 @@ from enum import Enum
 import math
 import random
 
-SCHEMA_VERSION = 2
-NATIVE_API_VERSION = 2
+SCHEMA_VERSION = 3
+NATIVE_API_VERSION = 3
 ORACLE_VERSION = 'python-r0b-17b1776'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
@@ -136,7 +136,7 @@ def export_initial_state(world, *, display='none'):
         }
     for system in world.systems:
         name = type(system).__name__
-        if name in ('GameTimeSystem', 'AnimationSystem', 'RealtimeSystem', 'TurnSystem'):
+        if name in ('GameTimeSystem', 'AnimationSystem', 'RealtimeSystem', 'TurnSystem', 'TerritorySystem'):
             systems[name] = {'enabled': system.enabled}
             if name == 'RealtimeSystem':
                 from rotk_env.utils.unit_spatial_index import get_unit_spatial_index

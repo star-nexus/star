@@ -76,6 +76,38 @@ pub struct SkillPoints {
 
 #[derive(Component, Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ConstructionPoints {
+    pub current_cp: i64,
+    pub max_cp: i64,
+}
+
+#[derive(Component, Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerritoryControl {
+    pub controlling_faction: Option<String>,
+    pub being_captured: bool,
+    pub capturing_unit: Option<u64>,
+    pub capture_progress: f64,
+    pub capture_time_required: f64,
+    pub fortified: bool,
+    pub fortification_level: i64,
+    pub captured_time: f64,
+    pub is_city: bool,
+}
+
+#[derive(Component, Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureAction {
+    pub capturing_unit: u64,
+    pub target_position: (i64, i64),
+    pub start_time: f64,
+    pub uses_action_points: bool,
+    pub action_points_cost: i64,
+    pub completed: bool,
+}
+
+#[derive(Component, Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatStats {
     pub base_attack: i64,
     pub base_defense: i64,
@@ -159,6 +191,9 @@ pub fn import(
     take!("MovementPoints", MovePoints);
     take!("ActionPoints", ActionPoints);
     take!("SkillPoints", SkillPoints);
+    take!("ConstructionPoints", ConstructionPoints);
+    take!("TerritoryControl", TerritoryControl);
+    take!("CaptureAction", CaptureAction);
     take!("Combat", CombatStats);
     take!("CombatRoll", CombatRoll);
     take!("Vision", crate::vision::Vision);
@@ -185,6 +220,9 @@ pub fn export(world: &World, e: Entity, cold: &mut BTreeMap<String, Value>) {
     put!("MovementPoints", MovePoints);
     put!("ActionPoints", ActionPoints);
     put!("SkillPoints", SkillPoints);
+    put!("ConstructionPoints", ConstructionPoints);
+    put!("TerritoryControl", TerritoryControl);
+    put!("CaptureAction", CaptureAction);
     put!("Combat", CombatStats);
     put!("CombatRoll", CombatRoll);
     put!("Vision", crate::vision::Vision);

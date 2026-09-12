@@ -1,7 +1,7 @@
 //! Existing move/attack validation order and external result formatting.
 use crate::{
     codec::{action_integer, scalar_display},
-    components::{ActionPoints, CombatStats, Headcount, MovePoints, Position, UnitInfo},
+    components::{ActionPoints, CombatStats, Headcount, MovePoints, Position, Status, UnitInfo},
     hex,
     observation::error,
     runtime::Runtime,
@@ -36,7 +36,42 @@ fn id(v: &Value) -> Option<u64> {
     action_integer(v).and_then(|v| u64::try_from(v).ok())
 }
 impl Runtime {
-    fn turn_permission(&self, uid: u64, action: &str) -> Option<Value> {
+    pub(crate) fn handle_rest(&mut self, params: &Value) -> Value {
+        let raw = &params["unit_id"];
+        if action_integer(raw).is_none() {
+            return error("unit_id must be integer");
+        }
+        let uid = id(raw);
+        let Some(entity) = uid
+            .and_then(|uid| self.world.entity(uid))
+            .filter(|&e| self.world.ecs.get::<UnitInfo>(e).is_some())
+        else {
+            return error(&format!("Unit {} not found", scalar_display(raw)));
+        };
+        let uid = uid.unwrap();
+        if let Some(error) = self.turn_permission(uid, "rest") {
+            return error;
+        }
+        let Some(mut status) = self.world.ecs.get_mut::<Status>(entity) else {
+            return error(&format!("Unit {} has no status", scalar_display(raw)));
+        };
+        status.wait_turns += 1;
+        if status.wait_turns >= 2
+            && status.current_status_is_enum
+            && status.current_status == "confusion"
+        {
+            status.current_status = "normal".into();
+            status.status_duration = 0;
+        }
+        let ap = self
+            .world
+            .ecs
+            .get::<ActionPoints>(entity)
+            .map_or(0, |p| p.current_ap);
+        let message = format!("Unit {} is resting and recovering", scalar_display(raw));
+        json!({"success":true,"result":true,"message":message,"details":message,"remaining_action_points":ap})
+    }
+    pub(crate) fn turn_permission(&self, uid: u64, action: &str) -> Option<Value> {
         let unit = self.component::<UnitInfo>(uid)?;
         if self
             .singletons
@@ -163,7 +198,7 @@ impl Runtime {
             "movement_descriptions":{"start_position":{"col":start.0,"row":start.1},"target_position":{"col":goal.0,"row":goal.1},"path":result["path"],"path_length":length},
             "estimated_duration_seconds":length as f64/2.,"remaining_movement_points":format!("{}/{}",mp.current_mp,mp.max_mp)})
     }
-    fn action_terrain(&self, cell: hex::Hex) -> &str {
+    pub(crate) fn action_terrain(&self, cell: hex::Hex) -> &str {
         self.spatial
             .tiles
             .get(&cell)

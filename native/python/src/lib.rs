@@ -58,6 +58,16 @@ impl NativeRuntime {
     fn finish_human_turn(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.finish_human_turn(wall_time))
     }
+    /// Trusted Framework input for the window's timed capture operation.
+    fn start_capture(
+        &self,
+        py: Python<'_>,
+        unit_id: u64,
+        position: (i64, i64),
+        wall_time: f64,
+    ) -> PyResult<bool> {
+        self.with_runtime(py, |r| r.start_capture(unit_id, position, wall_time))
+    }
     fn set_clock(&self, py: Python<'_>, paused: bool, time_scale: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.set_clock(paused, time_scale))
     }

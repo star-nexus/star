@@ -493,6 +493,15 @@ impl Runtime {
             "get_faction_state" if self.allowed_actions().iter().any(|n| n == action) => {
                 ObservationBatch::new(self).faction_state(params)
             }
+            "rest" if self.allowed_actions().iter().any(|n| n == action) => {
+                self.handle_rest(params)
+            }
+            "skill" if self.allowed_actions().iter().any(|n| n == action) => {
+                self.handle_skill(params)
+            }
+            "occupy" | "fortify" if self.allowed_actions().iter().any(|n| n == action) => {
+                self.handle_territory(action, params)
+            }
             "end_turn" if self.allowed_actions().iter().any(|n| n == action) => {
                 self.handle_end_turn(params)
             }

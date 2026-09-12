@@ -1,6 +1,9 @@
 //! Deterministic combat calculation. Permission checks belong to the action gate.
 use crate::{
-    components::{ActionPoints, CombatRoll, CombatStats, Headcount, Position, Status, UnitInfo},
+    components::{
+        ActionPoints, CombatRoll, CombatStats, Headcount, Position, Status, TerritoryControl,
+        UnitInfo,
+    },
     hex,
     runtime::{InitialComponents, Runtime},
 };
@@ -127,12 +130,36 @@ impl Runtime {
         let Some(pos) = self.component::<Position>(id) else {
             return 0.;
         };
-        let Some(tile) = self.spatial.tiles.get(&pos.hex()).filter(|t| t.has_terrain) else {
-            return 0.;
+        let base = self
+            .spatial
+            .tiles
+            .get(&pos.hex())
+            .filter(|t| t.has_terrain)
+            .and_then(|t| self.config.rules["terrain_effects"][&t.terrain][key].as_f64())
+            .unwrap_or(0.);
+        let territory = self
+            .territory_entity(pos.hex())
+            .and_then(|e| self.world.ecs.get::<TerritoryControl>(e));
+        let owner = self.component::<UnitInfo>(id).map(|u| u.faction.as_str());
+        let bonus = if self.config.systems.contains_key("TerritorySystem") {
+            territory
+                .filter(|t| t.controlling_faction.as_deref() == owner && owner.is_some())
+                .map_or(0, |t| {
+                    let level = if t.fortified {
+                        t.fortification_level
+                    } else {
+                        0
+                    };
+                    if key == "attack_bonus" {
+                        level + i64::from(t.is_city)
+                    } else {
+                        1 + level * 2 + i64::from(t.is_city) * 2
+                    }
+                })
+        } else {
+            0
         };
-        self.config.rules["terrain_effects"][&tile.terrain][key]
-            .as_f64()
-            .unwrap_or(0.)
+        base + bonus as f64 / 10.
     }
     pub fn calculate_damage(&mut self, a: u64, t: u64) -> Result<i64, String> {
         let attack = self.effective_stats(a)?.0 as f64 + self.terrain_bonus(a, "attack_bonus");
