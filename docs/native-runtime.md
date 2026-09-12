@@ -4,8 +4,9 @@ The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 **The Rust backend is not yet playable.** R2 is in progress: native movement,
 resource recovery, combat, Fog, statistics, team state and faction projections
-have differential contract tests. The authenticated Agent dispatcher, full game
-lifecycle and window handoff are still pending. There is no silent backend fallback.
+have differential contract tests. Trusted local registration, ownership checks and
+move/attack/faction-query dispatch are connected. Full game lifecycle, remaining
+actions and window handoff are still pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -77,6 +78,46 @@ a fresh batch, so a move/query/attack sequence cannot reuse a pre-move snapshot.
 The current projection still clones response trees and performs some full scans;
 no 5K/10K throughput or parallel speedup is claimed.
 
+The staged public interface is `RustRuntime.execute_action` and `execute_actions`.
+The caller supplies trusted `agent_id` separately from action parameters; a Hub
+adapter must derive it from the authenticated connection. The local API does not
+authenticate a network peer or connect Hub. Supported requests currently include
+registration, claim/release, list/broadcast/read team messages, action discovery,
+move, attack and `get_faction_state`. Attack presentation is still rule-mode only.
+Other configured gameplay verbs fail explicitly until their migration is complete.
+
+```python
+from rotk_env.runtime.native import ActionRequest
+
+# With a RustRuntime created as above:
+result = runtime.execute_action("register_agent_info", {
+    "faction": "wei", "provider": "synthetic", "model_id": "fake",
+    "base_url": "http://local",
+}, agent_id="agent-1")
+responses = runtime.execute_actions([
+    ActionRequest("agent-1", "get_faction_state", {"faction": "wei"}),
+    ActionRequest("agent-1", "get_faction_state", {"faction": "wei", "unit_ids": []}),
+])
+```
+
+Batch requests execute in supplied order, without waiting to collect more work.
+Only adjacent faction queries share an immutable native read context. An intervening
+command ends that context even if it fails. This preserves move → query → attack
+and claim/release → query visibility. Query action counters are committed in order
+at the read-segment boundary under the same exclusive runtime lock; projections do
+not read those counters. No other observer can see an intermediate deferred count.
+`execute_actions_diagnostic` returns the same results plus segment boundaries and
+cache-build counts for Lab. Batch size is chosen by the caller, with no internal
+unbounded request queue; nothing persists beyond the call.
+
+Parameters must already be normalized dictionaries containing JSON data. Envelope
+serialization/deserialization errors occur before executing the batch. Execution
+is sequential, not transactional: prior commands and legacy partial writes are not
+rolled back if a later request fails. Ordinary game errors remain per-request
+responses; an unsupported native capability or internal failure raises visibly.
+Responses own their data across later queries/reset/close. There is no default
+backend change or capacity acceptance from this interface checkpoint.
+
 The current native rules marker is `python-r0b-17b1776`. R0b adds lexical ordering
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible; mixing an old wheel
@@ -88,8 +129,8 @@ next vision update, matching Python. Statistics retain ordinary periodic samplin
 and the window's bounded multi-frame cycle, including reset partway through a
 cycle. Their historical wall timestamps are injected metadata; resource cooldowns
 still advance only from simulation time. The bootstrap codec also preserves
-public runtime attributes attached to dataclasses, including Agent registration
-metadata. Fog presentation deltas and the actual window integration are pending.
+public runtime attributes attached to dataclasses. Registration metadata was
+already declared in GameStats; the earlier codec did not drop those fields. Fog presentation deltas and the actual window integration are pending.
 
 The initialization codec preserves the difference between `UnitState` enum values
 and historical raw status strings, since Python's coefficient lookup distinguishes

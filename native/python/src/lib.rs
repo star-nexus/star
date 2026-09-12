@@ -121,6 +121,21 @@ impl NativeRuntime {
             Ok(json!(results).to_string())
         })
     }
+    /// Trusted local ingress. agent_id is supplied by the Python/Protocol adapter.
+    fn execute_action_json(&self, py: Python<'_>, request_json: String) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let request = serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
+            Ok(r.execute_request(request)?.to_string())
+        })
+    }
+    /// Ordered requests; consecutive faction queries share a borrowed read context.
+    /// Envelope decoding is atomic; execution is sequential, not a transaction.
+    fn execute_actions_json(&self, py: Python<'_>, requests_json: String) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let requests = serde_json::from_str(&requests_json).map_err(|e| e.to_string())?;
+            Ok(r.execute_requests(requests)?.to_string())
+        })
+    }
     /// Internal component probe; does not authorize Agent actions.
     fn _team_probe_json(&self, py: Python<'_>, operations_json: String) -> PyResult<String> {
         self.with_runtime(py, |r| {

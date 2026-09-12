@@ -96,7 +96,9 @@ def export_vision(system):
 
 
 def export_initial_state(world, *, display='none'):
-    from rotk_env.components import GameTime, RngService
+    from rotk_env.components import GameTime, RngService, GameStats, MapData, map_briefing
+    from rotk_env.prefabs.action_catalog import GAME_ACTIONS, docs_for_names
+    from protocol.error_codes import DESCRIPTIONS
     from rotk_env.prefabs.config import GameConfig
     clock = world.get_singleton_component(GameTime)
     rng = world.get_singleton_component(RngService)
@@ -131,7 +133,16 @@ def export_initial_state(world, *, display='none'):
             'visibility_limit': getattr(statistics, 'VISIBILITY_HISTORY_LIMIT', 100),
             'cycle': encode(getattr(statistics, '_cycle', None)),
         }
+    interface = {
+        'action_specs': docs_for_names(spec.name for spec in GAME_ACTIONS),
+        'system_errors': {str(int(code)): text for code, text in DESCRIPTIONS.items()},
+        'game_stats_defaults': encode(GameStats()),
+        'map_briefing': map_briefing(world.get_singleton_component(MapData)),
+        'movement_system': any(type(s).__name__ == 'MovementSystem' for s in world.systems),
+        'combat_system': any(type(s).__name__ == 'CombatSystem' for s in world.systems),
+    }
     return {'schema': SCHEMA_VERSION, 'oracle': ORACLE_VERSION, 'display': display,
+            'interface': interface,
             'mode': clock.current_mode.value, 'seed': str(rng.seed), 'seed_source': rng.source,
             'entity_counter': world.entity_counter, 'entities': entities, 'singletons': singletons,
             'systems': systems,

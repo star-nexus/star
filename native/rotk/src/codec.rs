@@ -18,6 +18,49 @@ pub fn truthy(value: &serde_json::Value) -> bool {
     }
 }
 
+/// Legacy action handlers accept bool as int (the observation unit_ids list does not).
+pub fn action_integer(value: &serde_json::Value) -> Option<i128> {
+    value
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| value.as_u64().map(i128::from))
+        .or_else(|| value.as_bool().map(i128::from))
+}
+pub fn string_repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::new();
+    out.push(quote);
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if c.is_ascii_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+pub fn scalar_display(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(v) => v.clone(),
+        serde_json::Value::Bool(true) => "True".into(),
+        serde_json::Value::Bool(false) => "False".into(),
+        serde_json::Value::Null => "None".into(),
+        other => other.to_string(),
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TaggedSet<T: Ord>(pub BTreeSet<T>);
 impl<T: Ord> Deref for TaggedSet<T> {

@@ -42,6 +42,8 @@ pub struct SceneSpec {
     pub rng: BTreeMap<String, RandomState>,
     pub rules: Value,
     #[serde(default)]
+    pub interface: Value,
+    #[serde(default)]
     pub systems: BTreeMap<String, Value>,
 }
 
