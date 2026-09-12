@@ -228,6 +228,8 @@ impl Runtime {
         self.record_combat(a, t, damage, new_count <= 0);
         self.events.push(json!({"type":"BattleEvent","fields":{"attacker_entity":a,"target_entity":t,"damage":damage}}));
         if new_count <= 0 {
+            self.living
+                .died(tf, self.component::<Position>(t).is_some());
             self.record_death(t, a);
             self.remove_combat_unit(t);
             log.push(format!("{tf} unit destroyed!"));

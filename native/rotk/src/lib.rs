@@ -4,6 +4,7 @@ pub mod codec;
 pub mod combat;
 pub mod components;
 pub mod hex;
+pub mod lifecycle;
 pub mod movement;
 pub mod observation;
 pub mod recovery;

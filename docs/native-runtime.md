@@ -132,6 +132,14 @@ still advance only from simulation time. The bootstrap codec also preserves
 public runtime attributes attached to dataclasses. Registration metadata was
 already declared in GameStats; the earlier codec did not drop those fields. Fog presentation deltas and the actual window integration are pending.
 
+Realtime/turn-mode world updates now apply the existing game-over policy: mutual
+annihilation, one remaining faction, then timeout (in that precedence). Realtime
+timeout uses simulation elapsed seconds. Derived living-faction counts are built on
+import/reset and updated on death, so this check does not scan all Units each frame.
+The window index's position requirement is retained. GameTimeSystem/AnimationSystem
+and lifecycle enabled flags survive import. Turn-clock synchronization is included;
+turn handoff/reset actions and settlement orchestration are still pending.
+
 The initialization codec preserves the difference between `UnitState` enum values
 and historical raw status strings, since Python's coefficient lookup distinguishes
 them. It does not normalize or rebalance those rules during migration.

@@ -133,6 +133,16 @@ def export_initial_state(world, *, display='none'):
             'visibility_limit': getattr(statistics, 'VISIBILITY_HISTORY_LIMIT', 100),
             'cycle': encode(getattr(statistics, '_cycle', None)),
         }
+    for system in world.systems:
+        name = type(system).__name__
+        if name in ('GameTimeSystem', 'AnimationSystem', 'RealtimeSystem', 'TurnSystem'):
+            systems[name] = {'enabled': system.enabled}
+            if name == 'RealtimeSystem':
+                from rotk_env.utils.unit_spatial_index import get_unit_spatial_index
+                systems[name]['indexed'] = ('window_' in type(system).__module__
+                                             and get_unit_spatial_index(world) is not None)
+            if name == 'TurnSystem':
+                systems[name].update(turn_timer=system.turn_timer, auto_turn_duration=system.auto_turn_duration)
     interface = {
         'action_specs': docs_for_names(spec.name for spec in GAME_ACTIONS),
         'system_errors': {str(int(code)): text for code, text in DESCRIPTIONS.items()},
@@ -149,7 +159,9 @@ def export_initial_state(world, *, display='none'):
             'clock': {'elapsed': clock.game_elapsed_time, 'time_scale': clock.time_scale,
                       'paused': clock.paused, 'realtime': clock.is_real_time(), 'tick': 0},
             'rng': {name: rng_state(stream) for name, stream in rng._rngs.items()},
-            'rules': {'hex_size': GameConfig.HEX_SIZE,
+            'rules': {'max_turns': GameConfig.MAX_TURNS,
+                      'max_realtime_seconds': GameConfig.MAX_REALTIME_SECONDS,
+                      'hex_size': GameConfig.HEX_SIZE,
                       'hex_orientation': GameConfig.HEX_ORIENTATION.value,
                       'terrain_effects': encode(GameConfig.TERRAIN_EFFECTS),
                       'terrain_coefficients': encode(GameConfig.TERRAIN_COEFFICIENTS),

@@ -54,6 +54,7 @@ pub struct Runtime {
     pub singletons: BTreeMap<String, Value>,
     pub(crate) config: SceneSpec,
     pub spatial: Spatial,
+    pub(crate) living: crate::lifecycle::LivingFactions,
     pub(crate) moving: BTreeSet<u64>,
     pub(crate) vision_dirty: BTreeSet<u64>,
     pub recovery: Option<Recovery>,
@@ -185,7 +186,9 @@ impl Runtime {
                     .map(|_| id)
             })
             .collect();
+        let living = crate::lifecycle::LivingFactions::build(&world);
         Ok(Self {
+            living,
             world,
             spatial,
             moving,
@@ -216,16 +219,35 @@ impl Runtime {
             return Err("wall metadata must be finite".into());
         }
         let revision = self.revision.checked_add(1).ok_or("revision exhausted")?;
-        self.clock.step(dt)?;
+        if !dt.is_finite() || dt < 0. {
+            return Err("dt must be finite and nonnegative".into());
+        }
+        let clock_enabled = self
+            .config
+            .systems
+            .get("GameTimeSystem")
+            .is_none_or(|s| s["enabled"] == true);
+        self.clock.step(if clock_enabled { dt } else { 0. })?;
         self.wall_time = wall_time;
         self.revision = revision;
-        if let Some(clock) = self.singletons.get_mut("GameTime") {
+        if clock_enabled && let Some(clock) = self.singletons.get_mut("GameTime") {
             clock["game_elapsed_time"] = json!(self.clock.elapsed);
             clock["last_update_time"] = json!(wall_time);
         }
+        if clock_enabled {
+            self.sync_turn_clock();
+        }
         self.advance_statistics(dt)?;
-        self.advance_movement(dt);
+        if self
+            .config
+            .systems
+            .get("AnimationSystem")
+            .is_none_or(|s| s["enabled"] == true)
+        {
+            self.advance_movement(dt);
+        }
         self.advance_recovery();
+        self.advance_lifecycle();
         self.advance_vision();
         self.revision = revision;
         Ok(())
@@ -320,7 +342,8 @@ impl Runtime {
     pub fn diagnostics(&self) -> Value {
         json!({"stage": "R2-in-progress", "gameplay_ready": false, "epoch": self.epoch,
             "revision": self.revision, "threads": self.threads, "clock": self.clock,
-            "entities": self.world.ordered().count(), "rules_version": RULES_VERSION})
+            "entities": self.world.ordered().count(), "living_units": self.living.all.values().sum::<usize>(),
+            "living_by_faction": self.living.all, "moving_units": self.moving.len(), "rules_version": RULES_VERSION})
     }
     pub fn set_wall_metadata(&mut self, time: f64) -> Result<(), String> {
         if !time.is_finite() {
