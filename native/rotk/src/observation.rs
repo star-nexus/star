@@ -1,9 +1,8 @@
 //! Read-only faction projection. A borrow scopes all caches to one write-free batch.
 use crate::{
-    components::{ActionPoints, CombatStats, Headcount, MovePoints, Position, Status, UnitInfo},
+    components::{ActionPoints, Headcount, Position, UnitInfo},
     hex::Hex,
-    runtime::{InitialComponents, Runtime},
-    vision::Vision,
+    runtime::Runtime,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -202,39 +201,6 @@ impl<'a> ObservationBatch<'a> {
         }
         self.metrics.panel_builds += 1;
         let r = self.runtime;
-        let e = r.world.entity(id).expect("validated panel entity");
-        let unit = r.world.ecs.get::<UnitInfo>(e).unwrap();
-        let count = r.world.ecs.get::<Headcount>(e).unwrap();
-        let p = r.world.ecs.get::<Position>(e);
-        let combat = r.world.ecs.get::<CombatStats>(e);
-        let mp = r.world.ecs.get::<MovePoints>(e);
-        let ap = r.world.ecs.get::<ActionPoints>(e);
-        let vision = r.world.ecs.get::<Vision>(e);
-        let status = r.world.ecs.get::<Status>(e);
-        let mut properties = json!({"attack_range":combat.map_or(1,|c| c.attack_range),
-            "attack_power":combat.map_or(10,|c| c.base_attack),"vision_range":vision.map_or(2,|v| v.range)});
-        if let Some(c) = combat {
-            properties["defense"] = json!(c.base_defense);
-        }
-        let mut skills: Vec<String> = r
-            .world
-            .ecs
-            .get::<InitialComponents>(e)
-            .and_then(|c| c.0.get("UnitSkills"))
-            .and_then(|s| {
-                s["available_skills"]
-                    .as_array()
-                    .or_else(|| s["available_skills"]["$set"].as_array())
-            })
-            .into_iter()
-            .flatten()
-            .map(|s| {
-                s.as_str()
-                    .map(String::from)
-                    .unwrap_or_else(|| s.to_string())
-            })
-            .collect();
-        skills.sort();
         let enemy_ids = &self.factions[faction].enemies;
         let attackable: Vec<_> = enemy_ids
             .iter()
@@ -246,13 +212,9 @@ impl<'a> ObservationBatch<'a> {
             .iter()
             .map(|p| json!({"col":p.0,"row":p.1}))
             .collect();
-        let info = json!({"unit_id":id,"unit_type":unit.unit_type,"faction":unit.faction,
-            "position":{"col":p.map_or(0,|p| p.col),"row":p.map_or(0,|p| p.row)},
-            "unit_status":{"current_count":count.current_count,"max_count":count.max_count,"health_percentage":count.ratio()*100.,
-                "morale":status.filter(|s| !s.current_status.is_empty()).map_or("normal",|s| s.current_status.as_str()),"fatigue":"none"},
-            "capabilities":{"properties":properties,"unit_resources":{"remaining_action_points":ap.map_or(0,|a| a.current_ap),
-                "remaining_movement_points":mp.map_or(0,|m| m.current_mp)}},"available_skills":skills,
-            "reachable":reachable,"attackable":attackable});
+        let mut info = r.detailed_unit_info(id);
+        info["reachable"] = json!(reachable);
+        info["attackable"] = json!(attackable);
         self.panels.insert(id, info);
     }
     /// Handler-level projection; trusted identity is checked by the action dispatcher.

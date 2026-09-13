@@ -10,9 +10,9 @@ from enum import Enum
 import math
 import random
 
-SCHEMA_VERSION = 3
-NATIVE_API_VERSION = 3
-ORACLE_VERSION = 'python-r0b-17b1776'
+SCHEMA_VERSION = 4
+NATIVE_API_VERSION = 4
+ORACLE_VERSION = 'python-r0c-3cc4ffe'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
 
@@ -144,6 +144,11 @@ def export_initial_state(world, *, display='none'):
                                              and get_unit_spatial_index(world) is not None)
             if name == 'TurnSystem':
                 systems[name].update(turn_timer=system.turn_timer, auto_turn_duration=system.auto_turn_duration)
+    llm = next((s for s in world.systems if type(s).__name__ == 'LLMSystem'), None)
+    observer = getattr(getattr(llm, 'action_handler', None), 'observation_system', None)
+    systems['LLMObservationSystem'] = {'cache': {
+        key: encode(result) for key, (revision, result) in (observer.cache.items() if observer else ())
+        if revision == world.revision}}
     interface = {
         'action_specs': docs_for_names(spec.name for spec in GAME_ACTIONS),
         'system_errors': {str(int(code)): text for code, text in DESCRIPTIONS.items()},

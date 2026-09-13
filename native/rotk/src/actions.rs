@@ -190,7 +190,7 @@ impl Runtime {
         json!({"success":false,"error":description,"error_code":code,"message":format!("Action {action} failed: {message}"),
             "api_version":"v1.0","metadata":{"action":action,"timestamp":wall_time}})
     }
-    fn allowed_actions(&self) -> Vec<String> {
+    pub(crate) fn allowed_actions(&self) -> Vec<String> {
         let specs = &self.config.interface["action_specs"];
         if let Some(names) = self
             .singletons
@@ -492,6 +492,17 @@ impl Runtime {
             }
             "get_faction_state" if self.allowed_actions().iter().any(|n| n == action) => {
                 ObservationBatch::new(self).faction_state(params)
+            }
+            "observation" if self.allowed_actions().iter().any(|n| n == action) => {
+                self.legacy_observation(params)
+            }
+            "unit_observation"
+            | "faction_observation"
+            | "limited_observation"
+            | "godview_observation"
+                if self.allowed_actions().iter().any(|n| n == action) =>
+            {
+                self.named_observation(action, params)
             }
             "rest" if self.allowed_actions().iter().any(|n| n == action) => {
                 self.handle_rest(params)

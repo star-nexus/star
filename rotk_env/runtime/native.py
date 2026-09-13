@@ -49,6 +49,14 @@ class ActionRequest:
         )
 
 
+def _decode_result(result):
+    if (result.get('operation') == 'get_observation' and result.get('success')
+            and result.get('metadata', {}).get('observation_level') == 'unit'):
+        area = result['data']['visible_area']
+        result['data']['visible_area'] = {tuple(cell) for cell in area['$set']}
+    return result
+
+
 class RustRuntime:
     """Owned native runtime; supported requests do not imply full gameplay readiness."""
     backend = 'rust'
@@ -65,7 +73,7 @@ class RustRuntime:
 
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None):
         request = ActionRequest(agent_id, action, parameters, wall_time, registration_time)
-        return json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False)))
+        return _decode_result(json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))
 
     def execute_actions(self, requests):
         """Execute supplied envelopes in order; prior commands are not rolled back on failure.
@@ -78,7 +86,9 @@ class RustRuntime:
     def execute_actions_diagnostic(self, requests):
         """The same request path plus per-read-segment cache-build counts for Lab."""
         wire = [request.to_wire() for request in requests]
-        return json.loads(self._native.execute_actions_json(json.dumps(wire, allow_nan=False)))
+        report = json.loads(self._native.execute_actions_json(json.dumps(wire, allow_nan=False)))
+        report['results'] = [_decode_result(result) for result in report['results']]
+        return report
 
     def get_faction_state(self, faction, *, agent_id, unit_ids=_UNSET, wall_time=None):
         parameters = {"faction": faction}

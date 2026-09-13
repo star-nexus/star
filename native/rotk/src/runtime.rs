@@ -66,6 +66,7 @@ pub struct Runtime {
     pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
     pub(crate) wall_time: f64,
     pub(crate) team: Option<crate::team::Team>,
+    pub(crate) query_cache: crate::named_observation::QueryCache,
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
@@ -226,6 +227,12 @@ impl Runtime {
             clock,
             rng,
             singletons,
+            query_cache: crate::named_observation::QueryCache::import(
+                &config
+                    .systems
+                    .get("LLMObservationSystem")
+                    .ok_or("missing observation bootstrap metadata")?["cache"],
+            )?,
             config,
             epoch,
             revision: 0,
@@ -314,6 +321,10 @@ impl Runtime {
                 }
             })
             .collect();
+        out.systems.insert(
+            "LLMObservationSystem".into(),
+            json!({"cache":self.query_cache.export(self.revision)}),
+        );
         out.singletons = self.singletons.clone();
         if let Some(team) = &self.team {
             out.singletons.insert(

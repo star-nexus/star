@@ -6,8 +6,8 @@ an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
 move/attack/faction-query dispatch, world termination and faction turn handoff
-are connected. Remaining observation variants, settlement and window handoff
-are still pending. There is no silent backend fallback.
+are connected, including the five non-image observation variants. VLM frame capture,
+settlement and window handoff are still pending. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -119,13 +119,14 @@ responses; an unsupported native capability or internal failure raises visibly.
 Responses own their data across later queries/reset/close. There is no default
 backend change or capacity acceptance from this interface checkpoint.
 
-The current native rules marker is `python-r0b-17b1776`. R0b adds lexical ordering
+The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical ordering
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
-The runtime now has API version3 and scene schema3 in addition to the rules marker.
+R0c also orders the two legacy/named observation terrain lists by coordinates.
+The runtime now has API version4 and scene schema4 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
-scene schemas1/2 are rejected on import/reset. This prevents older R2 kernels from
-silently ignoring newly introduced lifecycle or territory metadata. Rebuild after source changes;
+scene schemas1/2/3 are rejected on import/reset. This prevents older R2 kernels from
+silently ignoring newly introduced lifecycle, territory or observation-cache metadata. Rebuild after source changes;
 experimental historical traces must use their exact source and wheel.
 
 Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
@@ -198,3 +199,26 @@ A vanished capturing unit removes its task without clearing the tile's capture
 marker, as in Python. A unit moving away cancels the marker. Existing completed
 capture entities remain inert. Actual window buttons will be wired in the later
 presentation handoff. These contracts do not constitute a capacity measurement.
+
+
+R3b adds `observation`, `unit_observation`, `faction_observation`,
+`limited_observation` and `godview_observation` to the same trusted action API.
+The match must explicitly enable these actions. Each keeps its own historical
+visibility, optional fields, readiness and error behavior. Common own-unit facts
+are shared with `get_faction_state`; geometric reachability remains dynamic.
+
+Named observations cache immutable results at the current world revision. The
+public `from_cache` flag and original wall timestamp are retained on a hit.
+Writes/ticks invalidate this cache, including failed mutating actions after
+dispatch. Import/reset carries only cache entries valid in the imported world;
+old-world results cannot become new-world observations. This is separate from
+the call-scoped `get_faction_state` batch cache. No TTL or past-frame observation
+has been introduced. The diagnostic scene includes this cache because its hit
+metadata is observable. The Python unit observation still returns a `set` of
+coordinate tuples in `data.visible_area`; the native JSON boundary uses a tagged
+set for that field, decoded only at that exact schema location by the adapter.
+
+The existing god-view BattleLog attribute mismatch is preserved: normal nonempty
+BattleLogEntry lists cause `INTERNAL_ERROR` (missing `turn`), as in Python. This
+migration does not silently repair rules or legacy API quirks. VLM frame capture,
+actual window integration, BOT/settlement, and parallel workers remain pending.
