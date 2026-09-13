@@ -236,8 +236,20 @@ class World:
     def create_entity(self) -> Entity:
         """Create a new entity and return its ID."""
         entity_id = self.entity_counter
+        self.ensure_entity(entity_id)
+        return entity_id
+
+    def ensure_entity(self, entity_id: Entity) -> Entity:
+        """Adopt an external ID for a derived world, preserving indexes and allocation.
+
+        Repeated adoption keeps existing components; skipped IDs are not allocated.
+        """
+        if type(entity_id) is not int or entity_id < 0:
+            raise ValueError("Entity ID must be a non-negative integer")
+        if entity_id in self.entities:
+            return entity_id
         self.entities[entity_id] = {}
-        self.entity_counter += 1
+        self.entity_counter = max(self.entity_counter, entity_id + 1)
 
         # Empty entities only affect all-entity and exclusion-only queries.
         for key in tuple(self._population_query_keys):

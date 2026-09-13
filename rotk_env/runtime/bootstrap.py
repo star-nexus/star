@@ -10,8 +10,8 @@ from enum import Enum
 import math
 import random
 
-SCHEMA_VERSION = 4
-NATIVE_API_VERSION = 4
+SCHEMA_VERSION = 5
+NATIVE_API_VERSION = 5
 ORACLE_VERSION = 'python-r0c-3cc4ffe'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
@@ -149,6 +149,8 @@ def export_initial_state(world, *, display='none'):
     systems['LLMObservationSystem'] = {'cache': {
         key: encode(result) for key, (revision, result) in (observer.cache.items() if observer else ())
         if revision == world.revision}}
+    from .presentation_state import export_visual_lifecycle
+    systems['VisualLifecycle'] = export_visual_lifecycle(world)
     interface = {
         'action_specs': docs_for_names(spec.name for spec in GAME_ACTIONS),
         'system_errors': {str(int(code)): text for code, text in DESCRIPTIONS.items()},

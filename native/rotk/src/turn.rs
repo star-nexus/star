@@ -17,20 +17,26 @@ impl Runtime {
     }
     fn reset_round_actions(&mut self) {
         let mut query = self.world.ecs.query::<(
+            &star_core::world::ExternalId,
             &mut MovePoints,
             Option<&Headcount>,
             Option<&mut ActionPoints>,
         )>();
         // Disjoint rows: no RNG, events or shared state is touched during reset.
-        for (mut mp, count, ap) in query.iter_mut(&mut self.world.ecs) {
+        for (id, mut mp, count, ap) in query.iter_mut(&mut self.world.ecs) {
+            self.presentation_dirty.insert(id.0);
             mp.current_mp = count.map_or(mp.max_mp, |count| mp.effective(count));
             mp.has_moved = false;
             if let Some(mut ap) = ap {
                 ap.current_ap = ap.max_ap;
             }
         }
-        let mut query = self.world.ecs.query::<&mut Status>();
-        for mut status in query.iter_mut(&mut self.world.ecs) {
+        let mut query = self
+            .world
+            .ecs
+            .query::<(&star_core::world::ExternalId, &mut Status)>();
+        for (id, mut status) in query.iter_mut(&mut self.world.ecs) {
+            self.presentation_dirty.insert(id.0);
             if status.status_duration > 0 {
                 status.status_duration -= 1;
                 if status.status_duration <= 0 {

@@ -7,7 +7,8 @@ resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
 move/attack/faction-query dispatch, world termination and faction turn handoff
 are connected, including the five non-image observation variants. VLM frame capture,
-settlement and window handoff are still pending. There is no silent backend fallback.
+settlement and the playable scene/input handoff are still pending. A derived battlefield
+presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
 
@@ -66,8 +67,7 @@ Private `_movement_probe_json`, `_resource_probe_json`, `_combat_probe_json`
 and `_vision_probe_json`
 methods exist only for differential tests. They are **not Agent action APIs**:
 they have no registration/claim authorization boundary. The combat probe currently
-supports rule mode with normal or fallback statistics; presentation combat entities
-remain pending. Do not route Agents through
+supports normal or fallback statistics and the legacy combat presentation lifecycles. Do not route Agents through
 these probes or use them for a capacity claim. `gameplay_ready` remains false.
 
 `_team_probe_json` and `_observation_probe_json` also exercise internal contracts
@@ -84,7 +84,7 @@ The caller supplies trusted `agent_id` separately from action parameters; a Hub
 adapter must derive it from the authenticated connection. The local API does not
 authenticate a network peer or connect Hub. Supported requests currently include
 registration, claim/release, list/broadcast/read team messages, action discovery,
-move, attack, rest, occupy, fortify, skill, `end_turn` and `get_faction_state`. Attack presentation is still rule-mode only.
+move, attack, rest, occupy, fortify, skill, `end_turn` and `get_faction_state`. Combat lifecycles work in none/dummy/window configurations.
 Other configured gameplay verbs fail explicitly until their migration is complete.
 
 ```python
@@ -123,10 +123,10 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version4 and scene schema4 in addition to the rules marker.
+The runtime now has API version5 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
-scene schemas1/2/3 are rejected on import/reset. This prevents older R2 kernels from
-silently ignoring newly introduced lifecycle, territory or observation-cache metadata. Rebuild after source changes;
+scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
+silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
 experimental historical traces must use their exact source and wheel.
 
 Native Fog preserves line of sight, terrain bonuses, overlapping faction vision,
@@ -136,7 +136,8 @@ and the window's bounded multi-frame cycle, including reset partway through a
 cycle. Their historical wall timestamps are injected metadata; resource cooldowns
 still advance only from simulation time. The bootstrap codec also preserves
 public runtime attributes attached to dataclasses. Registration metadata was
-already declared in GameStats; the earlier codec did not drop those fields. Fog presentation deltas and the actual window integration are pending.
+already declared in GameStats; the earlier codec did not drop those fields. Fog presentation now uses an accumulated changed-cell journal. The playable scene
+and window input integration remain pending.
 
 Realtime/turn-mode world updates now apply the existing game-over policy: mutual
 annihilation, one remaining faction, then timeout (in that precedence). Realtime
@@ -222,3 +223,45 @@ The existing god-view BattleLog attribute mismatch is preserved: normal nonempty
 BattleLogEntry lists cause `INTERNAL_ERROR` (missing `turn`), as in Python. This
 migration does not silently repair rules or legacy API quirks. VLM frame capture,
 actual window integration, BOT/settlement, and parallel workers remain pending.
+
+
+## Native display handoff (R3 intermediate)
+
+`take_presentation_delta()` drains owned data for one display consumer. The first
+call after create/reset contains all Unit rows, territory controls and Fog cells;
+later calls contain changed Unit/territory rows and accumulated Fog changes.
+GameTime/GameState/GameMode/TurnManager are small current snapshots. Multiple
+writes/ticks before a drain retain final values and ordered events. Idle ticks do
+not emit the complete Unit population. Returned objects never alias native data.
+
+Unit rows include position, headcount, movement progress, AP/MP/SP/CP and status.
+They drive the display cache and its spatial index; they are not Agent observations
+and must not be exposed across the Protocol permission boundary. Terrain/sprites
+and other static scene data are prepared once in Python. Map or scene replacement
+requires a new prepared display World; an old epoch cannot update the new cache.
+
+Rust now owns attack/effect/projectile/floating-text lifetimes and their external
+entity IDs. This preserves the legacy ID stream when later captures allocate
+entities. The update phase order and projectile creation tick are unchanged;
+reset preserves in-flight progress and the projectile-created flag. This also
+retains none/dummy/window differences rather than normalizing them implicitly.
+
+`WorldPresentation` applies these deltas to an already prepared, independent
+Python display World. It receives no native runtime handle. `VisualProjection`
+uses existing Python easing/arc/rotation math and camera projection. Neither
+consumer advances game timers or creates authoritative entities. Events are
+returned to the application rather than published into the old gameplay event bus.
+
+`attach_battlefield_renderers(presentation)` mounts only the existing map, unit,
+effect and cached floating-text drawing systems. Its World must have no systems,
+and the engine/fonts must already be initialized. Its AnimationSystem only updates
+camera projection; it never runs the Python movement or combat lifecycle. Original
+font, damage/CRIT text, coordinate, Fog and sprite caches remain in use. This is a
+building block for the window handoff, not a replacement GameScene or a `--backend`
+launch option yet. Input commands, complete HUD/settlement and VLM are still pending.
+
+A single consumer must drain and apply in order. Recreate the prepared World and
+`WorldPresentation` on scene reset. Epoch changes and older revisions are rejected
+before display mutation. Resizing, panning and zooming belong to Python, including
+reprojection of floating text while the simulation clock is paused. Display
+mutations never write back into Rust; all gameplay input needs a runtime command.

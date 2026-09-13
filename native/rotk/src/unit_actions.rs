@@ -55,6 +55,7 @@ impl Runtime {
         let Some(mut status) = self.world.ecs.get_mut::<Status>(entity) else {
             return error(&format!("Unit {} has no status", scalar_display(raw)));
         };
+        self.presentation_dirty.insert(uid);
         status.wait_turns += 1;
         if status.wait_turns >= 2
             && status.current_status_is_enum

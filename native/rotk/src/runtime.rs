@@ -66,11 +66,15 @@ pub struct Runtime {
     pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
     pub(crate) wall_time: f64,
     pub(crate) team: Option<crate::team::Team>,
+    pub(crate) visuals: crate::presentation::Visuals,
     pub(crate) query_cache: crate::named_observation::QueryCache,
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
     pub(crate) presentation_dirty: BTreeSet<u64>,
+    pub(crate) presentation_tiles: BTreeSet<u64>,
+    pub(crate) presentation_fog: BTreeMap<String, BTreeSet<crate::hex::Hex>>,
+    pub(crate) presentation_fog_full: bool,
     pub(crate) presentation_removed: Vec<u64>,
     pub(crate) events: Vec<Value>,
 }
@@ -114,10 +118,14 @@ impl Runtime {
         config.seed = star_core::rng::canonical_seed(&config.seed)?;
         let mut world = OrderedWorld::new(config.entity_counter);
         let mut presentation_dirty = BTreeSet::new();
+        let mut presentation_tiles = BTreeSet::new();
         for mut spec in std::mem::take(&mut config.entities) {
             let entity = world.import(spec.id)?;
             if spec.components.contains_key("Unit") {
                 presentation_dirty.insert(spec.id);
+            }
+            if spec.components.contains_key("TerritoryControl") {
+                presentation_tiles.insert(spec.id);
             }
             components::import(&mut world.ecs, entity, &mut spec.components)?;
             world
@@ -179,6 +187,14 @@ impl Runtime {
         if let Some(r) = &recovery {
             r.validate(world.next_id())?;
         }
+        let visuals = crate::presentation::Visuals::import(
+            config
+                .systems
+                .get("VisualLifecycle")
+                .cloned()
+                .ok_or("missing visual lifecycle metadata")?,
+            &world,
+        )?;
         let moving = world
             .ordered()
             .filter_map(|(id, e)| {
@@ -215,6 +231,7 @@ impl Runtime {
             world,
             spatial,
             moving,
+            visuals,
             capturing,
             vision_dirty: BTreeSet::new(),
             recovery,
@@ -238,6 +255,9 @@ impl Runtime {
             revision: 0,
             threads,
             presentation_dirty,
+            presentation_tiles,
+            presentation_fog: BTreeMap::new(),
+            presentation_fog_full: true,
             presentation_removed: Vec::new(),
             events: Vec::new(),
         })
@@ -275,6 +295,9 @@ impl Runtime {
             .is_none_or(|s| s["enabled"] == true)
         {
             self.advance_movement(dt);
+            if self.config.systems.contains_key("AnimationSystem") {
+                self.advance_visuals(dt)?;
+            }
         }
         self.advance_recovery();
         self.advance_lifecycle();
@@ -325,6 +348,8 @@ impl Runtime {
             "LLMObservationSystem".into(),
             json!({"cache":self.query_cache.export(self.revision)}),
         );
+        out.systems
+            .insert("VisualLifecycle".into(), self.visuals.export());
         out.singletons = self.singletons.clone();
         if let Some(team) = &self.team {
             out.singletons.insert(
@@ -367,10 +392,27 @@ impl Runtime {
             if let Some(entity) = self.world.entity(id) {
                 units.push(json!({"id": id, "position": self.world.ecs.get::<Position>(entity),
                     "unit": self.world.ecs.get::<UnitInfo>(entity), "count": self.world.ecs.get::<Headcount>(entity),
-                    "movement": self.world.ecs.get::<Movement>(entity)}));
+                    "movement": self.world.ecs.get::<Movement>(entity),
+                    "movement_points":self.world.ecs.get::<components::MovePoints>(entity),
+                    "action_points":self.world.ecs.get::<components::ActionPoints>(entity),
+                    "status":self.world.ecs.get::<components::Status>(entity),
+                    "skill_points":self.world.ecs.get::<components::SkillPoints>(entity),
+                    "construction_points":self.world.ecs.get::<components::ConstructionPoints>(entity)}));
             }
         }
-        json!({"epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
+        let tiles: Vec<_> = std::mem::take(&mut self.presentation_tiles)
+            .into_iter()
+            .filter_map(|id| {
+                self.component::<components::TerritoryControl>(id)
+                    .map(|control| json!({"id":id,"control":control}))
+            })
+            .collect();
+        let state: BTreeMap<_, _> = ["GameTime", "GameState", "GameModeComponent", "TurnManager"]
+            .into_iter()
+            .filter_map(|name| self.singletons.get(name).map(|value| (name, value.clone())))
+            .collect();
+        let fog = self.fog_presentation();
+        json!({"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
                "units": units, "removed": std::mem::take(&mut self.presentation_removed),
                "events": std::mem::take(&mut self.events)})
     }

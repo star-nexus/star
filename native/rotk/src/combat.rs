@@ -189,11 +189,6 @@ impl Runtime {
         if !self.can_attack(a, Some(t)) {
             return Ok(self.attack_rejection(a, t));
         }
-        // R2 intermediate gate: presentation entity allocation and statistics
-        // subscribers are added before this becomes the public Agent boundary.
-        if self.config.display != "none" {
-            return Err("native combat display handoff is not implemented yet".into());
-        }
         let au = self.component::<UnitInfo>(a).unwrap().clone();
         let tu = self.component::<UnitInfo>(t).unwrap().clone();
         let attacker_count = self.component::<Headcount>(a).unwrap().current_count;
@@ -205,6 +200,7 @@ impl Runtime {
         let ae = self.world.entity(a).unwrap();
         let te = self.world.entity(t).unwrap();
         self.world.ecs.entity_mut(ae).insert(CombatRoll::default());
+        self.start_combat_visual(a, t, au.unit_type == "archer");
         let hit = self.rng.get("combat").randint(1, 20)?;
         self.world.ecs.get_mut::<CombatRoll>(ae).unwrap().hit_roll = Some(hit);
         // Fresh CombatRoll's forest penalty has no effect before the first roll.
@@ -219,6 +215,7 @@ impl Runtime {
         };
         let casualties = damage.min(old_count);
         let new_count = old_count - casualties;
+        self.combat_visual_damage(t, casualties, crit, au.unit_type == "archer")?;
         self.world
             .ecs
             .get_mut::<Headcount>(te)
@@ -259,6 +256,7 @@ impl Runtime {
                 .died(tf, self.component::<Position>(t).is_some());
             self.record_death(t, a);
             self.remove_combat_unit(t);
+            self.visuals.forget(t);
             log.push(format!("{tf} unit destroyed!"));
         }
         self.presentation_dirty.extend([a, t]);

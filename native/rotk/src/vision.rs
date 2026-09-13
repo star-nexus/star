@@ -396,6 +396,12 @@ impl Runtime {
         if let Some(mut v) = self.vision.take() {
             if v.state.enabled {
                 v.update(self);
+                for (faction, cells) in &v.delta {
+                    self.presentation_fog
+                        .entry(faction.clone())
+                        .or_default()
+                        .extend(cells.iter().copied());
+                }
             }
             self.vision = Some(v);
         }

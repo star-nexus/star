@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 
-fn pixel(cell: Hex, size: f64, pointy: bool) -> (f64, f64) {
+pub(crate) fn pixel(cell: Hex, size: f64, pointy: bool) -> (f64, f64) {
     let (c, r) = cell;
     let sqrt3 = 1.7320508075688772;
     if pointy {

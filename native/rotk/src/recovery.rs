@@ -218,16 +218,19 @@ fn python_floor_div(a: f64, b: f64) -> f64 {
 
 impl Runtime {
     pub fn mark_ap_spent(&mut self, id: u64) {
+        self.presentation_dirty.insert(id);
         if let Some(r) = &mut self.recovery {
             r.mark_ap(&self.world, id, self.clock.elapsed);
         }
     }
     pub fn mark_mp_spent(&mut self, id: u64) {
+        self.presentation_dirty.insert(id);
         if let Some(r) = &mut self.recovery {
             r.mark_mp(&self.world, id);
         }
     }
     pub fn mark_skill_started(&mut self, id: u64) {
+        self.presentation_dirty.insert(id);
         if let Some(r) = &mut self.recovery {
             r.mark_skill(&self.world, id, self.clock.elapsed);
         }

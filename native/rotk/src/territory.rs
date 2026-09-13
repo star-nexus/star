@@ -38,6 +38,11 @@ fn success(message: String) -> Value {
     json!({"success":true,"result":true,"message":message,"details":message})
 }
 impl Runtime {
+    fn mark_territory_visual(&mut self, tile: Entity) {
+        if let Some(id) = self.world.ecs.get::<star_core::world::ExternalId>(tile) {
+            self.presentation_tiles.insert(id.0);
+        }
+    }
     pub(crate) fn territory_entity(&self, cell: Hex) -> Option<Entity> {
         // All Python territory lookups deliberately treat external tile ID 0 as absent.
         let id = self.spatial.tiles.get(&cell)?.entity;
@@ -60,6 +65,7 @@ impl Runtime {
             return;
         };
         let faction = unit.faction.clone();
+        self.mark_territory_visual(tile);
         let mut control = self.world.ecs.get_mut::<TerritoryControl>(tile).unwrap();
         control.controlling_faction = Some(faction);
         control.being_captured = false;
@@ -69,6 +75,7 @@ impl Runtime {
     }
     fn cancel_capture(&mut self, cell: Hex) {
         if let Some(tile) = self.territory_entity(cell) {
+            self.mark_territory_visual(tile);
             let mut control = self.world.ecs.get_mut::<TerritoryControl>(tile).unwrap();
             control.being_captured = false;
             control.capturing_unit = None;
@@ -197,6 +204,7 @@ impl Runtime {
                 .unwrap()
                 .current_cp -= 1;
         }
+        self.mark_territory_visual(tile.unwrap());
         let mut control = self
             .world
             .ecs
@@ -259,6 +267,7 @@ impl Runtime {
             },
         ));
         self.capturing.insert(id);
+        self.mark_territory_visual(tile);
         let mut control = self.world.ecs.get_mut::<TerritoryControl>(tile).unwrap();
         control.being_captured = true;
         control.capturing_unit = Some(uid);
@@ -323,6 +332,7 @@ impl Runtime {
                     .get_mut::<CaptureAction>(self.world.entity(id).unwrap())
                     .unwrap()
                     .start_time = start;
+                self.mark_territory_visual(tile);
                 let mut control = self.world.ecs.get_mut::<TerritoryControl>(tile).unwrap();
                 if control.capture_time_required == 0. {
                     return Err("float division by zero".into());
