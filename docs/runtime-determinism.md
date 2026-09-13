@@ -19,6 +19,9 @@ value order. Team members retain registration order and messages retain FIFO.
 Available skill names use lexical order. This was a discovered omission in the
 first R0 oracle: populated multi-skill sets otherwise exposed Python hash order.
 The R0b follow-up fixes only this list ordering; old oracle tags remain immutable.
+The R0c follow-up also sorts the legacy `observation.visible_environment` and
+named `unit_observation.visible_terrain` lists by coordinates. Their contents and
+the Python `visible_area` set are unchanged; old tags retain their original order.
 
 Systems run by priority, with installation order breaking equal-priority ties.
 Event listeners run in subscription order, synchronously and depth first for

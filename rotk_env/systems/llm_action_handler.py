@@ -1839,7 +1839,7 @@ class LLMActionHandler:
         current_pos = (unit_position.col, unit_position.row) if unit_position else None
 
         visible_tiles = []
-        for pos in vision.visible_tiles:
+        for pos in sorted(vision.visible_tiles):
             tile_info = {
                 "position": {"col": pos[0], "row": pos[1]},
                 "terrain": self._get_terrain_at_position(pos).value,

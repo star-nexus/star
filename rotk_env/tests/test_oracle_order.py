@@ -7,6 +7,18 @@ from rotk_env.tests.test_faction_state_affordances import _world, _spawn
 from rotk_env.utils.hex_utils import HexMath, PathFinding
 
 
+def test_legacy_and_named_observation_terrain_use_coordinate_order():
+    from rotk_env.components import Vision
+    world = _world()
+    uid = _spawn(world, faction=Faction.WEI, col=0, row=0)
+    cells = {(0, 1), (-1, 0), (1, 0), (0, -1), (0, 0)}
+    world.add_component(uid, Vision(range=2, visible_tiles=cells))
+    handler = LLMActionHandler(world)
+    for tiles in (handler._get_visible_environment(uid, 'basic'),
+                  handler.observation_system._get_visible_terrain(cells)):
+        assert [(t['position']['col'], t['position']['row']) for t in tiles] == sorted(cells)
+
+
 def test_skill_list_order_is_independent_of_python_hash_seed():
     import json
     import os

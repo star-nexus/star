@@ -486,7 +486,7 @@ class LLMObservationSystem:
         from ..components.terrain import effect_for, terrain_at
 
         terrain_info = []
-        for col, row in visible_area:
+        for col, row in sorted(visible_area):
             terrain = terrain_at(self.world, (col, row))
             terrain_data = {
                 "position": {"col": col, "row": row},
