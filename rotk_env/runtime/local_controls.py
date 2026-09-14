@@ -13,16 +13,19 @@ class LocalControls:
         self.systems = frozenset(initial_state["systems"])
         self.interface = dict(initial_state["interface"])
         self.on_events = on_events
+        self.epoch = runtime.diagnostics()["epoch"]
+        if presentation.epoch is not None and presentation.epoch != self.epoch:
+            raise ValueError("Presentation belongs to a different native epoch")
 
     def refresh(self):
-        events = self.presentation.apply(self.runtime.take_presentation_delta())
+        events = self.presentation.apply(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
         if self.on_events is not None and events:
             self.on_events(events)
         return events
 
     def _call(self, method, *args, **kwargs):
         try:
-            return method(*args, **kwargs)
+            return method(*args, expected_epoch=self.epoch, **kwargs)
         finally:
             self.refresh()
 

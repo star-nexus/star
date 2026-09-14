@@ -71,7 +71,7 @@ class RustRuntime:
     def step(self, dt, *, wall_time=None):
         self._native.step(dt, time.time() if wall_time is None else wall_time)
 
-    def execute_control(self, kind, *, wall_time=None, **parameters):
+    def execute_control(self, kind, *, wall_time=None, expected_epoch=None, **parameters):
         """Trusted local UI input; never use this method for Agent/Hub requests.
 
         UI selection/targeting determines local human control. This boundary
@@ -82,6 +82,7 @@ class RustRuntime:
         return json.loads(self._native.execute_control_json(
             json.dumps(command, allow_nan=False),
             time.time() if wall_time is None else wall_time,
+            expected_epoch,
         ))
 
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None):
@@ -109,13 +110,13 @@ class RustRuntime:
             parameters["unit_ids"] = unit_ids
         return self.execute_action("get_faction_state", parameters, agent_id=agent_id, wall_time=wall_time)
 
-    def finish_human_turn(self, *, wall_time=None):
+    def finish_human_turn(self, *, wall_time=None, expected_epoch=None):
         """Trusted Framework input, with the legacy human reset-before-check semantics."""
-        self._native.finish_human_turn(time.time() if wall_time is None else wall_time)
+        self._native.finish_human_turn(time.time() if wall_time is None else wall_time, expected_epoch)
 
-    def start_capture(self, unit_id, position, *, wall_time=None):
+    def start_capture(self, unit_id, position, *, wall_time=None, expected_epoch=None):
         """Trusted Framework input for timed capture; Agent occupy is immediate."""
-        return self._native.start_capture(unit_id, position, time.time() if wall_time is None else wall_time)
+        return self._native.start_capture(unit_id, position, time.time() if wall_time is None else wall_time, expected_epoch)
 
     def set_clock(self, *, paused, time_scale=1.0):
         self._native.set_clock(paused, time_scale)
@@ -126,8 +127,8 @@ class RustRuntime:
     def diagnostics(self):
         return json.loads(self._native.diagnostics_json())
 
-    def take_presentation_delta(self):
-        return json.loads(self._native.take_presentation_delta_json())
+    def take_presentation_delta(self, *, expected_epoch=None):
+        return json.loads(self._native.take_presentation_delta_json(expected_epoch))
 
     def close(self):
         self._native.close()

@@ -6,6 +6,13 @@ use serde_json::{Value, json};
 use star_rotk::runtime::Runtime;
 use std::sync::Mutex;
 
+fn check_control_epoch(runtime: &Runtime, expected: Option<u64>) -> Result<(), String> {
+    if expected.is_some_and(|epoch| epoch != runtime.epoch) {
+        return Err("local control epoch changed; prepare new scene controls".into());
+    }
+    Ok(())
+}
+
 /// Owned Rust world. The lock is always acquired after detaching from Python.
 /// A poisoned instance errors permanently; no recovery into a different world.
 #[pyclass(frozen, module = "star_native._native")]
@@ -55,30 +62,47 @@ impl NativeRuntime {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
     /// Local Framework input only. Never dispatch Protocol/Agent payloads here.
+    #[pyo3(signature=(command_json, wall_time, expected_epoch=None))]
     fn execute_control_json(
         &self,
         py: Python<'_>,
         command_json: String,
         wall_time: f64,
+        expected_epoch: Option<u64>,
     ) -> PyResult<String> {
         self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
             let command = serde_json::from_str(&command_json).map_err(|e| e.to_string())?;
             Ok(r.execute_control(command, wall_time)?.to_string())
         })
     }
     /// Trusted Framework keyboard/menu input; not an Agent wire verb.
-    fn finish_human_turn(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
-        self.with_runtime(py, |r| r.finish_human_turn(wall_time))
+    #[pyo3(signature=(wall_time, expected_epoch=None))]
+    fn finish_human_turn(
+        &self,
+        py: Python<'_>,
+        wall_time: f64,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<()> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            r.finish_human_turn(wall_time)
+        })
     }
     /// Trusted Framework input for the window's timed capture operation.
+    #[pyo3(signature=(unit_id, position, wall_time, expected_epoch=None))]
     fn start_capture(
         &self,
         py: Python<'_>,
         unit_id: u64,
         position: (i64, i64),
         wall_time: f64,
+        expected_epoch: Option<u64>,
     ) -> PyResult<bool> {
-        self.with_runtime(py, |r| r.start_capture(unit_id, position, wall_time))
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            r.start_capture(unit_id, position, wall_time)
+        })
     }
     fn set_clock(&self, py: Python<'_>, paused: bool, time_scale: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.set_clock(paused, time_scale))
@@ -94,8 +118,16 @@ impl NativeRuntime {
     fn diagnostics_json(&self, py: Python<'_>) -> PyResult<String> {
         self.with_runtime(py, |r| Ok(r.diagnostics().to_string()))
     }
-    fn take_presentation_delta_json(&self, py: Python<'_>) -> PyResult<String> {
-        self.with_runtime(py, |r| Ok(r.presentation().to_string()))
+    #[pyo3(signature=(expected_epoch=None))]
+    fn take_presentation_delta_json(
+        &self,
+        py: Python<'_>,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            Ok(r.presentation().to_string())
+        })
     }
     fn close(&self, py: Python<'_>) -> PyResult<()> {
         py.detach(|| {

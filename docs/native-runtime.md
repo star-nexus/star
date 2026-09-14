@@ -289,6 +289,9 @@ commands to a `WorldPresentation`. Each command applies its display delta before
 returning, so another click in the same frame sees the resulting state. The optional
 callback receives ordered native presentation events; it must not invoke old Python
 simulation handlers. Native simulation has already applied their gameplay effects.
+The controller pins its native lifecycle epoch. Rust checks that epoch under the
+same lock before command execution or delta extraction, so stale callbacks cannot
+modify a reset world or drain the new display's initial baseline.
 
 The classes in `rotk_env.runtime.native_input` retain existing picking, target
 selection, keys, camera and panel interactions while redirecting gameplay writes.

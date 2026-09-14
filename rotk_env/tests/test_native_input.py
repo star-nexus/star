@@ -147,7 +147,31 @@ def test_controls_missing_systems_are_noops_and_stale_scene_fails(frozen):
             assert controls.finish_turn() is None
             assert native.export_state() == before
             native.reset(initial)
-            with pytest.raises(ValueError, match="epoch"): controls.refresh()
+            with pytest.raises(RuntimeError, match="epoch"): controls.refresh()
+    finally:
+        source.reset()
+        display.reset()
+
+
+@pytest.mark.parametrize("command", ["move", "keyboard", "capture", "refresh"])
+def test_stale_controls_neither_write_nor_drain_new_scene(command, frozen):
+    source, (a, b, enemy), _ = make("dummy", GameMode.TURN_BASED, "melee")
+    initial = export_initial_state(source, display="dummy")
+    display = detached_world(source)
+    try:
+        with RustRuntime(initial) as native:
+            controls = LocalControls(native, WorldPresentation(display), initial)
+            controls.refresh()
+            native.reset(initial)
+            before = native.export_state()
+            with pytest.raises(RuntimeError, match="epoch"):
+                if command == "move": controls.execute("move", unit_id=b, position=(-1, 1))
+                elif command == "keyboard": controls.finish_turn()
+                elif command == "capture": controls.start_capture(a, (-1, 0))
+                else: controls.refresh()
+            assert native.export_state() == before
+            first = native.take_presentation_delta()
+            assert first["fog"]["full"] and len(first["units"]) == 3
     finally:
         source.reset()
         display.reset()
