@@ -71,6 +71,19 @@ class RustRuntime:
     def step(self, dt, *, wall_time=None):
         self._native.step(dt, time.time() if wall_time is None else wall_time)
 
+    def execute_control(self, kind, *, wall_time=None, **parameters):
+        """Trusted local UI input; never use this method for Agent/Hub requests.
+
+        UI selection/targeting determines local human control. This boundary
+        mirrors existing MovementSystem/CombatSystem/button calls, without an
+        Agent registration, ownership override or transport request counter.
+        """
+        command = dict(kind=kind, **parameters)
+        return json.loads(self._native.execute_control_json(
+            json.dumps(command, allow_nan=False),
+            time.time() if wall_time is None else wall_time,
+        ))
+
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None):
         request = ActionRequest(agent_id, action, parameters, wall_time, registration_time)
         return _decode_result(json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))

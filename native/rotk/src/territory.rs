@@ -189,8 +189,45 @@ impl Runtime {
         {
             return error("Cannot build fortification at this position");
         }
+        self.commit_fortification(uid, tile.unwrap());
+        let mut result = success(format!(
+            "Unit {} built fortification at {repr}, increasing level to {}/{max}",
+            scalar_display(raw),
+            current + 1
+        ));
+        // Preserve the handler's extra subtraction in the response, not the state.
+        result["remaining_action_points"] =
+            json!(self.component::<ActionPoints>(uid).unwrap().current_ap - 1);
+        result
+    }
+    /// Low-level TerritorySystem contract used by the human action panel.
+    pub(crate) fn build_fortification(&mut self, uid: u64, cell: Hex) -> bool {
+        let Some(unit) = self.component::<UnitInfo>(uid) else {
+            return false;
+        };
+        let Some(tile) = self.territory_entity(cell) else {
+            return false;
+        };
+        let control = self.world.ecs.get::<TerritoryControl>(tile).unwrap();
+        if control.controlling_faction.as_deref() != Some(&unit.faction) || control.fortified {
+            return false;
+        }
+        if self.territory_turn_mode()
+            && (self
+                .component::<ActionPoints>(uid)
+                .is_none_or(|p| p.current_ap < 1)
+                || self
+                    .component::<ConstructionPoints>(uid)
+                    .is_none_or(|p| p.current_cp < 1))
+        {
+            return false;
+        }
+        self.commit_fortification(uid, tile);
+        true
+    }
+    fn commit_fortification(&mut self, uid: u64, tile: Entity) {
         let unit = self.world.entity(uid).unwrap();
-        // Legacy realtime build checks resources in the handler but spends none.
+        // Realtime does not spend AP/CP in the legacy territory implementation.
         if self.territory_turn_mode() {
             self.world
                 .ecs
@@ -204,23 +241,10 @@ impl Runtime {
                 .unwrap()
                 .current_cp -= 1;
         }
-        self.mark_territory_visual(tile.unwrap());
-        let mut control = self
-            .world
-            .ecs
-            .get_mut::<TerritoryControl>(tile.unwrap())
-            .unwrap();
+        self.mark_territory_visual(tile);
+        let mut control = self.world.ecs.get_mut::<TerritoryControl>(tile).unwrap();
         control.fortified = true;
         control.fortification_level = 1;
-        let mut result = success(format!(
-            "Unit {} built fortification at {repr}, increasing level to {}/{max}",
-            scalar_display(raw),
-            current + 1
-        ));
-        // Preserve the handler's extra subtraction in the response, not the state.
-        result["remaining_action_points"] =
-            json!(self.component::<ActionPoints>(uid).unwrap().current_ap - 1);
-        result
     }
     /// Framework input command. The Agent wire action `occupy` uses immediate capture.
     pub fn start_capture(&mut self, uid: u64, cell: Hex, wall_time: f64) -> Result<bool, String> {

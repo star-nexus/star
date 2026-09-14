@@ -7,7 +7,8 @@ resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
 move/attack/faction-query dispatch, world termination and faction turn handoff
 are connected, including the five non-image observation variants. VLM frame capture,
-settlement and the playable scene/input handoff are still pending. A derived battlefield
+settlement and the playable scene handoff are still pending. Local input adapters
+now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
 The Cargo workspace has three crates:
@@ -123,7 +124,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version5 and scene schema5 in addition to the rules marker.
+The runtime now has API version6 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -265,3 +266,41 @@ A single consumer must drain and apply in order. Recreate the prepared World and
 before display mutation. Resizing, panning and zooming belong to Python, including
 reprojection of floating text while the simulation clock is paused. Display
 mutations never write back into Rust; all gameplay input needs a runtime command.
+
+### Trusted local controls (R3d1)
+
+`RustRuntime.execute_control(kind, **parameters)` is a Framework input interface,
+separate from authenticated Agent requests. Its commands are `move(unit_id,
+position)`, `attack(unit_id, target_id)`, `wait(unit_id)`, `garrison(unit_id)`,
+`fortify(unit_id, position)`, `set_fog(enabled)` and `toolbar_end_turn()`. Positions
+are integer `(col, row)` pairs. Malformed command envelopes raise before execution;
+unknown or unavailable commands fail explicitly. Commands use the existing native
+movement/combat/resource state and never register a synthetic Agent.
+
+Human attack returns the legacy hit boolean. Local wait/garrison only spend AP;
+they do not apply the Agent `rest` status effects. Local fortification retains the
+existing real-time resource exception. Keyboard `finish_human_turn()` and toolbar
+`toolbar_end_turn()` remain distinct: the former resets actions and checks game
+termination, while the latter rotates the explicit `TurnManager` list without
+resource reset or turn events. These are compatibility behaviors, not new rules.
+
+`LocalControls(runtime, presentation, initial_state, on_events=...)` connects these
+commands to a `WorldPresentation`. Each command applies its display delta before
+returning, so another click in the same frame sees the resulting state. The optional
+callback receives ordered native presentation events; it must not invoke old Python
+simulation handlers. Native simulation has already applied their gameplay effects.
+
+The classes in `rotk_env.runtime.native_input` retain existing picking, target
+selection, keys, camera and panel interactions while redirecting gameplay writes.
+Initialize the scene's UI once before importing it into Rust; mount these adapters
+on the corresponding derived World after removing all old simulation/input systems
+and their subscriptions. Adapter initialization preserves the prepared camera, UI
+singletons and toolbar entities rather than allocating new external entity IDs.
+Use `CoordinateInputHandlingSystem` for the legacy dummy path and
+`InputHandlingSystem` for the window path. `UnitActionButtonSystem` and
+`UIButtonSystem` reuse the existing panel rendering and text caches.
+
+These building blocks do not yet provide the complete `GameScene`/CLI backend
+switch, transport/VLM integration, BOT or post-game report collection. In particular,
+local-control replay excludes LLMSystem's post-game transport update. The remaining
+scene lifecycle must explicitly connect that host boundary before Rust is playable.

@@ -54,6 +54,18 @@ impl NativeRuntime {
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
+    /// Local Framework input only. Never dispatch Protocol/Agent payloads here.
+    fn execute_control_json(
+        &self,
+        py: Python<'_>,
+        command_json: String,
+        wall_time: f64,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            let command = serde_json::from_str(&command_json).map_err(|e| e.to_string())?;
+            Ok(r.execute_control(command, wall_time)?.to_string())
+        })
+    }
     /// Trusted Framework keyboard/menu input; not an Agent wire verb.
     fn finish_human_turn(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.finish_human_turn(wall_time))
