@@ -63,6 +63,10 @@ Victory Conditions:
         """,
     )
 
+    parser.add_argument("--backend", choices=("python", "rust"), default="python",
+                        help="Simulation backend. Rust is experimental/offline; requires its matching native wheel.")
+    parser.add_argument("--native-threads", type=int, choices=(1, 2, 4), default=1,
+                        help="Native worker setting (currently serial; no parallel speedup claim).")
     parser.add_argument(
         "--headless",
         action="store_true",
@@ -219,6 +223,8 @@ def game_scene_kwargs_from_args(args) -> dict:
         "env_id": args.env_id,
         "enable_mock_ai": args.mock_ai,
         "scale_harness_socket": getattr(args, "scale_harness_socket", None),
+        "backend": getattr(args, "backend", "python"),
+        "native_threads": getattr(args, "native_threads", 1),
     }
 
 
@@ -241,8 +247,12 @@ def print_welcome():
 def main():
     """Main game function"""
     args = None
+    engine = None
     try:
         args = parse_arguments()
+        if args.backend == "rust":
+            from rotk_env.runtime.native import load_native
+            load_native()  # Explicit selection must fail before window startup.
 
         # Collection is opt-in so normal runs do not pay profiler timing/deque
         # overhead. JSON-only and explicit scale-harness runs collect silently;
@@ -275,6 +285,9 @@ def main():
             fps=GameConfig.FPS,
             uncapped=args.uncapped,
         )
+        # App-level selection survives normal menu launches and game-over restart.
+        engine.runtime_backend = args.backend
+        engine.native_threads = args.native_threads
         if not args.headless:
             GameConfig.WINDOW_WIDTH = engine.width
             GameConfig.WINDOW_HEIGHT = engine.height
@@ -322,6 +335,11 @@ def main():
 
         print("Game started! Configure the game in the start interface, then click start game.")
         engine.start()
+        if args.backend == "rust":
+            scene = engine.scene_manager._current_scene
+            session = getattr(scene, "native_session", None)
+            if session is not None and session.failure is not None:
+                raise RuntimeError("Rust scene failed") from session.failure
 
     except KeyboardInterrupt:
         print("\nGame interrupted by user")
@@ -330,7 +348,13 @@ def main():
         import traceback
 
         traceback.print_exc()
+        if args is not None and args.backend == "rust":
+            raise SystemExit(1) from e
     finally:
+        if engine is not None and args is not None and args.backend == "rust":
+            scene = engine.scene_manager._current_scene
+            if scene is not None:
+                scene.exit()
         if args is not None and args.profile_json:
             try:
                 profiler.write_json(args.profile_json)

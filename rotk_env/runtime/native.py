@@ -32,6 +32,7 @@ class ActionRequest:
     parameters: dict[str, Any] | None = None
     wall_time: float | None = None
     registration_time: str | None = None
+    connected_agents: int = 0
 
     def to_wire(self):
         # Transport already normalizes raw payloads. This boundary accepts detached
@@ -39,6 +40,8 @@ class ActionRequest:
         params = {} if self.parameters is None else self.parameters
         if not isinstance(params, dict):
             raise TypeError("parameters must be a normalized dictionary")
+        if type(self.connected_agents) is not int or not 0 <= self.connected_agents < 2**64:
+            raise ValueError("connected_agents must be a nonnegative u64 transport count")
         registering = self.action == "register_agent_info"
         return dict(
             agent_id=self.agent_id, action=self.action, parameters=params,
@@ -46,6 +49,7 @@ class ActionRequest:
             registration_time=(self.registration_time if self.registration_time is not None
                                else datetime.datetime.now().isoformat()) if registering else "",
             sanitized_base_url=AgentInfoRegistry.sanitize_url(params.get("base_url", "")) if registering else "",
+            connected_agents=self.connected_agents,
         )
 
 
@@ -71,6 +75,15 @@ class RustRuntime:
     def step(self, dt, *, wall_time=None):
         self._native.step(dt, time.time() if wall_time is None else wall_time)
 
+    def prepare_game_end(self, connected_agents, *, wall_time=None, expected_epoch=None):
+        """Update native collection counters and return an ordered delivery plan.
+
+        Called by the scene host, never by an Agent verb. Transport delivery,
+        once-only notification tracking and retries remain with that host.
+        """
+        return json.loads(self._native.prepare_game_end_json(
+            list(connected_agents), time.time() if wall_time is None else wall_time, expected_epoch))
+
     def execute_control(self, kind, *, wall_time=None, expected_epoch=None, **parameters):
         """Trusted local UI input; never use this method for Agent/Hub requests.
 
@@ -85,8 +98,8 @@ class RustRuntime:
             expected_epoch,
         ))
 
-    def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None):
-        request = ActionRequest(agent_id, action, parameters, wall_time, registration_time)
+    def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None, connected_agents=0):
+        request = ActionRequest(agent_id, action, parameters, wall_time, registration_time, connected_agents)
         return _decode_result(json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))
 
     def execute_actions(self, requests):
@@ -121,8 +134,8 @@ class RustRuntime:
     def set_clock(self, *, paused, time_scale=1.0):
         self._native.set_clock(paused, time_scale)
 
-    def export_state(self):
-        return json.loads(self._native.export_state_json())
+    def export_state(self, *, expected_epoch=None):
+        return json.loads(self._native.export_state_json(expected_epoch))
 
     def diagnostics(self):
         return json.loads(self._native.diagnostics_json())

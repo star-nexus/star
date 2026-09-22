@@ -61,6 +61,20 @@ impl NativeRuntime {
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
+    #[pyo3(signature=(connected_agents, wall_time, expected_epoch=None))]
+    fn prepare_game_end_json(
+        &self,
+        py: Python<'_>,
+        connected_agents: Vec<String>,
+        wall_time: f64,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            Ok(r.prepare_game_end(&connected_agents, wall_time)?
+                .to_string())
+        })
+    }
     /// Local Framework input only. Never dispatch Protocol/Agent payloads here.
     #[pyo3(signature=(command_json, wall_time, expected_epoch=None))]
     fn execute_control_json(
@@ -110,8 +124,10 @@ impl NativeRuntime {
     fn _set_wall_metadata(&self, py: Python<'_>, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.set_wall_metadata(wall_time))
     }
-    fn export_state_json(&self, py: Python<'_>) -> PyResult<String> {
+    #[pyo3(signature=(expected_epoch=None))]
+    fn export_state_json(&self, py: Python<'_>, expected_epoch: Option<u64>) -> PyResult<String> {
         self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
             serde_json::to_string(&r.export()).map_err(|e| e.to_string())
         })
     }

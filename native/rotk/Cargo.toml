@@ -10,3 +10,4 @@ star-core = { path = "../core" }
 bevy_ecs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+num-bigint.workspace = true

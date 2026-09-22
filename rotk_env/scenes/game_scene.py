@@ -19,6 +19,8 @@ class GameScene(Scene):
         super().__init__(engine)
         self.name = "game"
         self.world = World()
+        self.native_session = None
+        self.native_host = None
 
         # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
@@ -62,15 +64,23 @@ class GameScene(Scene):
         self.env_id = kwargs.get("env_id")
         self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
         self.scale_harness_socket = kwargs.get("scale_harness_socket")
+        self.backend = kwargs.get("backend", getattr(self.engine, "runtime_backend", "python"))
+        self.native_threads = kwargs.get("native_threads", getattr(self.engine, "native_threads", 1))
+        if self.backend not in ("python", "rust"):
+            raise ValueError(f"Unknown runtime backend: {self.backend}")
 
         if not self.initialized:
+            if self.backend == "rust":
+                self.game_end_wait_start = None
+                self._headless_exit_triggered = False
+                self._last_wait_second = -1
             self._initialize_game()
             self.initialized = True
 
     def _initialize_game(self):
         """Fill this scene's World through the shared skirmish builder."""
         display = "dummy" if self.headless else "window"
-        build_skirmish_world(
+        options = dict(
             players=self.players,
             mode=self.game_mode,
             scenario=self.scenario,
@@ -80,8 +90,17 @@ class GameScene(Scene):
             env_id=self.env_id,
             display=display,
             enable_mock_ai=self.enable_mock_ai,
-            world=self.world,
         )
+        if self.backend == "rust":
+            if self.scale_harness_socket:
+                raise ValueError("Rust scale-harness host is not connected yet")
+            from ..runtime.session import NativeSession
+            from ..runtime.settlement import OfflineSettlementHost
+            self.native_session = NativeSession(threads=self.native_threads, **options)
+            self.world = self.native_session.world
+            self.native_host = OfflineSettlementHost(self.native_session)
+        else:
+            build_skirmish_world(world=self.world, **options)
 
         # The scale controller is added only after the normal world is fully
         # assembled, so it can reuse the production AnimationSystem and lets
@@ -125,6 +144,7 @@ class GameScene(Scene):
             "display": display,
             "mock_ai": self.enable_mock_ai,
             "scale_harness": bool(self.scale_harness_socket),
+            "backend": self.backend,
         }
         if map_data is not None:
             metadata.update(
@@ -156,7 +176,18 @@ class GameScene(Scene):
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
             with profiler.time_system("world_update", category="update"):
-                self.world.update(delta_time)
+                if self.native_session is None:
+                    self.world.update(delta_time)
+                else:
+                    import time
+                    try:
+                        self.native_session.update_inputs(delta_time)
+                        self.native_session.step(delta_time)
+                        self.native_host.update(time.time())
+                        self.native_session.update_display(delta_time, inputs=False)
+                    except Exception as exc:
+                        self.native_session._fail(exc)
+                        raise
 
             game_state = self.world.get_singleton_component(GameState)
             if game_state and game_state.game_over:
@@ -256,4 +287,10 @@ class GameScene(Scene):
     def exit(self):
         """Called when exiting scene"""
         super().exit()
-        self.world.reset()
+        if self.native_session is not None:
+            self.native_session.close()
+            self.native_session = None
+            self.native_host = None
+            self.initialized = False
+        else:
+            self.world.reset()

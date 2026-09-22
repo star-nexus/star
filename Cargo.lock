@@ -908,6 +908,7 @@ name = "star-rotk"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
+ "num-bigint",
  "serde",
  "serde_json",
  "star-core",

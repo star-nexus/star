@@ -22,6 +22,9 @@ pub struct Request {
     /// Python URL parsing is transport metadata preparation, not a hot-loop callback.
     #[serde(default)]
     pub sanitized_base_url: String,
+    /// Trusted transport snapshot, never inferred from Agent-provided parameters.
+    #[serde(default)]
+    pub connected_agents: u64,
 }
 impl Request {
     fn normalize_identity(&mut self) {
@@ -475,6 +478,9 @@ impl Runtime {
             return Ok(rejection);
         }
         let mut result = match action {
+            "strategy_ping" => self.strategy_ping(params),
+            "report_llm_stats" => self.report_llm_stats(params),
+            "retrieve_game_status" => self.retrieve_game_status(request.connected_agents),
             "register_agent_info" => self.register_agent(&request, params),
             "release_units" => match self.release_request(params) {
                 Ok(result) => result,

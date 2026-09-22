@@ -8,6 +8,7 @@ from .bootstrap import prepare_display_world
 from .native import RustRuntime
 from .world_presentation import WorldPresentation
 from .local_controls import LocalControls
+from framework.ecs import profiling
 
 
 class NativeSession:
@@ -51,11 +52,23 @@ class NativeSession:
             self._fail(exc)
             raise
 
-    def update_display(self, dt):
+    def update_inputs(self, dt):
+        """Poll native input/panels before simulation, preserving command order."""
+        self._update_systems(dt, inputs=True, rendering=False)
+
+    def update_display(self, dt, *, inputs=True):
         """Run input/panels/rendering over derived data after the simulation step."""
+        self._update_systems(dt, inputs=inputs, rendering=True)
+
+    def _update_systems(self, dt, *, inputs, rendering):
         self._check_open()
         try:
-            self.world.update(dt)
+            self.world.bump_revision()
+            for system in self.world.systems:
+                is_input = getattr(system, "controls", None) is self.controls
+                if system.enabled and (inputs if is_input else rendering):
+                    with profiling.profiler.time_system(type(system).__name__):
+                        system.update(dt)
             self._check_open()
         except Exception as exc:
             self._fail(exc)

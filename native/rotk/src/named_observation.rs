@@ -56,7 +56,7 @@ fn py_repr(v: &Value) -> String {
         _ => scalar_display(v),
     }
 }
-fn py_display(v: &Value) -> String {
+pub(crate) fn py_display(v: &Value) -> String {
     if let Some(s) = v.as_str() {
         s.into()
     } else {

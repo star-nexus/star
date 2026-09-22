@@ -11,7 +11,7 @@ import math
 import random
 
 SCHEMA_VERSION = 5
-NATIVE_API_VERSION = 7
+NATIVE_API_VERSION = 8
 ORACLE_VERSION = 'python-r0c-3cc4ffe'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
@@ -151,7 +151,13 @@ def export_initial_state(world, *, display='none'):
         if revision == world.revision}}
     from .presentation_state import export_visual_lifecycle
     systems['VisualLifecycle'] = export_visual_lifecycle(world)
+    from rotk_env.systems.settlement_report_system import SettlementReportSystem
+    report = SettlementReportSystem()
+    report.world = world
+    map_system = next((s for s in world.systems if type(s).__name__ == 'MapSystem'), None)
     interface = {
+        'report_context': {'map_type': report._get_map_type(), 'game_mode': report._detect_game_mode(),
+                           'symmetry_type': getattr(map_system, 'symmetry_type', 'unknown')},
         'action_specs': docs_for_names(spec.name for spec in GAME_ACTIONS),
         'system_errors': {str(int(code)): text for code, text in DESCRIPTIONS.items()},
         'game_stats_defaults': encode(GameStats()),

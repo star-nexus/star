@@ -2,12 +2,12 @@
 
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
-**The Rust backend is not yet playable.** R3 is in progress: native movement,
+**The experimental Rust backend now supports offline local play.** R3 is in progress: native movement,
 resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
 move/attack/faction-query dispatch, world termination and faction turn handoff
 are connected, including the five non-image observation variants. VLM frame capture,
-settlement and the playable scene handoff are still pending. Local input adapters
+network post-game delivery and BOT are still pending. Offline GameScene and settlement now use NativeSession. Local input adapters
 now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
@@ -124,7 +124,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version7 and scene schema5 in addition to the rules marker.
+The runtime now has API version8 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -137,8 +137,7 @@ and the window's bounded multi-frame cycle, including reset partway through a
 cycle. Their historical wall timestamps are injected metadata; resource cooldowns
 still advance only from simulation time. The bootstrap codec also preserves
 public runtime attributes attached to dataclasses. Registration metadata was
-already declared in GameStats; the earlier codec did not drop those fields. Fog presentation now uses an accumulated changed-cell journal. The playable scene
-and window input integration remain pending.
+already declared in GameStats; the earlier codec did not drop those fields. Fog presentation now uses an accumulated changed-cell journal. Offline scene/window input integration is described below; network hosts remain pending.
 
 Realtime/turn-mode world updates now apply the existing game-over policy: mutual
 annihilation, one remaining faction, then timeout (in that precedence). Realtime
@@ -149,8 +148,7 @@ and lifecycle enabled flags survive import. Agent `end_turn` rotates factions an
 The trusted Framework method `finish_human_turn` preserves the human reset-before-
 check path. Turn statistics, battle logs and TurnStartEvent keep their old order;
 the GameTime round number synchronizes on the next tick. Cooldown/skill behavior
-is not rebalanced. Settlement orchestration and actual window input handoff remain
-pending. The small Player lookup table is derived on import/reset; future commands
+is not rebalanced. Offline settlement and window handoff are now connected; network orchestration remains pending. The small Player lookup table is derived on import/reset; future commands
 that change Player membership/faction must also update it.
 
 The initialization codec preserves the difference between `UnitState` enum values
@@ -223,7 +221,7 @@ set for that field, decoded only at that exact schema location by the adapter.
 The existing god-view BattleLog attribute mismatch is preserved: normal nonempty
 BattleLogEntry lists cause `INTERNAL_ERROR` (missing `turn`), as in Python. This
 migration does not silently repair rules or legacy API quirks. VLM frame capture,
-actual window integration, BOT/settlement, and parallel workers remain pending.
+BOT/network integration and parallel workers remain pending.
 
 
 ## Native display handoff (R3 intermediate)
@@ -304,10 +302,7 @@ Use `CoordinateInputHandlingSystem` for the legacy dummy path and
 `InputHandlingSystem` for the window path. `UnitActionButtonSystem` and
 `UIButtonSystem` reuse the existing panel rendering and text caches.
 
-These building blocks do not yet provide the complete `GameScene`/CLI backend
-switch, transport/VLM integration, BOT or post-game report collection. In particular,
-local-control replay excludes LLMSystem's post-game transport update. The remaining
-scene lifecycle must explicitly connect that host boundary before Rust is playable.
+The offline GameScene/CLI host below assembles these building blocks. Transport/VLM, BOT and network post-game delivery remain pending; offline local play is not full R3 acceptance.
 
 ### Offline scene ownership and HUD (R3d2)
 
@@ -340,6 +335,48 @@ remain local UI operations; newly appended messages retain legacy auto-scrolling
 The display GameStats is a **partial presentation copy**, not a source for final
 reports. Full settlement data must come from an explicit authoritative export.
 
-This offline session rejects Hub/BOT startup and does not implement post-game
-report collection, GameScene/menu handoff or the CLI backend switch. The ordinary
-Python launch remains unchanged; R3 and capacity acceptance are still incomplete.
+The session itself rejects Hub/BOT startup. GameScene attaches the offline post-game host below. The ordinary Python launch remains the default; R3 and capacity acceptance are still incomplete.
+
+
+### Experimental offline GameScene and settlement (R3d2b)
+
+After installing the matching API8 release wheel, run from a complete checkout
+(including the existing font/assets):
+
+```sh
+.venv/bin/python -m rotk_env.main --backend rust --no-hub --skip-start --mode real_time --scenario chibi-small --seed 42
+# Add --headless for dummy SDL; use --mode turn_based for turn play.
+# To use the normal menu, omit --skip-start; select the offline controller.
+```
+
+`--backend python` remains the default. `--native-threads 1|2|4` selects a native
+configuration, currently still serial. App-level backend selection survives the
+menu/game-over/menu cycle. Selecting Rust never falls back: missing/mismatched
+extensions fail before window startup; Hub, rule BOT and the old scale-harness
+host are rejected until their native adapters are connected. Rust scene faults
+close authority and make the CLI exit nonzero. Quitting closes scene subscriptions.
+
+Input panels poll before native simulation; pure rendering runs after its fresh
+display delta. Offline post-game handling follows the simulation step. The host
+calls `prepare_game_end(connected_agents, expected_epoch=...)` to update native
+collection counters and obtain ordered notification targets/payload; delivery and
+once-only notification state belong to the host. Offline has no recipients. It
+retains the Python policy of waiting 60 wall seconds even when statistics are ready.
+At the deadline it exports one complete authoritative snapshot, builds an independent
+report World with no systems, and reuses the existing report schema/persistence.
+It never fills a report from partial HUD statistics or mounts Python gameplay.
+A report formatting failure retains the existing scene timeout/exit behavior.
+
+Three system actions now execute in Rust: `strategy_ping`, `report_llm_stats` and
+`retrieve_game_status`. Identity/faction checks, counters, errors and request order
+follow the normalized Python baseline. Strategy throttle uses supplied wall time,
+not simulation CD time. Same-faction reports accumulate (including legacy duplicate
+reports); completion still counts factions, not individual Agents. Integer counters
+retain arbitrary precision; percentage rounding follows integer division before
+rounding to two decimals. This does not change scoring or report-completion rules.
+
+`ActionRequest.connected_agents` (or `execute_action(..., connected_agents=N)`) is
+trusted ingress metadata from the transport snapshot. The status handler never
+reads an Agent-supplied count or guesses connections from registration. Historical
+traces omit it and default to zero. Full state export accepts an optional epoch
+check so an old report host cannot export a reset world's report.
