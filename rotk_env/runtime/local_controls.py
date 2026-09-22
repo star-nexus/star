@@ -7,17 +7,26 @@ that may follow a partial write. No Protocol identity or synthetic Agent is used
 
 
 class LocalControls:
-    def __init__(self, runtime, presentation, initial_state, *, on_events=None):
+    def __init__(self, runtime, presentation, initial_state, *, on_events=None, on_error=None):
         self.runtime = runtime
         self.presentation = presentation
         self.systems = frozenset(initial_state["systems"])
         self.interface = dict(initial_state["interface"])
         self.on_events = on_events
+        self.on_error = on_error
         self.epoch = runtime.diagnostics()["epoch"]
         if presentation.epoch is not None and presentation.epoch != self.epoch:
             raise ValueError("Presentation belongs to a different native epoch")
 
     def refresh(self):
+        try:
+            return self._refresh()
+        except Exception as exc:
+            if self.on_error is not None:
+                self.on_error(exc)
+            raise
+
+    def _refresh(self):
         events = self.presentation.apply(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
         if self.on_events is not None and events:
             self.on_events(events)
@@ -25,9 +34,14 @@ class LocalControls:
 
     def _call(self, method, *args, **kwargs):
         try:
-            return method(*args, expected_epoch=self.epoch, **kwargs)
-        finally:
-            self.refresh()
+            try:
+                return method(*args, expected_epoch=self.epoch, **kwargs)
+            finally:
+                self.refresh()
+        except Exception as exc:
+            if self.on_error is not None:
+                self.on_error(exc)
+            raise
 
     def execute(self, kind, **parameters):
         required = {"move": "movement_system", "attack": "combat_system"}.get(kind)

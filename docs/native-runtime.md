@@ -124,7 +124,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version6 and scene schema5 in addition to the rules marker.
+The runtime now has API version7 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -259,7 +259,8 @@ and the engine/fonts must already be initialized. Its AnimationSystem only updat
 camera projection; it never runs the Python movement or combat lifecycle. Original
 font, damage/CRIT text, coordinate, Fog and sprite caches remain in use. This is a
 building block for the window handoff, not a replacement GameScene or a `--backend`
-launch option yet. Input commands, complete HUD/settlement and VLM are still pending.
+launch option yet. NativeSession below mounts local input and HUD; settlement and
+VLM remain separate host integration work.
 
 A single consumer must drain and apply in order. Recreate the prepared World and
 `WorldPresentation` on scene reset. Epoch changes and older revisions are rejected
@@ -307,3 +308,38 @@ These building blocks do not yet provide the complete `GameScene`/CLI backend
 switch, transport/VLM integration, BOT or post-game report collection. In particular,
 local-control replay excludes LLMSystem's post-game transport update. The remaining
 scene lifecycle must explicitly connect that host boundary before Rust is playable.
+
+### Offline scene ownership and HUD (R3d2)
+
+`NativeSession` owns one native world and its independent Python display World:
+
+```python
+from rotk_env.runtime.session import NativeSession
+
+with NativeSession(display="none", mode="real_time", scenario="chibi-small",
+                   seed=42, threads=1) as session:
+    session.step(1 / 30)  # Simulation seconds; wall_time only supplies metadata.
+    print(session.runtime.diagnostics())
+```
+
+For `dummy` or `window`, initialize GameEngine/SDL and fonts first. Call
+`step(dt)` followed by `update_display(dt)` inside the existing owner-thread
+frame loop; the host handles input dispatch, screen clearing and presentation.
+The display World contains only native input adapters and presentation systems.
+It does not execute Python movement, combat, resource, Fog, turn or statistics
+updates. Preparing another scene creates another session; close the old one to
+release its subscriptions and components. Initialization failure also cleans up
+partially mounted input subscriptions. A native command or display failure retires
+that native world immediately and raises at the next session boundary, including
+when the legacy event bus catches and prints the original callback exception.
+
+The API7 display delta adds `hud`: faction statistics and total simulation time,
+plus one initial battle-log baseline followed by newly appended entries. It does
+not copy battle/observation/LLM histories every frame. Scrolling and hiding the log
+remain local UI operations; newly appended messages retain legacy auto-scrolling.
+The display GameStats is a **partial presentation copy**, not a source for final
+reports. Full settlement data must come from an explicit authoritative export.
+
+This offline session rejects Hub/BOT startup and does not implement post-game
+report collection, GameScene/menu handoff or the CLI backend switch. The ordinary
+Python launch remains unchanged; R3 and capacity acceptance are still incomplete.

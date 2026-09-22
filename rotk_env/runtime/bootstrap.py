@@ -11,7 +11,7 @@ import math
 import random
 
 SCHEMA_VERSION = 5
-NATIVE_API_VERSION = 6
+NATIVE_API_VERSION = 7
 ORACLE_VERSION = 'python-r0c-3cc4ffe'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
@@ -177,24 +177,51 @@ def export_initial_state(world, *, display='none'):
                       'unit_stats': encode(GameConfig.UNIT_STATS)}}
 
 
-def prepare_scene(**kwargs):
-    """Prepare and discard a temporary Python world; return only owned data.
+def prepare_display_world(**kwargs):
+    """Prepare native initial data and retain the independent display components.
 
     Only call from the application owner thread during scene setup. No Hub/BOT is
     started. Existing event subscriptions are isolated and restored, even on error.
-    Rendering resources must already be initialized for dummy/window preparation.
+    Returned World has no systems or surviving simulation subscriptions. Its
+    components are Python-owned presentation data after the JSON handoff.
+    Rendering resources must already be initialized for window preparation.
     """
     from framework import World
     from framework.engine.events import EBS
     from rotk_env.prefabs.world_builder import build_skirmish_world
     if kwargs.get('hub_url') is not None or kwargs.get('enable_mock_ai', False):
         raise ValueError('Native scene preparation cannot start Hub or BOT')
+    if kwargs.get('display', 'none') not in ('none', 'dummy', 'window'):
+        raise ValueError('Invalid native display configuration')
     listeners = EBS._listeners
     EBS._listeners = {}
     world = World()
     try:
         build_skirmish_world(world=world, **kwargs)
-        return export_initial_state(world, display=kwargs.get('display', 'none'))
-    finally:
+        initial = export_initial_state(world, display=kwargs.get('display', 'none'))
+        # Retire every prepared system, including input/network lifecycle hooks,
+        # while its listeners still belong to the isolated preparation bus.
+        systems, world.systems = world.systems, []
+        failures = []
+        for system in systems:
+            cleanup = getattr(system, 'cleanup', None)
+            if cleanup is not None:
+                try:
+                    cleanup()
+                except Exception as exc:
+                    failures.append(exc)
+        if failures:
+            raise ExceptionGroup('Native preparation cleanup failed', failures)
+        return world, initial
+    except BaseException:
         world.reset()
+        raise
+    finally:
         EBS._listeners = listeners
+
+
+def prepare_scene(**kwargs):
+    """Prepare and discard display components; return only owned initial data."""
+    world, initial = prepare_display_world(**kwargs)
+    world.reset()
+    return initial

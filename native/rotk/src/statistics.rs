@@ -454,7 +454,11 @@ impl Runtime {
         let cap = log["max_entries"].as_u64().unwrap_or(100) as usize;
         let visible = log["visible_lines"].as_u64().unwrap_or(8) as usize;
         let entries = log["entries"].as_array_mut().expect("battle log");
-        entries.push(json!({"message":message,"log_type":kind,"faction":faction,"color":color,"game_time_display":display,"turn_number":turn}));
+        let entry = json!({"message":message,"log_type":kind,"faction":faction,"color":color,"game_time_display":display,"turn_number":turn});
+        if !self.presentation_log_full {
+            self.presentation_log_entries.push(entry.clone());
+        }
+        entries.push(entry);
         // Python's [-0:] retains the whole array, including a zero configured cap.
         if cap > 0 && entries.len() > cap {
             entries.drain(..entries.len() - cap);

@@ -102,6 +102,8 @@ class WorldPresentation:
         for name, state in delta["state"].items():
             world.add_singleton_component(_component(_STATE_TYPES[name], state))
         self._apply_fog(delta["fog"])
+        if "hud" in delta:
+            self._apply_hud(delta["hud"])
         camera = world.get_singleton_component(c.Camera)
         self.visuals.apply(delta["visuals"], zoom=camera.zoom if camera else 1.0)
         for uid in delta["visuals"]["removed"]:
@@ -129,6 +131,42 @@ class WorldPresentation:
         """Zoom affects current floating text even while the world is paused."""
         camera = self.world.get_singleton_component(c.Camera)
         self.visuals.set_zoom(camera.zoom if camera else 1.0)
+
+    def _apply_hud(self, delta):
+        world = self.world
+        table = delta["stats"]
+        if table is None:
+            world.remove_singleton_component(c.GameStats)
+        else:
+            stats = world.get_singleton_component(c.GameStats)
+            if stats is None:
+                stats = c.GameStats()
+                world.add_singleton_component(stats)
+            current = {Faction(key): value for key, value in table["faction_stats"].items()}
+            for faction in tuple(stats.faction_stats):
+                if faction not in current:
+                    del stats.faction_stats[faction]
+            for faction, values in current.items():
+                # Keep prepared panel ordering while updating its small counters.
+                target = stats.faction_stats.setdefault(faction, {})
+                for key in tuple(target):
+                    if key not in values:
+                        del target[key]
+                target.update(deepcopy(values))
+            stats.total_game_time = table["total_game_time"]
+        patch = delta["battle_log"]
+        if patch is None:
+            world.remove_singleton_component(c.BattleLog)
+        elif patch["full"]:
+            data = deepcopy(patch["baseline"])
+            data["entries"] = [c.BattleLogEntry(**{**entry, "color": tuple(entry["color"])}) for entry in data["entries"]]
+            world.add_singleton_component(c.BattleLog(**data))
+        else:
+            log = world.get_singleton_component(c.BattleLog)
+            if log is None:
+                raise ValueError("Battle log baseline missing")
+            for entry in patch["entries"]:
+                log.add_entry(**{**deepcopy(entry), "color": tuple(entry["color"])})
 
     def _apply_fog(self, delta):
         world = self.world

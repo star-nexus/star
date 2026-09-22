@@ -76,6 +76,8 @@ pub struct Runtime {
     pub(crate) presentation_fog: BTreeMap<String, BTreeSet<crate::hex::Hex>>,
     pub(crate) presentation_fog_full: bool,
     pub(crate) presentation_removed: Vec<u64>,
+    pub(crate) presentation_log_full: bool,
+    pub(crate) presentation_log_entries: Vec<Value>,
     pub(crate) events: Vec<Value>,
 }
 
@@ -259,6 +261,8 @@ impl Runtime {
             presentation_fog: BTreeMap::new(),
             presentation_fog_full: true,
             presentation_removed: Vec::new(),
+            presentation_log_full: true,
+            presentation_log_entries: Vec::new(),
             events: Vec::new(),
         })
     }
@@ -412,7 +416,8 @@ impl Runtime {
             .filter_map(|name| self.singletons.get(name).map(|value| (name, value.clone())))
             .collect();
         let fog = self.fog_presentation();
-        json!({"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
+        let hud = self.hud_presentation();
+        json!({"hud":hud,"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
                "units": units, "removed": std::mem::take(&mut self.presentation_removed),
                "events": std::mem::take(&mut self.events)})
     }
