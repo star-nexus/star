@@ -40,7 +40,11 @@ fn rounded(value: f64, digits: usize) -> f64 {
         .expect("formatted finite number")
 }
 fn remove_digit_separators(text: &str) -> Option<String> {
-    let chars: Vec<_> = text.trim().chars().collect();
+    let chars: Vec<_> = text
+        .trim()
+        .chars()
+        .map(crate::unicode_decimal::decimal_ascii)
+        .collect();
     for (i, c) in chars.iter().enumerate() {
         if *c == '_'
             && (i == 0

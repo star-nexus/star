@@ -184,3 +184,29 @@ def test_game_end_plan_rejects_running_world_before_writes(pair):
     with pytest.raises(RuntimeError,match='has not ended'):
         runtime.prepare_game_end([])
     assert runtime.export_state()==before
+
+
+# CPython 3.13 is the normalized oracle. Enumerate its decimal scripts so every
+# accepted digit (not only the motivating fullwidth example) crosses the API.
+import unicodedata
+_DECIMAL_ZERO = [i for i in range(0x110000)
+                 if unicodedata.category(chr(i)) == 'Nd' and unicodedata.decimal(chr(i)) == 0]
+
+
+@pytest.mark.parametrize('zero', _DECIMAL_ZERO)
+def test_unicode_decimal_stats_and_strategy_match_python(zero,pair,frozen):
+    _,_,call=pair
+    digits=''.join(chr(zero+i) for i in range(10))
+    call('a','report_llm_stats',dict(faction='wei',api_stats=dict(total_calls=digits,successful_calls=1)))
+    call('a','report_llm_stats',dict(faction='wei',api_stats=dict(total_calls=2,successful_calls=1)))
+    for digit in digits:
+        frozen[0]+=61
+        call('a','strategy_ping',dict(faction='wei',score='0.1'+digit))
+
+
+@pytest.mark.parametrize('value',['\u3000１２_３\u00a0','＋１２','¹','①','１２__３','１２_','_１２','\x1c１２','١٢.٥'])
+def test_unicode_numeric_spacing_separators_and_rejected_symbols(value,pair,frozen):
+    _,_,call=pair
+    call('a','report_llm_stats',dict(faction='wei',api_stats=dict(total_calls=value,successful_calls=1)))
+    call('a','report_llm_stats',dict(faction='wei',api_stats=dict(total_calls=2,successful_calls=1)))
+    call('a','strategy_ping',dict(faction='wei',score=value))

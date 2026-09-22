@@ -78,6 +78,8 @@ pub struct Runtime {
     pub(crate) presentation_removed: Vec<u64>,
     pub(crate) presentation_log_full: bool,
     pub(crate) presentation_log_entries: Vec<Value>,
+    pub(crate) presentation_players_full: bool,
+    pub(crate) presentation_player_removals: BTreeMap<u64, BTreeSet<u64>>,
     pub(crate) events: Vec<Value>,
 }
 
@@ -263,6 +265,8 @@ impl Runtime {
             presentation_removed: Vec::new(),
             presentation_log_full: true,
             presentation_log_entries: Vec::new(),
+            presentation_players_full: true,
+            presentation_player_removals: BTreeMap::new(),
             events: Vec::new(),
         })
     }
@@ -417,7 +421,31 @@ impl Runtime {
             .collect();
         let fog = self.fog_presentation();
         let hud = self.hud_presentation();
-        json!({"hud":hud,"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
+        let full = std::mem::take(&mut self.presentation_players_full);
+        let rows: Vec<_> = if full {
+            self.players
+                .iter()
+                .filter_map(|(id, _)| {
+                    let player = self.component::<InitialComponents>(*id)?.0.get("Player")?;
+                    Some(json!({"id":id,"player":player}))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Only membership removals currently mutate Player after import. Send
+        // changed IDs, never clone a faction's entire unit set on every death.
+        let removed = std::mem::take(&mut self.presentation_player_removals);
+        let units_removed: Vec<_> = if full {
+            Vec::new()
+        } else {
+            removed
+                .into_iter()
+                .map(|(id, unit_ids)| json!({"id":id,"unit_ids":unit_ids}))
+                .collect()
+        };
+        let players = json!({"full":full,"rows":rows,"units_removed":units_removed});
+        json!({"players":players,"hud":hud,"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
                "units": units, "removed": std::mem::take(&mut self.presentation_removed),
                "events": std::mem::take(&mut self.events)})
     }

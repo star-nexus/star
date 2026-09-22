@@ -11,7 +11,7 @@ import math
 import random
 
 SCHEMA_VERSION = 5
-NATIVE_API_VERSION = 8
+NATIVE_API_VERSION = 9
 ORACLE_VERSION = 'python-r0c-3cc4ffe'
 PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 

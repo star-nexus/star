@@ -1,5 +1,9 @@
 # Native runtime migration
 
+Benchmark compatibility differences and historical fixes are tracked in the
+[gameplay and mechanism GAP ledger](native-benchmark-gaps.md). Consult it when
+comparing results across Python oracles and experimental native checkpoints.
+
 The default game remains Python. R0 normalizes its replay ordering; R1 provides
 an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 **The experimental Rust backend now supports offline local play.** R3 is in progress: native movement,
@@ -124,7 +128,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version8 and scene schema5 in addition to the rules marker.
+The runtime now has API version9 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -340,7 +344,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API8 release wheel, run from a complete checkout
+After installing the matching API9 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -380,3 +384,14 @@ trusted ingress metadata from the transport snapshot. The status handler never
 reads an Agent-supplied count or guesses connections from registration. Historical
 traces omit it and default to zero. Full state export accepts an optional epoch
 check so an old report host cannot export a reset world's report.
+
+
+### Player membership presentation (R3d3a)
+
+API9 adds a complete initial Player baseline and compact subsequent unit-removal
+patches. A death updates the same first matching faction Player as Python; the
+derived membership set no longer retains dead unit IDs. No full faction member
+list is copied across the interface on each death. This fixes a presentation gap,
+not a change to combat or authoritative observation rules. Reset requires a new
+presentation consumer and baseline. Other dynamic cold-component coverage still
+needs audit; see G004 and R002 in the GAP ledger.

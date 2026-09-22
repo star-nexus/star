@@ -8,7 +8,7 @@ can mutate these derived objects without changing the native world.
 
 from copy import deepcopy
 from rotk_env import components as c
-from rotk_env.prefabs.config import Faction, GameMode, UnitType, UnitState
+from rotk_env.prefabs.config import Faction, GameMode, UnitType, UnitState, PlayerType
 from rotk_env.utils.unit_spatial_index import (
     rebuild_unit_spatial_index,
     update_unit_spatial_index,
@@ -38,6 +38,7 @@ _ENUM_FIELDS = {
     c.GameTime: dict(current_mode=GameMode),
     c.GameState: dict(current_player=Faction, game_mode=GameMode, winner=Faction),
     c.GameModeComponent: dict(mode=GameMode),
+    c.Player: dict(faction=Faction, player_type=PlayerType),
 }
 
 
@@ -48,6 +49,9 @@ def _component(cls, state):
             values[key] = enum(values[key])
     if cls is c.UnitStatus and values.pop("current_status_is_enum", False):
         values["current_status"] = UnitState(values["current_status"])
+    if cls is c.Player:
+        values["color"] = tuple(values["color"])
+        values["units"] = set(values["units"]["$set"])
     if cls is c.MovementAnimation:
         values["path"] = [tuple(cell) for cell in values["path"]]
         for key in ("start_pixel_pos", "target_pixel_pos"):
@@ -78,6 +82,8 @@ class WorldPresentation:
             raise ValueError("Stale presentation delta")
         if self.epoch is None and not delta["fog"]["full"]:
             raise ValueError("First presentation delta must contain a full baseline")
+        if self.epoch is None and not delta["players"]["full"]:
+            raise ValueError("First presentation delta must contain a Player baseline")
         self.epoch = delta["epoch"]
         self.revision = delta["revision"]
         world = self.world
@@ -101,6 +107,18 @@ class WorldPresentation:
             world.add_component(uid, _component(c.TerritoryControl, row["control"]))
         for name, state in delta["state"].items():
             world.add_singleton_component(_component(_STATE_TYPES[name], state))
+        players = delta["players"]
+        if players["full"]:
+            for uid in world.query().with_component(c.Player).ordered_entities():
+                world.remove_component(uid, c.Player)
+            for row in players["rows"]:
+                uid = world.ensure_entity(row["id"])
+                world.add_component(uid, _component(c.Player, row["player"]))
+        for row in players["units_removed"]:
+            player = world.get_component(row["id"], c.Player)
+            if player is None:
+                raise ValueError("Player baseline missing")
+            player.units.difference_update(row["unit_ids"])
         self._apply_fog(delta["fog"])
         if "hud" in delta:
             self._apply_hud(delta["hud"])

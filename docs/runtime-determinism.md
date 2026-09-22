@@ -39,3 +39,7 @@ advances with dt; Agent thinking uses wall time. Replays compare authoritative
 state, ordered events and complete decoded responses. JSON object key order and
 visual pixels are not the equality boundary. The Lab owns replay drivers and
 archived evidence. Python remains the default backend during migration.
+
+The original-to-oracle ordering changes and other migration discrepancies remain
+versioned in the [Benchmark GAP ledger](native-benchmark-gaps.md). Exact replay
+against this oracle is not a claim that older Python trajectories are unchanged.

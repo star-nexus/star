@@ -304,15 +304,15 @@ impl Runtime {
         {
             f["losses"] = json!(f["losses"].as_i64().unwrap_or(0) + 1);
         }
-        let player = self.world.ordered().find_map(|(_, e)| {
+        let player = self.world.ordered().find_map(|(player_id, e)| {
             self.world
                 .ecs
                 .get::<InitialComponents>(e)
                 .and_then(|c| c.0.get("Player"))
                 .filter(|p| p["faction"].as_str() == Some(&unit.faction))
-                .map(|_| e)
+                .map(|_| (player_id, e))
         });
-        if let Some(e) = player {
+        if let Some((player_id, e)) = player {
             let mut cold = self.world.ecs.get_mut::<InitialComponents>(e).unwrap();
             if let Some(units) = cold
                 .0
@@ -320,6 +320,10 @@ impl Runtime {
                 .and_then(|p| p["units"]["$set"].as_array_mut())
             {
                 units.retain(|v| v.as_u64() != Some(id));
+                self.presentation_player_removals
+                    .entry(player_id)
+                    .or_default()
+                    .insert(id);
             }
         }
         self.events

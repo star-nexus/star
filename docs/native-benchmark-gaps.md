@@ -1,0 +1,120 @@
+# Rust 迁移：游戏规则、机制与 Benchmark GAP 台账
+
+本台账记录**迁移期间实际出现过的差异**，包括已修复项；也单列尚未迁移的能力和待核验风险。修复不删除历史。新增规则差异必须记录后再决定如何修复，不能借迁移悄悄修改 Python oracle，也不能仅用“回归通过”代表所有配置等价。
+
+当前审计节点：R3d3a（开发中，2026-09-23）；前置 Rust `a6bf5f381b0393b0ab93973502d9744d6b9e3713`（R3d2b/API8）。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
+
+## 比较基线与影响口径
+
+- **原生产 Python**：`6a970deaee7d9b8d3939edd102973f2377edd6ac`。迁移分支尚未合并 main。
+- **当前规范化 Python oracle**：`3cc4ffea091dcf6afa8691c217ec4b09e25d4b5f`，规则标识 `python-r0c-3cc4ffe`。Rust的严格等价目标是这个基线。它与原生产的排序差异见G001–G003；不能把两者混称“原版”。
+- **A 数值/机制**：能改变权威状态、动作接纳、评分或统计；**B 信息**：改变Agent能看到的内容/顺序/错误反馈；**C 派生数据**：展示副本/应用层差异，是否影响决策须追踪消费者；**D 能力缺失**：某玩法或入口尚不可运行。
+- `CLOSED`表示指定复现和修复验收通过，**不代表整个迁移完成**；`BASELINE CHANGE`表示已明确纳入版本化oracle的变化；`OPEN`为已确认但未修复；`RISK`只有风险线索，不能当成确认差异；`PRESERVED`是原版已有机制，本轮没有引入差异。
+- JSON对象键排列本身不属于相等标准，**键被转换成可见字符串后则属于标准**。真实LLM的prompt、报错和列表排序都可能影响决策，即使单元测试中的最终胜负暂未变化。
+
+## 索引
+
+| ID | 差异 | 影响 | 状态 |
+| --- | --- | --- | --- |
+| G001 | R0实体/事件相关遍历与输出顺序规范化 | A/B，潜在轨迹影响 | BASELINE CHANGE |
+| G002 | R0b补齐多技能列表排序 | B | BASELINE CHANGE |
+| G003 | R0c补齐两种观测地块排序 | B | BASELINE CHANGE |
+| G004 | 死亡后Python展示Player.units仍保留死者 | C；消费者依赖时影响决策 | 修复待验证 |
+| G005 | Unicode十进制数字在策略分/统计计数中不兼容 | A：已复现分数/统计改变 | 修复待验证 |
+| G006 | 对象转文字的键顺序丢失 | B：策略依据文字不同 | OPEN |
+| G007 | VLM图像观测入口尚未迁移 | B/D | OPEN |
+| G008 | BOT驱动尚未接Rust世界 | A/D：不能复用原BOT对局 | OPEN |
+| G009 | 网络host、回合ACK及结束通知投递未接 | A/D：联网生命周期缺失 | OPEN |
+| G010 | 五种非图像观测曾缺失 | B/D | CLOSED于R3b |
+| G011 | 三种系统统计/状态指令曾缺失 | A/B/D | CLOSED于R3d2b |
+| G012 | 普通应用入口与完整结算曾缺失 | C/D | CLOSED于R3d2b离线范围 |
+| R001 | 其他宽松数值/字符串转换边界 | A/B | RISK，未全面审计 |
+| R002 | 其他冷组件的动态展示覆盖 | C | RISK，需逐写入点审计 |
+
+## G001–G003：原Python与规范化oracle之间的差异
+
+**触发**：无序实体/集合遍历，同一场景在不同hashseed下导出列表或处理顺序不同；多技能和两种地块列表在初版R0审计中遗漏。
+
+**旧→新**：G001采用外部实体ID排序、同优先级沿安装/订阅顺序、明确活动条目的处理顺序；G002技能名按字典序；G003 `observation.visible_environment` 与 `unit_observation.visible_terrain` 按 `(col,row)` 排序。显式`unit_ids`保留请求去重后的顺序，固定A*邻居和平局顺序未改。详见[排序契约](runtime-determinism.md)。
+
+**影响**：观测列表/提示顺序确实不同；G001可能影响共享状态更新或随机消费顺序。没有在真实LLM Benchmark中量化胜负变化，不能宣称数值影响为零，也不能把“可能”写成已经观察到排名变化。
+
+**版本/证据**：
+
+- G001 原生产 `6a970deaee7d9b8d3939edd102973f2377edd6ac` → `78cc8da3a03ffedaea58642abae8fcb710db997d` / `rust-python-oracle-r0-2026-09-11`；[R0跨hashseed轨迹、可复现Visibility历史顺序反例](../../star-lab/experiments/2026-09-rust-r0/README.md)。919回归；6配置各150ticks验证对应范围。
+- G002 初R0遗漏 → `17b17766923ce4db05efb17aaf023818cf69cdf6` / `rust-python-oracle-r0b-2026-09-12`；[四技能列表反例](../../star-lab/experiments/2026-09-rust-r0b-skill-order/README.md)。1047回归。旧R0及其后未补齐节点不能标为所有可选功能hash独立。
+- G003 R3a `7f4ad57bbd6966748c0fb49deb82f6ad43fc7aee`仍有遗漏 → R0c `3cc4ffea091dcf6afa8691c217ec4b09e25d4b5f` / `rust-python-oracle-r0c-2026-09-13`；[R3b报告中的两处顺序反例](../../star-lab/experiments/2026-09-rust-r3-observations/README.md)。1299回归；内容集合不变。
+
+**处置**：用户已批准先规范化再迁移；上述变化作为oracle版本边界保留。旧实验仅从原tag复现；跨oracle分数不可直接合并。新的排序变化必须新增/更新条目，不覆盖旧证据。
+
+## G004：死亡后的Player单位成员投影过期
+
+**触发**：NativeRuntime中一次致死攻击，再提取并应用展示增量；死亡可以发生在首次提取前或之后。
+
+**Python**：从第一个同阵营Player.units集合中删除死者。**Rust权威状态**也已正确删除；但旧WorldPresentation只删Unit实体，没有更新Player.units，展示副本继续持有旧ID。
+
+**影响**：确认派生状态不等价，不能供需要准确成员集合的消费者使用。当前Agent faction查询及R3d2b结算从Rust权威状态读取；本次复现两者的权威对照相同，**未观察到这条GAP改变战斗数值或该结算结果**。未来BOT/展示观测消费者若读取该副本，可能受影响，不能在修复前宣称完整应用等价。
+
+**版本/复现**：WorldPresentation首次出现于 `5bda51db6cd68455aa5724a6ef0eca1e66f89dda`（R3c）；直接测量受影响节点是R3d2b `a6bf5f381b0393b0ab93973502d9744d6b9e3713`，API8。Lab `r3_player_projection_probe.py` 工具 `4c7f057f32633f0353286b2ac961474712a9499a`：两模式×三display×1/2/4线程设置×首次提取前后，共36例，权威一致36/36、展示Player一致0/36。完整反例在[本阶段证据](../../star-lab/experiments/2026-09-rust-r3-player-gaps/README.md)。起始提交来自源码追溯，不把所有中间tag都说成已逐个运行过。
+
+**修复**：初次提取/重置给完整Player基线；后续只发送死亡成员ID补丁。Python消费后不修改Rust。每次死亡不跨语言复制整阵营成员集合；原权威死亡路径的集合扫描成本仍存在，不能宣称整条死亡处理O(active)。保留重复阵营Player的“第一个匹配”历史行为。预定修复检查点R3d3a/API9，验收后更新状态。
+
+## G005：Unicode十进制字符串改变评分/统计
+
+**触发/最小反例**：注册Wei Agent后 `strategy_ping(score="０.５")`；或者先 `report_llm_stats(api_stats={"total_calls":"１２","successful_calls":1})`，再上报次数2、成功1。
+
+**Python**：接受全角数字，策略分累加0.5；统计累计14次、2成功，成功率14.29%。**Rust API8**：拒绝该策略分；计数字符串转换失败按0处理，累计2次、2成功，成功率100%。第一条API计数原始字符串仍被接收，差异在后续累加发生，不能只检查第一条成功响应。
+
+**影响**：A类确认差异，直接改变策略评分和Benchmark统计。普通ASCII样本回归通过不能覆盖此输入范围。没有审计历史真实评测输入是否出现这些值，不能声称历史分数已被影响或完全未受影响。
+
+**版本/证据**：telemetry于 `a6bf5f381b0393b0ab93973502d9744d6b9e3713` / API8引入；同节点最小复现由Lab `r3_gap_audit_probe.py` 工具 `b76302acf93f1c54de2c40fb0ecccdaf956ee5a1`记录完整响应及状态，见[raw/compact](../../star-lab/experiments/2026-09-rust-r3-player-gaps/README.md)。
+
+**修复**：转换CPython3.13/Unicode15.1的Nd十进制数字后，仍沿用原数值格式/下划线规则；不把上标、圈号数字、Unicode加号等额外符号扩大为合法输入。标准表68组、680数字由本机CPython3.13的unicodedata生成，新增跨全部组及拒绝边界的差分契约。预定R3d3a修复，验收后更新状态；未来CPython/Unicode版本变化必须复核。
+
+## G006：对象转文字后的顺序差异
+
+**触发**：`strategy_ping(score=0.5,evidence={"z":1,"a":2})`。
+
+**Python**存 `"{'z': 1, 'a': 2}"`；**Rust API8**存 `"{'a': 2, 'z': 1}"`。响应可以完全相等，GameStats.strategy_evidence却不同。本次最小复现与G005共用工具和raw，受影响至少R3d2b；类似provider/model/faction错误文本转换的完整范围尚待审计。
+
+**影响/状态**：OPEN。这不是可忽略的JSON对象键排列，而是持久化的文字内容；可能影响后续评价器或LLM文本输入。示例数值策略分相同，尚未证明最终评分变化。下一阶段审查原输入顺序的保留与字符串转换，不能未经完整重放就全局替换JSON容器或静默拒绝原来接受的对象输入。实际评测若出现此类宽松输入，须报告本GAP，不能声称完全等价。
+
+## G007–G009：尚未迁移的应用能力
+
+- **G007 VLM（OPEN）**：Python有`handle_faction_state_vlm`；原Skirmish动作子集本来就不开放此verb，不能将双方均拒绝视为该功能完成。显式启用后Rust尚未实现图像附加路径。后续必须保持鉴权、结构化观测、帧的时点/视角/Fog/尺寸/编码及错误行为；不能偷偷给某Agent全图或另一阵营视角。当前源码用`pygame.image.save(BytesIO())`而标签写png，实际编码尚需以本版本字节核验；旧仓库的编码调查不是本版本已验证事实。
+- **G008 BOT（OPEN）**：Python可显式启用MockLLMAISystem；Rust NativeSession拒绝BOT。BOT决策/动作/资源与随机消费还没有完整闭环对照，不能将空AI槽当作原BOT难度的等价版本。缺失范围到当前R3d3a；下一阶段实现，不重调既有难度。
+- **G009 网络host（OPEN）**：Rust支持可信本地动作接口和结束通知计划，但GameScene拒绝Hub连接。认证来源、回合ACK/重试、墙钟LLM响应接纳、结束通知实际投递/上报等待仍须集成验证。Protocol性能不计本轮容量，并不意味着生命周期兼容可以跳过。没有真实联网Benchmark可比性结论。
+
+证据：[离线入口明确限制与拒绝契约](native-runtime.md)、[R3d2b归档](../../star-lab/experiments/2026-09-rust-r3-host/README.md)。这些是明确未完成项，不是已获准的新游戏规则。
+
+## G010–G012：曾经缺失、已分阶段补齐的能力
+
+- **G010（CLOSED于R3b）**：R3a `7f4ad57bbd6966748c0fb49deb82f6ad43fc7aee` 缺五种非图像观测，显式允许后仍报未实现；`d5abc70e9cda8a6820546112e6172dd9e43c1515` / `rust-kernel-r3b-2026-09-13`完成对应handler。54配置4203节点精确差分/重放；[前后探针](../../star-lab/experiments/2026-09-rust-r3-observations/README.md)。不能将此前Rust少观测的对局当同协议Benchmark。
+- **G011（CLOSED于R3d2b）**：R3d2a `91dc7688601c93192fea174c69981a315ac80ef9`的strategy_ping/report_llm_stats/retrieve_game_status返回Unknown action；`a6bf5f381b0393b0ab93973502d9744d6b9e3713`接通，66新契约及API7/8前后探针。[证据](../../star-lab/experiments/2026-09-rust-r3-host/README.md)。功能接通不等于所有宽松输入已等价，G005/G006单独保留。
+- **G012（CLOSED仅离线范围）**：R3d2a缺普通CLI/GameScene/结算host；R3d2b加入离线入口、等待到期一次权威快照报告。六场景510节点、新进程重放、四真实CLI进程通过；6JSON/CSV落盘，完整报告契约覆盖含Agent数据及失败路径。网络范围仍归G009；不能将关闭此离线项写成完整应用验收。
+
+更早R1/R2是明确标为子集的原型，缺失move/战斗/Fog/权限等能力的历史边界保留在[Lab阶段记录](../../star-lab/records/rust-env-migration.md)及各tag报告；本台账不是穷举所有开发中间态的声明。
+
+## 风险、保留机制与非GAP边界
+
+**R001（RISK）**：Python宽松类型、超长整数字符串、浮点转文字、非标准容器的错误顺序等还需扩大审计；本轮只关闭有直接反例和对应契约的范围。不能把尚未检查的类型都称为已确认错误。
+
+**R002（RISK）**：G004只补Player死亡成员同步。Combat/UnitSkills等冷数据如果将来出现新的写入路径，必须覆盖到派生数据；当前不能以一组正常小场景证明全部可选功能。
+
+以下是已识别的**原版机制/历史行为，迁移暂予保留（PRESERVED）**，不是本次新平衡规则：
+
+- 严重兵力损失影响移动预算；攻击随兵力弱化。用户讨论过取消移动弱化，但迁移计划明确单独处理，本分支没有取消。
+- 动态占用、友军穿行/敌军阻挡、移动路径/到达、固定模拟dt及CD/恢复规则；没有开放叠格或改用墙钟推进CD。
+- none/dummy/window的原有瞬移/动画、统计采样差异分别比较，不跨配置强行统一。
+- Agent占领与人工计时占领、人工/Agent结束回合的不同重置时点；fortify返回AP与实际AP的不一致、地形skill的success/result错配、godview的历史战报属性错误；见[已保留契约](native-runtime.md)。纠正这些机制须单独版本化，不借“Rust修bug”改规则。
+- R3d2b保留无Agent/已收齐也等待60墙钟秒的现有结算流程，以及同阵营重复统计累加。这影响评测完成时点与统计解释，但不是新增差异。
+- 只读批次共享没有TTL/上一帧观测；1/2/4线程当前串行，不算规则变化，也不能声称并行收益。更快实现引起墙钟响应接纳分布变化，需在性能实验中记录实际输入次序。
+
+## 每阶段维护与Benchmark使用要求
+
+1. 每项记录ID、首次发现/受影响的精确版本（区分源码追溯与实测）、两边行为、触发输入、影响范围、raw/测试、状态、修复SHA/tag、剩余限制。修复后保留反例及旧版本复现，不覆盖旧tag。
+2. 原始对局/报表注明backend、生产SHA、oracle标识、native API/schema、场景/模式/display、seed、dt/时钟、动作接纳顺序、Agent节奏及适用GAP ID。旧结果的影响须从日志审计，未知就明确写未知；合成实验不能代替真实LLM排名对照。
+3. 当前未合并main，因此原main节点的Python结果不因这些Rust改动自动改变；迁移分支的R0排序变化和实验性Rust结果需各自注明。不能跨版本直接混为一组基准结果。
+4. 若出现影响评分、胜负、权限或观测的信息差异，先加入台账并做最小复现。修复目标优先恢复当前oracle；若确需改变规则，明确新规则版本和评测可比性，再同步实现。未关闭的必需功能/GAP不得被“总测试数增加”掩盖或用来提前切默认后端。
+
+台账是持续维护文件，当前属于**回溯已归档重要差异＋本轮新增边界审计**，并非“没有列出就证明无差异”的完备性认证。
