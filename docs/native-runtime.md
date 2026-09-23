@@ -10,10 +10,49 @@ an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
 resource recovery, combat, Fog, statistics, team state and faction projections
 have differential contract tests. Trusted local registration, ownership checks and
 move/attack/faction-query dispatch, world termination and faction turn handoff
-are connected, including the five non-image observation variants. VLM frame capture,
-network post-game delivery and BOT are still pending. Offline GameScene and settlement now use NativeSession. Local input adapters
+are connected, including the five non-image observation variants and explicitly
+enabled VLM capture through the Python display adapter. Network post-game
+delivery and BOT integration are still pending. Offline GameScene and settlement now use NativeSession. Local input adapters
 now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
+
+## Product boundary: native execution, Python usability
+
+The migration delivers a Python-facing benchmark powered by a Rust kernel. Its
+completion criterion is correct behavior and measured capacity, not the fraction
+of source files rewritten in Rust. Preserve the four architectural layers; a
+language boundary is not an additional product layer.
+
+| Responsibility | Default placement |
+| --- | --- |
+| Authoritative ECS state, simulation clock, gameplay transitions, movement/path/occupancy, combat, recovery, Fog, permissions and observation computation | Rust |
+| Activity tracking, read-phase scheduling, batch evaluation and measured high-volume data assembly | Rust |
+| Public Agent/ENV API, Python SDK, configuration, scenario authoring, launch/CLI, experiments and model-provider integration | Python |
+| Window/input/UI composition, existing render adapters, reports, examples and community extensions | Python; move measured expensive computations below the interface when needed |
+| Protocol authentication/connection orchestration and BOT policy | Python-facing; profile central dispatch, encoding and mass policy execution before assigning their hot paths |
+
+A Python API must submit coarse commands/batches and consume owned results or
+compact display deltas. It must not traverse every authoritative component, call
+Rust once per Unit every tick, copy the full world per Agent, or require Python
+callbacks inside native hot loops. User-authored policies/extensions interact
+through explicit commands and validated configuration; they do not mutate a
+second authoritative Python world. Future native accelerators remain accessible
+through stable Python interfaces rather than requiring benchmark users to learn
+Rust. Published wheels should keep compiler setup out of normal installation.
+
+The architecture must accommodate expansion toward **5000 Agents**, independently
+of Unit count. The existing first acceptance gate remains 5000 Units / 1000 Agents
+at 30Hz with roughly 30-second Agent closed loops. A 5000-Agent capacity result
+must state Units, observation/decision rates, payload sizes, hardware and queue
+limits; it is not implied by a 5000-Unit result. Do not poll or run Python Agent
+callbacks at world frequency merely because the simulation ticks at 30Hz.
+
+Language-placement decisions follow profiling, iteration frequency, data volume
+and cross-language transfer cost. Moving implementation below the Python API
+must preserve game rules, observation content, permissions and action order;
+record any Benchmark-relevant gap in the compatibility ledger. Community-facing
+policy remains easy to change without rebuilding Rust; authoritative high-volume
+execution has one owner in the kernel.
 
 The Cargo workspace has three crates:
 
