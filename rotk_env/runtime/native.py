@@ -102,6 +102,31 @@ class RustRuntime:
         self._native.step(dt, time.time() if wall_time is None else wall_time)
 
     @_serialized
+    def host_status(self, *, expected_epoch=None):
+        """Small authoritative lifecycle facts; no world/display export."""
+        return json.loads(self._native.host_status_json(expected_epoch))
+
+    @_serialized
+    def record_message(self, agent_id, *, expected_epoch=None):
+        """Trusted transport accounting, once per admitted inbound message.
+
+        Preserve legacy placement: after a single action, before a batch. An
+        unregistered sender increments its own counter then raises, as in Python.
+        """
+        self._native.record_message(agent_id, expected_epoch)
+
+    @_serialized
+    def turn_start_context(self, *, wall_time=None, expected_epoch=None):
+        """Read after successful Agent end_turn on the owner admission thread.
+
+        Return registry-then-stats candidates for the transport's legacy set
+        insertion and connected-ID filtering. Calling this does not send, ACK,
+        retry or change a turn. Human turn notifications are not added implicitly.
+        """
+        return json.loads(self._native.turn_start_context_json(
+            time.time() if wall_time is None else wall_time, expected_epoch))
+
+    @_serialized
     def prepare_game_end(self, connected_agents, *, wall_time=None, expected_epoch=None):
         """Update native collection counters and return an ordered delivery plan.
 

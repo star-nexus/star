@@ -236,7 +236,7 @@ impl Runtime {
                 .map(String::from)
         })
     }
-    fn ensure_action_stats(&mut self) -> Result<(), String> {
+    pub(crate) fn ensure_action_stats(&mut self) -> Result<(), String> {
         if !self.singletons.contains_key("GameStats") {
             let defaults = self.config.interface["game_stats_defaults"].clone();
             if !defaults.is_object() {

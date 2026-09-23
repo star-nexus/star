@@ -122,8 +122,8 @@ class OfflineSettlementHost:
 
     def update(self, wall_time):
         self.session._check_open()
-        state = self.session.world.get_singleton_component(c.GameState)
-        if state is None or not state.game_over:
+        state = self.session.runtime.host_status(expected_epoch=self.session.controls.epoch)
+        if not state['game_over']:
             return
         if not self.notified:
             self.session.runtime.prepare_game_end([], wall_time=wall_time, expected_epoch=self.session.controls.epoch)

@@ -61,6 +61,37 @@ impl NativeRuntime {
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
+    #[pyo3(signature=(expected_epoch=None))]
+    fn host_status_json(&self, py: Python<'_>, expected_epoch: Option<u64>) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            Ok(r.host_status().to_string())
+        })
+    }
+    #[pyo3(signature=(agent_id, expected_epoch=None))]
+    fn record_message(
+        &self,
+        py: Python<'_>,
+        agent_id: Option<String>,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<()> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            r.record_message(agent_id.as_deref())
+        })
+    }
+    #[pyo3(signature=(wall_time, expected_epoch=None))]
+    fn turn_start_context_json(
+        &self,
+        py: Python<'_>,
+        wall_time: f64,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            Ok(r.turn_start_context(wall_time)?.to_string())
+        })
+    }
     #[pyo3(signature=(connected_agents, wall_time, expected_epoch=None))]
     fn prepare_game_end_json(
         &self,
