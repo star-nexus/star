@@ -182,8 +182,8 @@ impl Runtime {
                 .as_str()
                 .unwrap_or("Move failed")
                 .to_string();
-            result.as_object_mut().unwrap().remove("success");
-            result.as_object_mut().unwrap().remove("message");
+            result.as_object_mut().unwrap().shift_remove("success");
+            result.as_object_mut().unwrap().shift_remove("message");
             return extra(&message, result);
         }
         let start: hex::Hex = serde_json::from_value(result["from"].clone()).unwrap();

@@ -128,7 +128,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version9 and scene schema5 in addition to the rules marker.
+The runtime now has API version10 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -344,7 +344,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API9 release wheel, run from a complete checkout
+After installing the matching API10 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -395,3 +395,16 @@ list is copied across the interface on each death. This fixes a presentation gap
 not a change to combat or authoritative observation rules. Reset requires a new
 presentation consumer and baseline. Other dynamic cold-component coverage still
 needs audit; see G004 and R002 in the GAP ledger.
+
+### R3d3b: ordered JSON inputs (API10)
+
+JSON-shaped input objects retain insertion order through native parsing, storage,
+export and reset. This matters when legacy handlers convert accepted objects into
+strategy evidence or accumulated provider/model labels. First reports still store
+raw labels; no input is pre-stringified by the Python adapter. Recursive mapping
+order is preserved; gameplay entity/event order remains explicitly defined by the
+normalized oracle. API10 rejects an older wheel even though scene schema5 and the
+rule marker are unchanged. Historical artifacts must use their original wheels.
+
+This is not a promise that every permissive Python string/number conversion is
+equivalent. See the [Benchmark GAP ledger](native-benchmark-gaps.md).
