@@ -4,7 +4,6 @@ from copy import deepcopy
 import pytest
 
 pytest.importorskip('star_native')
-from rotk_env import components as c
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.runtime.native import ActionRequest, RustRuntime
 from rotk_env.systems.llm_system import LLMSystem
@@ -28,7 +27,7 @@ def test_strategy_evidence_keeps_recursive_input_order(pair, value):
     expected = str(value)
     if len(expected) > 120:
         expected = expected[:117] + '...'
-    assert world.get_singleton_component(c.GameStats).strategy_evidence['wei'] == [expected]
+    assert export_initial_state(world)['singletons']['GameStats']['strategy_evidence']['wei'] == [expected]
 
 
 @pytest.mark.parametrize('value', VALUES)
@@ -69,6 +68,8 @@ def test_batch_export_import_reset_keep_input_order_and_owned_results(threads, f
             snapshot = runtime.export_state()
             # Dict equality alone would miss reordering; inspect the stored label explicitly.
             assert snapshot == export_initial_state(world)
+            stored_label = snapshot['singletons']['GameStats']['llm_api_stats']['wei']['provider']
+            assert str(stored_label) == str(label)
             # Roundtrip the native-owned snapshot, not just the original Python bootstrap.
             runtime.reset(snapshot)
             snapshot['singletons'].clear()  # Returned state cannot alias the authority.
@@ -81,3 +82,9 @@ def test_batch_export_import_reset_keep_input_order_and_owned_results(threads, f
             assert runtime.export_state() == export_initial_state(world)
     finally:
         world.reset()
+
+
+@pytest.mark.parametrize('value', [1e-7, 1e20, -0.0, 1.2345678901234567, 10**100])
+def test_numeric_text_keeps_python_wire_representation(pair, value):
+    _, _, call = pair
+    call('a', 'strategy_ping', dict(faction='wei', score=.5, evidence=[value]))
