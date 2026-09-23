@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API11 release wheel, run from a complete checkout
+After installing the matching API12 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -501,3 +501,41 @@ the TGA packet contains the transformed RGB bytes. Old Python and API11 match
 byte-for-byte. The Lab archive preserves the initially failing raw-pixel guard,
 the independent codec control, and the corrected comparison against Python's
 encoded bytes. This is an existing codec behavior, not a Rust rendering change.
+
+### R3d4a: compact native host authority (API12)
+
+Python continues to own connections, authenticated sender extraction, owner-thread
+admission, ACK/retry timers, notification delivery and report formatting. The
+following **trusted host APIs are not Agent actions**:
+
+| API | Responsibility |
+| --- | --- |
+| `host_status(expected_epoch=...)` | Read four authoritative fields: `game_over`, `current_player`, `turn_number`, `winner`; constant-size output without Units or history. |
+| `record_message(agent_id, expected_epoch=...)` | Count one inbound message in Rust's GameStats, separately from action counts. |
+| `turn_start_context(wall_time=..., expected_epoch=...)` | After successful Agent `end_turn`, read the current faction/turn and registry-then-stats notification candidates. |
+
+The offline settlement host now reads `host_status` rather than the mutable
+Python display cache. Report creation still exports one complete state at the
+existing 60-second wall-clock deadline. Simulation CD continues to use `step(dt)`.
+
+These APIs release the GIL, use the same native lock and Python admission lock,
+and reject stale epochs/closed runtimes. Results own their data. A network owner
+must call `turn_start_context` immediately after the successful action, before
+admitting another write; separate calls do not create an atomic transaction.
+There is no new per-tick Agent scan: status reads a singleton, message recording
+updates counters, and turn candidates scan registry/mapping only on handoff.
+The candidate path remains O(registered Agents), not a claim of O(active) routing.
+
+Compatibility details matter: single-action messages are counted **after** their
+action; batches are counted **before** their actions. An unregistered nonempty
+sender increments its personal counter and then raises, preserving Python's
+partial write. Counters support integers beyond u64. Turn candidates retain
+duplicates and the original registry-then-stats insertion order. The Python host
+must add them individually to a set and then filter by connected IDs, retaining
+the legacy delivery order. Re-registering to another faction leaves the old
+registry row; this migration does not silently change notification eligibility.
+
+API12 is a host contract checkpoint. Hub-enabled GameScene, actual turn ACK/retry
+and delivery remain unavailable pending G009 integration; these methods alone do
+not establish network support, true parallelism, or 5000-Agent capacity. The
+Python backend remains default. Rebuild/install the matching wheel when updating.
