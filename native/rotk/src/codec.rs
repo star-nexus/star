@@ -44,7 +44,16 @@ pub fn string_repr(text: &str) -> String {
                 out.push('\\');
                 out.push(c);
             }
-            c if c.is_ascii_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if !crate::unicode_repr::printable(c) => {
+                let code = c as u32;
+                if code <= 0xff {
+                    out.push_str(&format!("\\x{code:02x}"));
+                } else if code <= 0xffff {
+                    out.push_str(&format!("\\u{code:04x}"));
+                } else {
+                    out.push_str(&format!("\\U{code:08x}"));
+                }
+            }
             c => out.push(c),
         }
     }

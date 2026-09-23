@@ -408,3 +408,11 @@ rule marker are unchanged. Historical artifacts must use their original wheels.
 
 This is not a promise that every permissive Python string/number conversion is
 equivalent. See the [Benchmark GAP ledger](native-benchmark-gaps.md).
+
+API10 also preserves CPython 3.13 / Unicode 15.1 non-printable character escaping
+in nested object/list representations. Top-level strings stay raw, as in Python.
+The generated table has 713 ranges and is versioned with the oracle; the Lab
+generator can verify it using `--check`. Updating Python/Unicode requires an
+explicit compatibility audit. No Python callbacks are used inside native text
+conversion. This boundary accepts Unicode scalar strings; arbitrary Python objects
+and lone-surrogate transport compatibility are not established.

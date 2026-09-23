@@ -88,3 +88,37 @@ def test_batch_export_import_reset_keep_input_order_and_owned_results(threads, f
 def test_numeric_text_keeps_python_wire_representation(pair, value):
     _, _, call = pair
     call('a', 'strategy_ping', dict(faction='wei', score=.5, evidence=[value]))
+
+
+# Exercise every isprintable transition and its neighbors through the public API.
+# Small strings keep all tested characters before the legacy 120-character cutoff.
+_POINTS = set()
+_previous = True
+for _code in range(0x110000):
+    _printable = chr(_code).isprintable()
+    if _printable != _previous:
+        _POINTS.update(range(max(0, _code - 1), min(0x110000, _code + 2)))
+    _previous = _printable
+_CHARS = [chr(code) for code in sorted(_POINTS) if not 0xD800 <= code <= 0xDFFF]
+_REPR_CHUNKS = [_CHARS[i:i + 8] for i in range(0, len(_CHARS), 8)]
+
+
+@pytest.mark.parametrize('part', range(16))
+def test_python_unicode_repr_boundaries_in_nested_input(part, pair, frozen):
+    _, _, call = pair
+    for chars in _REPR_CHUNKS[part::16]:
+        frozen[0] += 61
+        value = [''.join(chars)]
+        assert len(str(value)) <= 120
+        call('a', 'strategy_ping', dict(faction='wei', score=.5, evidence=value))
+
+
+def test_nonprintable_top_level_strings_stay_raw_and_labels_roundtrip(pair):
+    world, runtime, call = pair
+    value = '\u00a0\u2028\ue000\U0010ffff'
+    call('a', 'strategy_ping', dict(faction='wei', score=.5, evidence=value))
+    assert export_initial_state(world)['singletons']['GameStats']['strategy_evidence']['wei'] == [value]
+    params = dict(faction='wei', api_stats={}, provider=[value], model_id={value: None})
+    call('a', 'report_llm_stats', params)
+    runtime.reset(runtime.export_state())
+    call('b', 'report_llm_stats', dict(faction='wei', api_stats={}, provider='next', model_id='next'))

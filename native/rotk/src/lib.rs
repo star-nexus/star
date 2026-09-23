@@ -21,6 +21,7 @@ pub mod telemetry;
 pub mod territory;
 pub mod turn;
 mod unicode_decimal;
+mod unicode_repr;
 pub mod unit_actions;
 pub mod vision;
 pub const SCHEMA_VERSION: u32 = 5;
