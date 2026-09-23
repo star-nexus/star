@@ -455,3 +455,10 @@ Benchmark inputs. Correcting the encoding or perspective policy requires a
 separate versioned contract change. Missing displays return the same errors; a
 headless 1x1 surface stays 1x1. Linux/3.14 and real multimodal model delivery remain
 unverified. See [G007 and preserved visual semantics](native-benchmark-gaps.md).
+
+The inherited alpha path is also not a lossless raw-RGB screenshot contract:
+on the pinned stack `(200,80,30,128)` decodes as `(100,40,15,128)` after capture;
+the TGA packet contains the transformed RGB bytes. Old Python and API11 match
+byte-for-byte. The Lab archive preserves the initially failing raw-pixel guard,
+the independent codec control, and the corrected comparison against Python's
+encoded bytes. This is an existing codec behavior, not a Rust rendering change.
