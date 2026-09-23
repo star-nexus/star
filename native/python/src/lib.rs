@@ -202,6 +202,21 @@ impl NativeRuntime {
             Ok(r.execute_request(request)?.to_string())
         })
     }
+    /// Decode a complete batch before the Python host splits at display reads.
+    /// Keep malformed envelopes atomic even when later entries require a frame.
+    fn _validate_requests_json(&self, py: Python<'_>, requests_json: String) -> PyResult<()> {
+        self.with_runtime(py, |_| {
+            let requests: Vec<star_rotk::actions::Request> =
+                serde_json::from_str(&requests_json).map_err(|e| e.to_string())?;
+            if requests
+                .iter()
+                .any(|request| !request.wall_time.is_finite())
+            {
+                return Err("wall metadata must be finite".into());
+            }
+            Ok(())
+        })
+    }
     /// Ordered requests; consecutive faction queries share a borrowed read context.
     /// Envelope decoding is atomic; execution is sequential, not a transaction.
     fn execute_actions_json(&self, py: Python<'_>, requests_json: String) -> PyResult<String> {

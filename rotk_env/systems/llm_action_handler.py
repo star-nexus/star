@@ -8,8 +8,6 @@ LLM Action Handler - Minimal, robust, and efficient action gateway
 Designed for clarity and reliability when driven by language models.
 """
 
-import base64
-import io
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 from framework import World
@@ -1365,34 +1363,8 @@ class LLMActionHandler:
         Returns:
             (base64_str, None) on success; (None, error_message) on failure.
         """
-        # pygame and the render stack are imported here rather than at module
-        # scope: this is the only path in the handler that needs a display, and
-        # `get_faction_state_vlm` is not in the skirmish action set. A top-level
-        # import would pull SDL into every headless rule test.
-        try:
-            import pygame
-            from framework.engine.renders import RenderEngine
-        except ImportError as e:
-            return None, f"Display stack unavailable: {e}"
-
-        try:
-            re = RenderEngine()
-            screen = re.screen
-        except Exception as e:
-            return None, f"RenderEngine/screen not available: {e}"
-
-        try:
-            surf = screen.copy()
-        except Exception as e:
-            return None, f"Screen copy failed: {e}"
-
-        try:
-            buf = io.BytesIO()
-            pygame.image.save(surf, buf)
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            return b64, None
-        except Exception as e:
-            return None, f"Encode frame to base64 failed: {e}"
+        from framework.engine.frame_capture import capture_rendered_frame
+        return capture_rendered_frame()
 
     def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Same JSON as ``get_faction_state``, plus a full-board PNG."""

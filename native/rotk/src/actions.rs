@@ -496,7 +496,11 @@ impl Runtime {
                 let p = self.action_docs();
                 json!({"result":true,"success":true,"actions":p["docs"],"names":p["names"]})
             }
-            "get_faction_state" if self.allowed_actions().iter().any(|n| n == action) => {
+            // Image bytes are attached by the Python display adapter after this
+            // authorized projection, before any later request is admitted.
+            "get_faction_state" | "get_faction_state_vlm"
+                if self.allowed_actions().iter().any(|n| n == action) =>
+            {
                 ObservationBatch::new(self).faction_state(params)
             }
             "observation" if self.allowed_actions().iter().any(|n| n == action) => {

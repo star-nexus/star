@@ -2,6 +2,8 @@
 import datetime
 import json
 import time
+from functools import wraps
+from threading import RLock
 from dataclasses import dataclass
 from typing import Any
 from rotk_env.components.agent_info import AgentInfoRegistry
@@ -61,20 +63,45 @@ def _decode_result(result):
     return result
 
 
+def _serialized(method):
+    """Keep native queries plus Python display capture in one admission boundary."""
+    @wraps(method)
+    def invoke(self, *args, **kwargs):
+        with self._admission_lock:
+            return method(self, *args, **kwargs)
+    return invoke
+
+
+def _complete_result(action, result):
+    result = _decode_result(result)
+    if action == 'get_faction_state_vlm' and result.get('success'):
+        from framework.engine.frame_capture import capture_rendered_frame
+        frame, error = capture_rendered_frame()
+        result['frame_base64'] = frame
+        result['frame_format'] = 'png' if frame else None
+        if error is not None:
+            result['frame_error'] = error
+    return result
+
+
 class RustRuntime:
     """Owned native runtime; supported requests do not imply full gameplay readiness."""
     backend = 'rust'
 
     def __init__(self, initial_state, *, threads=1):
+        self._admission_lock = RLock()
         native = load_native()
         self._native = native(json.dumps(initial_state, allow_nan=False), threads)
 
+    @_serialized
     def reset(self, initial_state):
         self._native.reset(json.dumps(initial_state, allow_nan=False))
 
+    @_serialized
     def step(self, dt, *, wall_time=None):
         self._native.step(dt, time.time() if wall_time is None else wall_time)
 
+    @_serialized
     def prepare_game_end(self, connected_agents, *, wall_time=None, expected_epoch=None):
         """Update native collection counters and return an ordered delivery plan.
 
@@ -84,6 +111,7 @@ class RustRuntime:
         return json.loads(self._native.prepare_game_end_json(
             list(connected_agents), time.time() if wall_time is None else wall_time, expected_epoch))
 
+    @_serialized
     def execute_control(self, kind, *, wall_time=None, expected_epoch=None, **parameters):
         """Trusted local UI input; never use this method for Agent/Hub requests.
 
@@ -98,9 +126,10 @@ class RustRuntime:
             expected_epoch,
         ))
 
+    @_serialized
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None, connected_agents=0):
         request = ActionRequest(agent_id, action, parameters, wall_time, registration_time, connected_agents)
-        return _decode_result(json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))
+        return _complete_result(action, json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))
 
     def execute_actions(self, requests):
         """Execute supplied envelopes in order; prior commands are not rolled back on failure.
@@ -110,11 +139,38 @@ class RustRuntime:
         """
         return self.execute_actions_diagnostic(requests)["results"]
 
+    @_serialized
     def execute_actions_diagnostic(self, requests):
         """The same request path plus per-read-segment cache-build counts for Lab."""
         wire = [request.to_wire() for request in requests]
-        report = json.loads(self._native.execute_actions_json(json.dumps(wire, allow_nan=False)))
-        report['results'] = [_decode_result(result) for result in report['results']]
+        payload = json.dumps(wire, allow_nan=False)
+        if not any(request['action'] == 'get_faction_state_vlm' for request in wire):
+            report = json.loads(self._native.execute_actions_json(payload))
+            report['results'] = [_decode_result(result) for result in report['results']]
+            return report
+        # Decode the entire batch first: a malformed later envelope must not
+        # cause an earlier action to execute just because a display read split it.
+        self._native._validate_requests_json(payload)
+        report = dict(results=[], observation_segments=[])
+        def flush(segment):
+            if not segment:
+                return
+            partial = json.loads(self._native.execute_actions_json(json.dumps(segment, allow_nan=False)))
+            offset = len(report['results'])
+            report['results'].extend(_decode_result(result) for result in partial['results'])
+            for item in partial['observation_segments']:
+                report['observation_segments'].append({**item, 'start': item['start'] + offset,
+                                                      'end': item['end'] + offset})
+        segment = []
+        for request in wire:
+            if request['action'] != 'get_faction_state_vlm':
+                segment.append(request)
+                continue
+            flush(segment)
+            segment = []
+            result = json.loads(self._native.execute_action_json(json.dumps(request, allow_nan=False)))
+            report['results'].append(_complete_result(request['action'], result))
+        flush(segment)
         return report
 
     def get_faction_state(self, faction, *, agent_id, unit_ids=_UNSET, wall_time=None):
@@ -123,26 +179,33 @@ class RustRuntime:
             parameters["unit_ids"] = unit_ids
         return self.execute_action("get_faction_state", parameters, agent_id=agent_id, wall_time=wall_time)
 
+    @_serialized
     def finish_human_turn(self, *, wall_time=None, expected_epoch=None):
         """Trusted Framework input, with the legacy human reset-before-check semantics."""
         self._native.finish_human_turn(time.time() if wall_time is None else wall_time, expected_epoch)
 
+    @_serialized
     def start_capture(self, unit_id, position, *, wall_time=None, expected_epoch=None):
         """Trusted Framework input for timed capture; Agent occupy is immediate."""
         return self._native.start_capture(unit_id, position, time.time() if wall_time is None else wall_time, expected_epoch)
 
+    @_serialized
     def set_clock(self, *, paused, time_scale=1.0):
         self._native.set_clock(paused, time_scale)
 
+    @_serialized
     def export_state(self, *, expected_epoch=None):
         return json.loads(self._native.export_state_json(expected_epoch))
 
+    @_serialized
     def diagnostics(self):
         return json.loads(self._native.diagnostics_json())
 
+    @_serialized
     def take_presentation_delta(self, *, expected_epoch=None):
         return json.loads(self._native.take_presentation_delta_json(expected_epoch))
 
+    @_serialized
     def close(self):
         self._native.close()
 
