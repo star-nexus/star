@@ -90,6 +90,7 @@ def test_first_registration_message_retains_legacy_counting_position(batch, froz
 @pytest.mark.parametrize('connected', [[], ['a'], ['b', 'c', 'unknown', 'a'], [f'id{i}' for i in range(30)]])
 def test_turn_candidates_reproduce_legacy_notification_order_and_stale_registry(threads, connected, frozen, monkeypatch):
     world, _, _, llm = setup('none')
+    world.get_singleton_component(c.GameState).current_player = Faction.WEI
     sent = []
     monkeypatch.setattr(llm, 'send_message', lambda payload, *, target: sent.append((deepcopy(payload), target['id'])))
     llm.client.connected_agents = dict.fromkeys(connected, {})
