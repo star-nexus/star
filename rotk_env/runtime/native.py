@@ -151,6 +151,7 @@ class RustRuntime:
         # Decode the entire batch first: a malformed later envelope must not
         # cause an earlier action to execute just because a display read split it.
         self._native._validate_requests_json(payload)
+        wire = json.loads(payload)  # Freeze the entire admitted batch before a capture can yield.
         report = dict(results=[], observation_segments=[])
         def flush(segment):
             if not segment:

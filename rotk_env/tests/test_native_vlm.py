@@ -157,6 +157,9 @@ def test_mixed_batch_captures_before_later_actions_and_preserves_read_segments(t
             captured=[];capture=frame_capture.capture_rendered_frame
             def record():
                 captured.append(runtime.export_state()['entities'])
+                # A caller may mutate its later request while image capture yields.
+                # The already-admitted batch must keep the original wire snapshot.
+                requests[4].parameters['target_position']['col'] = 999
                 return capture()
             monkeypatch.setattr(frame_capture, 'capture_rendered_frame', record)
             report=runtime.execute_actions_diagnostic(requests)
