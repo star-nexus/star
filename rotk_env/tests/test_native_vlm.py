@@ -221,7 +221,7 @@ def test_other_runtime_writer_cannot_pass_a_pending_capture(operation, monkeypat
         release.set();runtime.close();world.reset()
 
 
-def test_plain_queries_do_not_import_or_capture_display(monkeypatch, frozen):
+def test_plain_queries_do_not_capture_display(monkeypatch, frozen):
     world, _, _ = make()
     monkeypatch.setattr(frame_capture,'capture_rendered_frame',lambda:pytest.fail('plain query captured a frame'))
     try:

@@ -128,7 +128,7 @@ The current native rules marker is `python-r0c-3cc4ffe`. R0b adds lexical orderi
 for available skill names, omitted by the initial R0 normalization. Old oracle
 tags and historical extension wheels remain reproducible at their recorded source.
 R0c also orders the two legacy/named observation terrain lists by coordinates.
-The runtime now has API version10 and scene schema5 in addition to the rules marker.
+The runtime now has API version11 and scene schema5 in addition to the rules marker.
 The current Python adapter rejects extensions without the matching API marker;
 scene schemas1/2/3/4 are rejected on import/reset. This prevents older R2 kernels from
 silently ignoring newly introduced lifecycle, territory, observation-cache or combat-presentation metadata. Rebuild after source changes;
@@ -344,7 +344,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API10 release wheel, run from a complete checkout
+After installing the matching API11 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -416,3 +416,42 @@ generator can verify it using `--check`. Updating Python/Unicode requires an
 explicit compatibility audit. No Python callbacks are used inside native text
 conversion. This boundary accepts Unicode scalar strings; arbitrary Python objects
 and lone-surrogate transport compatibility are not established.
+
+### R3d3c: VLM display attachment (API11)
+
+`RustRuntime.execute_action("get_faction_state_vlm", ..., agent_id=...)` and
+ordered request batches support the same explicitly enabled verb as Python.
+Skirmish defaults remain move/attack/get_faction_state (plus end_turn in turn mode);
+VLM is not silently added to `MatchRules.game_actions`. Native registration,
+faction checks, trusted identity, unit selection and structured observation run
+before any display read. Failed/unsupported queries do not capture a frame.
+
+The Rust kernel returns the authorized structured projection. The public Python
+adapter then copies the existing `RenderEngine.screen` and attaches the legacy
+`frame_base64`, `frame_format`, and optional `frame_error`. A capture failure keeps
+the successful structured query and its normal counters. The low-level
+`star_native.NativeRuntime` JSON methods are the kernel boundary and do not attach
+Python-rendered media; applications use `rotk_env.runtime.native.RustRuntime`.
+
+A batch is fully decoded and detached before execution. It splits at each VLM
+request so capture completes before later commands; adjacent ordinary faction
+queries still share their native read context. A per-runtime admission lock spans
+the native query and Python capture, serializing step/reset/close/local controls
+through this public adapter. Native computation still releases the GIL. Rendering
+and real framebuffer queries belong on the application/display owner thread;
+this lock does not synchronize unrelated windows or other runtime instances.
+
+**Inherited visual contract:** this is the current global framebuffer, including
+its current camera, UI perspective and Fog. It may precede the latest action;
+no redraw or per-Agent faction view is imposed by querying. A Wei request can
+therefore receive the current Shu/spectator view, just as in Python. Structured
+JSON still obeys the requesting faction and control permissions. Do not describe
+this API as an isolated, current-tick, per-Agent visual observation.
+
+The legacy `pygame.image.save(surface, BytesIO())` encoder produces TGA on the
+locked pygame 2.6.1 stack, while the response says `frame_format="png"`. API11
+preserves that existing wire behavior; it does not relabel or re-encode historical
+Benchmark inputs. Correcting the encoding or perspective policy requires a
+separate versioned contract change. Missing displays return the same errors; a
+headless 1x1 surface stays 1x1. Linux/3.14 and real multimodal model delivery remain
+unverified. See [G007 and preserved visual semantics](native-benchmark-gaps.md).
