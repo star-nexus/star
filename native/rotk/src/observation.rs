@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Serialize, Serializer, ser::SerializeMap};
 use serde_json::{Value, json, value::RawValue};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Owned immutable fields, encoded once inside a write-free observation segment.
@@ -113,6 +113,9 @@ pub struct Metrics {
     panel_encodes: usize,
     shared_public_results: usize,
     shared_panel_results: usize,
+    parallel_panel_batches: usize,
+    panel_tasks: usize,
+    panel_worker_threads: usize,
 }
 pub struct ObservationBatch<'a> {
     runtime: &'a Runtime,
@@ -121,6 +124,7 @@ pub struct ObservationBatch<'a> {
     panels: HashMap<u64, Arc<EncodedObject>>,
     enemies: HashMap<u64, Value>,
     tiles: HashMap<Hex, Value>,
+    panel_workers: HashSet<std::thread::ThreadId>,
     pub metrics: Metrics,
 }
 pub fn error(message: &str) -> Value {
@@ -135,6 +139,7 @@ impl<'a> ObservationBatch<'a> {
             panels: HashMap::new(),
             enemies: HashMap::new(),
             tiles: HashMap::new(),
+            panel_workers: HashSet::new(),
             metrics: Metrics::default(),
         }
     }
@@ -306,30 +311,64 @@ impl<'a> ObservationBatch<'a> {
             },
         );
     }
-    fn panel(&mut self, id: u64, faction: &str) {
-        if self.panels.contains_key(&id) {
-            return;
-        }
-        self.metrics.panel_builds += 1;
-        let r = self.runtime;
-        let attackable = self.attackable(id, faction);
-        let reachable: Vec<_> = r
-            .reachable(id)
+    fn prepare_panels(&mut self, ids: &[u64], faction: &str) {
+        let missing: Vec<_> = ids
             .iter()
-            .map(|p| json!({"col":p.0,"row":p.1}))
+            .copied()
+            .filter(|id| !self.panels.contains_key(id))
             .collect();
-        let mut info = r.detailed_unit_info(id);
-        info["reachable"] = Value::Array(reachable);
-        info["attackable"] = json!(attackable);
-        self.metrics.panel_encodes += 1;
-        self.panels.insert(id, Arc::new(EncodedObject::new(info)));
+        let r = self.runtime;
+        let enemies = &self.factions[faction].enemies;
+        let compute = |ids: &[u64]| {
+            ids.iter()
+                .map(|&id| {
+                    let mut metrics = Metrics::default();
+                    let attackable = Self::attackable(r, id, enemies, &mut metrics);
+                    let reachable = r
+                        .reachable(id)
+                        .iter()
+                        .map(|p| json!({"col":p.0,"row":p.1}))
+                        .collect();
+                    let mut info = r.detailed_unit_info(id);
+                    info["reachable"] = Value::Array(reachable);
+                    info["attackable"] = json!(attackable);
+                    (id, Arc::new(EncodedObject::new(info)), metrics)
+                })
+                .collect::<Vec<_>>()
+        };
+        let outputs = if let Some(pool) = r.observation_pool.as_ref().filter(|_| missing.len() > 1)
+        {
+            self.metrics.parallel_panel_batches += 1;
+            let chunks = pool.map_chunks(&missing, compute);
+            self.metrics.panel_tasks += chunks.len();
+            for (_, worker) in &chunks {
+                self.panel_workers.insert(*worker);
+            }
+            self.metrics.panel_worker_threads = self.panel_workers.len();
+            chunks.into_iter().flat_map(|(values, _)| values).collect()
+        } else {
+            compute(&missing)
+        };
+        // Commit caches/counters only after the scoped read jobs have joined.
+        for (id, panel, metrics) in outputs {
+            self.metrics.panel_builds += 1;
+            self.metrics.panel_encodes += 1;
+            self.metrics.attack_cell_lookups += metrics.attack_cell_lookups;
+            self.metrics.attack_distance_checks += metrics.attack_distance_checks;
+            self.metrics.attack_rule_checks += metrics.attack_rule_checks;
+            self.panels.insert(id, panel);
+        }
     }
     /// Exact broad phase: range is a necessary condition of can_attack. Reuse
     /// authoritative occupancy and the faction's visible-enemy set; never expand
     /// information access or cache across a write. Work is bounded by the smaller
     /// of the hex disc and enemy list, plus occupants of the visited cells.
-    fn attackable(&mut self, id: u64, faction: &str) -> Vec<u64> {
-        let r = self.runtime;
+    fn attackable(
+        r: &Runtime,
+        id: u64,
+        enemies: &BTreeSet<u64>,
+        metrics: &mut Metrics,
+    ) -> Vec<u64> {
         if !r.can_attack(id, None) {
             return vec![];
         }
@@ -340,7 +379,6 @@ impl<'a> ObservationBatch<'a> {
         if radius < 0 {
             return vec![];
         }
-        let enemies = &self.factions[faction].enemies;
         let wide = radius as u128;
         let cells = 1 + 3 * wide * (wide + 1);
         let mut candidates = vec![];
@@ -348,7 +386,7 @@ impl<'a> ObservationBatch<'a> {
             let (q, s) = hex::axial(position.hex());
             for dq in -radius..=radius {
                 for ds in (-radius).max(-dq - radius)..=radius.min(-dq + radius) {
-                    self.metrics.attack_cell_lookups += 1;
+                    metrics.attack_cell_lookups += 1;
                     let cell = hex::offset((q + dq, s + ds));
                     if let Some(occupants) = r.spatial.cells.get(&cell) {
                         candidates
@@ -362,7 +400,7 @@ impl<'a> ObservationBatch<'a> {
             // Huge/custom ranges and small enemy sets must not allocate/enumerate
             // a huge disc. Distance rejection also avoids constructing error JSON.
             for &enemy in enemies {
-                self.metrics.attack_distance_checks += 1;
+                metrics.attack_distance_checks += 1;
                 if r.component::<Position>(enemy)
                     .is_some_and(|p| hex::distance(position.hex(), p.hex()) <= radius)
                 {
@@ -371,7 +409,7 @@ impl<'a> ObservationBatch<'a> {
             }
         }
         candidates.retain(|&enemy| {
-            self.metrics.attack_rule_checks += 1;
+            metrics.attack_rule_checks += 1;
             r.can_attack(id, Some(enemy))
         });
         candidates
@@ -447,9 +485,9 @@ impl<'a> ObservationBatch<'a> {
         };
         self.faction(faction);
         let ids = selected.unwrap_or_else(|| self.factions[faction].alive.clone());
+        self.prepare_panels(&ids, faction);
         let mut units = vec![];
         for id in ids {
-            self.panel(id, faction);
             let owner = r.team.as_ref().and_then(|t| t.owner(id));
             units.push(UnitResponse {
                 panel: Arc::clone(&self.panels[&id]),

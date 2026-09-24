@@ -51,12 +51,7 @@ impl NativeRuntime {
         })
     }
     fn reset(&self, py: Python<'_>, scene_json: String) -> PyResult<()> {
-        self.with_runtime(py, |old| {
-            let epoch = old.epoch.checked_add(1).ok_or("lifecycle exhausted")?;
-            let replacement = Runtime::from_json(&scene_json, old.threads, epoch)?;
-            *old = replacement;
-            Ok(())
-        })
+        self.with_runtime(py, |runtime| runtime.reset(&scene_json))
     }
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))

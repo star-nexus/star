@@ -72,6 +72,7 @@ pub struct Runtime {
     pub epoch: u64,
     pub revision: u64,
     pub threads: usize,
+    pub(crate) observation_pool: Option<std::sync::Arc<star_core::read_pool::ReadPool>>,
     pub(crate) presentation_dirty: BTreeSet<u64>,
     pub(crate) presentation_tiles: BTreeSet<u64>,
     pub(crate) presentation_fog: BTreeMap<String, BTreeSet<crate::hex::Hex>>,
@@ -86,6 +87,21 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn from_json(payload: &str, threads: usize, epoch: u64) -> Result<Self, String> {
+        Self::from_json_with_pool(payload, threads, epoch, None)
+    }
+    pub fn reset(&mut self, payload: &str) -> Result<(), String> {
+        let epoch = self.epoch.checked_add(1).ok_or("lifecycle exhausted")?;
+        let replacement =
+            Self::from_json_with_pool(payload, self.threads, epoch, self.observation_pool.clone())?;
+        *self = replacement;
+        Ok(())
+    }
+    fn from_json_with_pool(
+        payload: &str,
+        threads: usize,
+        epoch: u64,
+        pool: Option<std::sync::Arc<star_core::read_pool::ReadPool>>,
+    ) -> Result<Self, String> {
         let mut config: SceneSpec = serde_json::from_str(payload).map_err(|e| e.to_string())?;
         if config.schema != crate::SCHEMA_VERSION || config.oracle != RULES_VERSION {
             return Err("unsupported scene schema or oracle".into());
@@ -262,6 +278,13 @@ impl Runtime {
             epoch,
             revision: 0,
             threads,
+            observation_pool: if threads == 1 {
+                None
+            } else {
+                Some(pool.unwrap_or_else(|| {
+                    std::sync::Arc::new(star_core::read_pool::ReadPool::new(threads))
+                }))
+            },
             presentation_dirty,
             presentation_tiles,
             presentation_fog: BTreeMap::new(),
