@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API14 release wheel, run from a complete checkout
+After installing the matching API15 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -614,3 +614,34 @@ does not identify this optimization: use the R3k3 source tag and its matching
 release wheel for reproducible performance. Python wrappers, network, UI and
 policy stay unchanged. Whole-response encoding and Python decoding still scale
 with returned data; kernel microbenchmarks do not establish the 30Hz capacity gate.
+
+### R3k4: immutable encoded observation facts (API15)
+
+Within each write-free observation segment, faction public fields and each
+selected Unit's base panel are encoded once. Responses share immutable owned
+fragments using Arc; their owner and commandable fields are captured separately
+for each request. Only kernel-created JSON values become serde RawValue fields:
+caller text still goes through normal JSON escaping. Final serialization copies
+the complete fragments into every response, with unchanged fields and ordering.
+There is no manual concatenation of untrusted JSON.
+
+Single actions (including the VLM state projection), ordered action batches and
+the diagnostic probe use this response representation. A query segment ends at
+a non-faction-query request; the next segment builds fresh facts. Earlier results
+own immutable facts, not references to current components, so later ownership
+changes, movement or death cannot change them while the mixed batch awaits
+serialization. Stats, authorization, request order and revision rules remain
+unchanged. No background worker or cross-frame cache is introduced.
+
+API15 adds diagnostic counts public_encodes, panel_encodes,
+shared_public_results and shared_panel_results. The last two count all response
+references, including the first; they are not cache-hit counts. Agent-facing
+fields, schema5 and the rules version are unchanged. Install the matching API15
+wheel. Python still receives independently mutable decoded results and keeps
+SDK, policy, transport, display and model orchestration.
+
+Sharing removes repeated JSON-tree clones and repeated encoding of common
+field values. Keys, request-specific fields, final payload bytes and Python
+decoding still cost work proportional to the output. This prepares a stable
+response representation for future read-only parallelism; it is not parallelism
+or a 30Hz world/Agent capacity result.
