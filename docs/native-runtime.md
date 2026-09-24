@@ -598,3 +598,19 @@ API14 adds diagnostic counters `census_entities_visited`,
 `enemy_entities_visited` and `terrain_cells_visited`; Agent response fields,
 scene schema5 and rules version remain unchanged. No response persists across
 world writes. Python keeps configuration, interfaces, policy, transport and UI.
+
+### R3k3: move owned observation JSON into envelopes (API14 compatible)
+
+Observation terrain/enemy arrays, reachable positions, per-request Unit arrays
+and batch result arrays already contain owned JSON values. The kernel now moves
+those arrays into their destination objects instead of serializing them into a
+second JSON tree. The handler diagnostic uses the same envelope assembly rule.
+No Agent fields, list ordering, permission checks, counter timing or write
+boundaries change. Retained batch facts are still cloned when an independently
+owned response needs them; this is not zero-copy transport or a cross-frame cache.
+
+The ABI remains API14/schema5 and the rules version is unchanged. API14 alone
+does not identify this optimization: use the R3k3 source tag and its matching
+release wheel for reproducible performance. Python wrappers, network, UI and
+policy stay unchanged. Whole-response encoding and Python decoding still scale
+with returned data; kernel microbenchmarks do not establish the 30Hz capacity gate.
