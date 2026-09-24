@@ -78,7 +78,12 @@ def test_index_tracks_movement_commit_death_and_reset(display):
     world.get_singleton_component(c.FogOfWar).enabled=False
     for i in range(80):_spawn(world,faction=Faction.SHU,col=50+i,row=0,mp=0)
     world.get_component(target,c.UnitCount).current_count=1
-    if display=='window':rebuild_unit_spatial_index(world)
+    if display=='window':
+        from rotk_env.systems.combat_system import CombatSystem
+        from rotk_env.systems.window_combat_system import CombatSystem as WindowCombat
+        world.systems=[s for s in world.systems if not isinstance(s,CombatSystem)]
+        world.add_system(WindowCombat())
+        rebuild_unit_spatial_index(world)
     params={'faction':'wei','unit_ids':[a]}
     n=NativeRuntime(json.dumps(export_initial_state(world,display=display)))
     handler=LLMActionHandler(world)
