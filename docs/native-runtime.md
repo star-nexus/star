@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API12 release wheel, run from a complete checkout
+After installing the matching API13 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -539,3 +539,39 @@ API12 is a host contract checkpoint. Hub-enabled GameScene, actual turn ACK/retr
 and delivery remain unavailable pending G009 integration; these methods alone do
 not establish network support, true parallelism, or 5000-Agent capacity. The
 Python backend remains default. Rebuild/install the matching wheel when updating.
+
+### R3k1: exact native attack candidates (API13)
+
+The Rust faction-observation kernel now carries over the original Python
+spatial-index optimization for `attackable`. It uses committed occupancy to
+collect nearby candidates, intersects them with the faction's visible enemies,
+and applies the existing combat predicate. IDs are returned in ascending order.
+The same read-batch cache, Fog rules, permission assembly and write boundaries
+remain in place. No new Python gameplay work or network integration is added.
+
+For range R and V visible enemies, the kernel chooses between visiting the
+`1 + 3R(R+1)` cells of the exact hex disc and scanning V enemy positions. The
+latter prevents enormous custom ranges from enumerating an enormous empty disc.
+Ineligible attackers exit before searching. The local route costs O(R² + nearby
+occupants), plus visibility-set lookups and result sorting; crowded cells and
+large output remain real costs. Range filtering is necessary, not a replacement
+for the original combat predicate. There is no cross-tick target cache to refresh.
+
+Diagnostic observation metrics now include `attack_cell_lookups`,
+`attack_distance_checks` and `attack_rule_checks`. They count work, not accepted
+attacks. They do not appear in Agent faction-state responses. API13 requires the
+matching wheel; scene schema5 and the Python oracle version are unchanged.
+
+A local single-query probe with 5000 Units, 100 selected friendly Units and
+2500 visible enemies measured median 468.45→42.50ms at range1 and
+465.20→44.01ms at range3 (five samples after one warmup). Native query plus JSON
+encoding was timed; Python decoding, simulation ticks, rendering, network and
+Agent scheduling were excluded. These are kernel diagnostics, not the 30Hz
+capacity gate. At range80 the same probe measured 143.43→144.66ms; broad visibility
+and result assembly cannot be removed by a local candidate index. Exact inputs,
+responses, negative controls and source identities are archived in STAR Lab.
+
+The active migration priority is authoritative world execution and observation
+cost. Python transport/ACK, BOT policy, UI and reports remain Python work. Their
+unfinished integration is tracked separately from Rust kernel implementation;
+it does not justify translating those layers into Rust.
