@@ -14,11 +14,12 @@ from rotk_env.tests.test_native_observation import setup, observe
 from rotk_env.tests.test_faction_state_affordances import _spawn
 from rotk_env.tests.test_native_movement import probe
 from rotk_env.tests.test_native_combat import combat_probe
+from rotk_env.utils.unit_spatial_index import rebuild_unit_spatial_index
 
 
 @pytest.mark.parametrize('display', ['none', 'dummy', 'window'])
 @pytest.mark.parametrize('origin', [(-2,-1), (-1,1), (0,0), (1,-2)])
-@pytest.mark.parametrize('radius', [-1, 0, 1, 3, 10**9])
+@pytest.mark.parametrize('radius', [-1, 0, 1, 3, 50])
 @pytest.mark.parametrize('fog', [False, True])
 def test_index_matches_full_python_masks_for_hex_parity_fog_and_ranges(display, origin, radius, fog):
     world, (a,b,target), _ = setup(display)
@@ -33,6 +34,7 @@ def test_index_matches_full_python_masks_for_hex_parity_fog_and_ranges(display, 
     for _ in range(3): _spawn(world,faction=Faction.SHU,col=origin[0],row=origin[1],mp=0)
     view=world.get_singleton_component(c.FogOfWar);view.enabled=fog
     view.faction_vision[Faction.WEI]={(col,row) for col in range(-4,5) for row in range(-4,5) if (col+row)%2==0}
+    if display=='window':rebuild_unit_spatial_index(world)
     params={'faction':'wei','agent_id':'alpha','unit_ids':[a,a]}
     try:
         with_native = NativeRuntime(json.dumps(export_initial_state(world,display=display)))
@@ -46,7 +48,7 @@ def test_index_matches_full_python_masks_for_hex_parity_fog_and_ranges(display, 
             assert with_native.export_state_json()==before
             assert result['metrics']['panel_builds']==1
             if radius<0:assert result['metrics']['attack_rule_checks']==0
-            if radius==10**9:assert result['metrics']['attack_cell_lookups']==0
+            if radius==50:assert result['metrics']['attack_cell_lookups']==0
         finally: with_native.close()
     finally:world.reset()
 
@@ -76,6 +78,7 @@ def test_index_tracks_movement_commit_death_and_reset(display):
     world.get_singleton_component(c.FogOfWar).enabled=False
     for i in range(80):_spawn(world,faction=Faction.SHU,col=50+i,row=0,mp=0)
     world.get_component(target,c.UnitCount).current_count=1
+    if display=='window':rebuild_unit_spatial_index(world)
     params={'faction':'wei','unit_ids':[a]}
     n=NativeRuntime(json.dumps(export_initial_state(world,display=display)))
     handler=LLMActionHandler(world)
@@ -100,3 +103,19 @@ def test_index_tracks_movement_commit_death_and_reset(display):
         assert target not in check()
         state=n.export_state_json();n.reset(state);check()
     finally:n.close();world.reset()
+
+
+@pytest.mark.parametrize('radius',[10**9,2**63-1])
+def test_huge_range_falls_back_without_enumerating_disc(radius):
+    world,(a,_,_),_=setup('none')
+    world.get_component(a,c.Combat).attack_range=radius
+    world.get_singleton_component(c.FogOfWar).enabled=False
+    params={'faction':'wei','unit_ids':[a]}
+    try:
+        n=NativeRuntime(json.dumps(export_initial_state(world)))
+        try:
+            report=observe(n,[params])
+            assert report['results']==[LLMActionHandler(world).handle_faction_state(params)]
+            assert report['metrics']['attack_cell_lookups']==0
+        finally:n.close()
+    finally:world.reset()
