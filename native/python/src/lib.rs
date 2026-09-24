@@ -230,7 +230,7 @@ impl NativeRuntime {
     fn execute_action_json(&self, py: Python<'_>, request_json: String) -> PyResult<String> {
         self.with_runtime(py, |r| {
             let request = serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
-            Ok(r.execute_request(request)?.to_string())
+            serde_json::to_string(&r.execute_request(request)?).map_err(|e| e.to_string())
         })
     }
     /// Decode a complete batch before the Python host splits at display reads.
@@ -253,7 +253,7 @@ impl NativeRuntime {
     fn execute_actions_json(&self, py: Python<'_>, requests_json: String) -> PyResult<String> {
         self.with_runtime(py, |r| {
             let requests = serde_json::from_str(&requests_json).map_err(|e| e.to_string())?;
-            Ok(r.execute_requests(requests)?.to_string())
+            serde_json::to_string(&r.execute_requests(requests)?).map_err(|e| e.to_string())
         })
     }
     /// Internal component probe; does not authorize Agent actions.
@@ -271,9 +271,11 @@ impl NativeRuntime {
                 serde_json::from_str(&parameters_json).map_err(|e| e.to_string())?;
             let mut batch = star_rotk::observation::ObservationBatch::new(r);
             let results: Vec<_> = requests.iter().map(|p| batch.faction_state(p)).collect();
-            let mut report = json!({"results":null,"metrics":batch.metrics});
-            report["results"] = Value::Array(results);
-            Ok(report.to_string())
+            let report = star_rotk::observation::ObservationReport {
+                results,
+                metrics: batch.metrics,
+            };
+            serde_json::to_string(&report).map_err(|e| e.to_string())
         })
     }
     /// Internal differential harness, never advertised as an Agent action gate.

@@ -4,8 +4,86 @@ use crate::{
     hex::{self, Hex},
     runtime::Runtime,
 };
-use serde_json::{Value, json};
+use serde::{Serialize, Serializer, ser::SerializeMap};
+use serde_json::{Value, json, value::RawValue};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
+
+/// Owned immutable fields, encoded once inside a write-free observation segment.
+/// RawValue is produced only by serde from kernel JSON, never from caller strings.
+struct EncodedObject(Vec<(String, Box<RawValue>)>);
+impl EncodedObject {
+    fn new(value: Value) -> Self {
+        let Value::Object(fields) = value else {
+            unreachable!("native observation object");
+        };
+        Self(
+            fields
+                .into_iter()
+                .map(|(key, value)| {
+                    (
+                        key,
+                        serde_json::value::to_raw_value(&value).expect("JSON value encodes"),
+                    )
+                })
+                .collect(),
+        )
+    }
+    fn fields<M: SerializeMap>(&self, map: &mut M) -> Result<(), M::Error> {
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        Ok(())
+    }
+}
+
+struct UnitResponse {
+    panel: Arc<EncodedObject>,
+    owner: Option<String>,
+    commandable: bool,
+}
+impl Serialize for UnitResponse {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.panel.0.len() + 2))?;
+        self.panel.fields(&mut map)?;
+        map.serialize_entry("owner", &self.owner)?;
+        map.serialize_entry("commandable", &self.commandable)?;
+        map.end()
+    }
+}
+
+pub struct FactionResponse {
+    public: Arc<EncodedObject>,
+    units: Vec<UnitResponse>,
+}
+impl Serialize for FactionResponse {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.public.0.len() + 1))?;
+        self.public.fields(&mut map)?;
+        map.serialize_entry("units", &self.units)?;
+        map.end()
+    }
+}
+
+/// Responses own their facts, not a live borrow of the runtime. A subsequent
+/// write may destroy/reset entities before the entire mixed batch is encoded.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum Response {
+    Plain(Value),
+    Faction(FactionResponse),
+}
+impl From<Value> for Response {
+    fn from(value: Value) -> Self {
+        Self::Plain(value)
+    }
+}
+
+#[derive(Serialize)]
+pub struct ObservationReport {
+    pub results: Vec<Response>,
+    pub metrics: Metrics,
+}
 
 #[derive(Default)]
 struct Census {
@@ -16,7 +94,7 @@ struct Census {
 struct FactionFacts {
     alive: Vec<u64>,
     enemies: BTreeSet<u64>,
-    public: Value,
+    public: Arc<EncodedObject>,
 }
 #[derive(Default, serde::Serialize)]
 pub struct Metrics {
@@ -31,12 +109,16 @@ pub struct Metrics {
     attack_cell_lookups: usize,
     attack_distance_checks: usize,
     attack_rule_checks: usize,
+    public_encodes: usize,
+    panel_encodes: usize,
+    shared_public_results: usize,
+    shared_panel_results: usize,
 }
 pub struct ObservationBatch<'a> {
     runtime: &'a Runtime,
     census: Option<Census>,
     factions: HashMap<String, FactionFacts>,
-    panels: HashMap<u64, Value>,
+    panels: HashMap<u64, Arc<EncodedObject>>,
     enemies: HashMap<u64, Value>,
     tiles: HashMap<Hex, Value>,
     pub metrics: Metrics,
@@ -213,6 +295,8 @@ impl<'a> ObservationBatch<'a> {
         // every nested key/string again; move them into their final container.
         public["visible_enemy_units"] = Value::Array(enemies);
         public["visible_terrain"] = Value::Array(terrain);
+        self.metrics.public_encodes += 1;
+        let public = Arc::new(EncodedObject::new(public));
         self.factions.insert(
             faction.into(),
             FactionFacts {
@@ -237,7 +321,8 @@ impl<'a> ObservationBatch<'a> {
         let mut info = r.detailed_unit_info(id);
         info["reachable"] = Value::Array(reachable);
         info["attackable"] = json!(attackable);
-        self.panels.insert(id, info);
+        self.metrics.panel_encodes += 1;
+        self.panels.insert(id, Arc::new(EncodedObject::new(info)));
     }
     /// Exact broad phase: range is a necessary condition of can_attack. Reuse
     /// authoritative occupancy and the faction's visible-enemy set; never expand
@@ -292,11 +377,11 @@ impl<'a> ObservationBatch<'a> {
         candidates
     }
     /// Handler-level projection; trusted identity is checked by the action dispatcher.
-    pub fn faction_state(&mut self, params: &Value) -> Value {
+    pub fn faction_state(&mut self, params: &Value) -> Response {
         let r = self.runtime;
         let requested = &params["faction"];
         if !crate::codec::truthy(requested) {
-            return error("faction parameter required");
+            return error("faction parameter required").into();
         }
         let faction = match requested.as_str() {
             Some(f @ ("wei" | "shu" | "wu")) => f,
@@ -307,7 +392,8 @@ impl<'a> ObservationBatch<'a> {
                         .as_str()
                         .map(String::from)
                         .unwrap_or_else(|| requested.to_string())
-                ));
+                ))
+                .into();
             }
         };
         let agent = params["agent_id"].as_str().filter(|a| !a.is_empty());
@@ -323,14 +409,14 @@ impl<'a> ObservationBatch<'a> {
             result["error_code"] = json!(2005);
             result["registered_faction"] = json!(observer);
             result["requested_faction"] = json!(faction);
-            return result;
+            return result.into();
         }
         let selected = if let Some(ids) = params.get("unit_ids") {
             let Some(ids) = ids.as_array() else {
-                return error("unit_ids must be a list of integer unit IDs");
+                return error("unit_ids must be a list of integer unit IDs").into();
             };
             if ids.iter().any(|id| !id.is_i64() && !id.is_u64()) {
-                return error("unit_ids must be a list of integer unit IDs");
+                return error("unit_ids must be a list of integer unit IDs").into();
             }
             let mut seen = BTreeSet::new();
             let mut ordered = vec![];
@@ -343,7 +429,7 @@ impl<'a> ObservationBatch<'a> {
                 {
                     let mut result = error("unit_ids must name existing units of your own faction");
                     result["error_code"] = json!(2005);
-                    return result;
+                    return result.into();
                 }
                 let uid = uid.unwrap();
                 if seen.insert(uid)
@@ -364,15 +450,18 @@ impl<'a> ObservationBatch<'a> {
         let mut units = vec![];
         for id in ids {
             self.panel(id, faction);
-            let mut panel = self.panels[&id].clone();
             let owner = r.team.as_ref().and_then(|t| t.owner(id));
-            panel["owner"] = json!(owner);
-            panel["commandable"] =
-                json!(agent.is_none() || owner.is_none_or(|owner| Some(owner) == agent));
-            units.push(panel);
+            units.push(UnitResponse {
+                panel: Arc::clone(&self.panels[&id]),
+                owner: owner.map(str::to_owned),
+                commandable: agent.is_none() || owner.is_none_or(|owner| Some(owner) == agent),
+            });
+            self.metrics.shared_panel_results += 1;
         }
-        let mut result = self.factions[faction].public.clone();
-        result["units"] = Value::Array(units);
-        result
+        self.metrics.shared_public_results += 1;
+        Response::Faction(FactionResponse {
+            public: Arc::clone(&self.factions[faction].public),
+            units,
+        })
     }
 }

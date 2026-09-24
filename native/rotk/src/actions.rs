@@ -2,7 +2,7 @@
 use crate::{
     codec::{action_integer, scalar_display, string_repr, truthy},
     components::UnitInfo,
-    observation::{ObservationBatch, error},
+    observation::{ObservationBatch, Response, error},
     runtime::Runtime,
     team::Team,
 };
@@ -26,6 +26,12 @@ pub struct Request {
     #[serde(default)]
     pub connected_agents: u64,
 }
+#[derive(serde::Serialize)]
+pub struct BatchReport {
+    pub results: Vec<Response>,
+    pub observation_segments: Vec<Value>,
+}
+
 impl Request {
     fn normalize_identity(&mut self) {
         if [
@@ -365,7 +371,7 @@ impl Runtime {
         }
         None
     }
-    fn record_action_result(&mut self, request: &Request, mut result: Value) -> Value {
+    fn record_action_result<T: From<Value>>(&mut self, request: &Request, mut result: T) -> T {
         let action = request.action.as_deref().unwrap_or("");
         let agent = request.agent_id.as_deref().filter(|a| !a.is_empty());
         if let Some(agent) = agent {
@@ -381,7 +387,7 @@ impl Runtime {
                         + 1
                 );
             } else {
-                result=self.system_error(action,&format!("[LLMSystem. _record_action] Record ENV <-> Agent action error: [LLMSystem. _record_action] Missing faction mapping for agent {agent}. Agents must call register_agent_info before issuing actions."),2012);
+                result=self.system_error(action,&format!("[LLMSystem. _record_action] Record ENV <-> Agent action error: [LLMSystem. _record_action] Missing faction mapping for agent {agent}. Agents must call register_agent_info before issuing actions."),2012).into();
             }
         }
         result
@@ -391,7 +397,7 @@ impl Runtime {
     /// Only action counters are deferred within a read segment: faction projections
     /// never read them, and they are committed in request order before releasing the
     /// exclusive runtime lock or executing any subsequent command.
-    pub fn execute_requests(&mut self, mut requests: Vec<Request>) -> Result<Value, String> {
+    pub fn execute_requests(&mut self, mut requests: Vec<Request>) -> Result<BatchReport, String> {
         if requests.iter().any(|r| !r.wall_time.is_finite()) {
             return Err("wall metadata must be finite".into());
         }
@@ -426,7 +432,7 @@ impl Runtime {
             let mut counted = vec![];
             for request in &queries {
                 if let Some(rejection) = self.authorize_request(request) {
-                    results.push(rejection);
+                    results.push(rejection.into());
                     counted.push(false);
                 } else {
                     results.push(if allowed {
@@ -438,6 +444,7 @@ impl Runtime {
                             2003,
                             request.wall_time,
                         )
+                        .into()
                     });
                     counted.push(true);
                 }
@@ -447,20 +454,18 @@ impl Runtime {
             for (index, (request, counted)) in queries.iter().zip(counted).enumerate() {
                 self.wall_time = request.wall_time;
                 if counted {
-                    let result = std::mem::take(&mut results[start + index]);
+                    let result = std::mem::replace(&mut results[start + index], Value::Null.into());
                     results[start + index] = self.record_action_result(request, result);
                 }
             }
         }
-        // Results are already owned JSON trees; do not serialize them into a
-        // second tree just to place them in the envelope.
-        let mut report = json!({"results":null,"observation_segments":null});
-        report["results"] = Value::Array(results);
-        report["observation_segments"] = Value::Array(segments);
-        Ok(report)
+        Ok(BatchReport {
+            results,
+            observation_segments: segments,
+        })
     }
     /// Only JSON-shaped, normalized local requests enter here. Python/Hub supplies identity.
-    pub fn execute_request(&mut self, mut request: Request) -> Result<Value, String> {
+    pub fn execute_request(&mut self, mut request: Request) -> Result<Response, String> {
         if !request.wall_time.is_finite() {
             return Err("wall metadata must be finite".into());
         }
@@ -472,15 +477,17 @@ impl Runtime {
         request.normalize_identity();
         let action = request.action.as_deref().unwrap_or("");
         if action.is_empty() {
-            return Ok(self.system_error("unknown", "Missing action name", 2007));
+            return Ok(self
+                .system_error("unknown", "Missing action name", 2007)
+                .into());
         }
         if action == "turn_start_ack" {
-            return Ok(json!({"success":true}));
+            return Ok(json!({"success":true}).into());
         }
         let agent = request.agent_id.as_deref().filter(|a| !a.is_empty());
         let params = &request.parameters;
         if let Some(rejection) = self.authorize_request(&request) {
-            return Ok(rejection);
+            return Ok(rejection.into());
         }
         let mut result = match action {
             "strategy_ping" => self.strategy_ping(params),
@@ -491,7 +498,7 @@ impl Runtime {
                 Ok(result) => result,
                 Err(message) => {
                     self.revision = self.revision.checked_add(1).ok_or("revision exhausted")?;
-                    return Ok(self.system_error(action, &message, 2012));
+                    return Ok(self.system_error(action, &message, 2012).into());
                 }
             },
             "claim_units" | "list_team" | "broadcast_to_team" | "read_team_messages" => {
@@ -506,7 +513,14 @@ impl Runtime {
             "get_faction_state" | "get_faction_state_vlm"
                 if self.allowed_actions().iter().any(|n| n == action) =>
             {
-                ObservationBatch::new(self).faction_state(params)
+                let response = ObservationBatch::new(self).faction_state(params);
+                let response = self.record_action_result(&request, response);
+                // Preserve imported action-spec semantics, including a custom
+                // kind that classifies this otherwise read-only action as a write.
+                if self.config.interface["action_specs"][action]["kind"].as_str() != Some("query") {
+                    self.revision = self.revision.checked_add(1).ok_or("revision exhausted")?;
+                }
+                return Ok(response);
             }
             "observation" if self.allowed_actions().iter().any(|n| n == action) => {
                 self.legacy_observation(params)
@@ -572,7 +586,7 @@ impl Runtime {
         {
             self.revision = self.revision.checked_add(1).ok_or("revision exhausted")?;
         }
-        Ok(result)
+        Ok(result.into())
     }
 }
 

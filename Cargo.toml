@@ -14,7 +14,7 @@ pyo3 = { version = "=0.29.2", features = ["extension-module"] }
 serde = { version = "1.0", features = ["derive"] }
 # Accepted JSON values can become Python-style text; preserve their input order.
 # Gameplay ordering remains explicit in ordered entity IDs and BTree containers.
-serde_json = { version = "1.0", features = ["float_roundtrip", "arbitrary_precision", "preserve_order"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "arbitrary_precision", "preserve_order", "raw_value"] }
 blake2 = "0.10"
 num-bigint = "0.4"
 
