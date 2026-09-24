@@ -452,7 +452,12 @@ impl Runtime {
                 }
             }
         }
-        Ok(json!({"results":results,"observation_segments":segments}))
+        // Results are already owned JSON trees; do not serialize them into a
+        // second tree just to place them in the envelope.
+        let mut report = json!({"results":null,"observation_segments":null});
+        report["results"] = Value::Array(results);
+        report["observation_segments"] = Value::Array(segments);
+        Ok(report)
     }
     /// Only JSON-shaped, normalized local requests enter here. Python/Hub supplies identity.
     pub fn execute_request(&mut self, mut request: Request) -> Result<Value, String> {

@@ -271,7 +271,9 @@ impl NativeRuntime {
                 serde_json::from_str(&parameters_json).map_err(|e| e.to_string())?;
             let mut batch = star_rotk::observation::ObservationBatch::new(r);
             let results: Vec<_> = requests.iter().map(|p| batch.faction_state(p)).collect();
-            Ok(json!({"results":results,"metrics":batch.metrics}).to_string())
+            let mut report = json!({"results":null,"metrics":batch.metrics});
+            report["results"] = Value::Array(results);
+            Ok(report.to_string())
         })
     }
     /// Internal differential harness, never advertised as an Agent action gate.

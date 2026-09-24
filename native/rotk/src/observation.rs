@@ -205,10 +205,14 @@ impl<'a> ObservationBatch<'a> {
         }
         let c = self.census.as_ref().unwrap();
         let alive = c.alive.get(faction).cloned().unwrap_or_default();
-        let public = json!({"success":true,"result":true,"state":self.faction_status(faction),"faction":faction,
+        let mut public = json!({"success":true,"result":true,"state":self.faction_status(faction),"faction":faction,
             "fog":if lifted {"disabled"} else {"active"}, "total_units":c.totals.get(faction).copied().unwrap_or(0),
             "alive_units":alive.len(),"actionable_units":c.actionable.get(faction).copied().unwrap_or(0),
-            "visible_enemy_units":enemies,"visible_terrain":terrain});
+            "visible_enemy_units":null,"visible_terrain":null});
+        // These arrays already own JSON values. Serialize-to-Value would copy
+        // every nested key/string again; move them into their final container.
+        public["visible_enemy_units"] = Value::Array(enemies);
+        public["visible_terrain"] = Value::Array(terrain);
         self.factions.insert(
             faction.into(),
             FactionFacts {
@@ -231,7 +235,7 @@ impl<'a> ObservationBatch<'a> {
             .map(|p| json!({"col":p.0,"row":p.1}))
             .collect();
         let mut info = r.detailed_unit_info(id);
-        info["reachable"] = json!(reachable);
+        info["reachable"] = Value::Array(reachable);
         info["attackable"] = json!(attackable);
         self.panels.insert(id, info);
     }
@@ -368,7 +372,7 @@ impl<'a> ObservationBatch<'a> {
             units.push(panel);
         }
         let mut result = self.factions[faction].public.clone();
-        result["units"] = json!(units);
+        result["units"] = Value::Array(units);
         result
     }
 }
