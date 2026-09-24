@@ -189,7 +189,7 @@ impl Visuals {
         }
         for id in remove {
             self.forget(id);
-            r.world.remove(id);
+            r.remove_entity(id);
         }
         let mut remove = vec![];
         for (&id, e) in &mut self.effect {
@@ -207,7 +207,7 @@ impl Visuals {
         }
         for id in remove {
             self.forget(id);
-            r.world.remove(id);
+            r.remove_entity(id);
         }
         let mut remove = vec![];
         for (&id, d) in &mut self.damage {
@@ -224,7 +224,7 @@ impl Visuals {
         }
         for id in remove {
             self.forget(id);
-            r.world.remove(id);
+            r.remove_entity(id);
         }
         Ok(())
     }

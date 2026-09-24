@@ -56,6 +56,7 @@ pub struct Runtime {
     pub spatial: Spatial,
     pub(crate) living: crate::lifecycle::LivingFactions,
     pub(crate) players: Vec<(u64, String)>,
+    pub(crate) unit_entities: BTreeMap<u64, Entity>,
     pub(crate) moving: BTreeSet<u64>,
     pub(crate) capturing: BTreeSet<u64>,
     pub(crate) vision_dirty: BTreeSet<u64>,
@@ -123,10 +124,12 @@ impl Runtime {
         let mut world = OrderedWorld::new(config.entity_counter);
         let mut presentation_dirty = BTreeSet::new();
         let mut presentation_tiles = BTreeSet::new();
+        let mut unit_entities = BTreeMap::new();
         for mut spec in std::mem::take(&mut config.entities) {
             let entity = world.import(spec.id)?;
             if spec.components.contains_key("Unit") {
                 presentation_dirty.insert(spec.id);
+                unit_entities.insert(spec.id, entity);
             }
             if spec.components.contains_key("TerritoryControl") {
                 presentation_tiles.insert(spec.id);
@@ -232,6 +235,7 @@ impl Runtime {
         Ok(Self {
             living,
             players,
+            unit_entities,
             world,
             spatial,
             moving,
@@ -269,6 +273,14 @@ impl Runtime {
             presentation_player_removals: BTreeMap::new(),
             events: Vec::new(),
         })
+    }
+
+    /// Remove derived unit membership at the same point as ECS destruction.
+    /// Both combat and expiring visual entities use this path; imported hybrid
+    /// entities must not leave stale membership behind either.
+    pub(crate) fn remove_entity(&mut self, id: u64) -> bool {
+        self.unit_entities.remove(&id);
+        self.world.remove(id)
     }
 
     /// R1 clock/lifecycle boundary. Gameplay systems join this step in R2/R3.

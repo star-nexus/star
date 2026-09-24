@@ -333,7 +333,7 @@ impl Runtime {
         }
         self.moving.remove(&id);
         self.vision_dirty.insert(id);
-        self.world.remove(id);
+        self.remove_entity(id);
         self.presentation_removed.push(id);
     }
 }

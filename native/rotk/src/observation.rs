@@ -25,6 +25,9 @@ pub struct Metrics {
     panel_builds: usize,
     enemy_builds: usize,
     tile_builds: usize,
+    census_entities_visited: usize,
+    enemy_entities_visited: usize,
+    terrain_cells_visited: usize,
     attack_cell_lookups: usize,
     attack_distance_checks: usize,
     attack_rule_checks: usize,
@@ -60,7 +63,8 @@ impl<'a> ObservationBatch<'a> {
         self.metrics.census_builds += 1;
         let r = self.runtime;
         let mut c = Census::default();
-        for (id, e) in r.world.ordered() {
+        for (&id, &e) in &r.unit_entities {
+            self.metrics.census_entities_visited += 1;
             let Some(u) = r.world.ecs.get::<UnitInfo>(e) else {
                 continue;
             };
@@ -142,7 +146,8 @@ impl<'a> ObservationBatch<'a> {
         let visible = r.fog.as_ref().and_then(|f| f.faction_vision.get(faction));
         let mut enemy_ids = BTreeSet::new();
         let mut enemies = vec![];
-        for (id, e) in r.world.ordered() {
+        for (&id, &e) in &r.unit_entities {
+            self.metrics.enemy_entities_visited += 1;
             let (Some(u), Some(p), Some(n)) = (
                 r.world.ecs.get::<UnitInfo>(e),
                 r.world.ecs.get::<Position>(e),
@@ -165,13 +170,28 @@ impl<'a> ObservationBatch<'a> {
             enemies.push(fact.clone());
         }
         let mut terrain = vec![];
-        let cells: BTreeSet<_> = r
-            .spatial
-            .tiles
-            .keys()
-            .copied()
-            .filter(|cell| lifted || visible.is_some_and(|v| v.contains(cell)))
-            .collect();
+        // Fog-positive queries need only visit the smaller existing set. Keep
+        // coordinate ordering and the map intersection (Fog can include off-map
+        // cells); zero tile ID and missing Terrain are handled below as before.
+        let cells: BTreeSet<_> = if !lifted && visible.is_none() {
+            BTreeSet::new()
+        } else if !lifted && visible.is_some_and(|v| v.len() < r.spatial.tiles.len()) {
+            let visible = visible.unwrap();
+            self.metrics.terrain_cells_visited += visible.len();
+            visible
+                .iter()
+                .copied()
+                .filter(|cell| r.spatial.tiles.contains_key(cell))
+                .collect()
+        } else {
+            self.metrics.terrain_cells_visited += r.spatial.tiles.len();
+            r.spatial
+                .tiles
+                .keys()
+                .copied()
+                .filter(|cell| lifted || visible.is_some_and(|v| v.contains(cell)))
+                .collect()
+        };
         for cell in cells {
             let tile = &r.spatial.tiles[&cell];
             // Preserve historical falsy external ID zero lookup.
