@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API13 release wheel, run from a complete checkout
+After installing the matching API14 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -575,3 +575,26 @@ The active migration priority is authoritative world execution and observation
 cost. Python transport/ACK, BOT policy, UI and reports remain Python work. Their
 unfinished integration is tracked separately from Rust kernel implementation;
 it does not justify translating those layers into Rust.
+
+### R3k2: native unit membership and terrain projection (API14)
+
+Faction census and enemy projection now visit a stable external-ID Unit index
+rather than all ECS entities. The index is derived during scene import/reset,
+contains only entity handles (not a second component copy), and is updated at
+ECS destruction for combat and expiring visuals. The current kernel imports
+Units at scene creation; future dynamic Unit creation/removal must maintain this
+membership through the native lifecycle too. Dead-but-retained and incomplete
+Units are still counted/filtered using the original component predicates.
+
+With active Fog, terrain projection visits the smaller of the faction's visible
+cells and map cells, retaining their exact intersection and coordinate ordering.
+Empty/missing visibility visits no terrain; disabled Fog still returns the full
+map. Missing Terrain and historical tile ID zero behavior are unchanged. Unit
+census is O(Units), not O(all world entities); terrain scanning is bounded by the
+smaller set, plus membership lookups and output construction. This is not an
+O(active) claim for all observations.
+
+API14 adds diagnostic counters `census_entities_visited`,
+`enemy_entities_visited` and `terrain_cells_visited`; Agent response fields,
+scene schema5 and rules version remain unchanged. No response persists across
+world writes. Python keeps configuration, interfaces, policy, transport and UI.
