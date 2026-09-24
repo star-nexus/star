@@ -1,7 +1,7 @@
 //! Read-only faction projection. A borrow scopes all caches to one write-free batch.
 use crate::{
-    components::{ActionPoints, Headcount, Position, UnitInfo},
-    hex::Hex,
+    components::{ActionPoints, CombatStats, Headcount, Position, UnitInfo},
+    hex::{self, Hex},
     runtime::Runtime,
 };
 use serde_json::{Value, json};
@@ -25,6 +25,9 @@ pub struct Metrics {
     panel_builds: usize,
     enemy_builds: usize,
     tile_builds: usize,
+    attack_cell_lookups: usize,
+    attack_distance_checks: usize,
+    attack_rule_checks: usize,
 }
 pub struct ObservationBatch<'a> {
     runtime: &'a Runtime,
@@ -201,12 +204,7 @@ impl<'a> ObservationBatch<'a> {
         }
         self.metrics.panel_builds += 1;
         let r = self.runtime;
-        let enemy_ids = &self.factions[faction].enemies;
-        let attackable: Vec<_> = enemy_ids
-            .iter()
-            .copied()
-            .filter(|&enemy| r.can_attack(id, Some(enemy)))
-            .collect();
+        let attackable = self.attackable(id, faction);
         let reachable: Vec<_> = r
             .reachable(id)
             .iter()
@@ -216,6 +214,58 @@ impl<'a> ObservationBatch<'a> {
         info["reachable"] = json!(reachable);
         info["attackable"] = json!(attackable);
         self.panels.insert(id, info);
+    }
+    /// Exact broad phase: range is a necessary condition of can_attack. Reuse
+    /// authoritative occupancy and the faction's visible-enemy set; never expand
+    /// information access or cache across a write. Work is bounded by the smaller
+    /// of the hex disc and enemy list, plus occupants of the visited cells.
+    fn attackable(&mut self, id: u64, faction: &str) -> Vec<u64> {
+        let r = self.runtime;
+        if !r.can_attack(id, None) {
+            return vec![];
+        }
+        let Some(position) = r.component::<Position>(id) else {
+            return vec![];
+        };
+        let radius = r.component::<CombatStats>(id).unwrap().attack_range;
+        if radius < 0 {
+            return vec![];
+        }
+        let enemies = &self.factions[faction].enemies;
+        let wide = radius as u128;
+        let cells = 1 + 3 * wide * (wide + 1);
+        let mut candidates = vec![];
+        if cells <= enemies.len() as u128 {
+            let (q, s) = hex::axial(position.hex());
+            for dq in -radius..=radius {
+                for ds in (-radius).max(-dq - radius)..=radius.min(-dq + radius) {
+                    self.metrics.attack_cell_lookups += 1;
+                    let cell = hex::offset((q + dq, s + ds));
+                    if let Some(occupants) = r.spatial.cells.get(&cell) {
+                        candidates
+                            .extend(occupants.keys().filter(|id| enemies.contains(id)).copied());
+                    }
+                }
+            }
+            // Cell traversal order is not the oracle's external entity-ID order.
+            candidates.sort_unstable();
+        } else {
+            // Huge/custom ranges and small enemy sets must not allocate/enumerate
+            // a huge disc. Distance rejection also avoids constructing error JSON.
+            for &enemy in enemies {
+                self.metrics.attack_distance_checks += 1;
+                if r.component::<Position>(enemy)
+                    .is_some_and(|p| hex::distance(position.hex(), p.hex()) <= radius)
+                {
+                    candidates.push(enemy);
+                }
+            }
+        }
+        candidates.retain(|&enemy| {
+            self.metrics.attack_rule_checks += 1;
+            r.can_attack(id, Some(enemy))
+        });
+        candidates
     }
     /// Handler-level projection; trusted identity is checked by the action dispatcher.
     pub fn faction_state(&mut self, params: &Value) -> Value {
