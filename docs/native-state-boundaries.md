@@ -58,3 +58,20 @@ from cross-thread diagnostic equality, never from Agent payload comparisons.
 Tests compare full Agent results, original work counts and authoritative state,
 and a barrier-based core test proves simultaneous distinct worker execution.
 This does not establish whole-world 30Hz capacity or justify a default change.
+
+
+## R4b public facts / timing addendum (2026-09-25)
+
+Runtime encoding source `290de0a` replaces the temporary public JSON-tree cache
+with owned encoded facts created from typed enemy/terrain fields. Borrowed strings
+exist only while serde encodes a fact; the cache and responses own their bytes.
+Cross-faction projections therefore share base facts without retaining live
+component references. Public visibility selection and all writers remain as in
+the R4a audit. Tests query three factions, compare Python responses and reset to
+changed headcount/terrain while retaining the earlier encoded result.
+
+The opt-in profiler reads wall time for diagnostics only. Normal handlers create
+no timer, and neither mode changes simulation time, RNG, component state or
+revisions. Faction and panel phases are timed on the caller; worker scheduling
+and join are included in panel elapsed time, not individually attributed. R002
+remains open for future or unaudited writers/consumers.

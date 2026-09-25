@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API16 release wheel, run from a complete checkout
+After installing the matching API17 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -671,3 +671,32 @@ UI and report orchestration. Local 1/2/4-thread differential tests and query
 microbenchmarks validate this narrow stage; small queries may regress from pool
 overhead, and public projection/output remain serial. Keep the default at one
 until complete frame/queue acceptance establishes the minimum sufficient count.
+
+
+### R4b: typed public facts and opt-in phase timing (API17)
+
+Public enemy and terrain facts are serialized directly from typed native data to
+owned immutable JSON fragments once per Unit/cell within a read segment. Faction
+projections reuse those fragments, preserving their original enemy-ID and tile
+coordinate order. Array encoding copies the complete fragments; final responses
+still contain every original field. This removes temporary recursive JSON trees,
+first-projection deep copies and repeated scalar encoding. It is not zero-copy
+transport, a cross-frame cache or a rule change. Scope/write/reset boundaries,
+Fog checks and per-request ownership remain unchanged.
+
+API17 adds the internal `_observation_profile_json(parameters_json)` diagnostic,
+returning `(ordinary_report_json, separate_timing_json)`. It is a handler probe,
+not an authenticated Agent verb. Normal calls do not read timing clocks. The
+probe records parse, batch construction, final encoding and explicit fact/result
+release wall times. Its `profile` contains faction/census/public encoding/panel
+wall times: census and public encoding are nested in faction; faction and panels
+are nested in batch, so do not add all fields. Panel time includes scheduling,
+join and cache commit, not a sum of worker CPU times. Native total excludes lock
+wait, Python conversion and encoding the timing report; measure ordinary calls
+separately. Timing never advances game CD or simulation time.
+
+This stage passed 2171 Python regressions, thread-equivalent response/state
+comparisons and authenticated batch checks. Query microbenchmarks show substantial
+reduction in public construction/release cost, with unchanged payload sizes.
+They do not replace whole-frame/queue capacity acceptance. Backend Python and
+native threads=1 remain defaults; Python SDK/UI/transport/policy stay Python.
