@@ -383,7 +383,7 @@ The session itself rejects Hub/BOT startup. GameScene attaches the offline post-
 
 ### Experimental offline GameScene and settlement (R3d2b)
 
-After installing the matching API15 release wheel, run from a complete checkout
+After installing the matching API16 release wheel, run from a complete checkout
 (including the existing font/assets):
 
 ```sh
@@ -393,7 +393,8 @@ After installing the matching API15 release wheel, run from a complete checkout
 ```
 
 `--backend python` remains the default. `--native-threads 1|2|4` selects a native
-configuration, currently still serial. App-level backend selection survives the
+configuration. From R4a, 2/4 enable a fixed pool for independent missing Unit
+observation panels; 1 remains the default. World writes remain serial. App-level backend selection survives the
 menu/game-over/menu cycle. Selecting Rust never falls back: missing/mismatched
 extensions fail before window startup; Hub, rule BOT and the old scale-harness
 host are rejected until their native adapters are connected. Rust scene faults
@@ -645,3 +646,28 @@ field values. Keys, request-specific fields, final payload bytes and Python
 decoding still cost work proportional to the output. This prepares a stable
 response representation for future read-only parallelism; it is not parallelism
 or a 30Hz world/Agent capacity result.
+
+
+### R4a: scoped read-panel parallelism (API16)
+
+`threads=2|4` now creates a fixed native pool; `threads=1` creates none and
+remains the default. The pool computes uncached Unit panels (exact reachable,
+legal attack targets and base fields) within one stable read phase. Each query
+submits at most one chunk per configured worker, skips scheduling for fewer than
+two missing panels, joins every job, then commits results in input order. It does
+not parallelize world systems, action acceptance, faction public projection,
+permission handling or final response encoding. Repeated panels still reuse the
+same read-segment facts. There is no TTL, stale snapshot or extra observation.
+
+Reset reuses the pool; a failed reset retains the old world. Close joins/drops the
+pool. Existing PyO3 GIL release and instance serialization remain. API16 adds
+`parallel_panel_batches`, `panel_tasks`, `panel_worker_threads` to diagnostics,
+not Agent payloads. Worker utilization may vary with scheduling. Schema5 and the
+oracle are unchanged. Install the matching API16 wheel before using this source.
+
+Read the [state ownership and read-phase audit](native-state-boundaries.md) for
+current writer/consumer responsibilities. Python retains SDK, policy, transport,
+UI and report orchestration. Local 1/2/4-thread differential tests and query
+microbenchmarks validate this narrow stage; small queries may regress from pool
+overhead, and public projection/output remain serial. Keep the default at one
+until complete frame/queue acceptance establishes the minimum sufficient count.
