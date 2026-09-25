@@ -37,6 +37,49 @@ impl EncodedObject {
     }
 }
 
+/// A fact is encoded once, including when projected into multiple factions.
+/// Serde creates the bytes from typed kernel data; caller JSON is never spliced.
+#[derive(Clone)]
+struct EncodedFact(Arc<RawValue>);
+impl EncodedFact {
+    fn new(value: &impl Serialize) -> Self {
+        Self(Arc::from(
+            serde_json::value::to_raw_value(value).expect("fact encodes"),
+        ))
+    }
+}
+impl Serialize for EncodedFact {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+#[derive(Serialize)]
+struct EnemyPosition {
+    col: i64,
+    row: i64,
+}
+#[derive(Serialize)]
+struct EnemyStatus {
+    current_count: i64,
+}
+#[derive(Serialize)]
+struct EnemyFact<'a> {
+    unit_id: u64,
+    unit_type: &'a str,
+    faction: &'a str,
+    position: EnemyPosition,
+    unit_status: EnemyStatus,
+}
+#[derive(Serialize)]
+struct TerrainFact<'a> {
+    col: i64,
+    row: i64,
+    #[serde(rename = "type")]
+    terrain: &'a str,
+    movement_cost: i64,
+    passable: bool,
+}
+
 struct UnitResponse {
     panel: Arc<EncodedObject>,
     owner: Option<String>,
@@ -130,8 +173,8 @@ pub struct ObservationBatch<'a> {
     census: Option<Census>,
     factions: HashMap<String, FactionFacts>,
     panels: HashMap<u64, Arc<EncodedObject>>,
-    enemies: HashMap<u64, Value>,
-    tiles: HashMap<Hex, Value>,
+    enemies: HashMap<u64, EncodedFact>,
+    tiles: HashMap<Hex, EncodedFact>,
     panel_workers: HashSet<std::thread::ThreadId>,
     pub metrics: Metrics,
     pub profile: Option<Profile>,
@@ -271,8 +314,18 @@ impl<'a> ObservationBatch<'a> {
             enemy_ids.insert(id);
             let fact = self.enemies.entry(id).or_insert_with(|| {
                 self.metrics.enemy_builds += 1;
-                json!({"unit_id":id,"unit_type":u.unit_type,"faction":u.faction,
-                    "position":{"col":p.col,"row":p.row},"unit_status":{"current_count":n.current_count}})
+                EncodedFact::new(&EnemyFact {
+                    unit_id: id,
+                    unit_type: &u.unit_type,
+                    faction: &u.faction,
+                    position: EnemyPosition {
+                        col: p.col,
+                        row: p.row,
+                    },
+                    unit_status: EnemyStatus {
+                        current_count: n.current_count,
+                    },
+                })
             });
             enemies.push(fact.clone());
         }
@@ -305,24 +358,42 @@ impl<'a> ObservationBatch<'a> {
             if tile.entity == 0 || !tile.has_terrain {
                 continue;
             }
-            terrain.push(self.tiles.entry(cell).or_insert_with(|| {
-                self.metrics.tile_builds += 1;
-                json!({"col":cell.0,"row":cell.1,"type":tile.terrain,"movement_cost":tile.cost,"passable":tile.cost<999})
-            }).clone());
+            terrain.push(
+                self.tiles
+                    .entry(cell)
+                    .or_insert_with(|| {
+                        self.metrics.tile_builds += 1;
+                        EncodedFact::new(&TerrainFact {
+                            col: cell.0,
+                            row: cell.1,
+                            terrain: &tile.terrain,
+                            movement_cost: tile.cost,
+                            passable: tile.cost < 999,
+                        })
+                    })
+                    .clone(),
+            );
         }
         let c = self.census.as_ref().unwrap();
         let alive = c.alive.get(faction).cloned().unwrap_or_default();
-        let mut public = json!({"success":true,"result":true,"state":self.faction_status(faction),"faction":faction,
-            "fog":if lifted {"disabled"} else {"active"}, "total_units":c.totals.get(faction).copied().unwrap_or(0),
-            "alive_units":alive.len(),"actionable_units":c.actionable.get(faction).copied().unwrap_or(0),
-            "visible_enemy_units":null,"visible_terrain":null});
-        // These arrays already own JSON values. Serialize-to-Value would copy
-        // every nested key/string again; move them into their final container.
-        public["visible_enemy_units"] = Value::Array(enemies);
-        public["visible_terrain"] = Value::Array(terrain);
-        self.metrics.public_encodes += 1;
         let encode_start = self.profile.as_ref().map(|_| std::time::Instant::now());
-        let public = Arc::new(EncodedObject::new(public));
+        let mut public = EncodedObject::new(
+            json!({"success":true,"result":true,"state":self.faction_status(faction),"faction":faction,
+            "fog":if lifted {"disabled"} else {"active"}, "total_units":c.totals.get(faction).copied().unwrap_or(0),
+            "alive_units":alive.len(),"actionable_units":c.actionable.get(faction).copied().unwrap_or(0)}),
+        );
+        // Encode arrays from immutable fact fragments; no recursive JSON tree
+        // cloning or second scalar encoding, even on the first projection.
+        public.0.push((
+            "visible_enemy_units".into(),
+            serde_json::value::to_raw_value(&enemies).expect("facts encode"),
+        ));
+        public.0.push((
+            "visible_terrain".into(),
+            serde_json::value::to_raw_value(&terrain).expect("facts encode"),
+        ));
+        self.metrics.public_encodes += 1;
+        let public = Arc::new(public);
         if let Some(start) = encode_start {
             self.profile.as_mut().unwrap().public_encode_ns += start.elapsed().as_nanos() as u64;
         }
