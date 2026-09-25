@@ -117,6 +117,14 @@ pub struct Metrics {
     panel_tasks: usize,
     panel_worker_threads: usize,
 }
+/// Opt-in diagnostic wall times. Nested fields are not additive.
+#[derive(Default, serde::Serialize)]
+pub struct Profile {
+    census_ns: u64,
+    faction_ns: u64,
+    public_encode_ns: u64,
+    panels_ns: u64,
+}
 pub struct ObservationBatch<'a> {
     runtime: &'a Runtime,
     census: Option<Census>,
@@ -126,6 +134,7 @@ pub struct ObservationBatch<'a> {
     tiles: HashMap<Hex, Value>,
     panel_workers: HashSet<std::thread::ThreadId>,
     pub metrics: Metrics,
+    pub profile: Option<Profile>,
 }
 pub fn error(message: &str) -> Value {
     json!({"success":false,"result":false,"details":message,"message":message})
@@ -141,12 +150,19 @@ impl<'a> ObservationBatch<'a> {
             tiles: HashMap::new(),
             panel_workers: HashSet::new(),
             metrics: Metrics::default(),
+            profile: None,
         }
+    }
+    pub fn profiled(runtime: &'a Runtime) -> Self {
+        let mut batch = Self::new(runtime);
+        batch.profile = Some(Profile::default());
+        batch
     }
     fn census(&mut self) {
         if self.census.is_some() {
             return;
         }
+        let start = self.profile.as_ref().map(|_| std::time::Instant::now());
         self.metrics.census_builds += 1;
         let r = self.runtime;
         let mut c = Census::default();
@@ -172,6 +188,9 @@ impl<'a> ObservationBatch<'a> {
             }
         }
         self.census = Some(c);
+        if let Some(start) = start {
+            self.profile.as_mut().unwrap().census_ns += start.elapsed().as_nanos() as u64;
+        }
     }
     fn faction_status(&self, faction: &str) -> &'static str {
         let r = self.runtime;
@@ -226,6 +245,7 @@ impl<'a> ObservationBatch<'a> {
         if self.factions.contains_key(faction) {
             return;
         }
+        let start = self.profile.as_ref().map(|_| std::time::Instant::now());
         self.census();
         self.metrics.faction_builds += 1;
         let r = self.runtime;
@@ -301,7 +321,11 @@ impl<'a> ObservationBatch<'a> {
         public["visible_enemy_units"] = Value::Array(enemies);
         public["visible_terrain"] = Value::Array(terrain);
         self.metrics.public_encodes += 1;
+        let encode_start = self.profile.as_ref().map(|_| std::time::Instant::now());
         let public = Arc::new(EncodedObject::new(public));
+        if let Some(start) = encode_start {
+            self.profile.as_mut().unwrap().public_encode_ns += start.elapsed().as_nanos() as u64;
+        }
         self.factions.insert(
             faction.into(),
             FactionFacts {
@@ -310,8 +334,12 @@ impl<'a> ObservationBatch<'a> {
                 public,
             },
         );
+        if let Some(start) = start {
+            self.profile.as_mut().unwrap().faction_ns += start.elapsed().as_nanos() as u64;
+        }
     }
     fn prepare_panels(&mut self, ids: &[u64], faction: &str) {
+        let start = self.profile.as_ref().map(|_| std::time::Instant::now());
         let missing: Vec<_> = ids
             .iter()
             .copied()
@@ -357,6 +385,9 @@ impl<'a> ObservationBatch<'a> {
             self.metrics.attack_distance_checks += metrics.attack_distance_checks;
             self.metrics.attack_rule_checks += metrics.attack_rule_checks;
             self.panels.insert(id, panel);
+        }
+        if let Some(start) = start {
+            self.profile.as_mut().unwrap().panels_ns += start.elapsed().as_nanos() as u64;
         }
     }
     /// Exact broad phase: range is a necessary condition of can_attack. Reuse

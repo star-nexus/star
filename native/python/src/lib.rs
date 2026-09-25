@@ -273,6 +273,42 @@ impl NativeRuntime {
             serde_json::to_string(&report).map_err(|e| e.to_string())
         })
     }
+    /// Opt-in handler profiler. Returns the ordinary report and separate timings.
+    /// This is not an authenticated Agent gate; normal calls do not read timers.
+    fn _observation_profile_json(
+        &self,
+        py: Python<'_>,
+        parameters_json: String,
+    ) -> PyResult<(String, String)> {
+        self.with_runtime(py, |r| {
+            use std::time::Instant;
+            let total = Instant::now();
+            let requests: Vec<Value> =
+                serde_json::from_str(&parameters_json).map_err(|e| e.to_string())?;
+            let parse_ns = total.elapsed().as_nanos() as u64;
+            let start = Instant::now();
+            let mut batch = star_rotk::observation::ObservationBatch::profiled(r);
+            let results: Vec<_> = requests.iter().map(|p| batch.faction_state(p)).collect();
+            let batch_ns = start.elapsed().as_nanos() as u64;
+            let profile = batch.profile.take();
+            let report = star_rotk::observation::ObservationReport {
+                results,
+                metrics: std::mem::take(&mut batch.metrics),
+            };
+            let start = Instant::now();
+            let encoded = serde_json::to_string(&report).map_err(|e| e.to_string())?;
+            let final_encode_ns = start.elapsed().as_nanos() as u64;
+            let start = Instant::now();
+            drop(report);
+            drop(batch);
+            drop(requests);
+            let drop_ns = start.elapsed().as_nanos() as u64;
+            let native_ns = total.elapsed().as_nanos() as u64;
+            let timing = json!({"parse_ns":parse_ns,"batch_ns":batch_ns,"profile":profile,
+                "final_encode_ns":final_encode_ns,"drop_ns":drop_ns,"native_ns":native_ns});
+            Ok((encoded, timing.to_string()))
+        })
+    }
     /// Internal differential harness, never advertised as an Agent action gate.
     fn _resource_probe_json(&self, py: Python<'_>, operations_json: String) -> PyResult<String> {
         use star_rotk::components::{ActionPoints, SkillPoints};
