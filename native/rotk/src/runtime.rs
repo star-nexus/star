@@ -47,6 +47,37 @@ pub struct SceneSpec {
     pub systems: BTreeMap<String, Value>,
 }
 
+/// Serialized while the exclusive runtime borrow is held. Python receives only
+/// owned JSON bytes, never references to ECS components.
+#[derive(Serialize)]
+pub struct Presentation<'a> {
+    players: Value,
+    hud: Value,
+    state: BTreeMap<&'static str, Value>,
+    tiles: Vec<Value>,
+    fog: Value,
+    visuals: Value,
+    epoch: u64,
+    revision: u64,
+    tick: u64,
+    units: Vec<UnitPresentation<'a>>,
+    removed: Vec<u64>,
+    events: Vec<Value>,
+}
+#[derive(Serialize)]
+struct UnitPresentation<'a> {
+    id: u64,
+    position: Option<&'a Position>,
+    unit: Option<&'a UnitInfo>,
+    count: Option<&'a Headcount>,
+    movement: Option<&'a Movement>,
+    movement_points: Option<&'a components::MovePoints>,
+    action_points: Option<&'a components::ActionPoints>,
+    status: Option<&'a components::Status>,
+    skill_points: Option<&'a components::SkillPoints>,
+    construction_points: Option<&'a components::ConstructionPoints>,
+}
+
 pub struct Runtime {
     pub world: OrderedWorld,
     pub clock: SimClock,
@@ -429,20 +460,8 @@ impl Runtime {
         }
         out
     }
-    pub fn presentation(&mut self) -> Value {
-        let mut units = Vec::with_capacity(self.presentation_dirty.len());
-        for id in std::mem::take(&mut self.presentation_dirty) {
-            if let Some(entity) = self.world.entity(id) {
-                units.push(json!({"id": id, "position": self.world.ecs.get::<Position>(entity),
-                    "unit": self.world.ecs.get::<UnitInfo>(entity), "count": self.world.ecs.get::<Headcount>(entity),
-                    "movement": self.world.ecs.get::<Movement>(entity),
-                    "movement_points":self.world.ecs.get::<components::MovePoints>(entity),
-                    "action_points":self.world.ecs.get::<components::ActionPoints>(entity),
-                    "status":self.world.ecs.get::<components::Status>(entity),
-                    "skill_points":self.world.ecs.get::<components::SkillPoints>(entity),
-                    "construction_points":self.world.ecs.get::<components::ConstructionPoints>(entity)}));
-            }
-        }
+    pub fn presentation(&mut self) -> Presentation<'_> {
+        let dirty = std::mem::take(&mut self.presentation_dirty);
         let tiles: Vec<_> = std::mem::take(&mut self.presentation_tiles)
             .into_iter()
             .filter_map(|id| {
@@ -480,9 +499,47 @@ impl Runtime {
                 .collect()
         };
         let players = json!({"full":full,"rows":rows,"units_removed":units_removed});
-        json!({"players":players,"hud":hud,"state":state,"tiles":tiles,"fog":fog,"visuals":self.visuals.delta(), "epoch": self.epoch, "revision": self.revision, "tick": self.clock.tick,
-               "units": units, "removed": std::mem::take(&mut self.presentation_removed),
-               "events": std::mem::take(&mut self.events)})
+        // Complete every mutation before borrowing component rows. The returned
+        // view cannot survive another world write; the binding serializes it
+        // inside the same runtime lock before returning owned bytes to Python.
+        let visuals = self.visuals.delta();
+        let removed = std::mem::take(&mut self.presentation_removed);
+        let events = std::mem::take(&mut self.events);
+        let units = dirty
+            .into_iter()
+            .filter_map(|id| {
+                let entity = self.world.entity(id)?;
+                Some(UnitPresentation {
+                    id,
+                    position: self.world.ecs.get::<Position>(entity),
+                    unit: self.world.ecs.get::<UnitInfo>(entity),
+                    count: self.world.ecs.get::<Headcount>(entity),
+                    movement: self.world.ecs.get::<Movement>(entity),
+                    movement_points: self.world.ecs.get::<components::MovePoints>(entity),
+                    action_points: self.world.ecs.get::<components::ActionPoints>(entity),
+                    status: self.world.ecs.get::<components::Status>(entity),
+                    skill_points: self.world.ecs.get::<components::SkillPoints>(entity),
+                    construction_points: self
+                        .world
+                        .ecs
+                        .get::<components::ConstructionPoints>(entity),
+                })
+            })
+            .collect();
+        Presentation {
+            players,
+            hud,
+            state,
+            tiles,
+            fog,
+            visuals,
+            epoch: self.epoch,
+            revision: self.revision,
+            tick: self.clock.tick,
+            units,
+            removed,
+            events,
+        }
     }
     pub fn diagnostics(&self) -> Value {
         json!({"stage": "R3-in-progress", "gameplay_ready": false, "epoch": self.epoch,

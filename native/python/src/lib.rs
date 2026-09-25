@@ -168,7 +168,7 @@ impl NativeRuntime {
     ) -> PyResult<String> {
         self.with_runtime(py, |r| {
             check_control_epoch(r, expected_epoch)?;
-            Ok(r.presentation().to_string())
+            serde_json::to_string(&r.presentation()).map_err(|e| e.to_string())
         })
     }
     fn close(&self, py: Python<'_>) -> PyResult<()> {
