@@ -700,3 +700,31 @@ comparisons and authenticated batch checks. Query microbenchmarks show substanti
 reduction in public construction/release cost, with unchanged payload sizes.
 They do not replace whole-frame/queue capacity acceptance. Backend Python and
 native threads=1 remain defaults; Python SDK/UI/transport/policy stay Python.
+
+
+## R4c presentation output and rendered closed-loop checkpoint
+
+Dirty Unit display rows now serialize directly from borrowed native components,
+without building and cloning intermediate JSON trees. The borrow is confined to
+the existing exclusive runtime call; Python still receives owned JSON and the
+same display schema. API17/schema5 remain compatible. Identify this performance
+build by source `e85e3067b1d2aed5cf08be9dbe35b1deed91dba1` and extension SHA
+`8c74d05d89f1037c0157ad25e32ed4c6852bad7d316694cb056faa8c72f2d2e2`, not API alone.
+
+On the Mac mini M4, the canonical rendered 5000-Unit / 1000-synthetic-Agent
+closed loop passed three independent 30-second warmups plus 300-second runs at
+30Hz: whole-frame work P99 32.479 / 32.613 / 32.405ms. Observation response and
+both admission queue P99 guards passed 100ms, along with survival, throughput,
+clock and backlog guards. The native thread count was one; the Lab Agent event
+budget was 8ms. Agents observe, submit per-Unit move/attack/wait choices and then
+wait a truncated-normal 30-second think time; there is no thinking-period polling.
+
+This scoped result includes the production Cocoa window, display application and
+render/present, with the canonical minimap Unit layer disabled and finite-run GC
+maintenance deferred. It excludes Protocol/Hub and real LLMs, and does not mean
+5000 Units move simultaneously. Some 30-second subwindows exceed the frame gate;
+capacity admission uses each full 300-second window, retaining all slow frames.
+The older 300-second failure remains archived. Python stays the default while
+remaining integration, compatibility audit and platform installation work proceeds.
+See the [Lab evidence](../../star-lab/experiments/2026-09-rust-rendered-loop/README.md)
+and [GAP ledger](native-benchmark-gaps.md) before comparing benchmark versions.

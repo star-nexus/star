@@ -75,3 +75,16 @@ no timer, and neither mode changes simulation time, RNG, component state or
 revisions. Faction and panel phases are timed on the caller; worker scheduling
 and join are included in panel elapsed time, not individually attributed. R002
 remains open for future or unaudited writers/consumers.
+
+
+## R4c presentation serialization lifetime
+
+`Runtime::presentation` drains the same dirty IDs, tile/state/Fog/player/visual
+changes, removed IDs and ordered events as before. After those mutations finish,
+it builds typed Unit rows borrowing ECS components. The binding serializes the
+returned view while holding the existing runtime lock; no write can intervene,
+and only an owned JSON string crosses into Python. No component reference or
+borrow survives the call. Field sets, nulls, ordering and one-shot delta drains
+are unchanged; a 2000-tick actual-input differential checks every complete decoded
+delta and byte length. This representation change does not add projection coverage
+for any new writer or consumer, so R002 remains a bounded-audit risk.
