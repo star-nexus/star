@@ -25,7 +25,8 @@ def test_public_facts_share_across_factions_and_are_rebuilt_on_reset(threads):
         assert report['metrics']['faction_builds']==3
         assert report['metrics']['enemy_builds']==4  # unique Units, not six faction projections
         tiles=world.get_singleton_component(c.MapData).tiles
-        assert report['metrics']['tile_builds']==len(tiles)
+        # The oracle excludes the mapped tile with external ID zero.
+        assert report['metrics']['tile_builds']==len(before[0]['visible_terrain'])
         world.get_component(enemy,c.UnitCount).current_count=17
         world.get_component(tiles[(0,0)],c.Terrain).terrain_type=TerrainType.FOREST
         n.reset(json.dumps(export_initial_state(world)))
