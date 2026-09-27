@@ -16,6 +16,22 @@ delivery and BOT integration are still pending. Offline GameScene and settlement
 now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
+## Latest compatibility checkpoint: R3d5 / API18
+
+API18 preserves the active CPython integer-string conversion limit for cumulative
+Agent telemetry. The Python request adapter samples `sys.get_int_max_str_digits()`
+only for `report_llm_stats`; Rust enforces it when the original handler would call
+`int()`. First reports still store the raw value. Limit zero remains unlimited;
+Agent parameters cannot override this trusted envelope metadata. Direct native
+envelopes that omit it use the oracle default4300. Match the API18 wheel to this
+checkout; old checkpoints and their wheels remain separately reproducible.
+
+This fixes an observed benchmark counter difference, recorded as G014 in the
+[GAP ledger](native-benchmark-gaps.md). It leaves game rules and defaults intact.
+Replay must preserve the interpreter setting at request admission, alongside time
+and ordering. R4c capacity evidence remains attached to its original API17 build;
+this compatibility checkpoint does not claim a new performance measurement.
+
 ## Product boundary: native execution, Python usability
 
 The migration delivers a Python-facing benchmark powered by a Rust kernel. Its
