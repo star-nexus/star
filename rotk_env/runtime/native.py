@@ -1,6 +1,7 @@
 """Owned Python interface to the native world; no mutable ECS proxy objects."""
 import datetime
 import json
+import sys
 import time
 from functools import wraps
 from threading import RLock
@@ -45,7 +46,7 @@ class ActionRequest:
         if type(self.connected_agents) is not int or not 0 <= self.connected_agents < 2**64:
             raise ValueError("connected_agents must be a nonnegative u64 transport count")
         registering = self.action == "register_agent_info"
-        return dict(
+        request = dict(
             agent_id=self.agent_id, action=self.action, parameters=params,
             wall_time=time.time() if self.wall_time is None else self.wall_time,
             registration_time=(self.registration_time if self.registration_time is not None
@@ -53,6 +54,9 @@ class ActionRequest:
             sanitized_base_url=AgentInfoRegistry.sanitize_url(params.get("base_url", "")) if registering else "",
             connected_agents=self.connected_agents,
         )
+        if self.action == "report_llm_stats":
+            request["integer_string_limit"] = sys.get_int_max_str_digits()
+        return request
 
 
 def _decode_result(result):

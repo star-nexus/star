@@ -26,5 +26,5 @@ mod unicode_repr;
 pub mod unit_actions;
 pub mod vision;
 pub const SCHEMA_VERSION: u32 = 5;
-pub const API_VERSION: u32 = 17;
+pub const API_VERSION: u32 = 18;
 pub const RULES_VERSION: &str = "python-r0c-3cc4ffe";

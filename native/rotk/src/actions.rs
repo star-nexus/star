@@ -25,7 +25,14 @@ pub struct Request {
     /// Trusted transport snapshot, never inferred from Agent-provided parameters.
     #[serde(default)]
     pub connected_agents: u64,
+    /// Trusted Python interpreter setting captured at admission, not Agent input.
+    #[serde(default = "default_integer_string_limit")]
+    pub integer_string_limit: usize,
 }
+fn default_integer_string_limit() -> usize {
+    4300 // CPython oracle default for legacy raw native envelopes.
+}
+
 #[derive(serde::Serialize)]
 pub struct BatchReport {
     pub results: Vec<Response>,
@@ -491,7 +498,7 @@ impl Runtime {
         }
         let mut result = match action {
             "strategy_ping" => self.strategy_ping(params),
-            "report_llm_stats" => self.report_llm_stats(params),
+            "report_llm_stats" => self.report_llm_stats(params, request.integer_string_limit),
             "retrieve_game_status" => self.retrieve_game_status(request.connected_agents),
             "register_agent_info" => self.register_agent(&request, params),
             "release_units" => match self.release_request(params) {

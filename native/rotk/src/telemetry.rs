@@ -69,12 +69,18 @@ fn number(value: &Value) -> Option<f64> {
                 .ok()
         })
 }
-fn counter(value: &Value) -> BigInt {
+fn counter(value: &Value, integer_string_limit: usize) -> BigInt {
     if let Some(v) = crate::codec::action_integer(value) {
         return v.into();
     }
     if let Some(v) = value.as_str() {
         return remove_digit_separators(v)
+            // CPython counts decimal digits, including leading zeroes, but not
+            // signs, whitespace or separators. Zero disables the host limit.
+            .filter(|s| {
+                integer_string_limit == 0
+                    || s.bytes().filter(u8::is_ascii_digit).count() <= integer_string_limit
+            })
             .and_then(|s| s.parse().ok())
             .unwrap_or_default();
     }
@@ -110,8 +116,8 @@ fn label(previous: &Value, incoming: &Value) -> String {
 fn percent(numerator: &Value, denominator: &Value) -> Result<Value, &'static str> {
     // CPython integer true division rounds the ratio, not its operands. Keep
     // large token counters exact and avoid inf/inf or double-rounding them.
-    let a = counter(numerator);
-    let b = counter(denominator);
+    let a = counter(numerator, 0);
+    let b = counter(denominator, 0);
     if b == BigInt::from(0) {
         return Ok(json!(0.));
     }
@@ -283,7 +289,11 @@ impl Runtime {
         json!({"success":true,"message":"Strategy score accepted","new_score":score,"pings":count+1})
     }
 
-    pub(crate) fn report_llm_stats(&mut self, params: &Value) -> Value {
+    pub(crate) fn report_llm_stats(
+        &mut self,
+        params: &Value,
+        integer_string_limit: usize,
+    ) -> Value {
         let faction = match faction(params) {
             Ok(f) => f,
             Err(e) => return e,
@@ -328,7 +338,8 @@ impl Runtime {
         let previous = &stats["llm_api_stats"][faction];
         if previous.is_object() && truthy(previous) {
             for key in ADD_KEYS {
-                let value = counter(&previous[*key]) + counter(&incoming[*key]);
+                let value = counter(&previous[*key], integer_string_limit)
+                    + counter(&incoming[*key], integer_string_limit);
                 incoming[*key] = serde_json::from_str(&value.to_string()).expect("integer JSON");
             }
             for (rate, numerator, denominator) in [
