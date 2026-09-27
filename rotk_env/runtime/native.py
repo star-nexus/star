@@ -210,6 +210,21 @@ class RustRuntime:
         return self.execute_action("get_faction_state", parameters, agent_id=agent_id, wall_time=wall_time)
 
     @_serialized
+    def get_faction_state_json(self, faction, *, agent_id, unit_ids=_UNSET, wall_time=None):
+        """Return owned JSON for transport without a server decode/encode round trip.
+
+        Uses the ordinary authenticated action gate and admission lock. The caller
+        may forward this immutable string; the client still decodes the complete
+        response. No fields, freshness or permission checks are omitted. JSON
+        spelling is not a byte-level compatibility contract with Python encoders.
+        """
+        parameters = {"faction": faction}
+        if unit_ids is not _UNSET:
+            parameters["unit_ids"] = unit_ids
+        request = ActionRequest(agent_id, "get_faction_state", parameters, wall_time)
+        return self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))
+
+    @_serialized
     def finish_human_turn(self, *, wall_time=None, expected_epoch=None):
         """Trusted Framework input, with the legacy human reset-before-check semantics."""
         self._native.finish_human_turn(time.time() if wall_time is None else wall_time, expected_epoch)
