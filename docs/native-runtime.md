@@ -16,7 +16,31 @@ delivery and BOT integration are still pending. Offline GameScene and settlement
 now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
-## Latest compatibility checkpoint: R3d5 / API18
+## Encoded faction observations: R4d / API18
+
+The Python adapter provides `runtime.get_faction_state_json(faction,
+agent_id=trusted_agent_id, unit_ids=owned_ids, wall_time=optional_wall_time)`.
+It returns an owned JSON string from the ordinary Rust action gate. Omit
+`unit_ids` for the existing full-faction semantics; an empty list stays empty.
+Permissions, Fog, list order, errors and current-world visibility are unchanged.
+Later actions, reset or close cannot change a previously returned string.
+
+Use this entry point when a host needs a serialized response body. It avoids
+decoding Rust JSON into Python objects solely to encode the same objects again.
+The client still decodes the full response; network envelopes, authentication
+identity and delivery remain the Python host's responsibility. The existing
+dictionary-returning `get_faction_state` and `execute_action` interfaces remain
+available. No network adapter is switched automatically, and this is not an
+encoded VLM or arbitrary-action interface. JSON spelling is not a byte-for-byte
+contract across encoders; decoded contents and list ordering are the contract.
+
+This adapter change reuses the API18 binary. The fixed recorded workload and
+real-window diagnostics are documented in
+[R4d evidence](../../star-lab/experiments/2026-09-rust-5000-agents/README.md).
+Short diagnostics do not establish the 300-second, three-run capacity gate.
+The default backend and native worker count remain Python and one worker.
+
+## Compatibility checkpoint: R3d5 / API18
 
 API18 preserves the active CPython integer-string conversion limit for cumulative
 Agent telemetry. The Python request adapter samples `sys.get_int_max_str_digits()`
