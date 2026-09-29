@@ -768,3 +768,28 @@ The older 300-second failure remains archived. Python stays the default while
 remaining integration, compatibility audit and platform installation work proceeds.
 See the [Lab evidence](../../star-lab/experiments/2026-09-rust-rendered-loop/README.md)
 and [GAP ledger](native-benchmark-gaps.md) before comparing benchmark versions.
+
+
+## R4e: current API18 capacity validation (2026-09-29)
+
+The unchanged R4d implementation `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`
+passed three independent30s warmups plus300s measurements on Mac mini M4/16GiB:
+5000 living Units,1000 synthetic Agents,30Hz, one native thread. Whole-frame
+P99 was29.800/29.275/29.470ms; observation response P99 was45.872/47.783/44.798ms
+and action queue P99 was35.293/35.601/34.744ms. All admission, clock, survival,
+throughput and backlog guards passed. Peak simultaneous movers were171/177/173.
+
+This uses Cocoa2480×1239, canonical Fog, minimap Unit layer off, finite-run GC
+deferred,8ms Lab Agent budget and post-action30±5s thinking truncated15–45s.
+Chrome remained open. Protocol/Hub and realLLM are excluded. The API18 extension
+SHA is `324454a00ab8bd3559c9229e6c6c9644242d65c488585eba7d29a63b39d29405`.
+Four-thread replay of40994 requests and9880 ticks matched responses, events and
+final state; this is not a multi-thread performance result.
+
+Same-profile single60s diagnostics against original Python6a970dea show mean
+observation service7.822→2.741ms (2.85× time ratio) and frame P9931.800→26.453ms
+(16.8% lower). These are live workload comparisons, not identical-input language
+benchmarks. See [R4e evidence](../../star-lab/experiments/2026-09-rust-1000-agent-validation/README.md).
+World step remains ordered; general System parallelism is not implemented.
+5000-Agent expansion is paused. Python/default1thread and remaining integration,
+GAP audit and platform release requirements remain unchanged.
