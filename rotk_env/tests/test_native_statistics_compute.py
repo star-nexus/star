@@ -1,5 +1,7 @@
 """Statistics row computation preserves ordered commits and partial failures."""
 import json
+import copy
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -101,3 +103,48 @@ def test_imported_duplicate_missing_rows_and_no_movement_component(threads):
         n.close()
     with pytest.raises(RuntimeError, match='closed'):
         n._step_profile_json(0., 1720000000.)
+
+
+def test_mixed_instance_pools_normal_threshold_reset_and_owned_deltas():
+    initial, ids = initial_statistics('window')
+    template = copy.deepcopy(next(e for e in initial['entities'] if e['id'] == ids[0]))
+    for offset in range(256):
+        row = copy.deepcopy(template)
+        row['id'] = initial['entity_counter'] + offset
+        initial['entities'].append(row)
+    initial['entity_counter'] += 256
+    initial['systems']['StatisticsSystem']['history_limit'] = 10000
+    scene = json.dumps(initial)
+
+    def sequence(n):
+        results = []
+        for index in range(12):
+            # Normal public step must share the same exact result as the
+            # diagnostic path while different instance pools coexist.
+            n.step(.1, 1720000000. + index)
+            results.append((json.loads(n.export_state_json()), json.loads(n.take_presentation_delta_json())))
+            if index == 5:
+                n.reset(n.export_state_json())
+        return results
+
+    reference = NativeRuntime(scene, 1)
+    instances = [NativeRuntime(scene, threads) for threads in [1,2,4]]
+    try:
+        expected = sequence(reference)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(sequence, n) for n in instances]
+            assert all(f.result() == expected for f in futures)
+        for n, threads in zip(instances, [1,2,4]):
+            n.reset(scene)
+            timing = json.loads(n._step_profile_json(.1, 1720000000.))
+            assert timing['statistics']['parallel_batches'] == int(threads > 1)
+            assert timing['statistics']['jobs'] == (0 if threads == 1 else threads)
+            assert 0 <= timing['statistics']['worker_threads'] <= threads
+        # Previously returned values stay valid after resets and pool teardown.
+        preserved = copy.deepcopy(expected)
+        reference.close()
+        assert expected == preserved
+    finally:
+        reference.close()
+        for n in instances:
+            n.close()

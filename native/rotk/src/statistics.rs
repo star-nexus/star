@@ -28,9 +28,11 @@ pub struct StatisticsTimings {
     pub jobs: usize,
     pub worker_threads: usize,
 }
-// Experimental crossover is selected from controlled whole-call evidence.
-// Until that gate passes normal execution stays on the serial compute path.
-pub(crate) const STATISTICS_PARALLEL_MIN_ROWS: usize = usize::MAX;
+// E2 alternating complete-step controls: 1..32 rows lose, 64 rows have little
+// headroom; 128+ rows win on M4 at 2/4 workers. Keep canonical 128-row batches
+// and larger legacy batches eligible; tiny/tail batches stay inline. Threads=1
+// still has no pool. See docs/native-statistics-parallel.md and Lab E2 evidence.
+pub(crate) const STATISTICS_PARALLEL_MIN_ROWS: usize = 128;
 fn start<const PROFILE: bool>() -> Option<std::time::Instant> {
     PROFILE.then(std::time::Instant::now)
 }

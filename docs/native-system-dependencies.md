@@ -6,10 +6,18 @@
 oracle `python-r0c-3cc4ffe`. Target remains 5000 Units + 1000 Agents;
 5000 Agents is paused. Rust owns world execution; Python owns SDK/policy/UI/transport.
 
-Progress: `recovery █ | dependency audit █ | attribution █ | parallel implementation ░ | capacity ░`.
+Progress: `recovery █ | dependency audit █ | attribution █ | Statistics implementation █ | E2 capacity ░`.
 This describes stage coverage, not elapsed-work percentages.
 
-## Current next task (E1 user steering)
+## Current implementation (E2)
+
+2026-10-01: [Statistics internal compute](native-statistics-parallel.md) implements
+the selected E1 leaf with a128-row cutoff and ordered main-thread commits.
+Fixed-input equivalence and net controls passed; the selected binary's regression
+and real capacity gates are recorded separately in that report. Defaults remain1.
+The P0 cost table below is historical; E2 does not enable between-System scheduling.
+
+## Historical selection (E1 user steering)
 
 2026-09-30: the next task explores **ECS between-System and within-System
 parallelism**. [E1 design and mechanism evidence](native-ecs-parallel-design.md)

@@ -16,6 +16,15 @@ delivery and BOT integration are still pending. Offline GameScene and settlement
 now redirect commands to Rust. A derived battlefield
 presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
 
+## Statistics internal compute: E2
+
+The experimental Rust backend uses its existing instance pool to build Statistics
+observation records when a scheduled batch contains at least128 rows and native
+threads is configured to2/4. It commits records and component changes in original
+order before continuing the next System. Tiny batches and the default1-thread
+configuration stay inline. Sampling, history retention, errors, rules and Python
+interfaces are unchanged. See [evidence and boundaries](native-statistics-parallel.md).
+
 ## Encoded faction observations: R4d / API18
 
 The Python adapter provides `runtime.get_faction_state_json(faction,

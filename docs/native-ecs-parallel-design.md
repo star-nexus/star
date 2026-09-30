@@ -8,6 +8,9 @@ P0 measurement2ac2b29 and locked Bevy0.19.1. Target5000 Units/1000 Agents;
 
 Progress: `access audit █ | locked-API probes █ | design alternatives █ | production prototype ░ | capacity ░`.
 Exploration is complete; no production world System is parallelized by E1.
+E2 now implements the selected Statistics leaf with a128-row cutoff;
+see [implementation, measured controls and gate status](native-statistics-parallel.md).
+This document preserves the E1 design decision and subsequent roadmap.
 
 ## 1. What currently prevents scheduling
 
