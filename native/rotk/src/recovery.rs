@@ -1,4 +1,5 @@
 //! R0 resource scheduler, including MP's next-boundary timer semantics.
+use crate::system_profile::{RecoveryTimings, elapsed, start};
 use crate::{
     components::{ActionPoints, MovePoints, SkillPoints},
     runtime::Runtime,
@@ -99,12 +100,25 @@ impl Recovery {
         self.skill_elapsed.remove(&id);
     }
     pub fn update(&mut self, world: &mut OrderedWorld, now: f64, dirty: &mut BTreeSet<u64>) {
+        self.update_profile::<false>(world, now, dirty, &mut RecoveryTimings::default());
+    }
+    fn update_profile<const PROFILE: bool>(
+        &mut self,
+        world: &mut OrderedWorld,
+        now: f64,
+        dirty: &mut BTreeSet<u64>,
+        timing: &mut RecoveryTimings,
+    ) {
         let Some(last) = self.last else {
             self.last = Some(now);
             return;
         };
         if now - last <= 0. {
             return;
+        }
+        if PROFILE {
+            timing.new_ids = world.next_id().saturating_sub(self.known);
+            timing.mp_pending = self.mp_pending.len() as u64;
         }
         // Only new IDs are audited, never all resident Units on each tick.
         for id in self.known..world.next_id() {
@@ -133,10 +147,17 @@ impl Recovery {
                 self.cancel_mp(id);
             }
         }
+        let ap_start = start::<PROFILE>();
         while let Some((due, entries)) = self.ap.pop_due(now) {
             let ticks = python_floor_div(now - due, self.ap_interval) + 1.;
             for (version, id) in entries {
+                if PROFILE {
+                    timing.ap_entries += 1;
+                }
                 if !self.ap.is_current(id, due, version) {
+                    if PROFILE {
+                        timing.stale_entries += 1;
+                    }
                     continue;
                 }
                 let ap = world
@@ -159,9 +180,19 @@ impl Recovery {
                 }
             }
         }
+        if PROFILE {
+            timing.ap_ns += elapsed(ap_start);
+        }
+        let mp_start = start::<PROFILE>();
         while let Some((due, entries)) = self.mp.pop_due(now) {
             for (version, id) in entries {
+                if PROFILE {
+                    timing.mp_entries += 1;
+                }
                 if !self.mp.is_current(id, due, version) {
+                    if PROFILE {
+                        timing.stale_entries += 1;
+                    }
                     continue;
                 }
                 if let Some(mut mp) = world
@@ -175,10 +206,20 @@ impl Recovery {
                 self.cancel_mp(id);
             }
         }
+        if PROFILE {
+            timing.mp_ns += elapsed(mp_start);
+        }
+        let skill_start = start::<PROFILE>();
         while let Some((due, entries)) = self.skill.pop_due(now) {
             let ticks = python_floor_div(now - due, self.skill_interval) + 1.;
             for (version, id) in entries {
+                if PROFILE {
+                    timing.skill_entries += 1;
+                }
                 if !self.skill.is_current(id, due, version) {
+                    if PROFILE {
+                        timing.stale_entries += 1;
+                    }
                     continue;
                 }
                 let sp = world
@@ -203,6 +244,9 @@ impl Recovery {
                     self.skill.schedule(id, next);
                 }
             }
+        }
+        if PROFILE {
+            timing.skill_ns += elapsed(skill_start);
         }
     }
 }
@@ -236,14 +280,29 @@ impl Runtime {
         }
     }
     pub fn advance_recovery(&mut self) {
+        self.advance_recovery_profile::<false>(&mut RecoveryTimings::default());
+    }
+    pub(crate) fn advance_recovery_profile<const PROFILE: bool>(
+        &mut self,
+        timing: &mut RecoveryTimings,
+    ) {
         if self.clock.realtime
             && let Some(r) = self.recovery.as_mut().filter(|r| r.enabled)
         {
-            r.update(
-                &mut self.world,
-                self.clock.elapsed,
-                &mut self.presentation_dirty,
-            );
+            if PROFILE {
+                r.update_profile::<true>(
+                    &mut self.world,
+                    self.clock.elapsed,
+                    &mut self.presentation_dirty,
+                    timing,
+                );
+            } else {
+                r.update(
+                    &mut self.world,
+                    self.clock.elapsed,
+                    &mut self.presentation_dirty,
+                );
+            }
         }
     }
 }

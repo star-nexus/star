@@ -1,5 +1,6 @@
 //! Animation lifetimes affect external ID allocation. Interpolation and pixels
 //! belong to the Python presentation layer; the world exports only changed rows.
+use crate::system_profile::{VisualTimings, elapsed, start};
 use crate::{
     components::Position,
     runtime::{InitialComponents, Runtime},
@@ -124,11 +125,20 @@ impl Visuals {
             .insert(InitialComponents(BTreeMap::new()));
         Ok(id)
     }
-    fn advance(&mut self, r: &mut Runtime, dt: f64) -> Result<(), String> {
+    fn advance<const PROFILE: bool>(
+        &mut self,
+        r: &mut Runtime,
+        dt: f64,
+        timing: &mut VisualTimings,
+    ) -> Result<(), String> {
         // Keep legacy phases: attack -> projectile -> effect -> floating text.
         // A projectile born this tick receives this tick's full dt as in Python.
         let mut complete = vec![];
         let mut arrows = vec![];
+        if PROFILE {
+            timing.attack_rows = self.attack.len() as u64;
+        }
+        let phase_start = start::<PROFILE>();
         for (&id, attack) in &mut self.attack {
             if r.component::<Position>(id).is_none() || attack["is_attacking"] != true {
                 continue;
@@ -155,12 +165,19 @@ impl Visuals {
                 attack["projectile_created"] = json!(true);
             }
         }
+        if PROFILE {
+            timing.attack_ns += elapsed(phase_start);
+        }
+        let structural_start = start::<PROFILE>();
         for id in complete {
             self.attack.remove(&id);
             self.dirty.insert(id);
         }
         for attack in arrows {
             let id = Self::spawn(r)?;
+            if PROFILE {
+                timing.spawned += 1;
+            }
             let ranged = attack["attack_type"] == "ranged";
             self.projectile.insert(id,json!({"start_pos":attack["start_pixel_pos"],"target_pos":attack["target_pixel_pos"],
                 "flight_progress":0.,"flight_speed":if ranged{600.}else{800.},"is_flying":true,
@@ -168,7 +185,12 @@ impl Visuals {
                 "size":1.,"color":if ranged{[139,69,19]}else{[192,192,192]}}));
             self.dirty.insert(id);
         }
+        if PROFILE {
+            timing.structural_ns += elapsed(structural_start);
+            timing.projectile_rows = self.projectile.len() as u64;
+        }
         let mut remove = vec![];
+        let phase_start = start::<PROFILE>();
         for (&id, p) in &mut self.projectile {
             if p["is_flying"] != true {
                 continue;
@@ -187,11 +209,23 @@ impl Visuals {
                 remove.push(id);
             }
         }
+        if PROFILE {
+            timing.projectile_ns += elapsed(phase_start);
+        }
+        let structural_start = start::<PROFILE>();
         for id in remove {
+            if PROFILE {
+                timing.removed += 1;
+            }
             self.forget(id);
             r.remove_entity(id);
         }
+        if PROFILE {
+            timing.structural_ns += elapsed(structural_start);
+            timing.effect_rows = self.effect.len() as u64;
+        }
         let mut remove = vec![];
+        let phase_start = start::<PROFILE>();
         for (&id, e) in &mut self.effect {
             if e["is_playing"] != true {
                 continue;
@@ -205,11 +239,23 @@ impl Visuals {
                 remove.push(id);
             }
         }
+        if PROFILE {
+            timing.effect_ns += elapsed(phase_start);
+        }
+        let structural_start = start::<PROFILE>();
         for id in remove {
+            if PROFILE {
+                timing.removed += 1;
+            }
             self.forget(id);
             r.remove_entity(id);
         }
+        if PROFILE {
+            timing.structural_ns += elapsed(structural_start);
+            timing.damage_rows = self.damage.len() as u64;
+        }
         let mut remove = vec![];
+        let phase_start = start::<PROFILE>();
         for (&id, d) in &mut self.damage {
             let elapsed = f(d, "elapsed_time") + dt;
             d["elapsed_time"] = json!(elapsed);
@@ -222,9 +268,19 @@ impl Visuals {
             let (vx, vy) = point(d, "velocity");
             d["world_position"] = json!([x + vx * dt, y + vy * dt]);
         }
+        if PROFILE {
+            timing.damage_ns += elapsed(phase_start);
+        }
+        let structural_start = start::<PROFILE>();
         for id in remove {
+            if PROFILE {
+                timing.removed += 1;
+            }
             self.forget(id);
             r.remove_entity(id);
+        }
+        if PROFILE {
+            timing.structural_ns += elapsed(structural_start);
         }
         Ok(())
     }
@@ -284,8 +340,15 @@ impl Runtime {
         Ok(())
     }
     pub(crate) fn advance_visuals(&mut self, dt: f64) -> Result<(), String> {
+        self.advance_visuals_profile::<false>(dt, &mut VisualTimings::default())
+    }
+    pub(crate) fn advance_visuals_profile<const PROFILE: bool>(
+        &mut self,
+        dt: f64,
+        timing: &mut VisualTimings,
+    ) -> Result<(), String> {
         let mut visuals = std::mem::take(&mut self.visuals);
-        let result = visuals.advance(self, dt);
+        let result = visuals.advance::<PROFILE>(self, dt, timing);
         self.visuals = visuals;
         result
     }

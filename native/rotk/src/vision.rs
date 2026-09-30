@@ -1,4 +1,5 @@
 //! Incremental faction visibility; geometry is independent of faction ownership.
+use crate::system_profile::{VisionTimings, elapsed, start};
 use crate::{
     components::{Position, UnitInfo},
     hex::{self, Hex},
@@ -241,7 +242,20 @@ impl VisionSystem {
         result
     }
     pub fn visibility_for(&mut self, r: &Runtime, center: Hex, range: i64) -> Arc<HexSet> {
+        self.visibility_for_profile::<false>(r, center, range, &mut VisionTimings::default())
+    }
+    fn visibility_for_profile<const PROFILE: bool>(
+        &mut self,
+        r: &Runtime,
+        center: Hex,
+        range: i64,
+        timing: &mut VisionTimings,
+    ) -> Arc<HexSet> {
+        let cache_start = start::<PROFILE>();
         let effective = range + Self::terrain_bonus(r, center);
+        if PROFILE {
+            timing.max_effective_range = timing.max_effective_range.max(effective);
+        }
         let key = (
             center,
             if self.state.window { range } else { effective },
@@ -257,20 +271,43 @@ impl VisionSystem {
             self.lru.insert(stamp, key);
             *old = stamp;
             self.state.geometry_hits += 1;
+            if PROFILE {
+                timing.geometry_hits += 1;
+                timing.cache_ns += elapsed(cache_start);
+            }
             return cells.clone();
         }
+        if PROFILE {
+            timing.cache_ns += elapsed(cache_start);
+        }
+        let geometry_start = start::<PROFILE>();
         let visible = Arc::new(Self::visible_geometry(r, center, effective));
+        if PROFILE {
+            timing.geometry_ns += elapsed(geometry_start);
+            timing.geometry_misses += 1;
+            timing.geometry_tiles += visible.len() as u64;
+        }
+        let cache_start = start::<PROFILE>();
         self.cache.insert(key, (visible.clone(), stamp));
         self.lru.insert(stamp, key);
         if self.cache.len() > self.state.capacity {
             let (_, old) = self.lru.pop_first().unwrap();
             self.cache.remove(&old);
             self.state.geometry_evictions += 1;
+            if PROFILE {
+                timing.geometry_evictions += 1;
+            }
         }
         self.state.geometry_misses += 1;
+        if PROFILE {
+            timing.cache_ns += elapsed(cache_start);
+        }
         visible
     }
     pub fn update(&mut self, r: &mut Runtime) {
+        self.update_profile::<false>(r, &mut VisionTimings::default());
+    }
+    fn update_profile<const PROFILE: bool>(&mut self, r: &mut Runtime, timing: &mut VisionTimings) {
         self.state.frames += 1;
         self.delta.clear();
         if r.fog.is_none() {
@@ -280,8 +317,12 @@ impl VisionSystem {
             });
         }
         self.state.last_fog_enabled = Some(r.fog.as_ref().unwrap().enabled);
+        let audit_start = start::<PROFILE>();
         if !self.state.bootstrapped {
             self.audit(r, true);
+            if PROFILE {
+                timing.audit_runs += 1;
+            }
             self.state.bootstrapped = true;
         } else if !(self.state.window && self.state.indexed)
             && self.state.frames.is_multiple_of(if self.state.indexed {
@@ -291,9 +332,17 @@ impl VisionSystem {
             })
         {
             self.audit(r, false);
+            if PROFILE {
+                timing.audit_runs += 1;
+            }
         }
         self.state.dirty.append(&mut r.vision_dirty);
+        if PROFILE {
+            timing.audit_ns += elapsed(audit_start);
+            timing.dirty_rows += self.state.dirty.len() as u64;
+        }
         for id in std::mem::take(&mut self.state.dirty) {
+            let gather_start = start::<PROFILE>();
             let values = r.world.entity(id).and_then(|e| {
                 Some((
                     e,
@@ -302,12 +351,20 @@ impl VisionSystem {
                     r.world.ecs.get::<UnitInfo>(e)?.faction.clone(),
                 ))
             });
+            if PROFILE {
+                timing.gather_ns += elapsed(gather_start);
+            }
             let Some((e, pos, v, faction)) = values else {
+                let commit_start = start::<PROFILE>();
                 let old = self.state.unit_visibility.remove(&id).unwrap_or_default();
                 if let Some(f) = self.state.unit_faction.remove(&id)
                     && !old.is_empty()
                 {
                     self.remove_tiles(r.fog.as_mut().unwrap(), &f, &old);
+                }
+                if PROFILE {
+                    timing.removed_rows += 1;
+                    timing.commit_ns += elapsed(commit_start);
                 }
                 continue;
             };
@@ -318,9 +375,13 @@ impl VisionSystem {
                 && self.state.unit_faction.get(&id) == Some(&faction)
             {
                 self.state.cache_hits += 1;
+                if PROFILE {
+                    timing.unit_cache_hits += 1;
+                }
                 continue;
             }
-            let visible = self.visibility_for(r, pos, v.range);
+            let visible = self.visibility_for_profile::<PROFILE>(r, pos, v.range, timing);
+            let commit_start = start::<PROFILE>();
             let mut old = self
                 .state
                 .unit_visibility
@@ -355,6 +416,10 @@ impl VisionSystem {
             vision.last_range = v.range;
             vision.dirty = false;
             self.state.recomputes += 1;
+            if PROFILE {
+                timing.recompute_rows += 1;
+                timing.commit_ns += elapsed(commit_start);
+            }
         }
     }
 }
@@ -393,14 +458,28 @@ impl Runtime {
         }
     }
     pub fn advance_vision(&mut self) {
+        self.advance_vision_profile::<false>(&mut VisionTimings::default());
+    }
+    pub(crate) fn advance_vision_profile<const PROFILE: bool>(
+        &mut self,
+        timing: &mut VisionTimings,
+    ) {
         if let Some(mut v) = self.vision.take() {
             if v.state.enabled {
-                v.update(self);
+                if PROFILE {
+                    v.update_profile::<true>(self, timing);
+                } else {
+                    v.update(self);
+                }
+                let presentation_start = start::<PROFILE>();
                 for (faction, cells) in &v.delta {
                     self.presentation_fog
                         .entry(faction.clone())
                         .or_default()
                         .extend(cells.iter().copied());
+                }
+                if PROFILE {
+                    timing.presentation_ns += elapsed(presentation_start);
                 }
             }
             self.vision = Some(v);

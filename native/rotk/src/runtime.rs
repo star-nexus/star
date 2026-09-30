@@ -343,7 +343,7 @@ impl Runtime {
             dt,
             wall_time,
             &mut BTreeMap::new(),
-            &mut crate::statistics::StatisticsTimings::default(),
+            &mut crate::system_profile::StepTimings::default(),
             crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
         )
     }
@@ -374,7 +374,7 @@ impl Runtime {
                 dt,
                 wall_time,
                 &mut BTreeMap::new(),
-                &mut crate::statistics::StatisticsTimings::default(),
+                &mut crate::system_profile::StepTimings::default(),
                 min_rows,
             )?;
             Ok(Value::Null)
@@ -390,11 +390,11 @@ impl Runtime {
         let moving = self.moving.len();
         let capturing = self.capturing.len();
         let mut phases = BTreeMap::new();
-        let mut statistics = crate::statistics::StatisticsTimings::default();
-        self.step_inner::<true>(dt, wall_time, &mut phases, &mut statistics, min_rows)?;
+        let mut timings = crate::system_profile::StepTimings::default();
+        self.step_inner::<true>(dt, wall_time, &mut phases, &mut timings, min_rows)?;
         Ok(
             json!({"phases_ns": phases, "native_ns": start.elapsed().as_nanos() as u64,
-            "moving_before": moving, "capturing_before": capturing, "statistics": statistics}),
+            "moving_before": moving, "capturing_before": capturing, "statistics": timings.statistics, "candidates": timings.candidates}),
         )
     }
 
@@ -403,7 +403,7 @@ impl Runtime {
         dt: f64,
         wall_time: f64,
         phases: &mut BTreeMap<&'static str, u64>,
-        statistics: &mut crate::statistics::StatisticsTimings,
+        timings: &mut crate::system_profile::StepTimings,
         min_rows: usize,
     ) -> Result<(), String> {
         macro_rules! phase {
@@ -452,7 +452,7 @@ impl Runtime {
         }
         phase!(
             "statistics",
-            self.advance_statistics_profile::<PROFILE>(dt, statistics, min_rows)
+            self.advance_statistics_profile::<PROFILE>(dt, &mut timings.statistics, min_rows)
         )?;
         if self
             .config
@@ -460,14 +460,42 @@ impl Runtime {
             .get("AnimationSystem")
             .is_none_or(|s| s["enabled"] == true)
         {
-            phase!("movement", self.advance_movement(dt));
+            phase!(
+                "movement",
+                if PROFILE {
+                    self.advance_movement_profile::<true>(dt, &mut timings.candidates.movement)
+                } else {
+                    self.advance_movement(dt)
+                }
+            );
             if self.config.systems.contains_key("AnimationSystem") {
-                phase!("visuals", self.advance_visuals(dt))?;
+                phase!(
+                    "visuals",
+                    if PROFILE {
+                        self.advance_visuals_profile::<true>(dt, &mut timings.candidates.visuals)
+                    } else {
+                        self.advance_visuals(dt)
+                    }
+                )?;
             }
         }
-        phase!("recovery", self.advance_recovery());
+        phase!(
+            "recovery",
+            if PROFILE {
+                self.advance_recovery_profile::<true>(&mut timings.candidates.recovery)
+            } else {
+                self.advance_recovery()
+            }
+        );
         phase!("lifecycle", self.advance_lifecycle());
-        phase!("vision", self.advance_vision());
+        phase!(
+            "vision",
+            if PROFILE {
+                self.advance_vision_profile::<true>(&mut timings.candidates.vision)
+            } else {
+                self.advance_vision()
+            }
+        );
         phase!("captures", self.advance_captures())?;
         self.revision = revision;
         Ok(())

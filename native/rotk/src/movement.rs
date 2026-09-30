@@ -1,4 +1,5 @@
 //! MovementSystem and authoritative per-segment progression from AnimationSystem.
+use crate::system_profile::{MovementTimings, elapsed, start};
 use crate::{
     components::{Headcount, MovePoints, Movement, Position, Status, UnitInfo},
     hex::{self, Hex},
@@ -257,6 +258,16 @@ impl Runtime {
     }
 
     pub(crate) fn advance_movement(&mut self, dt: f64) {
+        self.advance_movement_profile::<false>(dt, &mut MovementTimings::default());
+    }
+    pub(crate) fn advance_movement_profile<const PROFILE: bool>(
+        &mut self,
+        dt: f64,
+        timing: &mut MovementTimings,
+    ) {
+        if PROFILE {
+            timing.active_rows = self.moving.len() as u64;
+        }
         if self.config.display == "none" || self.moving.is_empty() {
             return;
         }
@@ -266,22 +277,38 @@ impl Runtime {
         let mut query = self.world.ecs.query::<(&mut Position, &mut Movement)>();
         for &id in &self.moving {
             let Some(e) = self.world.entity(id) else {
+                if PROFILE {
+                    timing.invalid_rows += 1;
+                }
                 finished.push(id);
                 continue;
             };
             let Ok((mut position, mut anim)) = query.get_mut(&mut self.world.ecs, e) else {
+                if PROFILE {
+                    timing.invalid_rows += 1;
+                }
                 finished.push(id);
                 continue;
             };
             if !anim.is_moving {
+                if PROFILE {
+                    timing.invalid_rows += 1;
+                }
                 finished.push(id);
                 continue;
+            }
+            let row_start = start::<PROFILE>();
+            if PROFILE {
+                timing.advanced_rows += 1;
             }
             if anim.path.is_empty() || anim.current_target_index >= anim.path.len() {
                 anim.is_moving = false;
                 anim.progress = 0.;
                 anim.current_target_index = 0;
                 anim.path.clear();
+                if PROFILE {
+                    timing.invalid_rows += 1;
+                }
                 finished.push(id);
                 continue;
             }
@@ -294,9 +321,18 @@ impl Runtime {
                 let old = position.hex();
                 position.col = target.0;
                 position.row = target.1;
+                let spatial_start = start::<PROFILE>();
                 self.spatial.moved(id, old, target);
+                if PROFILE {
+                    timing.crossings += 1;
+                    timing.spatial_ns += elapsed(spatial_start);
+                }
+                let dirty_start = start::<PROFILE>();
                 if old != target && self.config.display == "window" {
                     self.vision_dirty.insert(id);
+                }
+                if PROFILE {
+                    timing.dirty_ns += elapsed(dirty_start);
                 }
                 anim.current_target_index += 1;
                 anim.progress = (anim.progress - 1.).max(0.);
@@ -304,18 +340,33 @@ impl Runtime {
                     anim.is_moving = false;
                     anim.progress = 0.;
                 } else {
+                    let pixel_start = start::<PROFILE>();
                     anim.start_pixel_pos = Some(pixel(target, size, pointy));
                     anim.target_pixel_pos =
                         Some(pixel(anim.path[anim.current_target_index], size, pointy));
+                    if PROFILE {
+                        timing.pixel_ns += elapsed(pixel_start);
+                    }
                 }
             }
+            let dirty_start = start::<PROFILE>();
             self.presentation_dirty.insert(id);
+            if PROFILE {
+                timing.dirty_ns += elapsed(dirty_start);
+            }
             if !anim.is_moving {
                 finished.push(id);
             }
+            if PROFILE {
+                timing.row_ns += elapsed(row_start);
+            }
         }
+        let cleanup_start = start::<PROFILE>();
         for id in finished {
             self.moving.remove(&id);
+        }
+        if PROFILE {
+            timing.cleanup_ns += elapsed(cleanup_start);
         }
     }
 }
