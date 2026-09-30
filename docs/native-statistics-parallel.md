@@ -1,6 +1,6 @@
 # E2 — Statistics current-batch internal parallelism
 
-2026-10-01. Progress: `serial split █ | attribution █ | scoped compute █ | equivalence █ | net/crossover █ | live capacity ░`.
+2026-10-01. Progress: `serial split █ | attribution █ | scoped compute █ | equivalence █ | net/crossover █ | live capacity █ | raw re-audit █`.
 Target5000 Units/1000 Agents;5000 Agents paused. Default Python/native threads=1.
 
 Statistics observations now gather narrow borrowed facts for only the scheduled
@@ -25,9 +25,14 @@ Serial checkpoint44c3696814b82d7c9d92a83ef7d160ef462168af; experimental dispatch
 checkpoint7ab0ac1d97f5d68b8d81c505fa505a1cb234a56c. Independent P0 binary remains
 c058d75c0ad67a7c340c2a6ac74a9d5bc2888adf / extension
 a73c477263d792cd0c4f71e3ab6001a36223cf0afd7136f8e8975f16b584731f.
+Selected runtime checkpoint **2bc57d5f2241a578f61d71bb5774e7063a03ec25**;
+selected extension **23dc7e4f5425e855a780a802d889f13bd28f300577688e66378ab574b7712d55**.
 Old/candidate1/2/4 agree on all40994 recorded requests/9880ticks/9880full deltas,
 complete response stream and final state.36synthetic scenarios/174steps also agree
 in full state, errors, one-shot deltas and resets with the independent old binary.
+Twenty complete trace runs and eight complete contract variants were re-audited
+from the canonical raw archive. Normal selected step1/2/4 also passes;2291Python
+tests,4Rust contracts,fmt/Clippy/release pass, including concurrent mixed instances.
 
 In serial diagnostic nonempty observation ticks,125rows average: health arithmetic
 0.151µs, JSON construction154.005µs, gather22.220µs, ordered commit21.301µs,
@@ -43,9 +48,17 @@ mean-positive point on this one machine;128 is the conservative operational cuto
 Neither number promises a universal crossover across hardware/payloads. Product
 does not change batch size or scan all residents to fill workers.
 
-Live5000/1000Cocoa frame/queue gates are pending at this checkpoint. Fixed-trace
-step gains do not imply whole-frame gains or a new capacity Frontier. G008/G009
-remain OPEN; R001/R002 remain RISK; no new confirmed gameplay GAP.
+Three actual Cocoa2480×1239 windows, each30s warmup+300s measurement, pass the
+canonical5000Units/1000Agents/30Hz frame/queue/load/clock gates with native4.
+Frame P99:28.283/28.643/28.631ms; world Hz:29.997/29.993/30.000.
+Observation response P99:43.347/45.531/44.518ms; action queue P99:33.508/35.489/34.070ms.
+All slow frames remain: max91.923/102.449/32.239ms, worst rolling5s P99
+39.837/76.037/31.794ms. Whole300s gates do not guarantee every frame/short window.
+Alive minimum5000; peak movers180/173/173. Fixed-trace step gains do not imply
+whole-frame causation or a larger capacity Frontier. R4e native1 evidence remains
+valid; native4 is explicit configuration. Hub/realLLM/high-density and5000Agents
+are unvalidated. G008/G009 remain OPEN; R001/R002 remain RISK; no new confirmed
+gameplay GAP. No forced worker-panic fault-injection claim follows.
 
 ## Diagnostics / language boundary
 
