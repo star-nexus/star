@@ -793,3 +793,15 @@ benchmarks. See [R4e evidence](../../star-lab/experiments/2026-09-rust-1000-agen
 World step remains ordered; general System parallelism is not implemented.
 5000-Agent expansion is paused. Python/default1thread and remaining integration,
 GAP audit and platform release requirements remain unchanged.
+
+
+## Parallel work P0: dependency and cost attribution (2026-09-30)
+
+The independent R4e-based work line first audits [System dependencies](native-system-dependencies.md).
+The private `_step_profile_json(dt, wall_time)` diagnostic advances one step and
+returns phase timing; it does not run a dry probe or enable parallel scheduling.
+Normal step reads no diagnostic timer. Install the freshly built release wheel
+for this additive capability; API18 alone does not identify a build. Target stays
+5000 Units / 1000 Agents, with 5000 Agents paused. Python remains the interface
+and ecosystem; ordering, RNG, observations and display drain semantics remain
+under the original boundaries. Attribution is not capacity or release acceptance.

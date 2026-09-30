@@ -4,6 +4,12 @@
 
 当前审计节点：R4e（容量验证，2026-09-29；完整迁移仍未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
 
+## P0：独立Rust并行依赖审计与成本归因（2026-09-30）
+
+从R4e tag隔离到 `codex/rust-ecs-parallel`。完整[System读写依赖表](native-system-dependencies.md)区分System间、System内和跨请求共享。新增私有逐System推进计时入口，共用原step执行顺序；普通step无计时读取，诊断墙钟不参与规则/CD。原错误/部分写入与展示drain边界保留。API18/schema5/oracle不变，需以新源码及wheel SHA识别新增诊断能力。
+
+本阶段是成本归因，不是并行收益/容量验证；不确认新增玩法GAP，不将“未发现”当作全量证明。G001–G003基线差异、G008/G009 OPEN、R001/R002 RISK全部保留，5000Agents暂缓。诊断可能改变墙钟耗时，不用录制输入重放速度推断真实闭环接纳分布。[Lab记录](/Users/liyang/Developer/star-lab/experiments/2026-09-rust-system-attribution/README.md)。
+
 ## R4e：当前容量验证（2026-09-29）
 
 复用R4d实现/API18，未修改生产执行代码或规则。5000Units/1000Agents三轮300秒30Hz长测通过；40994请求/9880tick的4线程重放保持响应、事件及最终权威状态一致。原生产Python与当前规范化Python的单次同条件短测均保留；它们不是同轨迹对照，原版与规范化版仍有G001–G003顺序差异，不能将性能数字解释为完全相同Benchmark轨迹。没有确认新增玩法GAP；G008/G009/R001/R002继续开放。[证据](../../star-lab/experiments/2026-09-rust-1000-agent-validation/README.md)。

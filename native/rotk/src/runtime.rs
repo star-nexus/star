@@ -339,6 +339,48 @@ impl Runtime {
 
     /// R1 clock/lifecycle boundary. Gameplay systems join this step in R2/R3.
     pub fn step(&mut self, dt: f64, wall_time: f64) -> Result<(), String> {
+        self.step_inner::<false>(dt, wall_time, &mut BTreeMap::new())
+    }
+
+    /// Diagnostic advancing call, not a dry run. Timers never drive game time.
+    /// Shares every execution/error boundary with step; no profiler state is kept.
+    pub fn profile_step(&mut self, dt: f64, wall_time: f64) -> Result<Value, String> {
+        let start = std::time::Instant::now();
+        let moving = self.moving.len();
+        let capturing = self.capturing.len();
+        let mut phases = BTreeMap::new();
+        self.step_inner::<true>(dt, wall_time, &mut phases)?;
+        Ok(
+            json!({"phases_ns": phases, "native_ns": start.elapsed().as_nanos() as u64,
+            "moving_before": moving, "capturing_before": capturing}),
+        )
+    }
+
+    fn step_inner<const PROFILE: bool>(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        phases: &mut BTreeMap<&'static str, u64>,
+    ) -> Result<(), String> {
+        macro_rules! phase {
+            ($name:literal, $body:expr) => {{
+                let start = if PROFILE {
+                    Some(std::time::Instant::now())
+                } else {
+                    None
+                };
+                let result = $body;
+                if let Some(start) = start {
+                    phases.insert($name, start.elapsed().as_nanos() as u64);
+                }
+                result
+            }};
+        }
+        let clock_start = if PROFILE {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         if !wall_time.is_finite() {
             return Err("wall metadata must be finite".into());
         }
@@ -361,22 +403,25 @@ impl Runtime {
         if clock_enabled {
             self.sync_turn_clock();
         }
-        self.advance_statistics(dt)?;
+        if let Some(start) = clock_start {
+            phases.insert("clock", start.elapsed().as_nanos() as u64);
+        }
+        phase!("statistics", self.advance_statistics(dt))?;
         if self
             .config
             .systems
             .get("AnimationSystem")
             .is_none_or(|s| s["enabled"] == true)
         {
-            self.advance_movement(dt);
+            phase!("movement", self.advance_movement(dt));
             if self.config.systems.contains_key("AnimationSystem") {
-                self.advance_visuals(dt)?;
+                phase!("visuals", self.advance_visuals(dt))?;
             }
         }
-        self.advance_recovery();
-        self.advance_lifecycle();
-        self.advance_vision();
-        self.advance_captures()?;
+        phase!("recovery", self.advance_recovery());
+        phase!("lifecycle", self.advance_lifecycle());
+        phase!("vision", self.advance_vision());
+        phase!("captures", self.advance_captures())?;
         self.revision = revision;
         Ok(())
     }

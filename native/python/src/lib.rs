@@ -56,6 +56,10 @@ impl NativeRuntime {
     fn step(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<()> {
         self.with_runtime(py, |r| r.step(dt, wall_time))
     }
+    /// Opt-in advancing profiler; normal step performs no timer reads.
+    fn _step_profile_json(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<String> {
+        self.with_runtime(py, |r| Ok(r.profile_step(dt, wall_time)?.to_string()))
+    }
     #[pyo3(signature=(expected_epoch=None))]
     fn host_status_json(&self, py: Python<'_>, expected_epoch: Option<u64>) -> PyResult<String> {
         self.with_runtime(py, |r| {
