@@ -60,6 +60,21 @@ impl NativeRuntime {
     fn _step_profile_json(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<String> {
         self.with_runtime(py, |r| Ok(r.profile_step(dt, wall_time)?.to_string()))
     }
+    /// Advancing research control; overrides only this call's pure-row dispatch.
+    #[pyo3(signature=(dt, wall_time, min_rows, profile=true))]
+    fn _statistics_step_json(
+        &self,
+        py: Python<'_>,
+        dt: f64,
+        wall_time: f64,
+        min_rows: usize,
+        profile: bool,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            Ok(r.statistics_step_probe(dt, wall_time, min_rows, profile)?
+                .to_string())
+        })
+    }
     #[pyo3(signature=(expected_epoch=None))]
     fn host_status_json(&self, py: Python<'_>, expected_epoch: Option<u64>) -> PyResult<String> {
         self.with_runtime(py, |r| {

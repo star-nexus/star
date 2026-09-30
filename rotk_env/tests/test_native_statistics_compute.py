@@ -26,16 +26,22 @@ def initial_statistics(display):
 @pytest.mark.parametrize('display', ['none', 'window'])
 @pytest.mark.parametrize('bad_index', [0, 1, 2])
 @pytest.mark.parametrize('threads', [1, 2, 4])
-def test_first_error_keeps_successful_prefix_and_original_trim_boundary(display, bad_index, threads):
+@pytest.mark.parametrize('force_compute', [False, True])
+def test_first_error_keeps_successful_prefix_and_original_trim_boundary(display, bad_index, threads, force_compute):
     initial, ids = initial_statistics(display)
     units = {e['id']: e['components'] for e in initial['entities']}
     units[ids[bad_index]]['UnitCount']['max_count'] = 0
     old_rows = 10 if display == 'window' else 10000
     initial['singletons']['GameStats']['unit_observation_history'] = [{'prior': i} for i in range(old_rows)]
     n = NativeRuntime(json.dumps(initial), threads)
+    def step():
+        if force_compute:
+            n._statistics_step_json(.25, 1720000000., 0, False)
+        else:
+            n.step(.25, 1720000000.)
     try:
         with pytest.raises(RuntimeError, match='statistics health division by zero'):
-            n.step(.25, 1720000000.)
+            step()
         after = json.loads(n.export_state_json())
         actual = {e['id']: e['components'] for e in after['entities']}
         assert ['UnitObservation' in actual[i] for i in ids] == [i < bad_index for i in range(3)]
@@ -57,7 +63,7 @@ def test_first_error_keeps_successful_prefix_and_original_trim_boundary(display,
         assert json.loads(n.export_state_json()) == after
         n.reset(json.dumps(initial))
         with pytest.raises(RuntimeError, match='statistics health division by zero'):
-            n.step(.25, 1720000000.)
+            step()
         assert json.loads(n.export_state_json()) == after
     finally:
         n.close()
@@ -76,7 +82,7 @@ def test_imported_duplicate_missing_rows_and_no_movement_component(threads):
                          fog_disabled_visible_to=None)
     n = NativeRuntime(json.dumps(initial), threads)
     try:
-        timing = json.loads(n._step_profile_json(0., 1720000000.))
+        timing = json.loads(n._statistics_step_json(0., 1720000000., 0))
         after = json.loads(n.export_state_json())
         actual = {e['id']: e['components'] for e in after['entities']}
         history = after['singletons']['GameStats']['unit_observation_history']
@@ -87,6 +93,9 @@ def test_imported_duplicate_missing_rows_and_no_movement_component(threads):
         assert actual[b]['UnitObservation']['movement_remaining'] == 0
         assert 'UnitObservation' not in actual[c]
         assert timing['statistics']['observation_rows'] == 3
+        assert timing['statistics']['parallel_batches'] == (threads > 1)
+        assert timing['statistics']['jobs'] == (0 if threads == 1 else min(threads, 3))
+        assert 0 <= timing['statistics']['worker_threads'] <= threads
         assert after['systems']['StatisticsSystem']['cycle']['phase'] == 'visibility'
     finally:
         n.close()

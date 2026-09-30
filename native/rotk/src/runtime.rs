@@ -344,18 +344,54 @@ impl Runtime {
             wall_time,
             &mut BTreeMap::new(),
             &mut crate::statistics::StatisticsTimings::default(),
+            crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
         )
     }
 
     /// Diagnostic advancing call, not a dry run. Timers never drive game time.
     /// Shares every execution/error boundary with step; no profiler state is kept.
     pub fn profile_step(&mut self, dt: f64, wall_time: f64) -> Result<Value, String> {
+        self.profile_step_with_statistics_threshold(
+            dt,
+            wall_time,
+            crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
+        )
+    }
+
+    /// Private research control: advances the same world, varying only pure-row
+    /// dispatch. No policy is persisted into state, reset or observation output.
+    pub fn statistics_step_probe(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        min_rows: usize,
+        profile: bool,
+    ) -> Result<Value, String> {
+        if profile {
+            self.profile_step_with_statistics_threshold(dt, wall_time, min_rows)
+        } else {
+            self.step_inner::<false>(
+                dt,
+                wall_time,
+                &mut BTreeMap::new(),
+                &mut crate::statistics::StatisticsTimings::default(),
+                min_rows,
+            )?;
+            Ok(Value::Null)
+        }
+    }
+    fn profile_step_with_statistics_threshold(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        min_rows: usize,
+    ) -> Result<Value, String> {
         let start = std::time::Instant::now();
         let moving = self.moving.len();
         let capturing = self.capturing.len();
         let mut phases = BTreeMap::new();
         let mut statistics = crate::statistics::StatisticsTimings::default();
-        self.step_inner::<true>(dt, wall_time, &mut phases, &mut statistics)?;
+        self.step_inner::<true>(dt, wall_time, &mut phases, &mut statistics, min_rows)?;
         Ok(
             json!({"phases_ns": phases, "native_ns": start.elapsed().as_nanos() as u64,
             "moving_before": moving, "capturing_before": capturing, "statistics": statistics}),
@@ -368,6 +404,7 @@ impl Runtime {
         wall_time: f64,
         phases: &mut BTreeMap<&'static str, u64>,
         statistics: &mut crate::statistics::StatisticsTimings,
+        min_rows: usize,
     ) -> Result<(), String> {
         macro_rules! phase {
             ($name:literal, $body:expr) => {{
@@ -415,7 +452,7 @@ impl Runtime {
         }
         phase!(
             "statistics",
-            self.advance_statistics_profile::<PROFILE>(dt, statistics)
+            self.advance_statistics_profile::<PROFILE>(dt, statistics, min_rows)
         )?;
         if self
             .config

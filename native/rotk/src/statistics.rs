@@ -21,7 +21,16 @@ pub struct StatisticsTimings {
     pub trim_ns: u64,
     pub visibility_ns: u64,
     pub factions_ns: u64,
+    pub kernel_wall_ns: u64,
+    pub worker_max_ns: u64,
+    pub dispatch_residual_ns: u64,
+    pub parallel_batches: usize,
+    pub jobs: usize,
+    pub worker_threads: usize,
 }
+// Experimental crossover is selected from controlled whole-call evidence.
+// Until that gate passes normal execution stays on the serial compute path.
+pub(crate) const STATISTICS_PARALLEL_MIN_ROWS: usize = usize::MAX;
 fn start<const PROFILE: bool>() -> Option<std::time::Instant> {
     PROFILE.then(std::time::Instant::now)
 }
@@ -181,6 +190,7 @@ impl StatisticsSystem {
         r: &mut Runtime,
         ids: &[u64],
         timings: &mut StatisticsTimings,
+        min_rows: usize,
     ) -> Result<(), String> {
         if !r.singletons.contains_key("GameStats") {
             return Ok(());
@@ -228,11 +238,50 @@ impl StatisticsSystem {
             timings.gather_ns += elapsed(mark);
             timings.observation_rows += input.len();
         }
-        let (rows, compute, records) =
-            observation_rows::<PROFILE>(&input, &r.singletons["GameStats"]["total_game_time"]);
+        let mark = start::<PROFILE>();
+        let timestamp = &r.singletons["GameStats"]["total_game_time"];
+        let mut worker_max = 0;
+        let rows = if !input.is_empty()
+            && input.len() >= min_rows
+            && let Some(pool) = &r.observation_pool
+        {
+            let jobs = pool.map_chunks(&input, |chunk| {
+                observation_rows::<PROFILE>(chunk, timestamp)
+            });
+            let mut rows = Vec::with_capacity(input.len());
+            if PROFILE {
+                timings.parallel_batches += 1;
+                timings.jobs += jobs.len();
+                timings.worker_threads += jobs
+                    .iter()
+                    .map(|(_, worker)| *worker)
+                    .collect::<std::collections::HashSet<_>>()
+                    .len();
+            }
+            for ((mut chunk, compute, records), _) in jobs {
+                if PROFILE {
+                    timings.compute_ns += compute;
+                    timings.records_ns += records;
+                    worker_max = worker_max.max(compute + records);
+                }
+                rows.append(&mut chunk);
+            }
+            rows
+        } else {
+            let (rows, compute, records) = observation_rows::<PROFILE>(&input, timestamp);
+            if PROFILE {
+                timings.compute_ns += compute;
+                timings.records_ns += records;
+            }
+            rows
+        };
         if PROFILE {
-            timings.compute_ns += compute;
-            timings.records_ns += records;
+            let wall = elapsed(mark);
+            timings.kernel_wall_ns += wall;
+            timings.worker_max_ns += worker_max;
+            if worker_max > 0 {
+                timings.dispatch_residual_ns += wall.saturating_sub(worker_max);
+            }
         }
         let mark = start::<PROFILE>();
         let trim_before = timings.trim_ns;
@@ -383,13 +432,19 @@ impl StatisticsSystem {
         }
     }
     pub fn update(&mut self, r: &mut Runtime, dt: f64) -> Result<(), String> {
-        self.update_profile::<false>(r, dt, &mut StatisticsTimings::default())
+        self.update_profile::<false>(
+            r,
+            dt,
+            &mut StatisticsTimings::default(),
+            STATISTICS_PARALLEL_MIN_ROWS,
+        )
     }
     fn update_profile<const PROFILE: bool>(
         &mut self,
         r: &mut Runtime,
         dt: f64,
         timings: &mut StatisticsTimings,
+        min_rows: usize,
     ) -> Result<(), String> {
         if let Some(stats) = r.singletons.get_mut("GameStats") {
             stats["total_game_time"] = if r.clock.realtime {
@@ -413,7 +468,7 @@ impl StatisticsSystem {
             if due {
                 let observations = Self::ids(r, true);
                 let visibility = Self::ids(r, false);
-                self.observations::<PROFILE>(r, &observations, timings)?;
+                self.observations::<PROFILE>(r, &observations, timings, min_rows)?;
                 if r.fog.is_some()
                     && let Some(tracker) = &mut r.visibility_tracker
                 {
@@ -460,7 +515,7 @@ impl StatisticsSystem {
         let mut complete = false;
         match cycle.phase.as_str() {
             "observations" => {
-                self.observations::<PROFILE>(r, batch, timings)?;
+                self.observations::<PROFILE>(r, batch, timings, min_rows)?;
                 cycle.index = end;
                 if end >= ids.len() {
                     cycle.phase = "visibility".into();
@@ -548,16 +603,21 @@ impl StatisticsSystem {
 
 impl Runtime {
     pub fn advance_statistics(&mut self, dt: f64) -> Result<(), String> {
-        self.advance_statistics_profile::<false>(dt, &mut StatisticsTimings::default())
+        self.advance_statistics_profile::<false>(
+            dt,
+            &mut StatisticsTimings::default(),
+            STATISTICS_PARALLEL_MIN_ROWS,
+        )
     }
     pub(crate) fn advance_statistics_profile<const PROFILE: bool>(
         &mut self,
         dt: f64,
         timings: &mut StatisticsTimings,
+        min_rows: usize,
     ) -> Result<(), String> {
         if let Some(mut system) = self.statistics.take() {
             let result = if system.enabled {
-                system.update_profile::<PROFILE>(self, dt, timings)
+                system.update_profile::<PROFILE>(self, dt, timings, min_rows)
             } else {
                 Ok(())
             };
