@@ -6,7 +6,7 @@
 oracle `python-r0c-3cc4ffe`. Target remains 5000 Units + 1000 Agents;
 5000 Agents is paused. Rust owns world execution; Python owns SDK/policy/UI/transport.
 
-Progress: `recovery █ | dependency audit █ | attribution ▒ | parallel implementation ░ | capacity ░`.
+Progress: `recovery █ | dependency audit █ | attribution █ | parallel implementation ░ | capacity ░`.
 This describes stage coverage, not elapsed-work percentages.
 
 ## Three distinct mechanisms
@@ -49,6 +49,45 @@ Entity allocation order. RNG is CPython-compatible per domain; workers may not
 choose its consumption order. Reset reconstructs derived ledgers and reuses the
 read pool only after validation; failed reset retains the old world.
 
+## P0 measured cost (fixed-input diagnostic)
+
+Measurement implementation `2ac2b29a7a3bf09d92370a0352dcf0fd47f741e5`.
+All 40994 requests / 9880 ticks / 9880 complete display extractions match frozen
+R4e at 1/2/4 threads. Candidate ordinary/profiled full decoded responses, deltas
+and final states compare directly. Frozen cross-process full-output-stream and
+final-state hashes also match. 2239 Python tests (22 new), 4 Rust tests, fmt,
+Clippy and release build passed. Archived binary SHA is in the Lab manifest.
+
+| System phase | P0 t1 mean ms | P0 t1 P99 ms |
+|---|---:|---:|
+| Clock / turn sync | 0.000906 | 0.001875 |
+| Statistics | 0.167297 | 0.591833 |
+| Movement | 0.027429 | 0.054417 |
+| Visuals | 0.010109 | 0.033875 |
+| Recovery | 0.003624 | 0.012750 |
+| Lifecycle | 0.000429 | 0.001167 |
+| Vision | 0.045143 | 0.127208 |
+| Capture | 0.000072 | 0.000250 |
+
+Native diagnostic total mean0.256917ms includes about0.001908ms not attributed to
+phases (including timer/map/report work); this is NOT a measured profiler overhead
+A/B. Samples include recorded warmup and paired headless execution. Do not compare
+these times as language, thread or window-frame speedup; tiny phases are noisy.
+The earlier dependency table's unmeasured cells refer specifically to R4e live
+per-System attribution. P0 now fills them only for this scoped diagnostic.
+
+11007 observations occupy6938 immutable read segments. Lengths1/2/3/4/5 occur
+3910/2048/921/57/2 times.7097 queries(64.48%) are in multi-query segments; only1604
+(14.57%) repeat their faction and no selected panel repeats. This is an upper
+opportunity count, not predicted saved time or proof of scheduler feasibility.
+
+Select P1 **ordered encoded read-batch integration for already-admitted adjacent
+queries**, reusing existing public facts. Audit the admission queue/callbacks
+before implementation; never reorder to create these segments. Keep cross-faction
+Fog/permissions and per-request output/client decode. Movement/Vision worker
+candidates are deferred at current cost; statistics needs an ordered sampling and
+reduction audit. System-between scheduling remains unapproved.
+
 ## Evidence and first implementation
 
 The R4e table does not identify the most expensive individual world phase.
@@ -77,9 +116,9 @@ and compare the output stream against the frozen R4e binary. Also count genuine
 contiguous read segments before choosing cross-request integration. This phase
 validates attribution, not a performance fix or a new capacity frontier.
 
-Next choose exactly one measured candidate: sufficiently expensive independent
-Vision geometry or Movement arithmetic inside its System, or demonstrated
-adjacent-query sharing. Preserve sequential commits, reuse the existing pool,
+P1 selects adjacent-query sharing as above. If admission cannot preserve its
+existing order, record the negative feasibility result. Preserve sequential
+commits and reuse the existing pool,
 measure 1/2/4 with unchanged input, and retain scheduling losses as negative
 results. Then use original R4e commands/guards for the actual window gate. Keep
 5000-Agent expansion paused, Python/default one thread, G008/G009/R001/R002 open.
