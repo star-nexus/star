@@ -339,7 +339,12 @@ impl Runtime {
 
     /// R1 clock/lifecycle boundary. Gameplay systems join this step in R2/R3.
     pub fn step(&mut self, dt: f64, wall_time: f64) -> Result<(), String> {
-        self.step_inner::<false>(dt, wall_time, &mut BTreeMap::new())
+        self.step_inner::<false>(
+            dt,
+            wall_time,
+            &mut BTreeMap::new(),
+            &mut crate::statistics::StatisticsTimings::default(),
+        )
     }
 
     /// Diagnostic advancing call, not a dry run. Timers never drive game time.
@@ -349,10 +354,11 @@ impl Runtime {
         let moving = self.moving.len();
         let capturing = self.capturing.len();
         let mut phases = BTreeMap::new();
-        self.step_inner::<true>(dt, wall_time, &mut phases)?;
+        let mut statistics = crate::statistics::StatisticsTimings::default();
+        self.step_inner::<true>(dt, wall_time, &mut phases, &mut statistics)?;
         Ok(
             json!({"phases_ns": phases, "native_ns": start.elapsed().as_nanos() as u64,
-            "moving_before": moving, "capturing_before": capturing}),
+            "moving_before": moving, "capturing_before": capturing, "statistics": statistics}),
         )
     }
 
@@ -361,6 +367,7 @@ impl Runtime {
         dt: f64,
         wall_time: f64,
         phases: &mut BTreeMap<&'static str, u64>,
+        statistics: &mut crate::statistics::StatisticsTimings,
     ) -> Result<(), String> {
         macro_rules! phase {
             ($name:literal, $body:expr) => {{
@@ -406,7 +413,10 @@ impl Runtime {
         if let Some(start) = clock_start {
             phases.insert("clock", start.elapsed().as_nanos() as u64);
         }
-        phase!("statistics", self.advance_statistics(dt))?;
+        phase!(
+            "statistics",
+            self.advance_statistics_profile::<PROFILE>(dt, statistics)
+        )?;
         if self
             .config
             .systems

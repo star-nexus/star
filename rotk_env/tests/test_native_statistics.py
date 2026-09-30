@@ -21,7 +21,8 @@ from rotk_env.tests.test_native_combat import combat_probe
 
 @pytest.mark.parametrize('display',['none','dummy','window'])
 @pytest.mark.parametrize('mode',[GameMode.REAL_TIME,GameMode.TURN_BASED])
-def test_stats_sampling_actions_fog_and_midcycle_restore(display,mode,monkeypatch):
+@pytest.mark.parametrize('threads',[1,2,4])
+def test_stats_sampling_actions_fog_and_midcycle_restore(display,mode,threads,monkeypatch):
     now=[1720000000.]
     monkeypatch.setattr(time,'time',lambda:now[0])
     # Freeze default-factory metadata too (the factories were captured at import).
@@ -38,7 +39,7 @@ def test_stats_sampling_actions_fog_and_midcycle_restore(display,mode,monkeypatc
     recovery=ResourceRecoverySystem();world.add_system(recovery)
     world.get_component(a,Combat).attack_range=5
     world.get_component(c,UnitCount).current_count=1
-    n=NativeRuntime(json.dumps(export_initial_state(world,display=display)))
+    n=NativeRuntime(json.dumps(export_initial_state(world,display=display)),threads)
     movement=next(s for s in world.systems if isinstance(s,MovementSystem))
     animation=next((s for s in world.systems if isinstance(s,AnimationSystem)),None)
     combat=next(s for s in world.systems if isinstance(s,CombatSystem))

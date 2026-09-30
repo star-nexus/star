@@ -10,6 +10,87 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Per-call diagnostics only; never serialized into authoritative scene state.
+#[derive(Default, Serialize)]
+pub struct StatisticsTimings {
+    pub observation_rows: usize,
+    pub gather_ns: u64,
+    pub compute_ns: u64,
+    pub records_ns: u64,
+    pub commit_ns: u64,
+    pub trim_ns: u64,
+    pub visibility_ns: u64,
+    pub factions_ns: u64,
+}
+fn start<const PROFILE: bool>() -> Option<std::time::Instant> {
+    PROFILE.then(std::time::Instant::now)
+}
+fn elapsed(start: Option<std::time::Instant>) -> u64 {
+    start.map_or(0, |s| s.elapsed().as_nanos() as u64)
+}
+
+// Borrow only this batch's typed facts; no world export, prior-history copy or
+// mutable ECS access enters a compute kernel. Inputs stop at the first bad row.
+struct ObservationInput<'a> {
+    id: u64,
+    entity: Entity,
+    faction: &'a str,
+    unit_type: &'a str,
+    position: Hex,
+    count: i64,
+    max_count: i64,
+    movement: Option<&'a MovePoints>,
+    terrain: &'a str,
+    previous_remaining: i64,
+}
+struct ObservationRow {
+    entity: Entity,
+    position: Hex,
+    health: f64,
+    movement: Option<MovePoints>,
+    terrain: String,
+    record: Value,
+}
+fn observation_rows<const PROFILE: bool>(
+    input: &[ObservationInput<'_>],
+    timestamp: &Value,
+) -> (Vec<Result<ObservationRow, String>>, u64, u64) {
+    let mark = start::<PROFILE>();
+    let health: Vec<Result<f64, String>> = input
+        .iter()
+        .map(|row| {
+            if row.max_count == 0 {
+                Err("statistics health division by zero".into())
+            } else {
+                Ok((row.count as f64 / row.max_count as f64) * 100.)
+            }
+        })
+        .collect();
+    let compute_ns = elapsed(mark);
+    let mark = start::<PROFILE>();
+    let rows = input
+        .iter()
+        .zip(health)
+        .map(|(row, health)| {
+            let health = health?;
+            let remaining = row
+                .movement
+                .map_or(row.previous_remaining, |m| m.current_mp);
+            Ok(ObservationRow {
+                entity: row.entity,
+                position: row.position,
+                health,
+                movement: row.movement.cloned(),
+                terrain: row.terrain.to_string(),
+                record: json!({"entity":row.id,"faction":row.faction,"unit_type":row.unit_type,
+                "position":row.position,"health_percentage":health,"movement_remaining":remaining,
+                "terrain_type":row.terrain,"timestamp":timestamp}),
+            })
+        })
+        .collect();
+    (rows, compute_ns, elapsed(mark))
+}
+
 #[derive(Component, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitObservation {
@@ -95,32 +176,71 @@ impl StatisticsSystem {
             })
             .collect()
     }
-    fn observations(&self, r: &mut Runtime, ids: &[u64]) -> Result<(), String> {
+    fn observations<const PROFILE: bool>(
+        &self,
+        r: &mut Runtime,
+        ids: &[u64],
+        timings: &mut StatisticsTimings,
+    ) -> Result<(), String> {
         if !r.singletons.contains_key("GameStats") {
             return Ok(());
         }
+        let mark = start::<PROFILE>();
+        let mut input = Vec::with_capacity(ids.len());
         for &id in ids {
             let Some((e, u, c, p)) = r.world.entity(id).and_then(|e| {
                 Some((
                     e,
-                    r.world.ecs.get::<UnitInfo>(e)?.clone(),
-                    r.world.ecs.get::<Headcount>(e)?.clone(),
+                    r.world.ecs.get::<UnitInfo>(e)?,
+                    r.world.ecs.get::<Headcount>(e)?,
                     r.world.ecs.get::<Position>(e)?.hex(),
                 ))
             }) else {
                 continue;
             };
-            if c.max_count == 0 {
-                return Err("statistics health division by zero".into());
-            }
-            let movement = r.world.ecs.get::<MovePoints>(e).cloned();
             let terrain = r
                 .spatial
                 .tiles
                 .get(&p)
                 .filter(|t| t.has_terrain)
-                .map_or("plains", |t| t.terrain.as_str())
-                .to_string();
+                .map_or("plains", |t| t.terrain.as_str());
+            input.push(ObservationInput {
+                id,
+                entity: e,
+                faction: &u.faction,
+                unit_type: &u.unit_type,
+                position: p,
+                count: c.current_count,
+                max_count: c.max_count,
+                movement: r.world.ecs.get::<MovePoints>(e),
+                terrain,
+                previous_remaining: r
+                    .world
+                    .ecs
+                    .get::<UnitObservation>(e)
+                    .map_or(0, |o| o.movement_remaining),
+            });
+            if c.max_count == 0 {
+                break;
+            }
+        }
+        if PROFILE {
+            timings.gather_ns += elapsed(mark);
+            timings.observation_rows += input.len();
+        }
+        let (rows, compute, records) =
+            observation_rows::<PROFILE>(&input, &r.singletons["GameStats"]["total_game_time"]);
+        if PROFILE {
+            timings.compute_ns += compute;
+            timings.records_ns += records;
+        }
+        let mark = start::<PROFILE>();
+        let trim_before = timings.trim_ns;
+        // Insertion and every patch/history append retain original row order,
+        // including duplicate IDs in an imported cycle and the first-error prefix.
+        for row in rows {
+            let row = row?;
+            let e = row.entity;
             if r.world.ecs.get::<UnitObservation>(e).is_none() {
                 r.world
                     .ecs
@@ -129,40 +249,47 @@ impl StatisticsSystem {
             }
             let mut observation = r.world.ecs.get_mut::<UnitObservation>(e).unwrap();
             observation.previous_position = observation.current_position;
-            observation.current_position = p;
-            observation.health_percentage = (c.current_count as f64 / c.max_count as f64) * 100.;
-            if let Some(m) = movement {
+            observation.current_position = row.position;
+            observation.health_percentage = row.health;
+            if let Some(m) = row.movement {
                 observation.movement_remaining = m.current_mp;
                 observation.has_acted_this_turn = m.has_moved;
                 if observation.previous_position != observation.current_position {
                     observation.total_distance_moved += 1;
-                    observation.movement_path.push(p);
+                    observation.movement_path.push(row.position);
                     let len = observation.movement_path.len();
                     if len > 50 {
                         observation.movement_path.drain(..len - 50);
                     }
                 }
             }
-            observation.current_terrain_type = terrain.clone();
-            let health = observation.health_percentage;
-            let remaining = observation.movement_remaining;
+            observation.current_terrain_type = row.terrain;
             let stats = r.singletons.get_mut("GameStats").unwrap();
-            let timestamp = stats["total_game_time"].clone();
             let history = stats["unit_observation_history"]
                 .as_array_mut()
                 .expect("observation history");
-            history.push(json!({"entity":id,"faction":u.faction,"unit_type":u.unit_type,"position":p,
-                "health_percentage":health,"movement_remaining":remaining,"terrain_type":terrain,"timestamp":timestamp}));
+            history.push(row.record);
             if !self.window && history.len() > 10000 {
+                let trim = start::<PROFILE>();
                 history.drain(..history.len() - 5000);
+                if PROFILE {
+                    timings.trim_ns += elapsed(trim);
+                }
             }
         }
+        if PROFILE {
+            timings.commit_ns += elapsed(mark).saturating_sub(timings.trim_ns - trim_before);
+        }
         if self.window {
+            let mark = start::<PROFILE>();
             let history = r.singletons.get_mut("GameStats").unwrap()["unit_observation_history"]
                 .as_array_mut()
                 .unwrap();
             if history.len() > self.history_limit {
                 history.drain(..history.len() - self.history_limit);
+            }
+            if PROFILE {
+                timings.trim_ns += elapsed(mark);
             }
         }
         Ok(())
@@ -256,6 +383,14 @@ impl StatisticsSystem {
         }
     }
     pub fn update(&mut self, r: &mut Runtime, dt: f64) -> Result<(), String> {
+        self.update_profile::<false>(r, dt, &mut StatisticsTimings::default())
+    }
+    fn update_profile<const PROFILE: bool>(
+        &mut self,
+        r: &mut Runtime,
+        dt: f64,
+        timings: &mut StatisticsTimings,
+    ) -> Result<(), String> {
         if let Some(stats) = r.singletons.get_mut("GameStats") {
             stats["total_game_time"] = if r.clock.realtime {
                 json!(r.clock.elapsed)
@@ -278,7 +413,7 @@ impl StatisticsSystem {
             if due {
                 let observations = Self::ids(r, true);
                 let visibility = Self::ids(r, false);
-                self.observations(r, &observations)?;
+                self.observations::<PROFILE>(r, &observations, timings)?;
                 if r.fog.is_some()
                     && let Some(tracker) = &mut r.visibility_tracker
                 {
@@ -286,8 +421,16 @@ impl StatisticsSystem {
                         units.clear();
                     }
                 }
+                let mark = start::<PROFILE>();
                 self.visibility(r, &visibility, None);
+                if PROFILE {
+                    timings.visibility_ns += elapsed(mark);
+                }
+                let mark = start::<PROFILE>();
                 self.factions(r, &observations, &mut BTreeMap::new(), true);
+                if PROFILE {
+                    timings.factions_ns += elapsed(mark);
+                }
                 self.last_update_time = r.wall_time;
             }
             return Ok(());
@@ -317,7 +460,7 @@ impl StatisticsSystem {
         let mut complete = false;
         match cycle.phase.as_str() {
             "observations" => {
-                self.observations(r, batch)?;
+                self.observations::<PROFILE>(r, batch, timings)?;
                 cycle.index = end;
                 if end >= ids.len() {
                     cycle.phase = "visibility".into();
@@ -365,6 +508,7 @@ impl StatisticsSystem {
                         }
                         cycle.fog_disabled_visible_to = Some(TaggedSet(factions));
                     }
+                    let mark = start::<PROFILE>();
                     self.visibility(
                         r,
                         batch,
@@ -374,6 +518,9 @@ impl StatisticsSystem {
                             None
                         },
                     );
+                    if PROFILE {
+                        timings.visibility_ns += elapsed(mark);
+                    }
                     cycle.index = end;
                     if end >= ids.len() {
                         cycle.phase = "factions".into();
@@ -382,7 +529,11 @@ impl StatisticsSystem {
                 }
             }
             "factions" => {
+                let mark = start::<PROFILE>();
                 self.factions(r, batch, &mut cycle.faction_counts, end >= ids.len());
+                if PROFILE {
+                    timings.factions_ns += elapsed(mark);
+                }
                 cycle.index = end;
                 complete = end >= ids.len();
             }
@@ -397,9 +548,16 @@ impl StatisticsSystem {
 
 impl Runtime {
     pub fn advance_statistics(&mut self, dt: f64) -> Result<(), String> {
+        self.advance_statistics_profile::<false>(dt, &mut StatisticsTimings::default())
+    }
+    pub(crate) fn advance_statistics_profile<const PROFILE: bool>(
+        &mut self,
+        dt: f64,
+        timings: &mut StatisticsTimings,
+    ) -> Result<(), String> {
         if let Some(mut system) = self.statistics.take() {
             let result = if system.enabled {
-                system.update(self, dt)
+                system.update_profile::<PROFILE>(self, dt, timings)
             } else {
                 Ok(())
             };
