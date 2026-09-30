@@ -2,7 +2,13 @@
 
 本台账记录**迁移期间实际出现过的差异**，包括已修复项；也单列尚未迁移的能力和待核验风险。修复不删除历史。新增规则差异必须记录后再决定如何修复，不能借迁移悄悄修改 Python oracle，也不能仅用“回归通过”代表所有配置等价。
 
-当前审计节点：E2（Statistics内部并行，2026-10-01；canonical容量显式4线程验收通过，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
+当前审计节点：E3（其他System内部候选归因，2026-10-01；没有新增并行执行或容量，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
+
+## E3：其他 System 内部候选归因（2026-10-01）
+
+[成本/依赖与条件 roadmap](native-internal-system-candidates.md)：Vision 未缓存几何占整体仅 1.27–1.37%，主要成本在原序 Fog/集合提交；Movement 行处理乐观上界约 5.36–5.45µs/tick，Visuals 单阶段批次很小，Recovery 到期项峰值 24，Capture 无活动样本。当前负载没有足够证据立即新增内部并行；条件保留 Vision 冷缓存几何、更多同时移动单位、Visuals 大批同阶段更新。不得把诊断上界当作普通路径收益或新线程门槛。
+
+源码6d4018c，extension e0f46cf，annotated rust-parallel-e3-internal-attribution-2026-10-01。2315Python/4Rust/fmt/Clippy/release通过；旧E2及新1/2/4共4轮完整40994请求/9880step/展示重放一致，4个36场景/174step契约输出字节相同。[Lab证据](/Users/liyang/Developer/star-lab/experiments/2026-10-rust-internal-system-candidates/README.md)。仅添加按次私有归因，不改规则、动作/RNG/ID顺序、观测、E2策略、默认线程、API18/schema5/oracle。没有新 live 容量/Frontier；未确认新增玩法GAP，不关闭G008/G009/R001/R002。5000Agents仍暂缓。此节优先于旧E2的下一候选。
 
 ## E2：Statistics批次记录构建并行（2026-10-01）
 

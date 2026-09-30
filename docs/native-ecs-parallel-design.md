@@ -1,5 +1,7 @@
 # E1: ECS System parallelism design exploration
 
+最新 E3：[其他 System 内部成本与条件 roadmap](native-internal-system-candidates.md)。当前规范负载没有启用新并行；以下保留历史审计与设计。
+
 2026-09-30. User steered the next task to **between-System and within-System
 parallelism**. P0's encoded cross-request batch candidate is deferred; it remains
 in its immutable evidence package. This design uses c058d75c0ad67a7c340c2a6ac74a9d5bc2888adf,

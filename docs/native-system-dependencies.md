@@ -1,5 +1,7 @@
 # Rust parallel phase P0: dependencies before scheduling
 
+最新 E3：[其他 System 内部成本与条件 roadmap](native-internal-system-candidates.md)。当前规范负载没有启用新并行；以下保留历史审计与设计。
+
 2026-09-30. Baseline annotated tag `rust-kernel-r4e-2026-09-29` resolves to
 `7e145d169433695cd4957e186a6b2fda06813c26`; measured implementation
 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`, API18/schema5,
