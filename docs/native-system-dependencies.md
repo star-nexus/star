@@ -9,6 +9,16 @@ oracle `python-r0c-3cc4ffe`. Target remains 5000 Units + 1000 Agents;
 Progress: `recovery █ | dependency audit █ | attribution █ | parallel implementation ░ | capacity ░`.
 This describes stage coverage, not elapsed-work percentages.
 
+## Current next task (E1 user steering)
+
+2026-09-30: the next task explores **ECS between-System and within-System
+parallelism**. [E1 design and mechanism evidence](native-ecs-parallel-design.md)
+supersedes the P0 adjacent-query proposal as active priority; keep P0 results
+and historical decision intact. Narrow Recovery/Lifecycle/Vision accesses are
+semantic candidates, while current whole Runtime interfaces remain exclusive.
+E2 selects Statistics current-batch compute/ordered commit for the first prototype.
+No production parallel scheduling is enabled by this design.
+
 ## Three distinct mechanisms
 
 | Mechanism | Current implementation | Requirement for extending it |
