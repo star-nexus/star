@@ -107,6 +107,12 @@ impl Deadlines {
     pub fn is_current(&self, id: u64, due: f64, version: u64) -> bool {
         self.active.get(&id) == Some(&(due, version))
     }
+    /// Read-only bucket test includes stale entries, which still cost work to drain.
+    pub fn has_due(&self, now: f64) -> bool {
+        self.buckets
+            .first_key_value()
+            .is_some_and(|(t, _)| t.0 <= now)
+    }
     pub fn pop_due(&mut self, now: f64) -> Option<(f64, Vec<(u64, u64)>)> {
         if self
             .buckets

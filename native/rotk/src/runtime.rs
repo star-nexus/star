@@ -339,7 +339,7 @@ impl Runtime {
 
     /// R1 clock/lifecycle boundary. Gameplay systems join this step in R2/R3.
     pub fn step(&mut self, dt: f64, wall_time: f64) -> Result<(), String> {
-        self.step_inner::<false>(
+        self.step_inner::<false, false>(
             dt,
             wall_time,
             &mut BTreeMap::new(),
@@ -370,7 +370,7 @@ impl Runtime {
         if profile {
             self.profile_step_with_statistics_threshold(dt, wall_time, min_rows)
         } else {
-            self.step_inner::<false>(
+            self.step_inner::<false, false>(
                 dt,
                 wall_time,
                 &mut BTreeMap::new(),
@@ -391,14 +391,75 @@ impl Runtime {
         let capturing = self.capturing.len();
         let mut phases = BTreeMap::new();
         let mut timings = crate::system_profile::StepTimings::default();
-        self.step_inner::<true>(dt, wall_time, &mut phases, &mut timings, min_rows)?;
+        self.step_inner::<true, false>(dt, wall_time, &mut phases, &mut timings, min_rows)?;
         Ok(
             json!({"phases_ns": phases, "native_ns": start.elapsed().as_nanos() as u64,
             "moving_before": moving, "capturing_before": capturing, "statistics": timings.statistics, "candidates": timings.candidates}),
         )
     }
 
-    fn step_inner<const PROFILE: bool>(
+    /// E4 stage-one advancing probe. Later modes are rejected before clock writes.
+    pub fn between_systems_step_probe(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        mode: &str,
+        profile: bool,
+    ) -> Result<Value, String> {
+        if !matches!(mode, "baseline" | "empty_fork") {
+            return Err("E4 stage one supports baseline and empty_fork only".into());
+        }
+        let start = profile.then(std::time::Instant::now);
+        let mut phases = BTreeMap::new();
+        let mut timings = crate::system_profile::StepTimings::default();
+        let threshold = crate::statistics::STATISTICS_PARALLEL_MIN_ROWS;
+        match (mode, profile) {
+            ("empty_fork", true) => {
+                self.step_inner::<true, true>(dt, wall_time, &mut phases, &mut timings, threshold)?
+            }
+            ("empty_fork", false) => {
+                self.step_inner::<false, true>(dt, wall_time, &mut phases, &mut timings, threshold)?
+            }
+            (_, true) => {
+                self.step_inner::<true, false>(dt, wall_time, &mut phases, &mut timings, threshold)?
+            }
+            (_, false) => self.step_inner::<false, false>(
+                dt,
+                wall_time,
+                &mut phases,
+                &mut timings,
+                threshold,
+            )?,
+        }
+        Ok(start.map_or(
+            Value::Null,
+            |start| json!({"native_ns":start.elapsed().as_nanos() as u64, "phases_ns":phases}),
+        ))
+    }
+
+    fn between_systems_eligible(&self) -> bool {
+        self.observation_pool.is_some()
+            && self.clock.realtime
+            && self.fog.is_some()
+            && self.vision.as_ref().is_some_and(|v| {
+                v.state.enabled
+                    && v.state.window
+                    && v.state.indexed
+                    && v.state.bootstrapped
+                    && (!v.state.dirty.is_empty() || !self.vision_dirty.is_empty())
+            })
+            && self.recovery.as_ref().is_some_and(|r| {
+                r.enabled
+                    && r.last.is_some_and(|last| self.clock.elapsed > last)
+                    && (self.world.next_id() > r.known
+                        || !r.mp_pending.is_empty()
+                        || r.ap.has_due(self.clock.elapsed)
+                        || r.mp.has_due(self.clock.elapsed)
+                        || r.skill.has_due(self.clock.elapsed))
+            })
+    }
+
+    fn step_inner<const PROFILE: bool, const EMPTY_FORK: bool>(
         &mut self,
         dt: f64,
         wall_time: f64,
@@ -479,15 +540,45 @@ impl Runtime {
                 )?;
             }
         }
-        phase!(
-            "recovery",
-            if PROFILE {
-                self.advance_recovery_profile::<true>(&mut timings.candidates.recovery)
-            } else {
-                self.advance_recovery()
+        if PROFILE {
+            phases.insert("eligible", u64::from(self.between_systems_eligible()));
+        }
+        if EMPTY_FORK && self.between_systems_eligible() {
+            let pool = self
+                .observation_pool
+                .as_ref()
+                .expect("eligible pool")
+                .clone();
+            let start = PROFILE.then(std::time::Instant::now);
+            pool.fork_join(
+                || (),
+                || {
+                    phase!(
+                        "recovery",
+                        if PROFILE {
+                            self.advance_recovery_profile::<true>(&mut timings.candidates.recovery)
+                        } else {
+                            self.advance_recovery()
+                        }
+                    );
+                    phase!("lifecycle", self.advance_lifecycle());
+                },
+            );
+            if let Some(start) = start {
+                phases.insert("fork_region", start.elapsed().as_nanos() as u64);
+                phases.insert("forked", 1);
             }
-        );
-        phase!("lifecycle", self.advance_lifecycle());
+        } else {
+            phase!(
+                "recovery",
+                if PROFILE {
+                    self.advance_recovery_profile::<true>(&mut timings.candidates.recovery)
+                } else {
+                    self.advance_recovery()
+                }
+            );
+            phase!("lifecycle", self.advance_lifecycle());
+        }
         phase!(
             "vision",
             if PROFILE {

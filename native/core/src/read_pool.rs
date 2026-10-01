@@ -17,6 +17,26 @@ impl ReadPool {
             threads,
         }
     }
+    /// One worker overlaps caller work. Both panic paths join before unwinding.
+    /// The caller never steals pool jobs; at most two participants are active.
+    pub fn fork_join<R: Send + 'static, C>(
+        &self,
+        worker: impl FnOnce() -> R + Send,
+        caller: impl FnOnce() -> C,
+    ) -> (R, C) {
+        use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+        let mut called = None;
+        let mut results = self.pool.scope_with_executor(false, None, |scope| {
+            scope.spawn(async move { catch_unwind(AssertUnwindSafe(worker)) });
+            called = Some(catch_unwind(AssertUnwindSafe(caller)));
+        });
+        let computed = results.pop().expect("one scoped job");
+        let called = called.expect("caller completed");
+        match (computed, called) {
+            (_, Err(panic)) | (Err(panic), _) => resume_unwind(panic),
+            (Ok(worker), Ok(caller)) => (worker, caller),
+        }
+    }
     /// At most one chunk per worker; completed values are returned in input order.
     /// The caller waits without running pool jobs, so this uses N workers, not N+1.
     pub fn map_chunks<T: Sync, R: Send + 'static>(
@@ -47,6 +67,52 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::sync::Barrier;
+
+    #[test]
+    fn fork_overlaps_caller_and_joins_both_panic_paths() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        for threads in [2, 4] {
+            let pool = ReadPool::new(threads);
+            let barrier = Barrier::new(2);
+            let caller_id = std::thread::current().id();
+            let (worker_id, value) = pool.fork_join(
+                || {
+                    barrier.wait();
+                    std::thread::current().id()
+                },
+                || {
+                    barrier.wait();
+                    7
+                },
+            );
+            assert_ne!(worker_id, caller_id);
+            assert_eq!(value, 7);
+            let completed = AtomicBool::new(false);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| pool.fork_join(
+                    || {
+                        completed.store(true, Ordering::SeqCst);
+                    },
+                    || panic!("caller fault"),
+                )))
+                .is_err()
+            );
+            assert!(completed.load(Ordering::SeqCst));
+            completed.store(false, Ordering::SeqCst);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| pool.fork_join(
+                    || panic!("worker fault"),
+                    || {
+                        completed.store(true, Ordering::SeqCst);
+                    },
+                )))
+                .is_err()
+            );
+            assert!(completed.load(Ordering::SeqCst));
+            assert_eq!(pool.fork_join(|| 3, || 4), (3, 4));
+        }
+    }
 
     #[test]
     fn scoped_jobs_run_on_distinct_bounded_workers_and_keep_input_order() {

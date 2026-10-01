@@ -60,6 +60,21 @@ impl NativeRuntime {
     fn _step_profile_json(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<String> {
         self.with_runtime(py, |r| Ok(r.profile_step(dt, wall_time)?.to_string()))
     }
+    /// E4 private per-call negative control; never persists an execution policy.
+    #[pyo3(signature=(dt, wall_time, mode, profile=false))]
+    fn _between_systems_step_json(
+        &self,
+        py: Python<'_>,
+        dt: f64,
+        wall_time: f64,
+        mode: &str,
+        profile: bool,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            Ok(r.between_systems_step_probe(dt, wall_time, mode, profile)?
+                .to_string())
+        })
+    }
     /// Advancing research control; overrides only this call's pure-row dispatch.
     #[pyo3(signature=(dt, wall_time, min_rows, profile=true))]
     fn _statistics_step_json(
