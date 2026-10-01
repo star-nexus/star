@@ -2,7 +2,13 @@
 
 本台账记录**迁移期间实际出现过的差异**，包括已修复项；也单列尚未迁移的能力和待核验风险。修复不删除历史。新增规则差异必须记录后再决定如何修复，不能借迁移悄悄修改 Python oracle，也不能仅用“回归通过”代表所有配置等价。
 
-当前审计节点：E4（System之间派发预算筛选，2026-10-02；保守停止，未实施Vision拆分或新增容量，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
+当前审计节点：E5（Movement∥Visuals真实System之间重叠，2026-10-02；native2/4主门槛均未通过，默认关闭、仅保留私有研究接口；无新live/容量，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
+
+## E5：Movement 与 Visuals 的 System 之间真实重叠（2026-10-02）
+
+源码94913a4f836a3c106e08a1334cb81971cfd728c3；窄Position存在性/next-ID事实及Visuals所有权转移，无World复制，复用实例pool。一worker Visuals计算与caller Movement重叠，join后原序Spawn/Remove/状态发布，预期错误成功前缀和两侧panic join边界保留。普通step/default1/API18/schema5/E2 Statistics128策略不变。
+
+13个独立E4/四模式×线程合同输出字节一致，各13场景/377step；2345Python/6Rust/fmt/Clippy/release通过。当前规范目标5000Units/1000Agents的native2/4三轮主对照各仅1轮通过mean/P99/CI95门槛，所以不进入单实例确认或live；0/4/16敏感性不替换预注册门槛8。无新增确认玩法GAP，G001–G003历史、G008/G009 OPEN、R001/R002 RISK保留，5000Agents暂缓。完整证据见[E5边界与决策](native-movement-visuals-parallel.md)和[Lab正式包](/Users/liyang/Developer/star-lab/experiments/2026-10-rust-movement-visuals-parallel/README.md)。结论限于本机/当前轨迹/门槛8，不泛化所有System并行方案。
 
 ## E4：System 之间并行派发研究（2026-10-02，筛选负结果已验证）
 

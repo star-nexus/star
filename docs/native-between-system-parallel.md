@@ -1,5 +1,7 @@
 # E4：System 之间并行的派发预算研究
 
+后续不同候选的真实重叠与净收益见 [E5：Movement∥Visuals](native-movement-visuals-parallel.md)。E4的Vision候选边界及负筛选历史保留。
+
 本轮从 E3 `ad02b75f2b83f97fe0bef4c1c9eee5742b1610fb` 起步；目标继续为 5000 Units＋1000 Agents，5000 Agents 暂缓。Rust 执行世界、Python 保留接口与生态。默认 native1、API18/schema5 和普通 step 的执行顺序保持原状。
 
 ## 依赖与成本

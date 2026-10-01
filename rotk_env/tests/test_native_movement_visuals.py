@@ -117,3 +117,47 @@ def test_complete_visual_prefix_and_lifecycle(threads, mode):
         assert selected > 0
     else:
         assert selected == 0
+
+@pytest.mark.parametrize('threads', [1,2,4])
+def test_game_over_keeps_vision_after_visual_join(threads):
+    from rotk_env.components import Vision
+    from rotk_env.systems.window_vision_system import VisionSystem
+    world, ids, _ = make('window', GameMode.REAL_TIME, 'ranged')
+    try:
+        for uid in ids:
+            world.add_component(uid, Vision(range=2))
+        vision = VisionSystem()
+        world.add_system(vision)
+        vision.update(0.)
+        initial = export_initial_state(world, display='window')
+    finally:
+        world.reset()
+    initial['rules']['max_realtime_seconds'] = 0.
+    initial['systems']['RealtimeSystem'] = {'enabled': True, 'indexed': True}
+    initial['systems']['VisionSystem']['dirty'] = list(ids)
+    unit = next(e for e in initial['entities'] if e['id'] == ids[0])
+    unit['components']['Vision'].update(range=4, dirty=True)
+    plain = NativeRuntime(json.dumps(initial), threads)
+    measured = NativeRuntime(json.dumps(initial), threads)
+    try:
+        for native in (plain, measured):
+            assert combat_probe(native, 'attack', ids[0], ids[2])['success']
+            assert probe(native, 'move', ids[1], (-2,1))['success']
+        plain.step(.1, 1720000000.)
+        report = json.loads(measured._movement_visuals_step_json(.1, 1720000000., 'parallel', 0, True))
+        state = json.loads(measured.export_state_json())
+        assert state['singletons']['GameState']['game_over'] is True
+        unit = next(e for e in state['entities'] if e['id'] == ids[0])
+        assert unit['components']['Vision']['_last_range'] == 4
+        assert report['phases_ns'].get('e5_eligible',0) == int(threads>1)
+        same(plain, measured)
+        crossings = 0
+        for index in range(5):
+            plain.step(5., 1720000001.+index)
+            report = json.loads(measured._movement_visuals_step_json(5., 1720000001.+index, 'parallel', 0, True))
+            crossings += report['candidates']['movement']['crossings']
+            same(plain, measured)
+        assert crossings >= 2
+    finally:
+        plain.close()
+        measured.close()
