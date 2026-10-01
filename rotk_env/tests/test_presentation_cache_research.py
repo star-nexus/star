@@ -12,6 +12,8 @@ from rotk_env.runtime.bootstrap import encode
 from rotk_env.runtime.world_presentation import WorldPresentation, _UNIT_COLUMNS
 from rotk_env.utils.unit_spatial_index import get_unit_spatial_index
 
+from rotk_env.tests.test_native_request_batch import frozen
+
 MODES = ('baseline', 'reuse_constructed', 'reuse_typed')
 
 
@@ -118,3 +120,25 @@ def test_ordinary_apply_ast_unchanged_from_e6_base():
         cls=next(n for n in ast.parse(source).body if isinstance(n,ast.ClassDef) and n.name=='WorldPresentation')
         return ast.dump(next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='apply'),include_attributes=False)
     assert body(old)==body(new)
+
+@pytest.mark.parametrize('mode', ('reuse_constructed','reuse_typed'))
+@pytest.mark.parametrize('kind', ('melee','ranged'))
+@pytest.mark.parametrize('dead', (False,True))
+def test_reuse_tracks_independent_python_combat_and_camera(mode,kind,dead,monkeypatch,frozen):
+    from rotk_env.tests.test_native_world_presentation import test_presentation_world_tracks_native_facts_and_legacy_visuals_without_simulation as reference
+    monkeypatch.setattr(WorldPresentation,'apply',lambda self,d:self._apply_research(d,mode=mode))
+    reference(kind,dead,frozen)
+
+
+def test_missing_required_unknown_fields_first_baseline_and_research_shape():
+    # No partial component fields are published on constructor/conversion error.
+    for mode in MODES:
+        p=WorldPresentation(World());p.apply(delta());before=deepcopy(vars(p.world.get_component(10,c.Unit)))
+        d=delta(1);d['units'][0]['unit'].pop('unit_type')
+        with pytest.raises(TypeError):p._apply_research(d,mode=mode)
+        assert vars(p.world.get_component(10,c.Unit))==before
+        # Earlier Position commits are retained, as on ordinary apply.
+        assert p.revision==1 and p.world.revision==1
+        empty=WorldPresentation(World());d=delta();d['fog']['full']=False
+        with pytest.raises(ValueError):empty._apply_research(d,mode=mode)
+        assert empty.epoch is None and empty.world.entities=={}
