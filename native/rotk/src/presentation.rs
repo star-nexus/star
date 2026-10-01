@@ -21,6 +21,74 @@ pub(crate) struct Visuals {
     #[serde(skip)]
     removed: Vec<u64>,
 }
+// A single phase algorithm runs against immediate ECS access or an ordered plan.
+trait VisualAccess {
+    fn has_position(&self, id: u64) -> bool;
+    fn spawn(&mut self) -> Result<u64, String>;
+    fn remove(&mut self, id: u64);
+}
+impl VisualAccess for Runtime {
+    fn has_position(&self, id: u64) -> bool {
+        self.component::<Position>(id).is_some()
+    }
+    fn spawn(&mut self) -> Result<u64, String> {
+        Visuals::spawn(self)
+    }
+    fn remove(&mut self, id: u64) {
+        self.remove_entity(id);
+    }
+}
+enum VisualOp {
+    Spawn(u64),
+    Remove(u64),
+}
+struct VisualPlan {
+    positions: BTreeSet<u64>,
+    next_id: u64,
+    operations: Vec<VisualOp>,
+}
+impl VisualAccess for VisualPlan {
+    fn has_position(&self, id: u64) -> bool {
+        self.positions.contains(&id)
+    }
+    fn spawn(&mut self) -> Result<u64, String> {
+        let id = self.next_id;
+        self.next_id = id.checked_add(1).ok_or("entity ID exhausted")?;
+        self.operations.push(VisualOp::Spawn(id));
+        Ok(id)
+    }
+    fn remove(&mut self, id: u64) {
+        self.operations.push(VisualOp::Remove(id));
+    }
+}
+pub(crate) struct VisualWork {
+    visuals: Visuals,
+    plan: VisualPlan,
+}
+impl VisualWork {
+    pub(crate) fn compute<const PROFILE: bool>(
+        &mut self,
+        dt: f64,
+        timing: &mut VisualTimings,
+    ) -> Result<(), String> {
+        self.visuals.advance::<PROFILE>(&mut self.plan, dt, timing)
+    }
+    // Also used after a joined panic: all owned maps return before unwinding.
+    pub(crate) fn publish(self, runtime: &mut Runtime) {
+        for op in self.plan.operations {
+            match op {
+                VisualOp::Spawn(expected) => {
+                    let actual = Visuals::spawn(runtime).expect("exclusive visual ID plan");
+                    assert_eq!(actual, expected, "Movement must not allocate IDs");
+                }
+                VisualOp::Remove(id) => {
+                    runtime.remove_entity(id);
+                }
+            }
+        }
+        runtime.visuals = self.visuals;
+    }
+}
 fn f(row: &Value, key: &str) -> f64 {
     row[key].as_f64().expect("validated visual number")
 }
@@ -127,7 +195,7 @@ impl Visuals {
     }
     fn advance<const PROFILE: bool>(
         &mut self,
-        r: &mut Runtime,
+        r: &mut impl VisualAccess,
         dt: f64,
         timing: &mut VisualTimings,
     ) -> Result<(), String> {
@@ -140,7 +208,7 @@ impl Visuals {
         }
         let phase_start = start::<PROFILE>();
         for (&id, attack) in &mut self.attack {
-            if r.component::<Position>(id).is_none() || attack["is_attacking"] != true {
+            if !r.has_position(id) || attack["is_attacking"] != true {
                 continue;
             }
             let progress = f(attack, "progress") + f(attack, "speed") * dt;
@@ -174,7 +242,7 @@ impl Visuals {
             self.dirty.insert(id);
         }
         for attack in arrows {
-            let id = Self::spawn(r)?;
+            let id = r.spawn()?;
             if PROFILE {
                 timing.spawned += 1;
             }
@@ -218,7 +286,7 @@ impl Visuals {
                 timing.removed += 1;
             }
             self.forget(id);
-            r.remove_entity(id);
+            r.remove(id);
         }
         if PROFILE {
             timing.structural_ns += elapsed(structural_start);
@@ -248,7 +316,7 @@ impl Visuals {
                 timing.removed += 1;
             }
             self.forget(id);
-            r.remove_entity(id);
+            r.remove(id);
         }
         if PROFILE {
             timing.structural_ns += elapsed(structural_start);
@@ -277,7 +345,7 @@ impl Visuals {
                 timing.removed += 1;
             }
             self.forget(id);
-            r.remove_entity(id);
+            r.remove(id);
         }
         if PROFILE {
             timing.structural_ns += elapsed(structural_start);
@@ -286,6 +354,26 @@ impl Visuals {
     }
 }
 impl Runtime {
+    pub(crate) fn visual_damage_rows(&self) -> usize {
+        self.visuals.damage.len()
+    }
+    pub(crate) fn prepare_visual_work(&mut self) -> VisualWork {
+        let positions = self
+            .visuals
+            .attack
+            .keys()
+            .copied()
+            .filter(|&id| self.component::<Position>(id).is_some())
+            .collect();
+        VisualWork {
+            visuals: std::mem::take(&mut self.visuals),
+            plan: VisualPlan {
+                positions,
+                next_id: self.world.next_id(),
+                operations: Vec::new(),
+            },
+        }
+    }
     fn visual_pixel(&self, p: (i64, i64)) -> (f64, f64) {
         crate::movement::pixel(
             p,
@@ -389,5 +477,46 @@ impl Runtime {
             })
             .collect();
         json!({"full":full,"enabled":self.fog.as_ref().map(|fog|fog.enabled),"factions":factions})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn visual_plan_retains_owned_maps_after_both_joined_faults() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        for caller_fault in [false, true] {
+            let pool = star_core::read_pool::ReadPool::new(2);
+            let completed = AtomicBool::new(false);
+            let mut work = VisualWork {
+                visuals: Visuals::default(),
+                plan: VisualPlan {
+                    positions: BTreeSet::new(),
+                    next_id: u64::MAX - 1,
+                    operations: vec![],
+                },
+            };
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| pool.fork_join(
+                    || {
+                        work.visuals.dirty.insert(7);
+                        assert_eq!(work.plan.spawn().unwrap(), u64::MAX - 1);
+                        assert_eq!(work.plan.spawn().unwrap_err(), "entity ID exhausted");
+                        completed.store(true, Ordering::SeqCst);
+                        assert!(caller_fault, "worker fault");
+                    },
+                    || {
+                        assert!(!caller_fault, "caller fault");
+                    },
+                )))
+                .is_err()
+            );
+            assert!(completed.load(Ordering::SeqCst));
+            assert!(work.visuals.dirty.contains(&7));
+            assert_eq!(work.plan.operations.len(), 1);
+            assert_eq!(pool.fork_join(|| 1, || 2), (1, 2));
+        }
     }
 }

@@ -459,6 +459,46 @@ impl Runtime {
             })
     }
 
+    pub fn movement_visuals_step_probe(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        mode: &str,
+        min_damage_rows: usize,
+        profile: bool,
+    ) -> Result<Value, String> {
+        if !matches!(
+            mode,
+            "baseline" | "empty_fork" | "split_serial" | "parallel"
+        ) {
+            return Err("invalid E5 mode".into());
+        }
+        let start = profile.then(std::time::Instant::now);
+        let mut phases = BTreeMap::new();
+        let mut timings = crate::system_profile::StepTimings::default();
+        if profile {
+            self.step_execution::<true, false, true>(
+                dt,
+                wall_time,
+                &mut phases,
+                &mut timings,
+                crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
+                mode,
+                min_damage_rows,
+            )?;
+        } else {
+            self.step_execution::<false, false, true>(
+                dt,
+                wall_time,
+                &mut phases,
+                &mut timings,
+                crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
+                mode,
+                min_damage_rows,
+            )?;
+        }
+        Ok(start.map_or(Value::Null, |start| json!({"native_ns":start.elapsed().as_nanos() as u64,"phases_ns":phases,"candidates":timings.candidates})))
+    }
     fn step_inner<const PROFILE: bool, const EMPTY_FORK: bool>(
         &mut self,
         dt: f64,
@@ -466,6 +506,27 @@ impl Runtime {
         phases: &mut BTreeMap<&'static str, u64>,
         timings: &mut crate::system_profile::StepTimings,
         min_rows: usize,
+    ) -> Result<(), String> {
+        self.step_execution::<PROFILE, EMPTY_FORK, false>(
+            dt,
+            wall_time,
+            phases,
+            timings,
+            min_rows,
+            "baseline",
+            usize::MAX,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn step_execution<const PROFILE: bool, const EMPTY_FORK: bool, const E5: bool>(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        phases: &mut BTreeMap<&'static str, u64>,
+        timings: &mut crate::system_profile::StepTimings,
+        min_rows: usize,
+        mode: &str,
+        min_damage_rows: usize,
     ) -> Result<(), String> {
         macro_rules! phase {
             ($name:literal, $body:expr) => {{
@@ -521,23 +582,122 @@ impl Runtime {
             .get("AnimationSystem")
             .is_none_or(|s| s["enabled"] == true)
         {
-            phase!(
-                "movement",
-                if PROFILE {
-                    self.advance_movement_profile::<true>(dt, &mut timings.candidates.movement)
+            let selected = E5
+                && mode != "baseline"
+                && self.config.display == "window"
+                && self.config.systems.contains_key("AnimationSystem")
+                && !self.moving.is_empty()
+                && self.visual_damage_rows() >= min_damage_rows
+                && (mode == "split_serial" || self.observation_pool.is_some());
+            if E5 && PROFILE {
+                phases.insert("e5_eligible", u64::from(selected));
+            }
+            if selected {
+                if mode == "empty_fork" {
+                    let pool = self
+                        .observation_pool
+                        .as_ref()
+                        .expect("selected pool")
+                        .clone();
+                    phase!(
+                        "e5_region",
+                        pool.fork_join(
+                            || (),
+                            || {
+                                phase!(
+                                    "movement",
+                                    self.advance_movement_profile::<PROFILE>(
+                                        dt,
+                                        &mut timings.candidates.movement
+                                    )
+                                );
+                            }
+                        )
+                    );
+                    phase!(
+                        "visuals",
+                        self.advance_visuals_profile::<PROFILE>(
+                            dt,
+                            &mut timings.candidates.visuals
+                        )
+                    )?;
                 } else {
-                    self.advance_movement(dt)
-                }
-            );
-            if self.config.systems.contains_key("AnimationSystem") {
-                phase!(
-                    "visuals",
-                    if PROFILE {
-                        self.advance_visuals_profile::<true>(dt, &mut timings.candidates.visuals)
-                    } else {
-                        self.advance_visuals(dt)
+                    let mut work = phase!("e5_prepare", self.prepare_visual_work());
+                    let mut visual_timing = crate::system_profile::VisualTimings::default();
+                    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        if mode == "parallel" {
+                            let pool = self
+                                .observation_pool
+                                .as_ref()
+                                .expect("selected pool")
+                                .clone();
+                            let ((visual_ns, result), movement_ns) = phase!(
+                                "e5_region",
+                                pool.fork_join(
+                                    || {
+                                        let start = crate::system_profile::start::<PROFILE>();
+                                        let result =
+                                            work.compute::<PROFILE>(dt, &mut visual_timing);
+                                        (crate::system_profile::elapsed(start), result)
+                                    },
+                                    || {
+                                        let start = crate::system_profile::start::<PROFILE>();
+                                        self.advance_movement_profile::<PROFILE>(
+                                            dt,
+                                            &mut timings.candidates.movement,
+                                        );
+                                        crate::system_profile::elapsed(start)
+                                    }
+                                )
+                            );
+                            if PROFILE {
+                                phases.insert("e5_compute", visual_ns);
+                                phases.insert("movement", movement_ns);
+                            }
+                            result
+                        } else {
+                            phase!(
+                                "movement",
+                                self.advance_movement_profile::<PROFILE>(
+                                    dt,
+                                    &mut timings.candidates.movement
+                                )
+                            );
+                            phase!(
+                                "e5_compute",
+                                work.compute::<PROFILE>(dt, &mut visual_timing)
+                            )
+                        }
+                    }));
+                    phase!("e5_publish", work.publish(self));
+                    timings.candidates.visuals = visual_timing;
+                    match joined {
+                        Ok(result) => result?,
+                        Err(panic) => std::panic::resume_unwind(panic),
                     }
-                )?;
+                }
+            } else {
+                phase!(
+                    "movement",
+                    if PROFILE {
+                        self.advance_movement_profile::<true>(dt, &mut timings.candidates.movement)
+                    } else {
+                        self.advance_movement(dt)
+                    }
+                );
+                if self.config.systems.contains_key("AnimationSystem") {
+                    phase!(
+                        "visuals",
+                        if PROFILE {
+                            self.advance_visuals_profile::<true>(
+                                dt,
+                                &mut timings.candidates.visuals,
+                            )
+                        } else {
+                            self.advance_visuals(dt)
+                        }
+                    )?;
+                }
             }
         }
         if PROFILE {
