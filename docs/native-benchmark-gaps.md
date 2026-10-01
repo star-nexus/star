@@ -4,6 +4,12 @@
 
 当前审计节点：E5（Movement∥Visuals真实System之间重叠，2026-10-02；native2/4主门槛均未通过，默认关闭、仅保留私有研究接口；无新live/容量，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
 
+## 整体性能评估（2026-10-02，仅规划，执行研究节点仍为E5）
+
+源码审查节点3b167b1；最新完整窗口仍对应E2/source2bc57d5，而非当前E5 binary的新live。canonical复算支持先评估展示消费/显示准备与已有read-batch接入，native候选为Statistics历史结构、Vision集合/Fog提交表示；候选实现与净收益均未验证。约5.1ms未分项update不归因于render/GC，诊断System重叠上限不作为新加速比。详见[Lab整体评估](/Users/liyang/Developer/star-lab/records/rust-performance-optimization-assessment.md)。
+
+若后续实施，必须保留完整观测、动作/RNG/ID顺序、时钟、错误成功前缀、派生引用与一次性事件；表示改变不得改变历史上限或采样，调度改变须记录实际接纳序列。此阶段仅复核已有证据与提出投入建议，没有生产执行/API18/schema5/default1变更、确认新玩法差异、容量/Frontier或GAP关闭。G001–G003历史、G008/G009 OPEN、R001/R002 RISK保留；5000Agents继续暂缓。
+
 ## E5：Movement 与 Visuals 的 System 之间真实重叠（2026-10-02）
 
 源码94913a4f836a3c106e08a1334cb81971cfd728c3；窄Position存在性/next-ID事实及Visuals所有权转移，无World复制，复用实例pool。一worker Visuals计算与caller Movement重叠，join后原序Spawn/Remove/状态发布，预期错误成功前缀和两侧panic join边界保留。普通step/default1/API18/schema5/E2 Statistics128策略不变。
