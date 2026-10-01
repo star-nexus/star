@@ -1,5 +1,7 @@
 # Rust parallel phase P0: dependencies before scheduling
 
+E4最新边界与派发预算研究：[System之间并行](native-between-system-parallel.md)。以该阶段状态为准，E1/E3历史预算不是已实现加速。
+
 最新 E3：[其他 System 内部成本与条件 roadmap](native-internal-system-candidates.md)。当前规范负载没有启用新并行；以下保留历史审计与设计。
 
 2026-09-30. Baseline annotated tag `rust-kernel-r4e-2026-09-29` resolves to

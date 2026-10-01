@@ -1,5 +1,7 @@
 # E3：其他 System 内部并行候选（2026-10-01）
 
+E4最新边界与派发预算研究：[System之间并行](native-between-system-parallel.md)。以该阶段状态为准，E1/E3历史预算不是已实现加速。
+
 研究完成。当前 5000 Units＋1000 Agents 规范负载下，**尚无足够证据启用另一项 System 内部并行**。保留 E2 Statistics 策略：当前批次 JSON 记录构建、128 行门槛、显式 2／4 线程、原序提交；默认 1 不变。System 之间仍顺序执行。5000 Agents 暂缓。
 
 进度：`边界审计 █ | 分项归因 █ | 完整等价 █ | 成本/条件排序 █ | canonical归档 █`。
