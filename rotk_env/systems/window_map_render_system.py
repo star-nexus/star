@@ -19,6 +19,7 @@ journal and patches only dirty hexes while view geometry is unchanged.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import time
 from typing import Iterator, List, Optional, Tuple
@@ -695,3 +696,71 @@ class WindowMapRenderSystem(FastMapRenderSystem):
         )
         profiling.profiler.set_frame_metric("map_overscan_source_pixels", 0)
         self._render_terrain_direct(map_data, visible_tiles, camera_offset, zoom)
+
+
+    @contextmanager
+    def _display_research_frame(self, mode="baseline"):
+        """Opt-in E7 frame scope; ordinary rendering never selects this policy."""
+        if mode not in ("baseline", "empty_territory"):
+            raise ValueError(f"Unknown display research mode: {mode}")
+        if getattr(self, "_e7_frame_active", False):
+            raise RuntimeError("Nested display research frame")
+        self._e7_frame_active = True
+        name = "_render_territory_boundaries_optimized"
+        had_binding = name in self.__dict__
+        previous = getattr(self, name)
+        try:
+            if mode == "empty_territory":
+                self._e7_territory_original = previous
+                setattr(self, name, self._render_territory_boundaries_empty)
+            yield
+        finally:
+            if mode == "empty_territory":
+                if had_binding:
+                    setattr(self, name, previous)
+                else:
+                    self.__dict__.pop(name, None)
+                self.__dict__.pop("_e7_territory_original", None)
+            self._e7_frame_active = False
+
+    def _render_territory_boundaries_empty(self, visible_tiles, camera_offset, zoom):
+        """Avoid ECS lookups only when its live membership proves no territories.
+
+        Cache coordinates, never component values. Mutable tile IDs are read on
+        every call. Any territory or nonstandard input uses the original method.
+        """
+        from framework.ecs.world import World
+        from rotk_env.components import TerritoryControl
+        from rotk_env.systems.map_render_system import MapRenderSystem
+
+        original = self._e7_territory_original
+        underlying = getattr(original, "_e7_probe_original", original)
+        fallback = lambda: original(visible_tiles, camera_offset, zoom)
+        world = self.world
+        if (type(world) is not World
+                or getattr(world.get_component, "__func__", None) is not World.get_component
+                or getattr(world.get_singleton_component, "__func__", None) is not World.get_singleton_component
+                or getattr(underlying, "__func__", None) is not MapRenderSystem._render_territory_boundaries_optimized
+                or type(visible_tiles) is not set
+                or len(visible_tiles) > 32768
+                or world._component_to_entities.get(TerritoryControl)):
+            return fallback()
+        map_data = world.get_singleton_component(MapData)
+        if type(map_data) is not MapData or type(map_data.tiles) is not dict:
+            return fallback()
+        coords = tuple(visible_tiles)
+        if coords != getattr(self, "_e7_valid_coordinates", None):
+            if any(type(cell) is not tuple or len(cell) != 2
+                   or type(cell[0]) is not int or type(cell[1]) is not int
+                   for cell in coords):
+                return fallback()
+            self._e7_valid_coordinates = coords
+        for cell in coords:
+            uid = map_data.tiles.get(cell)
+            if uid is not None and type(uid) is not int:
+                return fallback()
+        # No drawing is possible without a TerritoryControl component. In
+        # particular, no cached ownership/style can survive membership changes.
+
+    def cleanup(self):
+        self.__dict__.pop("_e7_valid_coordinates", None)
