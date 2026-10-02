@@ -4,6 +4,20 @@
 
 当前审计节点：E5（Movement∥Visuals真实System之间重叠，2026-10-02；native2/4主门槛均未通过，默认关闭、仅保留私有研究接口；无新live/容量，完整迁移未完成）；最近修复的机制差异为R3d5/G014。R4d测量源码 `5147e4d8e0c33c997bd86960d87fa4b5b3ca90c5`，API18。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
 
+
+## E6：展示组件复用研究（2026-10-02）
+
+[实现与边界](native-presentation-cache-research.md)：三个私有consumer模式，普通apply不变。
+2385项回归及native1/4完整请求/展示/查询/像素契约通过；reuse_typed固定轨迹六轮
+apply改善44.26–45.62%、完整链14.66–15.53%、总工作10.78–11.61%，P99及区间门槛通过。
+仅复用构造对象的模式apply慢2.11–2.71%，不采用。native4单实例确认通过。
+候选三轮实时窗口guards通过，但baseline第二轮帧及队列超限，六次整体窗口gate未通过。
+默认仍关闭，未将固定轨迹加速解释为容量提高；不新增已确认玩法GAP。
+像素墙钟及地形缓存构建进度的控制失败/相同baseline反例独立归档，产品代码未因此修改。
+G001–G003原状态、G008/G009 OPEN、R001/R002 RISK保留；5000Agents暂缓，Frontier不变。
+进度：`契约/归因 █ | 原型/回归 █ | 等价 █ | 收益 █ | 条件窗口 █ | 证据/恢复 █`。
+
+
 ## 整体性能评估（2026-10-02，仅规划，执行研究节点仍为E5）
 
 源码审查节点3b167b1；最新完整窗口仍对应E2/source2bc57d5，而非当前E5 binary的新live。canonical复算支持先评估展示消费/显示准备与已有read-batch接入，native候选为Statistics历史结构、Vision集合/Fog提交表示；候选实现与净收益均未验证。约5.1ms未分项update不归因于render/GC，诊断System重叠上限不作为新加速比。详见[Lab整体评估](/Users/liyang/Developer/star-lab/records/rust-performance-optimization-assessment.md)。
