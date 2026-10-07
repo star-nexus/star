@@ -2,7 +2,7 @@
 use crate::{
     codec::{action_integer, scalar_display, string_repr, truthy},
     components::UnitInfo,
-    observation::{ObservationBatch, Response, error},
+    observation::{ObservationBatch, ReadSegmentCache, Response, error},
     runtime::Runtime,
     team::Team,
 };
@@ -472,7 +472,29 @@ impl Runtime {
         })
     }
     /// Only JSON-shaped, normalized local requests enter here. Python/Hub supplies identity.
-    pub fn execute_request(&mut self, mut request: Request) -> Result<Response, String> {
+    pub fn admitted_faction_query_is_readonly(&self) -> bool {
+        self.config.interface["action_specs"]["get_faction_state"]["kind"].as_str() == Some("query")
+    }
+    /// Small per-request diagnostic, deliberately not a full authority export.
+    pub fn admitted_query_accounting_snapshot(&self, agent: Option<&str>) -> Value {
+        let stats = self.singletons.get("GameStats");
+        let faction = stats.and_then(|s| agent.and_then(|a| s["agent_id_to_faction"][a].as_str()));
+        json!({"wall_time":self.wall_time,"epoch":self.epoch,"revision":self.revision,
+            "agent":agent,"registered_faction":faction,
+            "agent_actions":stats.and_then(|s| agent.map(|a| s["action_count_by_agent"][a].clone())),
+            "faction_actions":stats.and_then(|s| faction.map(|f| s["action_count_by_faction"][f].clone()))})
+    }
+    pub fn execute_request(&mut self, request: Request) -> Result<Response, String> {
+        self.execute_request_with_read_cache(request, &mut None, None)
+    }
+    /// Research ingress only. All timing, authorization and accounting retain
+    /// the single-request order; only owned observation facts may survive.
+    pub fn execute_request_with_read_cache(
+        &mut self,
+        mut request: Request,
+        cache: &mut Option<ReadSegmentCache>,
+        diagnostic: Option<&mut Value>,
+    ) -> Result<Response, String> {
         if !request.wall_time.is_finite() {
             return Err("wall metadata must be finite".into());
         }
@@ -520,7 +542,21 @@ impl Runtime {
             "get_faction_state" | "get_faction_state_vlm"
                 if self.allowed_actions().iter().any(|n| n == action) =>
             {
-                let response = ObservationBatch::new(self).faction_state(params);
+                let response = if let Some(owned) = cache.take() {
+                    let mut batch = ObservationBatch::from_cache(self, owned);
+                    let response = batch.faction_state(params);
+                    let metrics = diagnostic
+                        .as_ref()
+                        .map(|_| serde_json::to_value(&batch.metrics).expect("metrics encode"));
+                    let owned = batch.into_cache();
+                    if let Some(output) = diagnostic {
+                        *output = json!({"metrics":metrics,"cache":owned.diagnostic_summary()});
+                    }
+                    *cache = Some(owned);
+                    response
+                } else {
+                    ObservationBatch::new(self).faction_state(params)
+                };
                 let response = self.record_action_result(&request, response);
                 // Preserve imported action-spec semantics, including a custom
                 // kind that classifies this otherwise read-only action as a write.

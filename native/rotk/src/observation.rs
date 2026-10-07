@@ -168,6 +168,41 @@ pub struct Profile {
     public_encode_ns: u64,
     panels_ns: u64,
 }
+/// Owned facts only: never contains a World/ECS borrow or request authorization.
+/// The private Python ingress moves this cache between bounded query calls.
+#[derive(Default)]
+pub struct ReadSegmentCache {
+    census: Option<Census>,
+    factions: HashMap<String, FactionFacts>,
+    panels: HashMap<u64, Arc<EncodedObject>>,
+    enemies: HashMap<u64, EncodedFact>,
+    tiles: HashMap<Hex, EncodedFact>,
+}
+impl ReadSegmentCache {
+    /// Encoded backing bytes, not allocator footprint or process RSS.
+    pub fn diagnostic_summary(&self) -> Value {
+        let object_bytes = |o: &EncodedObject| {
+            o.0.iter()
+                .map(|(k, v)| k.len() + v.get().len())
+                .sum::<usize>()
+        };
+        let bytes = self
+            .factions
+            .values()
+            .map(|f| object_bytes(&f.public))
+            .sum::<usize>()
+            + self.panels.values().map(|p| object_bytes(p)).sum::<usize>()
+            + self
+                .enemies
+                .values()
+                .map(|e| e.0.get().len())
+                .sum::<usize>()
+            + self.tiles.values().map(|t| t.0.get().len()).sum::<usize>();
+        json!({"census":self.census.is_some(),"factions":self.factions.len(),
+               "panels":self.panels.len(),"enemies":self.enemies.len(),
+               "tiles":self.tiles.len(),"encoded_backing_bytes":bytes})
+    }
+}
 pub struct ObservationBatch<'a> {
     runtime: &'a Runtime,
     census: Option<Census>,
@@ -183,6 +218,28 @@ pub fn error(message: &str) -> Value {
     json!({"success":false,"result":false,"details":message,"message":message})
 }
 impl<'a> ObservationBatch<'a> {
+    pub fn from_cache(runtime: &'a Runtime, cache: ReadSegmentCache) -> Self {
+        Self {
+            runtime,
+            census: cache.census,
+            factions: cache.factions,
+            panels: cache.panels,
+            enemies: cache.enemies,
+            tiles: cache.tiles,
+            panel_workers: HashSet::new(),
+            metrics: Metrics::default(),
+            profile: None,
+        }
+    }
+    pub fn into_cache(self) -> ReadSegmentCache {
+        ReadSegmentCache {
+            census: self.census,
+            factions: self.factions,
+            panels: self.panels,
+            enemies: self.enemies,
+            tiles: self.tiles,
+        }
+    }
     pub fn new(runtime: &'a Runtime) -> Self {
         Self {
             runtime,

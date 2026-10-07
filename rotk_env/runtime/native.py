@@ -88,6 +88,66 @@ def _complete_result(action, result):
     return result
 
 
+class _AdmittedObservationSegment:
+    """Private bounded research scope; ordinary methods remain native barriers."""
+    def __init__(self, runtime, mode, max_requests, diagnostics):
+        if mode not in ('single', 'segment_no_reuse', 'segment_encoded'):
+            raise ValueError('invalid observation segment mode')
+        if type(max_requests) is not int or not 2 <= max_requests <= 4:
+            raise ValueError('invalid observation segment limit')
+        self.runtime = runtime
+        self.mode = mode
+        self.maximum = max_requests
+        self.diagnostics = diagnostics
+        self.token = None
+        self.report = None
+        self.entered = False
+
+    def __enter__(self):
+        if self.entered:
+            raise RuntimeError('observation segment context already entered')
+        self.runtime._admission_lock.acquire()
+        try:
+            if self.mode != 'single':
+                self.token = self.runtime._native._begin_observation_segment_json(
+                    self.mode, self.maximum, self.diagnostics)
+            self.entered = True
+            return self
+        except BaseException:
+            self.runtime._admission_lock.release()
+            raise
+
+    def get_faction_state_json(self, faction, *, agent_id, unit_ids=_UNSET, wall_time=None):
+        if not self.entered:
+            raise RuntimeError('observation segment context is not active')
+        with self.runtime._admission_lock:
+            if self.token is None:
+                return self.runtime.get_faction_state_json(
+                    faction, unit_ids=unit_ids, agent_id=agent_id, wall_time=wall_time)
+            params = {'faction': faction}
+            if unit_ids is not _UNSET:
+                params['unit_ids'] = unit_ids
+            request = ActionRequest(agent_id, 'get_faction_state', params, wall_time)
+            return self.runtime._native._observation_segment_request_json(
+                self.token, json.dumps(request.to_wire(), allow_nan=False))
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if self.token is not None:
+                try:
+                    report = self.runtime._native._end_observation_segment_json(self.token)
+                    self.report = None if report is None else json.loads(report)
+                except BaseException:
+                    # Preserve the initiating failure when its native mutex is
+                    # already poisoned. The context cannot be used again.
+                    if exc_type is None:
+                        raise
+        finally:
+            self.entered = False
+            self.token = None
+            self.runtime._admission_lock.release()
+
+
 class RustRuntime:
     """Owned native runtime; supported requests do not imply full gameplay readiness."""
     backend = 'rust'
@@ -96,6 +156,9 @@ class RustRuntime:
         self._admission_lock = RLock()
         native = load_native()
         self._native = native(json.dumps(initial_state, allow_nan=False), threads)
+
+    def _admitted_observation_segment(self, mode, *, max_requests=4, diagnostics=False):
+        return _AdmittedObservationSegment(self, mode, max_requests, diagnostics)
 
     @_serialized
     def reset(self, initial_state):

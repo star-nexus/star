@@ -3,8 +3,39 @@ use pyo3::{
     prelude::*,
 };
 use serde_json::{Value, json};
+use star_rotk::observation::ReadSegmentCache;
 use star_rotk::runtime::Runtime;
-use std::sync::Mutex;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+
+static INSTANCE_NONCE: AtomicU64 = AtomicU64::new(1);
+
+struct ReadSegment {
+    token: String,
+    owner: std::thread::ThreadId,
+    epoch: u64,
+    requests: usize,
+    maximum: usize,
+    reuse: bool,
+    cache: Option<ReadSegmentCache>,
+    diagnostics: Option<Vec<Value>>,
+}
+struct NativeState {
+    runtime: Option<Runtime>,
+    segment: Option<ReadSegment>,
+    nonce: u64,
+    generation: u64,
+}
+impl NativeState {
+    fn invalidate_read_segment(&mut self) {
+        self.segment = None;
+        // Saturation disables future research segments; ordinary operations
+        // remain available. No generation can wrap and revive an old token.
+        self.generation = self.generation.saturating_add(1);
+    }
+}
 
 fn check_control_epoch(runtime: &Runtime, expected: Option<u64>) -> Result<(), String> {
     if expected.is_some_and(|epoch| epoch != runtime.epoch) {
@@ -17,24 +48,36 @@ fn check_control_epoch(runtime: &Runtime, expected: Option<u64>) -> Result<(), S
 /// A poisoned instance errors permanently; no recovery into a different world.
 #[pyclass(frozen, module = "star_native._native")]
 struct NativeRuntime {
-    inner: Mutex<Option<Runtime>>,
+    inner: Mutex<NativeState>,
 }
 
 impl NativeRuntime {
-    fn with_runtime<T: Send>(
+    fn with_state<T: Send>(
         &self,
         py: Python<'_>,
-        f: impl FnOnce(&mut Runtime) -> Result<T, String> + Send,
+        f: impl FnOnce(&mut NativeState) -> Result<T, String> + Send,
     ) -> PyResult<T> {
         py.detach(|| {
             let mut guard = self
                 .inner
                 .lock()
                 .map_err(|_| "native runtime is poisoned".to_string())?;
-            let runtime = guard.as_mut().ok_or("native runtime is closed")?;
-            f(runtime)
+            f(&mut guard)
         })
         .map_err(PyRuntimeError::new_err)
+    }
+    fn with_runtime<T: Send>(
+        &self,
+        py: Python<'_>,
+        f: impl FnOnce(&mut Runtime) -> Result<T, String> + Send,
+    ) -> PyResult<T> {
+        self.with_state(py, |state| {
+            // Every ordinary native entry, including reads and failed input
+            // decoding, is a conservative barrier before touching Runtime.
+            state.invalidate_read_segment();
+            let runtime = state.runtime.as_mut().ok_or("native runtime is closed")?;
+            f(runtime)
+        })
     }
 }
 
@@ -47,7 +90,14 @@ impl NativeRuntime {
             .detach(|| Runtime::from_json(&scene_json, threads, 1))
             .map_err(PyValueError::new_err)?;
         Ok(Self {
-            inner: Mutex::new(Some(world)),
+            inner: Mutex::new(NativeState {
+                runtime: Some(world),
+                segment: None,
+                generation: 0,
+                nonce: INSTANCE_NONCE
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                    .map_err(|_| PyRuntimeError::new_err("instance nonce exhausted"))?,
+            }),
         })
     }
     fn reset(&self, py: Python<'_>, scene_json: String) -> PyResult<()> {
@@ -223,12 +273,128 @@ impl NativeRuntime {
         })
     }
     fn close(&self, py: Python<'_>) -> PyResult<()> {
-        py.detach(|| {
-            self.inner
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("native runtime is poisoned"))?
-                .take();
+        self.with_state(py, |state| {
+            state.invalidate_read_segment();
+            state.runtime.take();
             Ok(())
+        })
+    }
+    /// Private research lifetime; does not write world clock or action counts.
+    #[pyo3(signature=(mode, max_requests=4, diagnostics=false))]
+    fn _begin_observation_segment_json(
+        &self,
+        py: Python<'_>,
+        mode: String,
+        max_requests: usize,
+        diagnostics: bool,
+    ) -> PyResult<Option<String>> {
+        if !matches!(mode.as_str(), "segment_no_reuse" | "segment_encoded")
+            || !(2..=4).contains(&max_requests)
+        {
+            return Err(PyValueError::new_err(
+                "invalid observation segment mode or limit",
+            ));
+        }
+        self.with_state(py, |state| {
+            let r = state.runtime.as_ref().ok_or("native runtime is closed")?;
+            if state.segment.is_some() {
+                return Err("observation segment already active".into());
+            }
+            if !r.admitted_faction_query_is_readonly() {
+                return Ok(None);
+            }
+            state.generation = state
+                .generation
+                .checked_add(1)
+                .ok_or("segment generation exhausted")?;
+            let token = format!("{}:{}:{}", state.nonce, r.epoch, state.generation);
+            state.segment = Some(ReadSegment {
+                token: token.clone(),
+                owner: std::thread::current().id(),
+                epoch: r.epoch,
+                requests: 0,
+                maximum: max_requests,
+                reuse: mode == "segment_encoded",
+                cache: Some(ReadSegmentCache::default()),
+                diagnostics: diagnostics.then(Vec::new),
+            });
+            Ok(Some(token))
+        })
+    }
+    /// A stale token falls back before any request side effect, never retries.
+    fn _observation_segment_request_json(
+        &self,
+        py: Python<'_>,
+        token: String,
+        request_json: String,
+    ) -> PyResult<String> {
+        self.with_state(py, |state| {
+            let request: star_rotk::actions::Request = match serde_json::from_str(&request_json) {
+                Ok(r) => r,
+                Err(e) => {
+                    state.invalidate_read_segment();
+                    return Err(e.to_string());
+                }
+            };
+            let r = state.runtime.as_mut().ok_or("native runtime is closed")?;
+            let valid = state.segment.as_ref().is_some_and(|s| {
+                s.token == token
+                    && s.owner == std::thread::current().id()
+                    && s.epoch == r.epoch
+                    && s.requests < s.maximum
+            }) && request.action.as_deref() == Some("get_faction_state")
+                && r.admitted_faction_query_is_readonly();
+            if !valid {
+                // End the active cache even when the provided token is old:
+                // ordinary fallback is itself a conservative native barrier.
+                state.segment = None;
+                state.generation = state.generation.saturating_add(1);
+                return serde_json::to_string(&r.execute_request(request)?)
+                    .map_err(|e| e.to_string());
+            }
+            // Move the entire owned context out: any error/panic drops it;
+            // no partially executed request can be replayed or cached later.
+            let mut segment = state.segment.take().expect("valid active segment");
+            if !segment.reuse {
+                segment.cache = Some(ReadSegmentCache::default());
+            }
+            let mut diagnostic = Value::Null;
+            let diagnostic_agent = segment
+                .diagnostics
+                .as_ref()
+                .and_then(|_| request.agent_id.clone());
+            let response = r.execute_request_with_read_cache(
+                request,
+                &mut segment.cache,
+                segment.diagnostics.as_ref().map(|_| &mut diagnostic),
+            )?;
+            let encoded = serde_json::to_string(&response).map_err(|e| e.to_string())?;
+            segment.requests += 1;
+            if let Some(rows) = &mut segment.diagnostics {
+                diagnostic["accounting_after_request"] =
+                    r.admitted_query_accounting_snapshot(diagnostic_agent.as_deref());
+                rows.push(diagnostic);
+            }
+            // All responses own immutable backing; they do not borrow cache.
+            state.segment = Some(segment);
+            Ok(encoded)
+        })
+    }
+    /// Ending an old/foreign token must never destroy a newer active context.
+    fn _end_observation_segment_json(
+        &self,
+        py: Python<'_>,
+        token: String,
+    ) -> PyResult<Option<String>> {
+        self.with_state(py, |state| {
+            if !state.segment.as_ref().is_some_and(|s| s.token==token && s.owner==std::thread::current().id()) {
+                return Ok(None);
+            }
+            let segment = state.segment.take().expect("matching segment");
+            segment.diagnostics.map(|rows| serde_json::to_string(&json!({
+                "requests":segment.requests,"query_diagnostics":rows,
+                "cache_before_drop":segment.cache.as_ref().map(ReadSegmentCache::diagnostic_summary),
+            })).map_err(|e| e.to_string())).transpose()
         })
     }
     /// Internal differential harness, never advertised as an Agent action gate.
