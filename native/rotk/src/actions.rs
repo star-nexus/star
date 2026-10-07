@@ -481,8 +481,8 @@ impl Runtime {
         let faction = stats.and_then(|s| agent.and_then(|a| s["agent_id_to_faction"][a].as_str()));
         json!({"wall_time":self.wall_time,"epoch":self.epoch,"revision":self.revision,
             "agent":agent,"registered_faction":faction,
-            "agent_actions":stats.and_then(|s| agent.map(|a| s["action_count_by_agent"][a].clone())),
-            "faction_actions":stats.and_then(|s| faction.map(|f| s["action_count_by_faction"][f].clone()))})
+            "agent_actions":stats.and_then(|s| agent.map(|a| s["action_counts_by_agent"][a].clone())),
+            "faction_actions":stats.and_then(|s| faction.map(|f| s["action_counts_by_faction"][f].clone()))})
     }
     pub fn execute_request(&mut self, request: Request) -> Result<Response, String> {
         self.execute_request_with_read_cache(request, &mut None, None)

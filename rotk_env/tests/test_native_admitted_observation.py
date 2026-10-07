@@ -21,8 +21,8 @@ def accounting(state, metadata, agent, wall_time):
     faction = stats.get('agent_id_to_faction', {}).get(agent)
     return dict(wall_time=wall_time,epoch=metadata['epoch'],revision=metadata['revision'],
                 agent=agent,registered_faction=faction,
-                agent_actions=stats.get('action_count_by_agent',{}).get(agent),
-                faction_actions=stats.get('action_count_by_faction',{}).get(faction))
+                agent_actions=stats.get('action_counts_by_agent',{}).get(agent),
+                faction_actions=stats.get('action_counts_by_faction',{}).get(faction))
 
 
 @pytest.mark.parametrize('threads', [1,4])
@@ -52,6 +52,9 @@ def test_each_response_accounting_and_final_world(initial, threads, mode, case):
             actual=[segment.get_faction_state_json(**q,wall_time=1720000000.+i) for i,q in enumerate(requests)]
         assert actual==expected
         assert candidate.export_state()==single.export_state()
+        # A misspelled stats key must not turn this into a null==null oracle.
+        assert isinstance(snapshots[0]['agent_actions'], int)
+        assert isinstance(snapshots[0]['faction_actions'], int)
         assert [x['accounting_after_request'] for x in segment.report['query_diagnostics']]==snapshots
         if case=='repeat':
             builds=[x['metrics']['census_builds'] for x in segment.report['query_diagnostics']]
