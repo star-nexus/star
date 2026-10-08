@@ -104,6 +104,7 @@ pub struct Runtime {
     pub revision: u64,
     pub threads: usize,
     pub(crate) observation_pool: Option<std::sync::Arc<star_core::read_pool::ReadPool>>,
+    pub(crate) observation_scan_entity_ref: bool,
     pub(crate) presentation_dirty: BTreeSet<u64>,
     pub(crate) presentation_tiles: BTreeSet<u64>,
     pub(crate) presentation_fog: BTreeMap<String, BTreeSet<crate::hex::Hex>>,
@@ -117,6 +118,22 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// Private scan experiment. Reset constructs a fresh, baseline runtime.
+    pub fn observation_scan_research(&self) -> &'static str {
+        if self.observation_scan_entity_ref {
+            "entity_ref"
+        } else {
+            "baseline"
+        }
+    }
+    pub fn set_observation_scan_research(&mut self, mode: &str) -> Result<(), String> {
+        self.observation_scan_entity_ref = match mode {
+            "baseline" => false,
+            "entity_ref" => true,
+            _ => return Err("invalid observation scan mode".into()),
+        };
+        Ok(())
+    }
     pub fn from_json(payload: &str, threads: usize, epoch: u64) -> Result<Self, String> {
         Self::from_json_with_pool(payload, threads, epoch, None)
     }
@@ -316,6 +333,7 @@ impl Runtime {
                     std::sync::Arc::new(star_core::read_pool::ReadPool::new(threads))
                 }))
             },
+            observation_scan_entity_ref: false,
             presentation_dirty,
             presentation_tiles,
             presentation_fog: BTreeMap::new(),
