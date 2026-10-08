@@ -282,7 +282,7 @@ impl NativeRuntime {
     /// Private research lifetime; does not write world clock or action counts.
     fn _set_observation_scan_research(&self, py: Python<'_>, mode: &str) -> PyResult<()> {
         // Reject invalid modes before the conservative scope barrier.
-        if !matches!(mode, "baseline" | "entity_ref") {
+        if !matches!(mode, "baseline" | "entity_ref" | "borrowed_census") {
             return Err(PyValueError::new_err("invalid observation scan mode"));
         }
         self.with_runtime(py, |r| r.set_observation_scan_research(mode))

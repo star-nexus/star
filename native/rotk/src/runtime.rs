@@ -105,6 +105,7 @@ pub struct Runtime {
     pub threads: usize,
     pub(crate) observation_pool: Option<std::sync::Arc<star_core::read_pool::ReadPool>>,
     pub(crate) observation_scan_entity_ref: bool,
+    pub(crate) observation_census_borrowed: bool,
     pub(crate) presentation_dirty: BTreeSet<u64>,
     pub(crate) presentation_tiles: BTreeSet<u64>,
     pub(crate) presentation_fog: BTreeMap<String, BTreeSet<crate::hex::Hex>>,
@@ -120,18 +121,23 @@ pub struct Runtime {
 impl Runtime {
     /// Private scan experiment. Reset constructs a fresh, baseline runtime.
     pub fn observation_scan_research(&self) -> &'static str {
-        if self.observation_scan_entity_ref {
+        if self.observation_census_borrowed {
+            "borrowed_census"
+        } else if self.observation_scan_entity_ref {
             "entity_ref"
         } else {
             "baseline"
         }
     }
     pub fn set_observation_scan_research(&mut self, mode: &str) -> Result<(), String> {
-        self.observation_scan_entity_ref = match mode {
-            "baseline" => false,
-            "entity_ref" => true,
+        let (entity_ref, borrowed_census) = match mode {
+            "baseline" => (false, false),
+            "entity_ref" => (true, false),
+            "borrowed_census" => (false, true),
             _ => return Err("invalid observation scan mode".into()),
         };
+        self.observation_scan_entity_ref = entity_ref;
+        self.observation_census_borrowed = borrowed_census;
         Ok(())
     }
     pub fn from_json(payload: &str, threads: usize, epoch: u64) -> Result<Self, String> {
@@ -334,6 +340,7 @@ impl Runtime {
                 }))
             },
             observation_scan_entity_ref: false,
+            observation_census_borrowed: false,
             presentation_dirty,
             presentation_tiles,
             presentation_fog: BTreeMap::new(),

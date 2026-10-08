@@ -264,7 +264,9 @@ impl<'a> ObservationBatch<'a> {
         }
         let start = self.profile.as_ref().map(|_| std::time::Instant::now());
         self.metrics.census_builds += 1;
-        let c = if self.runtime.observation_scan_entity_ref {
+        let c = if self.runtime.observation_census_borrowed {
+            self.borrowed_census()
+        } else if self.runtime.observation_scan_entity_ref {
             self.scan_census::<true>()
         } else {
             self.scan_census::<false>()
@@ -275,6 +277,42 @@ impl<'a> ObservationBatch<'a> {
         }
     }
     // Const specialization keeps mode selection outside the entity loop.
+    fn borrowed_census(&mut self) -> Census {
+        let r = self.runtime;
+        let mut totals = BTreeMap::<&str, usize>::new();
+        let mut alive = BTreeMap::<&str, Vec<u64>>::new();
+        let mut actionable = BTreeMap::<&str, usize>::new();
+        for (&id, &e) in &r.unit_entities {
+            self.metrics.census_entities_visited += 1;
+            let Some(u) = r.world.ecs.get::<UnitInfo>(e) else {
+                continue;
+            };
+            *totals.entry(u.faction.as_str()).or_default() += 1;
+            if r.world
+                .ecs
+                .get::<Headcount>(e)
+                .is_some_and(|n| n.current_count > 0)
+            {
+                alive.entry(u.faction.as_str()).or_default().push(id);
+                if r.world
+                    .ecs
+                    .get::<ActionPoints>(e)
+                    .is_some_and(|p| p.current_ap > 0)
+                {
+                    *actionable.entry(u.faction.as_str()).or_default() += 1;
+                }
+            }
+        }
+        // No ECS/string borrow escapes into the owned read-segment cache.
+        Census {
+            totals: totals.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+            alive: alive.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+            actionable: actionable
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v))
+                .collect(),
+        }
+    }
     fn scan_census<const SINGLE: bool>(&mut self) -> Census {
         let r = self.runtime;
         let mut c = Census::default();
