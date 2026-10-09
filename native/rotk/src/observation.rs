@@ -80,6 +80,84 @@ struct TerrainFact<'a> {
     passable: bool,
 }
 
+struct CachedTerrainFact {
+    entity: u64,
+    has_terrain: bool,
+    terrain: String,
+    cost: i64,
+    fact: EncodedFact,
+}
+/// E11 derived, instance-owned bytes. Neither permissions nor Fog live here.
+#[derive(Default)]
+pub(crate) struct TerrainFactCache {
+    map_len: usize,
+    entries: HashMap<Hex, CachedTerrainFact>,
+}
+impl TerrainFactCache {
+    fn prepare(&mut self, map_len: usize) {
+        if self.map_len != map_len {
+            // Release the allocation as well as facts when the map shrinks.
+            *self = Self {
+                map_len,
+                ..Self::default()
+            };
+        }
+    }
+    fn fact(&mut self, cell: Hex, tile: &crate::spatial::TileInfo) -> (EncodedFact, bool) {
+        if let Some(old) = self.entries.get(&cell)
+            && old.entity == tile.entity
+            && old.has_terrain == tile.has_terrain
+            && old.terrain == tile.terrain
+            && old.cost == tile.cost
+        {
+            return (old.fact.clone(), false);
+        }
+        // Same-sized map replacement can introduce new keys. No stale key is
+        // queried without a current TileInfo, and retained entry count is bounded.
+        if !self.entries.contains_key(&cell) && self.entries.len() >= self.map_len {
+            self.entries.clear();
+        }
+        let fact = encode_terrain(cell, tile);
+        self.entries.insert(
+            cell,
+            CachedTerrainFact {
+                entity: tile.entity,
+                has_terrain: tile.has_terrain,
+                terrain: tile.terrain.clone(),
+                cost: tile.cost,
+                fact: fact.clone(),
+            },
+        );
+        (fact, true)
+    }
+}
+fn encode_terrain(cell: Hex, tile: &crate::spatial::TileInfo) -> EncodedFact {
+    EncodedFact::new(&TerrainFact {
+        col: cell.0,
+        row: cell.1,
+        terrain: &tile.terrain,
+        movement_cost: tile.cost,
+        passable: tile.cost < 999,
+    })
+}
+
+impl Runtime {
+    pub fn set_observation_terrain_mode(&mut self, mode: &str) -> Result<(), String> {
+        let enabled = match mode {
+            "baseline" => false,
+            "terrain_fact_reuse" => true,
+            _ => return Err("invalid observation terrain mode".into()),
+        };
+        // A mutable Runtime proves there is no in-flight cache borrower.
+        *self
+            .observation_terrain_cache
+            .get_mut()
+            .expect("terrain cache poisoned") = TerrainFactCache::default();
+        self.observation_terrain_reuse = enabled;
+        Ok(())
+    }
+}
+
 struct UnitResponse {
     panel: Arc<EncodedObject>,
     owner: Option<String>,
@@ -167,6 +245,17 @@ pub struct Profile {
     faction_ns: u64,
     public_encode_ns: u64,
     panels_ns: u64,
+    enemy_scan_ns: u64,
+    terrain_selection_ns: u64,
+    terrain_facts_ns: u64,
+    terrain_fact_builds: usize,
+    terrain_fact_hits: usize,
+    terrain_build_ns: u64,
+    terrain_hit_ns: u64,
+    terrain_encoded_bytes: usize,
+    terrain_cache_entries: usize,
+    terrain_cache_backing_bytes: usize,
+    terrain_reuse_enabled: bool,
 }
 /// Owned facts only: never contains a World/ECS borrow or request authorization.
 /// The private Python ingress moves this cache between bounded query calls.
@@ -409,8 +498,13 @@ impl<'a> ObservationBatch<'a> {
         let r = self.runtime;
         let lifted = r.fog.as_ref().is_none_or(|f| !f.enabled);
         let visible = r.fog.as_ref().and_then(|f| f.faction_vision.get(faction));
+        let enemy_start = self.profile.as_ref().map(|_| std::time::Instant::now());
         let (enemy_ids, enemies) = self.scan_enemies(faction, lifted, visible);
+        if let Some(start) = enemy_start {
+            self.profile.as_mut().unwrap().enemy_scan_ns += start.elapsed().as_nanos() as u64;
+        }
         let mut terrain = vec![];
+        let selection_start = self.profile.as_ref().map(|_| std::time::Instant::now());
         // Fog-positive queries need only visit the smaller existing set. Keep
         // coordinate ordering and the map intersection (Fog can include off-map
         // cells); zero tile ID and missing Terrain are handled below as before.
@@ -433,28 +527,72 @@ impl<'a> ObservationBatch<'a> {
                 .filter(|cell| lifted || visible.is_some_and(|v| v.contains(cell)))
                 .collect()
         };
+        if let Some(start) = selection_start {
+            self.profile.as_mut().unwrap().terrain_selection_ns +=
+                start.elapsed().as_nanos() as u64;
+        }
+        let facts_start = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let mut reuse = r.observation_terrain_reuse.then(|| {
+            let mut cache = r
+                .observation_terrain_cache
+                .lock()
+                .expect("terrain cache poisoned");
+            cache.prepare(r.spatial.tiles.len());
+            cache
+        });
         for cell in cells {
             let tile = &r.spatial.tiles[&cell];
             // Preserve historical falsy external ID zero lookup.
             if tile.entity == 0 || !tile.has_terrain {
+                if let Some(cache) = reuse.as_mut() {
+                    cache.entries.remove(&cell);
+                }
                 continue;
             }
             terrain.push(
                 self.tiles
                     .entry(cell)
                     .or_insert_with(|| {
-                        self.metrics.tile_builds += 1;
-                        EncodedFact::new(&TerrainFact {
-                            col: cell.0,
-                            row: cell.1,
-                            terrain: &tile.terrain,
-                            movement_cost: tile.cost,
-                            passable: tile.cost < 999,
-                        })
+                        let fact_start = self.profile.as_ref().map(|_| std::time::Instant::now());
+                        let (fact, built) = if let Some(cache) = reuse.as_mut() {
+                            cache.fact(cell, tile)
+                        } else {
+                            (encode_terrain(cell, tile), true)
+                        };
+                        self.metrics.tile_builds += usize::from(built);
+                        if let Some(p) = self.profile.as_mut() {
+                            let elapsed = fact_start.unwrap().elapsed().as_nanos() as u64;
+                            if built {
+                                p.terrain_build_ns += elapsed;
+                            } else {
+                                p.terrain_hit_ns += elapsed;
+                            }
+                            p.terrain_fact_builds += usize::from(built);
+                            p.terrain_fact_hits += usize::from(!built);
+                            if built {
+                                p.terrain_encoded_bytes += fact.0.get().len();
+                            }
+                        }
+                        fact
                     })
                     .clone(),
             );
         }
+        if let Some(start) = facts_start {
+            let p = self.profile.as_mut().unwrap();
+            p.terrain_facts_ns += start.elapsed().as_nanos() as u64;
+            p.terrain_reuse_enabled = r.observation_terrain_reuse;
+            if let Some(cache) = reuse.as_ref() {
+                p.terrain_cache_entries = cache.entries.len();
+                p.terrain_cache_backing_bytes = cache
+                    .entries
+                    .values()
+                    .map(|entry| entry.terrain.len() + entry.fact.0.get().len())
+                    .sum();
+            }
+        }
+        // Never dispatch or join the ReadPool with the terrain lock held.
+        drop(reuse);
         let c = self.census.as_ref().unwrap();
         let alive = c.alive.get(faction).cloned().unwrap_or_default();
         let encode_start = self.profile.as_ref().map(|_| std::time::Instant::now());
@@ -684,5 +822,72 @@ impl<'a> ObservationBatch<'a> {
             public: Arc::clone(&self.factions[faction].public),
             units,
         })
+    }
+}
+
+#[cfg(test)]
+mod terrain_tests {
+    use super::*;
+    use crate::spatial::TileInfo;
+
+    fn tile() -> TileInfo {
+        TileInfo {
+            entity: 7,
+            terrain: "平原\"\\\n".into(),
+            cost: 1,
+            has_terrain: true,
+        }
+    }
+
+    #[test]
+    fn exact_signature_and_owned_bytes_survive_a_b_a() {
+        let mut cache = TerrainFactCache::default();
+        cache.prepare(2);
+        let mut t = tile();
+        let (a, built) = cache.fact((0, 1), &t);
+        assert!(built);
+        let (hit, built) = cache.fact((0, 1), &t);
+        assert!(!built && Arc::ptr_eq(&a.0, &hit.0));
+        let old_bytes = a.0.get().to_string();
+        for field in 0..4 {
+            let original = t.clone();
+            match field {
+                0 => t.entity += 1,
+                1 => t.has_terrain = false,
+                2 => t.terrain = "森林🌲".into(),
+                _ => t.cost = 999,
+            }
+            let (b, built) = cache.fact((0, 1), &t);
+            assert!(built);
+            assert_eq!(b.0.get(), encode_terrain((0, 1), &t).0.get());
+            t = original;
+            let (again, built) = cache.fact((0, 1), &t);
+            assert!(built);
+            assert_eq!(again.0.get(), old_bytes);
+        }
+        cache.entries.clear();
+        assert_eq!(a.0.get(), old_bytes);
+        assert_eq!(
+            serde_json::from_str::<Value>(&old_bytes).unwrap()["type"],
+            t.terrain
+        );
+    }
+
+    #[test]
+    fn map_resize_and_same_size_replacement_bound_retention() {
+        let mut cache = TerrainFactCache::default();
+        let t = tile();
+        cache.prepare(2);
+        cache.fact((0, 0), &t);
+        cache.fact((1, 0), &t);
+        assert_eq!(cache.entries.len(), 2);
+        cache.fact((2, 0), &t);
+        assert_eq!(cache.entries.len(), 1);
+        assert!(cache.entries.contains_key(&(2, 0)));
+        cache.prepare(1);
+        assert!(cache.entries.is_empty());
+        cache.fact((3, 0), &t);
+        cache.prepare(0);
+        assert!(cache.entries.is_empty());
     }
 }

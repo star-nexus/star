@@ -113,6 +113,13 @@ impl NativeRuntime {
         }
         self.with_runtime(py, |r| r.set_statistics_history_mode(mode))
     }
+    /// E11 instance-local research control, excluded from authority/schema.
+    fn _set_observation_terrain_mode(&self, py: Python<'_>, mode: &str) -> PyResult<()> {
+        if !matches!(mode, "baseline" | "terrain_fact_reuse") {
+            return Err(PyValueError::new_err("invalid observation terrain mode"));
+        }
+        self.with_runtime(py, |r| r.set_observation_terrain_mode(mode))
+    }
     /// Opt-in advancing profiler; normal step performs no timer reads.
     fn _step_profile_json(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<String> {
         self.with_runtime(py, |r| Ok(r.profile_step(dt, wall_time)?.to_string()))
