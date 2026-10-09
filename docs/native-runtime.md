@@ -67,6 +67,20 @@ authorized after reviewing that distinction. See the
 [measurement and adoption record](../../star-lab/experiments/2026-10-rust-observation-service/README.md).
 The API18/schema5 boundary and default native thread count remain unchanged.
 
+## Observation terrain fact encoding reuse
+
+Rust instances now reuse unchanged terrain fact encodings by default. Every
+request still validates the current TileInfo and recomputes current visibility;
+permissions, Hex order, fields and star-protocol remain unchanged. The cache is
+instance-owned and bounded by map cell count. Successful reset returns to default
+reuse with an empty cache; failed reset retains the old instance. Private baseline
+rollback remains available for internal differential checks.
+
+One resource-valid fixed-input native1 screen measured 11.75% less observation
+service time and 8.37% less request + step + presentation-extraction work. This
+is not a step/full-frame or capacity claim. See [cache and lifecycle contract](native-observation-terrain-research.md)
+and the [E11 Lab record](../../star-lab/experiments/2026-10-rust-observation-algorithm/README.md).
+
 ## Compatibility checkpoint: R3d5 / API18
 
 API18 preserves the active CPython integer-string conversion limit for cumulative

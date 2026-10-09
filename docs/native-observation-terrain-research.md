@@ -1,10 +1,10 @@
-# E11 terrain fact encoding research
+# Terrain fact encoding reuse (E11 adopted)
 
-Default instances use the original observation algorithm. The private native
-`_set_observation_terrain_mode("terrain_fact_reuse")` control enables only an
-instance-local terrain fact cache; `"baseline"` disables it. Invalid modes are
+Default Rust instances reuse unchanged, instance-local terrain fact encodings.
+The private native `_set_observation_terrain_mode("baseline")` control disables
+reuse for internal regression/rollback; `"terrain_fact_reuse"` re-enables it. Invalid modes are
 rejected before the native ingress invalidates any read segment. Successful
-configuration clears the research cache without changing authority revision.
+configuration clears the derived cache without changing authority revision.
 
 Every request still performs its current authorization, Fog/map intersection,
 Hex ordering, enemy scan and panel preparation. A cached fact can be used only
@@ -24,7 +24,7 @@ gameplay writes only Spatial.cells; Spatial.tiles is rebuilt at scene creation
 or successful reset. This cache is not a new dynamic terrain mutation API.
 
 Mode changes discard derived cache state. Successful reset creates a fresh,
-baseline Runtime; failed reset leaves the old owner unchanged. Close releases
+default reuse Runtime with an empty cache; failed reset leaves the old owner unchanged. Close releases
 the cache. Already returned facts/responses remain independently owned. The
 cache and mode are excluded from authority export and API18/schema5.
 
@@ -36,5 +36,8 @@ overhead. Cache backing-byte aggregation is outside the loop timer, but inside
 the enclosing faction timer. Normal calls have no timer reads or byte summaries.
 
 This change does not alter star-protocol or participant Agent decoding. Formal
-research evidence and adoption decisions belong to STAR Lab. No default adoption
-or capacity claim follows from merely implementing the cache.
+research evidence and adoption decisions belong to STAR Lab. The resource-valid
+fixed-input native1 screen measured 11.75% less observation service time and
+8.37% less request + step + presentation-extraction work. These are observation
+service results, not a step, full-frame, multiround or capacity claim. See the
+[adoption and evidence record](../../star-lab/experiments/2026-10-rust-observation-algorithm/README.md).

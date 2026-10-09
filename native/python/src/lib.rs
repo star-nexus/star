@@ -113,7 +113,7 @@ impl NativeRuntime {
         }
         self.with_runtime(py, |r| r.set_statistics_history_mode(mode))
     }
-    /// E11 instance-local research control, excluded from authority/schema.
+    /// Instance-local terrain baseline/reuse control, excluded from authority/schema.
     fn _set_observation_terrain_mode(&self, py: Python<'_>, mode: &str) -> PyResult<()> {
         if !matches!(mode, "baseline" | "terrain_fact_reuse") {
             return Err(PyValueError::new_err("invalid observation terrain mode"));

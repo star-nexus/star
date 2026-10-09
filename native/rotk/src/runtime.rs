@@ -297,7 +297,8 @@ impl Runtime {
             fog,
             statistics,
             statistics_history: crate::statistics_history::StatisticsHistory::default(),
-            observation_terrain_reuse: false,
+            // Derived terrain bytes are checked against current TileInfo on every query.
+            observation_terrain_reuse: true,
             observation_terrain_cache: std::sync::Mutex::default(),
             visibility_tracker,
             wall_time,
