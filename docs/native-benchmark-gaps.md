@@ -4,6 +4,23 @@
 
 当前已执行审计节点：E6（展示组件复用，2026-10-02；固定轨迹正收益，窗口整体对照未全通过，默认关闭）；E7显示链路准备仅完成规划与旧证据计量审计，未实施。E6验证源码 `068c1ecd17988ac6d884984e904aea924968e0ae`，主测量0a297a8，native执行代码相同、API18/schema5。最近修复的机制差异为R3d5/G014。本文件以生产仓库为主台账，Lab保存完整复现/原始轨迹和阶段报告；两个仓库按同级目录放置时，下文证据链接可直接打开。
 
+## E8：人口统计键分配的正式采用（2026-10-09）
+
+用户明确授权将已测的census借用键收敛为普通Rust观测实现并推送研究分支。
+删除baseline/entity_ref/borrowed_census扫描切换与未采用EntityRef实现；三张统计map
+先使用借用阵营键，缓存发布前转成拥有键。仍扫描完整Unit集合，计数、缺组件、
+ID顺序、Fog、鉴权、动作与错误边界不变。普通宿主不启用读段缓存，E6/E7及其他
+研究默认保持；API18/schema5/native默认1不变。
+
+旧源8c2afd7的一轮普通single宿主ABBA：service改善9.2258%，改善区间全正；完整帧
+均值改善1.3256%，区间跨零。原四次运行/资源guards和P99包络通过。采用决策依据
+是减少冗余分配的局部服务收益与有界改动，不将旧整帧门槛改判为通过。
+收敛后的源码/扩展/回归与短完整输入重放另记于
+[Lab正式记录](/Users/liyang/Developer/star-lab/experiments/2026-10-rust-observation-service/README.md)。
+没有新增确认玩法差异；G001–G003历史、G008/G009 OPEN、R001/R002 RISK保持，
+不更新容量/Frontier、不恢复5000 Agents。该分支默认采用不等于Rust迁移合并main
+或生产网络上线；未发布新wheel版本或关闭迁移GAP。
+
 ## E7：显示链路与绘制准备（2026-10-02，仅规划）
 
 [Lab方案](/Users/liyang/Developer/star-lab/records/rust-display-preparation-plan.md)从E6验证节点起步。

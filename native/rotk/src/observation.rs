@@ -264,20 +264,13 @@ impl<'a> ObservationBatch<'a> {
         }
         let start = self.profile.as_ref().map(|_| std::time::Instant::now());
         self.metrics.census_builds += 1;
-        let c = if self.runtime.observation_census_borrowed {
-            self.borrowed_census()
-        } else if self.runtime.observation_scan_entity_ref {
-            self.scan_census::<true>()
-        } else {
-            self.scan_census::<false>()
-        };
-        self.census = Some(c);
+        self.census = Some(self.build_census());
         if let Some(start) = start {
             self.profile.as_mut().unwrap().census_ns += start.elapsed().as_nanos() as u64;
         }
     }
-    // Const specialization keeps mode selection outside the entity loop.
-    fn borrowed_census(&mut self) -> Census {
+    // Accumulate borrowed faction keys, then own each distinct key once.
+    fn build_census(&mut self) -> Census {
         let r = self.runtime;
         let mut totals = BTreeMap::<&str, usize>::new();
         let mut alive = BTreeMap::<&str, Vec<u64>>::new();
@@ -312,34 +305,6 @@ impl<'a> ObservationBatch<'a> {
                 .map(|(k, v)| (k.to_owned(), v))
                 .collect(),
         }
-    }
-    fn scan_census<const SINGLE: bool>(&mut self) -> Census {
-        let r = self.runtime;
-        let mut c = Census::default();
-        for (&id, &e) in &r.unit_entities {
-            self.metrics.census_entities_visited += 1;
-            let entity = SINGLE.then(|| r.world.ecs.get_entity(e).ok()).flatten();
-            macro_rules! get {
-                ($component:ty) => {
-                    if SINGLE {
-                        entity.as_ref().and_then(|v| v.get::<$component>())
-                    } else {
-                        r.world.ecs.get::<$component>(e)
-                    }
-                };
-            }
-            let Some(u) = get!(UnitInfo) else {
-                continue;
-            };
-            *c.totals.entry(u.faction.clone()).or_default() += 1;
-            if get!(Headcount).is_some_and(|n| n.current_count > 0) {
-                c.alive.entry(u.faction.clone()).or_default().push(id);
-                if get!(ActionPoints).is_some_and(|p| p.current_ap > 0) {
-                    *c.actionable.entry(u.faction.clone()).or_default() += 1;
-                }
-            }
-        }
-        c
     }
     fn faction_status(&self, faction: &str) -> &'static str {
         let r = self.runtime;
@@ -390,7 +355,7 @@ impl<'a> ObservationBatch<'a> {
         }
         "active"
     }
-    fn scan_enemies<const SINGLE: bool>(
+    fn scan_enemies(
         &mut self,
         faction: &str,
         lifted: bool,
@@ -401,18 +366,11 @@ impl<'a> ObservationBatch<'a> {
         let mut enemies = vec![];
         for (&id, &e) in &r.unit_entities {
             self.metrics.enemy_entities_visited += 1;
-            let entity = SINGLE.then(|| r.world.ecs.get_entity(e).ok()).flatten();
-            macro_rules! get {
-                ($component:ty) => {
-                    if SINGLE {
-                        entity.as_ref().and_then(|v| v.get::<$component>())
-                    } else {
-                        r.world.ecs.get::<$component>(e)
-                    }
-                };
-            }
-            let (Some(u), Some(p), Some(n)) = (get!(UnitInfo), get!(Position), get!(Headcount))
-            else {
+            let (Some(u), Some(p), Some(n)) = (
+                r.world.ecs.get::<UnitInfo>(e),
+                r.world.ecs.get::<Position>(e),
+                r.world.ecs.get::<Headcount>(e),
+            ) else {
                 continue;
             };
             if u.faction == faction
@@ -451,11 +409,7 @@ impl<'a> ObservationBatch<'a> {
         let r = self.runtime;
         let lifted = r.fog.as_ref().is_none_or(|f| !f.enabled);
         let visible = r.fog.as_ref().and_then(|f| f.faction_vision.get(faction));
-        let (enemy_ids, enemies) = if r.observation_scan_entity_ref {
-            self.scan_enemies::<true>(faction, lifted, visible)
-        } else {
-            self.scan_enemies::<false>(faction, lifted, visible)
-        };
+        let (enemy_ids, enemies) = self.scan_enemies(faction, lifted, visible);
         let mut terrain = vec![];
         // Fog-positive queries need only visit the smaller existing set. Keep
         // coordinate ordering and the map intersection (Fog can include off-map

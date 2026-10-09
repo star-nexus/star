@@ -49,6 +49,24 @@ real-window diagnostics are documented in
 Short diagnostics do not establish the 300-second, three-run capacity gate.
 The default backend and native worker count remain Python and one worker.
 
+## Observation census allocation
+
+Rust faction observations now accumulate borrowed faction names during the
+population scan and create owned keys once per distinct faction in each census
+map. Returned responses and cached facts still own their data. Counts, entity
+order, permissions, Fog and write/reset/close boundaries are unchanged; the scan
+still visits all Unit entities. This is the ordinary implementation, with no scan
+mode switch or extra thread pool. The earlier observation-segment reuse remains
+a private research interface and is not enabled in the ordinary host.
+
+On the measured M4 workload of 5000 Units / 1000 Agents, one local-host ABBA
+showed a 9.23% reduction in observation service time. Full-frame mean improved
+1.33%, but its interval crossed zero; this is a local service optimization, not
+a confirmed frame or capacity improvement. The bounded adoption was explicitly
+authorized after reviewing that distinction. See the
+[measurement and adoption record](../../star-lab/experiments/2026-10-rust-observation-service/README.md).
+The API18/schema5 boundary and default native thread count remain unchanged.
+
 ## Compatibility checkpoint: R3d5 / API18
 
 API18 preserves the active CPython integer-string conversion limit for cumulative

@@ -161,10 +161,6 @@ class RustRuntime:
         return _AdmittedObservationSegment(self, mode, max_requests, diagnostics)
 
     @_serialized
-    def _set_observation_scan_research(self, mode):
-        self._native._set_observation_scan_research(mode)
-
-    @_serialized
     def reset(self, initial_state):
         self._native.reset(json.dumps(initial_state, allow_nan=False))
 

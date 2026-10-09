@@ -280,24 +280,6 @@ impl NativeRuntime {
         })
     }
     /// Private research lifetime; does not write world clock or action counts.
-    fn _set_observation_scan_research(&self, py: Python<'_>, mode: &str) -> PyResult<()> {
-        // Reject invalid modes before the conservative scope barrier.
-        if !matches!(mode, "baseline" | "entity_ref" | "borrowed_census") {
-            return Err(PyValueError::new_err("invalid observation scan mode"));
-        }
-        self.with_runtime(py, |r| r.set_observation_scan_research(mode))
-    }
-    fn _observation_scan_research(&self, py: Python<'_>) -> PyResult<String> {
-        self.with_state(py, |state| {
-            Ok(state
-                .runtime
-                .as_ref()
-                .ok_or("native runtime is closed")?
-                .observation_scan_research()
-                .into())
-        })
-    }
-    /// Private research lifetime; does not write world clock or action counts.
     #[pyo3(signature=(mode, max_requests=4, diagnostics=false))]
     fn _begin_observation_segment_json(
         &self,
