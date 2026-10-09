@@ -27,6 +27,15 @@ pub(crate) struct VisionTimings {
     pub geometry_tiles: u64,
     pub commit_ns: u64,
     pub presentation_ns: u64,
+    pub component_set_copies: u64,
+    pub old_set_copies: u64,
+    pub published_set_copies: u64,
+    pub copied_tiles: u64,
+    pub temporary_difference_sets: u64,
+    pub removed_tiles: u64,
+    pub added_tiles: u64,
+    pub fog_became_visible: u64,
+    pub fog_became_invisible: u64,
 }
 #[derive(Default, Serialize)]
 pub(crate) struct MovementTimings {

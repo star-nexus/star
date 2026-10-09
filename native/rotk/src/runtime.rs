@@ -477,7 +477,7 @@ impl Runtime {
         let mut phases = BTreeMap::new();
         let mut timings = crate::system_profile::StepTimings::default();
         if profile {
-            self.step_execution::<true, false, true>(
+            self.step_execution::<true, false, true, false>(
                 dt,
                 wall_time,
                 &mut phases,
@@ -487,7 +487,7 @@ impl Runtime {
                 min_damage_rows,
             )?;
         } else {
-            self.step_execution::<false, false, true>(
+            self.step_execution::<false, false, true, false>(
                 dt,
                 wall_time,
                 &mut phases,
@@ -499,6 +499,41 @@ impl Runtime {
         }
         Ok(start.map_or(Value::Null, |start| json!({"native_ns":start.elapsed().as_nanos() as u64,"phases_ns":phases,"candidates":timings.candidates})))
     }
+    /// E9 private, this-call-only Vision commit factor. Normal step is baseline.
+    pub fn vision_commit_step_probe(
+        &mut self,
+        dt: f64,
+        wall_time: f64,
+        mode: &str,
+        profile: bool,
+    ) -> Result<Value, String> {
+        if !matches!(mode, "baseline" | "stream_commit") {
+            return Err("invalid E9 mode".into());
+        }
+        let start = profile.then(std::time::Instant::now);
+        let mut phases = BTreeMap::new();
+        let mut timings = crate::system_profile::StepTimings::default();
+        macro_rules! run {
+            ($profile:literal, $stream:literal) => {
+                self.step_execution::<$profile, false, false, $stream>(
+                    dt,
+                    wall_time,
+                    &mut phases,
+                    &mut timings,
+                    crate::statistics::STATISTICS_PARALLEL_MIN_ROWS,
+                    "baseline",
+                    usize::MAX,
+                )?
+            };
+        }
+        match (profile, mode == "stream_commit") {
+            (true, true) => run!(true, true),
+            (true, false) => run!(true, false),
+            (false, true) => run!(false, true),
+            (false, false) => run!(false, false),
+        }
+        Ok(start.map_or(Value::Null, |start| json!({"native_ns":start.elapsed().as_nanos() as u64,"phases_ns":phases,"vision":timings.candidates.vision})))
+    }
     fn step_inner<const PROFILE: bool, const EMPTY_FORK: bool>(
         &mut self,
         dt: f64,
@@ -507,7 +542,7 @@ impl Runtime {
         timings: &mut crate::system_profile::StepTimings,
         min_rows: usize,
     ) -> Result<(), String> {
-        self.step_execution::<PROFILE, EMPTY_FORK, false>(
+        self.step_execution::<PROFILE, EMPTY_FORK, false, false>(
             dt,
             wall_time,
             phases,
@@ -518,7 +553,12 @@ impl Runtime {
         )
     }
     #[allow(clippy::too_many_arguments)]
-    fn step_execution<const PROFILE: bool, const EMPTY_FORK: bool, const E5: bool>(
+    fn step_execution<
+        const PROFILE: bool,
+        const EMPTY_FORK: bool,
+        const E5: bool,
+        const STREAM: bool,
+    >(
         &mut self,
         dt: f64,
         wall_time: f64,
@@ -742,9 +782,9 @@ impl Runtime {
         phase!(
             "vision",
             if PROFILE {
-                self.advance_vision_profile::<true>(&mut timings.candidates.vision)
+                self.advance_vision_commit_profile::<true, STREAM>(&mut timings.candidates.vision)
             } else {
-                self.advance_vision()
+                self.advance_vision_commit_profile::<false, STREAM>(&mut timings.candidates.vision)
             }
         );
         phase!("captures", self.advance_captures())?;

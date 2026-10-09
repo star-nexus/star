@@ -110,6 +110,21 @@ impl NativeRuntime {
     fn _step_profile_json(&self, py: Python<'_>, dt: f64, wall_time: f64) -> PyResult<String> {
         self.with_runtime(py, |r| Ok(r.profile_step(dt, wall_time)?.to_string()))
     }
+    /// E9 opt-in advancing factor; shares the native failure/cache boundary.
+    #[pyo3(signature=(dt, wall_time, mode="baseline", profile=false))]
+    fn _vision_commit_step_json(
+        &self,
+        py: Python<'_>,
+        dt: f64,
+        wall_time: f64,
+        mode: &str,
+        profile: bool,
+    ) -> PyResult<String> {
+        self.with_runtime(py, |r| {
+            Ok(r.vision_commit_step_probe(dt, wall_time, mode, profile)?
+                .to_string())
+        })
+    }
     #[pyo3(signature=(dt, wall_time, mode, min_damage_rows=8, profile=false))]
     fn _movement_visuals_step_json(
         &self,

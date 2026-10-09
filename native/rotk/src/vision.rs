@@ -181,13 +181,22 @@ impl VisionSystem {
                 .filter(|id| !current.contains(id)),
         );
     }
-    fn remove_tiles(&mut self, fog: &mut Fog, faction: &str, tiles: &BTreeSet<Hex>) {
+    fn remove_tiles<const PROFILE: bool>(
+        &mut self,
+        fog: &mut Fog,
+        faction: &str,
+        tiles: &BTreeSet<Hex>,
+        timing: &mut VisionTimings,
+    ) {
         let counts = self.counts.entry(faction.into()).or_default();
         let visible = fog.faction_vision.entry(faction.into()).or_default();
         for tile in tiles {
             let old = counts.get(tile).copied().unwrap_or(0);
             if old <= 1 {
                 if old != 0 {
+                    if PROFILE {
+                        timing.fog_became_invisible += 1;
+                    }
                     counts.remove(tile);
                     visible.remove(tile);
                     self.delta.entry(faction.into()).or_default().insert(*tile);
@@ -197,12 +206,21 @@ impl VisionSystem {
             }
         }
     }
-    fn add_tiles(&mut self, fog: &mut Fog, faction: &str, tiles: &BTreeSet<Hex>) {
+    fn add_tiles<const PROFILE: bool>(
+        &mut self,
+        fog: &mut Fog,
+        faction: &str,
+        tiles: &BTreeSet<Hex>,
+        timing: &mut VisionTimings,
+    ) {
         let counts = self.counts.entry(faction.into()).or_default();
         let visible = fog.faction_vision.entry(faction.into()).or_default();
         for tile in tiles {
             let count = counts.entry(*tile).or_default();
             if *count == 0 {
+                if PROFILE {
+                    timing.fog_became_visible += 1;
+                }
                 visible.insert(*tile);
                 fog.explored_tiles
                     .entry(faction.into())
@@ -308,6 +326,108 @@ impl VisionSystem {
         self.update_profile::<false>(r, &mut VisionTimings::default());
     }
     fn update_profile<const PROFILE: bool>(&mut self, r: &mut Runtime, timing: &mut VisionTimings) {
+        self.begin_update::<PROFILE>(r, timing);
+        for id in std::mem::take(&mut self.state.dirty) {
+            let gather_start = start::<PROFILE>();
+            let values = r.world.entity(id).and_then(|e| {
+                Some((
+                    e,
+                    r.world.ecs.get::<Position>(e)?.hex(),
+                    {
+                        let vision = r.world.ecs.get::<Vision>(e)?;
+                        if PROFILE {
+                            timing.component_set_copies += 1;
+                            timing.copied_tiles += vision.visible_tiles.len() as u64;
+                        }
+                        vision.clone()
+                    },
+                    r.world.ecs.get::<UnitInfo>(e)?.faction.clone(),
+                ))
+            });
+            if PROFILE {
+                timing.gather_ns += elapsed(gather_start);
+            }
+            let Some((e, pos, v, faction)) = values else {
+                let commit_start = start::<PROFILE>();
+                let old = self.state.unit_visibility.remove(&id).unwrap_or_default();
+                if let Some(f) = self.state.unit_faction.remove(&id)
+                    && !old.is_empty()
+                {
+                    self.remove_tiles::<PROFILE>(r.fog.as_mut().unwrap(), &f, &old, timing);
+                }
+                if PROFILE {
+                    timing.removed_rows += 1;
+                    timing.commit_ns += elapsed(commit_start);
+                }
+                continue;
+            };
+            if !v.dirty
+                && v.last_pos == Some(pos)
+                && v.last_range == v.range
+                && self.state.unit_visibility.contains_key(&id)
+                && self.state.unit_faction.get(&id) == Some(&faction)
+            {
+                self.state.cache_hits += 1;
+                if PROFILE {
+                    timing.unit_cache_hits += 1;
+                }
+                continue;
+            }
+            let visible = self.visibility_for_profile::<PROFILE>(r, pos, v.range, timing);
+            let commit_start = start::<PROFILE>();
+            if PROFILE && let Some(old) = self.state.unit_visibility.get(&id) {
+                timing.old_set_copies += 1;
+                timing.copied_tiles += old.len() as u64;
+            }
+            let mut old = self
+                .state
+                .unit_visibility
+                .get(&id)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(old_faction) = self
+                .state
+                .unit_faction
+                .get(&id)
+                .filter(|f| **f != faction)
+                .cloned()
+            {
+                self.remove_tiles::<PROFILE>(r.fog.as_mut().unwrap(), &old_faction, &old, timing);
+                old.clear();
+            }
+            let removed = old.difference(&visible).copied().collect::<BTreeSet<_>>();
+            let added = visible.difference(&old).copied().collect::<BTreeSet<_>>();
+            if PROFILE {
+                timing.temporary_difference_sets += 2;
+                timing.removed_tiles += removed.len() as u64;
+                timing.added_tiles += added.len() as u64;
+                timing.published_set_copies += 2;
+                timing.copied_tiles += 2 * visible.len() as u64;
+            }
+            if !removed.is_empty() {
+                self.remove_tiles::<PROFILE>(r.fog.as_mut().unwrap(), &faction, &removed, timing);
+            }
+            if !added.is_empty() {
+                self.add_tiles::<PROFILE>(r.fog.as_mut().unwrap(), &faction, &added, timing);
+            }
+            self.state
+                .unit_visibility
+                .insert(id, visible.as_ref().clone());
+            self.state.unit_faction.insert(id, faction);
+            let mut vision = r.world.ecs.get_mut::<Vision>(e).unwrap();
+            vision.visible_tiles = visible.as_ref().clone();
+            vision.last_pos = Some(pos);
+            vision.last_range = v.range;
+            vision.dirty = false;
+            self.state.recomputes += 1;
+            if PROFILE {
+                timing.recompute_rows += 1;
+                timing.commit_ns += elapsed(commit_start);
+            }
+        }
+    }
+
+    fn begin_update<const PROFILE: bool>(&mut self, r: &mut Runtime, timing: &mut VisionTimings) {
         self.state.frames += 1;
         self.delta.clear();
         if r.fog.is_none() {
@@ -341,26 +461,41 @@ impl VisionSystem {
             timing.audit_ns += elapsed(audit_start);
             timing.dirty_rows += self.state.dirty.len() as u64;
         }
+    }
+
+    // Disjoint borrows keep old per-unit sets in place until the original publish
+    // boundary. Only scalar component facts cross the mutable cache lookup.
+    fn update_stream_profile<const PROFILE: bool>(
+        &mut self,
+        r: &mut Runtime,
+        timing: &mut VisionTimings,
+    ) {
+        self.begin_update::<PROFILE>(r, timing);
         for id in std::mem::take(&mut self.state.dirty) {
             let gather_start = start::<PROFILE>();
             let values = r.world.entity(id).and_then(|e| {
-                Some((
-                    e,
-                    r.world.ecs.get::<Position>(e)?.hex(),
-                    r.world.ecs.get::<Vision>(e)?.clone(),
-                    r.world.ecs.get::<UnitInfo>(e)?.faction.clone(),
-                ))
+                let p = r.world.ecs.get::<Position>(e)?.hex();
+                let v = r.world.ecs.get::<Vision>(e)?;
+                let faction = r.world.ecs.get::<UnitInfo>(e)?.faction.clone();
+                Some((e, p, v.range, v.last_pos, v.last_range, v.dirty, faction))
             });
             if PROFILE {
                 timing.gather_ns += elapsed(gather_start);
             }
-            let Some((e, pos, v, faction)) = values else {
+            let Some((e, pos, range, last_pos, last_range, dirty, faction)) = values else {
                 let commit_start = start::<PROFILE>();
                 let old = self.state.unit_visibility.remove(&id).unwrap_or_default();
                 if let Some(f) = self.state.unit_faction.remove(&id)
                     && !old.is_empty()
                 {
-                    self.remove_tiles(r.fog.as_mut().unwrap(), &f, &old);
+                    Self::remove_stream::<PROFILE>(
+                        &mut self.counts,
+                        &mut self.delta,
+                        r.fog.as_mut().unwrap(),
+                        &f,
+                        old.iter().copied(),
+                        timing,
+                    );
                 }
                 if PROFILE {
                     timing.removed_rows += 1;
@@ -368,9 +503,9 @@ impl VisionSystem {
                 }
                 continue;
             };
-            if !v.dirty
-                && v.last_pos == Some(pos)
-                && v.last_range == v.range
+            if !dirty
+                && last_pos == Some(pos)
+                && last_range == range
                 && self.state.unit_visibility.contains_key(&id)
                 && self.state.unit_faction.get(&id) == Some(&faction)
             {
@@ -380,31 +515,48 @@ impl VisionSystem {
                 }
                 continue;
             }
-            let visible = self.visibility_for_profile::<PROFILE>(r, pos, v.range, timing);
+            let visible = self.visibility_for_profile::<PROFILE>(r, pos, range, timing);
             let commit_start = start::<PROFILE>();
-            let mut old = self
-                .state
-                .unit_visibility
-                .get(&id)
-                .cloned()
-                .unwrap_or_default();
-            if let Some(old_faction) = self
-                .state
-                .unit_faction
-                .get(&id)
-                .filter(|f| **f != faction)
-                .cloned()
-            {
-                self.remove_tiles(r.fog.as_mut().unwrap(), &old_faction, &old);
-                old.clear();
+            let empty = HexSet::default();
+            let mut old = self.state.unit_visibility.get(&id).unwrap_or(&empty);
+            if let Some(old_faction) = self.state.unit_faction.get(&id).filter(|f| **f != faction) {
+                // Deliberately call even for an empty set: the original creates
+                // empty counts/faction_vision keys on a faction transition.
+                Self::remove_stream::<PROFILE>(
+                    &mut self.counts,
+                    &mut self.delta,
+                    r.fog.as_mut().unwrap(),
+                    old_faction,
+                    old.iter().copied(),
+                    timing,
+                );
+                old = &empty;
             }
-            let removed = old.difference(&visible).copied().collect::<BTreeSet<_>>();
-            let added = visible.difference(&old).copied().collect::<BTreeSet<_>>();
-            if !removed.is_empty() {
-                self.remove_tiles(r.fog.as_mut().unwrap(), &faction, &removed);
+            if PROFILE {
+                timing.removed_tiles += old.difference(&visible).count() as u64;
+                timing.added_tiles += visible.difference(old).count() as u64;
             }
-            if !added.is_empty() {
-                self.add_tiles(r.fog.as_mut().unwrap(), &faction, &added);
+            let mut removed = old.difference(&visible).copied().peekable();
+            if removed.peek().is_some() {
+                Self::remove_stream::<PROFILE>(
+                    &mut self.counts,
+                    &mut self.delta,
+                    r.fog.as_mut().unwrap(),
+                    &faction,
+                    removed,
+                    timing,
+                );
+            }
+            let mut added = visible.difference(old).copied().peekable();
+            if added.peek().is_some() {
+                Self::add_stream::<PROFILE>(
+                    &mut self.counts,
+                    &mut self.delta,
+                    r.fog.as_mut().unwrap(),
+                    &faction,
+                    added,
+                    timing,
+                );
             }
             self.state
                 .unit_visibility
@@ -413,13 +565,96 @@ impl VisionSystem {
             let mut vision = r.world.ecs.get_mut::<Vision>(e).unwrap();
             vision.visible_tiles = visible.as_ref().clone();
             vision.last_pos = Some(pos);
-            vision.last_range = v.range;
+            vision.last_range = range;
             vision.dirty = false;
             self.state.recomputes += 1;
             if PROFILE {
+                timing.published_set_copies += 2;
+                timing.copied_tiles += 2 * visible.len() as u64;
                 timing.recompute_rows += 1;
                 timing.commit_ns += elapsed(commit_start);
             }
+        }
+    }
+
+    // Obtain delta/explored maps only at the first real transition. Keeping those
+    // references for the rest of the ordered stream preserves lazy key creation.
+    fn remove_stream<const PROFILE: bool>(
+        all_counts: &mut BTreeMap<String, BTreeMap<Hex, u64>>,
+        all_delta: &mut BTreeMap<String, HexSet>,
+        fog: &mut Fog,
+        faction: &str,
+        mut tiles: impl Iterator<Item = Hex>,
+        timing: &mut VisionTimings,
+    ) {
+        let counts = all_counts.entry(faction.into()).or_default();
+        let visible = fog.faction_vision.entry(faction.into()).or_default();
+        while let Some(tile) = tiles.next() {
+            let old = counts.get(&tile).copied().unwrap_or(0);
+            if old > 1 {
+                counts.insert(tile, old - 1);
+            } else if old != 0 {
+                counts.remove(&tile);
+                visible.remove(&tile);
+                let delta = all_delta.entry(faction.into()).or_default();
+                delta.insert(tile);
+                if PROFILE {
+                    timing.fog_became_invisible += 1;
+                }
+                for tile in tiles {
+                    let old = counts.get(&tile).copied().unwrap_or(0);
+                    if old > 1 {
+                        counts.insert(tile, old - 1);
+                    } else if old != 0 {
+                        counts.remove(&tile);
+                        visible.remove(&tile);
+                        delta.insert(tile);
+                        if PROFILE {
+                            timing.fog_became_invisible += 1;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+    fn add_stream<const PROFILE: bool>(
+        all_counts: &mut BTreeMap<String, BTreeMap<Hex, u64>>,
+        all_delta: &mut BTreeMap<String, HexSet>,
+        fog: &mut Fog,
+        faction: &str,
+        mut tiles: impl Iterator<Item = Hex>,
+        timing: &mut VisionTimings,
+    ) {
+        let counts = all_counts.entry(faction.into()).or_default();
+        let visible = fog.faction_vision.entry(faction.into()).or_default();
+        while let Some(tile) = tiles.next() {
+            let count = counts.entry(tile).or_default();
+            if *count == 0 {
+                visible.insert(tile);
+                let explored = fog.explored_tiles.entry(faction.into()).or_default();
+                explored.insert(tile);
+                let delta = all_delta.entry(faction.into()).or_default();
+                delta.insert(tile);
+                if PROFILE {
+                    timing.fog_became_visible += 1;
+                }
+                *count += 1;
+                for tile in tiles {
+                    let count = counts.entry(tile).or_default();
+                    if *count == 0 {
+                        visible.insert(tile);
+                        explored.insert(tile);
+                        delta.insert(tile);
+                        if PROFILE {
+                            timing.fog_became_visible += 1;
+                        }
+                    }
+                    *count += 1;
+                }
+                break;
+            }
+            *count += 1;
         }
     }
 }
@@ -464,9 +699,17 @@ impl Runtime {
         &mut self,
         timing: &mut VisionTimings,
     ) {
+        self.advance_vision_commit_profile::<PROFILE, false>(timing);
+    }
+    pub(crate) fn advance_vision_commit_profile<const PROFILE: bool, const STREAM: bool>(
+        &mut self,
+        timing: &mut VisionTimings,
+    ) {
         if let Some(mut v) = self.vision.take() {
             if v.state.enabled {
-                if PROFILE {
+                if STREAM {
+                    v.update_stream_profile::<PROFILE>(self, timing);
+                } else if PROFILE {
                     v.update_profile::<true>(self, timing);
                 } else {
                     v.update(self);
