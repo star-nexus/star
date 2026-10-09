@@ -19,7 +19,7 @@ pub struct TileInfo {
 }
 #[derive(Default)]
 pub struct Spatial {
-    pub tiles: HashMap<Hex, TileInfo>,
+    pub tiles: crate::tile_map::TileMap,
     pub cells: HashMap<Hex, BTreeMap<u64, String>>,
 }
 impl Spatial {

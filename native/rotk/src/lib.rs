@@ -22,6 +22,7 @@ mod system_profile;
 pub mod team;
 pub mod telemetry;
 pub mod territory;
+mod tile_map;
 pub mod turn;
 mod unicode_decimal;
 mod unicode_repr;
