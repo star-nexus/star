@@ -15,6 +15,8 @@ def test_profile_matches_handler_without_changing_world(threads):
     try:
         wire=json.dumps([dict(faction='wei',unit_ids=[b,a,b]),dict(faction='shu'),dict(faction='bad')])
         regular=json.loads(n._observation_probe_json(wire))
+        # Compare diagnostics at the same cold-cache boundary as the first read.
+        n._set_observation_terrain_mode('terrain_fact_reuse')
         encoded,timing=n._observation_profile_json(wire)
         result=json.loads(encoded);t=json.loads(timing)
         assert result['results']==regular['results']
@@ -25,6 +27,14 @@ def test_profile_matches_handler_without_changing_world(threads):
         assert t['profile']['census_ns']<=t['profile']['faction_ns']
         assert t['profile']['panels_ns']<=t['batch_ns']
         assert sum(t[k] for k in ('parse_ns','batch_ns','final_encode_ns','drop_ns'))<=t['native_ns']
+        # Warm ordinary and profiled reads must agree without rebuilding facts.
+        warm_regular=json.loads(n._observation_probe_json(wire))
+        warm_raw,warm_timing=n._observation_profile_json(wire)
+        warm=json.loads(warm_raw)
+        assert warm['results']==warm_regular['results']==regular['results']
+        assert {k:v for k,v in warm['metrics'].items() if k!='panel_worker_threads'} == {k:v for k,v in warm_regular['metrics'].items() if k!='panel_worker_threads'}
+        assert warm['metrics']['tile_builds']==0
+        assert json.loads(warm_timing)['profile']['terrain_fact_builds']==0
         assert json.loads(n.export_state_json())==json.loads(initial)
         with pytest.raises(RuntimeError):n._observation_profile_json('{')
         assert json.loads(n.export_state_json())==json.loads(initial)
