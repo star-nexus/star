@@ -372,3 +372,9 @@ P0完整9880 tick、普通/typed分层及两个真实窗口短诊断完成。普
 Rust ENV默认复用经当前TileInfo精确签名验证的单格编码，仍逐请求计算Fog可见地图交集和按Hex排序输出；不改变鉴权、观测内容、协议或Agent实现。成功reset默认启用并清空缓存，失败reset保留原实例；内部baseline回退保留。其他未采用研究开关保持原状态。
 
 采用依据是既有完整短轨迹正确性及正常压力的native1固定输入对照：观测11.75%、请求＋step＋增量提取总工作8.37%改善。仅表示本轮局部ENV收益，不称step/整帧加速或容量提高。正式默认接入节点的新wheel和契约/普通入口验证见[E11 Lab证据](../../star-lab/experiments/2026-10-rust-observation-algorithm/README.md)。既有GAP与容量/Frontier不因本项采用关闭，5000 Agents继续暂缓。
+
+## E12：调度解耦的有限机制研究（默认未接入）
+
+新增私有单owner＋有界FIFO增量原型；普通NativeSession/GameScene/Hub/default仍保持，E11仍默认开启。9机制契约及native1前400tick、native4前20tick同序权威/响应/增量/消费命令比较通过，仅前缀范围。当前完整本地窗口诊断区分限帧、显示与服务等待；模拟阻塞的ABBA显示等待收益，但CPU/服务有开销。不是完整新架构的协议、VLM、像素、交互/结算/reset/stop、长期背压或容量验收。
+
+阶段台账：E12有限owner机制已验证；E12生产宿主接纳/tick线性化、全部UI写入封闭、VLM revision屏障、真实窗口/网络生命周期仍OPEN。未确认新增玩法差异；G001–G003历史、G008/G009 OPEN、R001/R002 RISK不关闭，容量/Frontier不更新，5000Agents暂缓。详见[native-authority-scheduling-research.md](native-authority-scheduling-research.md)。
