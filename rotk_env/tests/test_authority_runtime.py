@@ -65,6 +65,7 @@ def test_one_owner_preserves_inputs_fifo_results_and_manual_clock():
     finally:
         owner.close()
     assert raw.closed and owner.scheduling_metrics()['closed']
+    assert owner._on_publication is None and owner._capture_frame is None
 
 
 def test_background_request_finishes_without_ui_frame():
@@ -204,3 +205,10 @@ def test_invalid_capacity_starts_no_owner(capacity):
     with pytest.raises(ValueError):
         AuthorityRuntime(raw, on_publication=lambda row: None, inbox_capacity=capacity)
     assert not raw.closed
+
+
+def test_context_manager_closes_and_joins():
+    raw = Runtime()
+    with AuthorityRuntime(raw, on_publication=lambda row: None) as owner:
+        assert owner.execute_action('ok', {}) == {}
+    assert raw.closed and owner.scheduling_metrics()['closed']

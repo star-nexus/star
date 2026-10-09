@@ -373,8 +373,16 @@ Rust ENV默认复用经当前TileInfo精确签名验证的单格编码，仍逐�
 
 采用依据是既有完整短轨迹正确性及正常压力的native1固定输入对照：观测11.75%、请求＋step＋增量提取总工作8.37%改善。仅表示本轮局部ENV收益，不称step/整帧加速或容量提高。正式默认接入节点的新wheel和契约/普通入口验证见[E11 Lab证据](../../star-lab/experiments/2026-10-rust-observation-algorithm/README.md)。既有GAP与容量/Frontier不因本项采用关闭，5000 Agents继续暂缓。
 
-## E12：调度解耦的有限机制研究（默认未接入）
+## E12：调度解耦的有限机制研究（历史阶段）
 
 新增私有单owner＋有界FIFO增量原型；普通NativeSession/GameScene/Hub/default仍保持，E11仍默认开启。9机制契约及native1前400tick、native4前20tick同序权威/响应/增量/消费命令比较通过，仅前缀范围。当前完整本地窗口诊断区分限帧、显示与服务等待；模拟阻塞的ABBA显示等待收益，但CPU/服务有开销。不是完整新架构的协议、VLM、像素、交互/结算/reset/stop、长期背压或容量验收。
 
 阶段台账：E12有限owner机制已验证；E12生产宿主接纳/tick线性化、全部UI写入封闭、VLM revision屏障、真实窗口/网络生命周期仍OPEN。未确认新增玩法差异；G001–G003历史、G008/G009 OPEN、R001/R002 RISK不关闭，容量/Frontier不更新，5000Agents暂缓。详见[native-authority-scheduling-research.md](native-authority-scheduling-research.md)。
+
+## E12：现有 Rust 场景默认接入（2026-10-10）
+
+用户接受CPU调度开销并授权采用。现有NativeSession/GameScene默认单一authority owner；固定步长独立时钟、有界请求/增量队列、本地控制、暂停、VLM UI投影/捕获屏障与close/join已接入。保留显式serial回退、原生故障边界、native1/API18/schema5、E11和协议；Python与Agent实现不改。
+
+215项受影响契约（含真实owner native1/4接口）通过；100tick固定前缀、2253请求、139观测的完整权威/响应/wire/事件/增量核验通过。一对10秒预热+30秒真实Cocoa窗口运行通过：本地观测周期排队16.06→1.89ms，完成18.24→4.37ms，后台世界约30Hz，5000 Units/1000 Agents及线程收尾正常。实时轨迹不同，不是固定输入配对因果证明或生产网络验收；旧完整输入与kernel证据原位复用。复算/内外SHA/精确节点见E12 Lab采用包。
+
+阶段完成范围限于现有离线Rust场景和运行时接口。Hub/BOT/scale-harness仍为既有未接入项；长期背压容量最小值、完整新宿主轨迹/像素验收和实际网络仍未证明。G001–G003历史、G008/G009 OPEN、R001/R002 RISK不关闭，容量/Frontier不更新，5000Agents暂缓。[正式实现和回退](native-authority-scheduling.md)。

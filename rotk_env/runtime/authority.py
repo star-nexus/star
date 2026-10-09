@@ -308,5 +308,13 @@ class AuthorityRuntime:
             except BaseException as exc:
                 error = exc
         self._thread.join()
+        # Release display/session callbacks even during deferred-GC epochs.
+        self._on_publication = self._capture_frame = self._old_capture = None
         if error is not None:
             raise error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()

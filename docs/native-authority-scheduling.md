@@ -8,6 +8,8 @@
 
 本地控制与读请求使用相同 owner。UI等待同步调用时会继续消费增量与图像栅栏，避免输出满导致双方死锁；其他线程不接触显示数据。成功VLM响应先发布当前权威投影、暂停后续权威操作，由UI重新准备/绘制并调用原捕获器，然后继续批次。保留原输出字段、图像字节编码及历史frame_format标签；不改变star-protocol。禁止显示消费者同步重入权威，异常必须收尾join。
 
+VLM沿用现有当前UI视角。这里同步权威投影与捕获时机；按请求阵营改变图像视角属于另一个协议/显示能力议题。
+
 场景暂停停止独立时钟，恢复时建立新deadline，不计算菜单停留时间。成功/失败reset保留原Runtime状态与错误契约，reset前先停时钟并消费旧epoch增量；reset调用者仍须准备新epoch的显示World及controls。close停止接纳、完成已接纳操作、消费剩余增量、join线程后释放World。发生原生故障不换成Python模拟。
 
 串行回退：`star --backend rust --no-hub --native-scheduling serial`。直接会话可用 `NativeSession(authority_scheduling=False, ...)`；默认会话的手动 `step` 在独立时钟未启动时使用既有显式dt，调用 `runtime.start_clock(dt)` 后禁止混入手动推进。显式uncapped测量保留原逐帧wall dt，不自动启动独立固定时钟。

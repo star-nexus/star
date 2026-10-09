@@ -1,6 +1,6 @@
 # E12：权威执行与展示解耦研究
 
-当前仅提供私有 `_AuthorityExecutor` 机制原型，普通 NativeSession、GameScene、Hub、协议及默认路径不接入。继承 native1、API18/schema5、census 与 E11 默认地形编码复用。
+以下保留 E12 首轮私有 `_AuthorityExecutor` 的机制研究记录；当时普通 NativeSession、GameScene、Hub、协议及默认路径未接入。2026-10-10 用户授权正式采用后，现有 Rust 场景默认接入独立 authority owner，详见 [正式实现与回退](native-authority-scheduling.md)。Hub 等既有未接入范围保持。继承 native1、API18/schema5、census 与 E11 默认地形编码复用。
 
 当前主循环每帧接纳本地请求后执行输入、step、增量提取/应用、显示准备、绘制、SDL提交与限帧等待。E12先区分这些等待来源，不把旧性能数字当当前结论。
 
