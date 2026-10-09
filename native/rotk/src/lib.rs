@@ -17,6 +17,7 @@ pub mod runtime;
 pub mod skills;
 pub mod spatial;
 pub mod statistics;
+mod statistics_history;
 mod system_profile;
 pub mod team;
 pub mod telemetry;

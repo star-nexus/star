@@ -95,6 +95,7 @@ pub struct Runtime {
     pub(crate) vision: Option<crate::vision::VisionSystem>,
     pub(crate) fog: Option<crate::vision::Fog>,
     pub(crate) statistics: Option<crate::statistics::StatisticsSystem>,
+    pub(crate) statistics_history: crate::statistics_history::StatisticsHistory,
     pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
     pub(crate) wall_time: f64,
     pub(crate) team: Option<crate::team::Team>,
@@ -293,6 +294,7 @@ impl Runtime {
             vision,
             fog,
             statistics,
+            statistics_history: crate::statistics_history::StatisticsHistory::default(),
             visibility_tracker,
             wall_time,
             team,
@@ -836,6 +838,7 @@ impl Runtime {
         out.systems
             .insert("VisualLifecycle".into(), self.visuals.export());
         out.singletons = self.singletons.clone();
+        self.statistics_history.export_into(&mut out.singletons);
         if let Some(team) = &self.team {
             out.singletons.insert(
                 "TeamCoordination".into(),

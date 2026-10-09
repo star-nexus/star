@@ -19,6 +19,19 @@ pub struct StatisticsTimings {
     pub records_ns: u64,
     pub commit_ns: u64,
     pub trim_ns: u64,
+    pub history_append_ns: u64,
+    pub history_transfer_ns: u64,
+    pub history_dispose_ns: u64,
+    pub history_compact_ns: u64,
+    pub history_appended: usize,
+    pub history_dropped: usize,
+    pub history_transfers: usize,
+    pub history_trim_operations: usize,
+    pub history_retained_slots_relocated: usize,
+    pub history_max_len: usize,
+    pub history_before_trim: usize,
+    pub history_after_trim: usize,
+    pub history_wrapped: bool,
     pub visibility_ns: u64,
     pub factions_ns: u64,
     pub kernel_wall_ns: u64,
@@ -315,30 +328,23 @@ impl StatisticsSystem {
                 }
             }
             observation.current_terrain_type = row.terrain;
-            let stats = r.singletons.get_mut("GameStats").unwrap();
-            let history = stats["unit_observation_history"]
-                .as_array_mut()
-                .expect("observation history");
-            history.push(row.record);
-            if !self.window && history.len() > 10000 {
-                let trim = start::<PROFILE>();
-                history.drain(..history.len() - 5000);
-                if PROFILE {
-                    timings.trim_ns += elapsed(trim);
-                }
-            }
+            r.statistics_history.append::<PROFILE>(
+                &mut r.singletons,
+                row.record,
+                self.window,
+                timings,
+            );
         }
         if PROFILE {
             timings.commit_ns += elapsed(mark).saturating_sub(timings.trim_ns - trim_before);
         }
         if self.window {
             let mark = start::<PROFILE>();
-            let history = r.singletons.get_mut("GameStats").unwrap()["unit_observation_history"]
-                .as_array_mut()
-                .unwrap();
-            if history.len() > self.history_limit {
-                history.drain(..history.len() - self.history_limit);
-            }
+            r.statistics_history.trim_window::<PROFILE>(
+                &mut r.singletons,
+                self.history_limit,
+                timings,
+            );
             if PROFILE {
                 timings.trim_ns += elapsed(mark);
             }
