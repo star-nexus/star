@@ -8,11 +8,13 @@ from .bootstrap import prepare_display_world
 from .native import RustRuntime
 from .world_presentation import WorldPresentation
 from .local_controls import LocalControls
+from .authority import AuthorityRuntime
 from framework.ecs import profiling
 
 
 class NativeSession:
-    def __init__(self, *, display="none", threads=1, on_events=None, **scene_options):
+    def __init__(self, *, display="none", threads=1, on_events=None,
+                 authority_scheduling=True, **scene_options):
         self.runtime = None
         self.world = None
         self.closed = False
@@ -21,6 +23,10 @@ class NativeSession:
             self.world, initial = prepare_display_world(display=display, **scene_options)
             self.runtime = RustRuntime(initial, threads=threads)
             self.presentation = WorldPresentation(self.world)
+            if authority_scheduling:
+                self.runtime = AuthorityRuntime(self.runtime,
+                    on_publication=lambda delta: self.presentation.apply(delta),
+                    capture_frame=self._capture_frame)
             self.controls = LocalControls(self.runtime, self.presentation, initial,
                                           on_events=on_events, on_error=self._fail)
             self.controls.refresh()
@@ -54,7 +60,28 @@ class NativeSession:
 
     def update_inputs(self, dt):
         """Poll native input/panels before simulation, preserving command order."""
+        if isinstance(self.runtime, AuthorityRuntime):
+            self.refresh()
         self._update_systems(dt, inputs=True, rendering=False)
+
+    def refresh(self):
+        """Consume all queued deltas, including one current owner fence."""
+        self._check_open()
+        return self.controls.refresh()
+
+    def _capture_frame(self):
+        # Called on the display thread after the owner's publication fence.
+        # Prepare/render the current projection without admitting inputs or
+        # advancing authority. Preserve the legacy bytes/label/error contract.
+        from framework.engine.renders import RenderEngine
+        from framework.engine.frame_capture import capture_rendered_frame
+        if any(type(s).__name__ == 'UnitRenderSystem' for s in self.world.systems):
+            render = RenderEngine()
+            if render.screen is not None:
+                render.screen.fill((135, 141, 106))
+                self._update_systems(0, inputs=False, rendering=True)
+                render.update()
+        return capture_rendered_frame()
 
     def update_display(self, dt, *, inputs=True):
         """Run input/panels/rendering over derived data after the simulation step."""
@@ -92,7 +119,10 @@ class NativeSession:
             # immediately and re-raise at the next scene boundary instead of
             # letting another queued input or tick continue a damaged world.
             if self.runtime is not None:
-                self.runtime.close()
+                if isinstance(self.runtime, AuthorityRuntime) and self.runtime._pumping:
+                    self.runtime.retire()
+                else:
+                    self.runtime.close()
 
     def _check_open(self):
         if self.failure is not None:
@@ -105,11 +135,11 @@ class NativeSession:
             return
         self.closed = True
         try:
-            if self.world is not None:
-                self.world.reset()
-        finally:
             if self.runtime is not None:
                 self.runtime.close()
+        finally:
+            if self.world is not None:
+                self.world.reset()
 
     def __enter__(self):
         return self

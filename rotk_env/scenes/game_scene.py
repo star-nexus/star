@@ -21,6 +21,7 @@ class GameScene(Scene):
         self.world = World()
         self.native_session = None
         self.native_host = None
+        self._authority_clock_started = False
 
         # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
@@ -66,6 +67,9 @@ class GameScene(Scene):
         self.scale_harness_socket = kwargs.get("scale_harness_socket")
         self.backend = kwargs.get("backend", getattr(self.engine, "runtime_backend", "python"))
         self.native_threads = kwargs.get("native_threads", getattr(self.engine, "native_threads", 1))
+        self.native_scheduling = kwargs.get("native_scheduling", getattr(self.engine, "native_scheduling", "threaded"))
+        if self.native_scheduling not in ("threaded", "serial"):
+            raise ValueError("Unknown native scheduling policy")
         if self.backend not in ("python", "rust"):
             raise ValueError(f"Unknown runtime backend: {self.backend}")
 
@@ -96,7 +100,8 @@ class GameScene(Scene):
                 raise ValueError("Rust scale-harness host is not connected yet")
             from ..runtime.session import NativeSession
             from ..runtime.settlement import OfflineSettlementHost
-            self.native_session = NativeSession(threads=self.native_threads, **options)
+            self.native_session = NativeSession(threads=self.native_threads,
+                authority_scheduling=self.native_scheduling == "threaded", **options)
             self.world = self.native_session.world
             self.native_host = OfflineSettlementHost(self.native_session)
         else:
@@ -145,6 +150,7 @@ class GameScene(Scene):
             "mock_ai": self.enable_mock_ai,
             "scale_harness": bool(self.scale_harness_socket),
             "backend": self.backend,
+            "native_scheduling": self.native_scheduling,
         }
         if map_data is not None:
             metadata.update(
@@ -182,7 +188,16 @@ class GameScene(Scene):
                     import time
                     try:
                         self.native_session.update_inputs(delta_time)
-                        self.native_session.step(delta_time)
+                        runtime = self.native_session.runtime
+                        if self.native_scheduling == 'serial' or getattr(self.engine, 'uncapped', False):
+                            # Explicit uncapped measurement retains its existing
+                            # wall-dt input; capped play owns a fixed clock below.
+                            self.native_session.step(delta_time)
+                        else:
+                            if not self._authority_clock_started:
+                                runtime.start_clock(1.0 / float(getattr(self.engine, 'fps', 30)))
+                                self._authority_clock_started = True
+                            self.native_session.refresh()
                         self.native_host.update(time.time())
                         self.native_session.update_display(delta_time, inputs=False)
                     except Exception as exc:
@@ -291,6 +306,18 @@ class GameScene(Scene):
             self.native_session.close()
             self.native_session = None
             self.native_host = None
+            self._authority_clock_started = False
             self.initialized = False
         else:
             self.world.reset()
+
+    def pause(self):
+        if self.native_session is not None and self._authority_clock_started:
+            self.native_session.runtime.stop_clock()
+            self._authority_clock_started = False
+        super().pause()
+
+    def resume(self):
+        # The first resumed update starts the clock with a fresh deadline; time
+        # spent in another scene never produces catch-up simulation steps.
+        super().resume()

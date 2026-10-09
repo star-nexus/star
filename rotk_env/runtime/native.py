@@ -76,11 +76,11 @@ def _serialized(method):
     return invoke
 
 
-def _complete_result(action, result):
+def _complete_result(action, result, capture=None):
     result = _decode_result(result)
     if action == 'get_faction_state_vlm' and result.get('success'):
         from framework.engine.frame_capture import capture_rendered_frame
-        frame, error = capture_rendered_frame()
+        frame, error = (capture or capture_rendered_frame)()
         result['frame_base64'] = frame
         result['frame_format'] = 'png' if frame else None
         if error is not None:
@@ -154,6 +154,7 @@ class RustRuntime:
 
     def __init__(self, initial_state, *, threads=1):
         self._admission_lock = RLock()
+        self._frame_capture = None
         native = load_native()
         self._native = native(json.dumps(initial_state, allow_nan=False), threads)
 
@@ -221,7 +222,7 @@ class RustRuntime:
     @_serialized
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None, connected_agents=0):
         request = ActionRequest(agent_id, action, parameters, wall_time, registration_time, connected_agents)
-        return _complete_result(action, json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))))
+        return _complete_result(action, json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))), self._frame_capture)
 
     def execute_actions(self, requests):
         """Execute supplied envelopes in order; prior commands are not rolled back on failure.
@@ -262,7 +263,7 @@ class RustRuntime:
             flush(segment)
             segment = []
             result = json.loads(self._native.execute_action_json(json.dumps(request, allow_nan=False)))
-            report['results'].append(_complete_result(request['action'], result))
+            report['results'].append(_complete_result(request['action'], result, self._frame_capture))
         flush(segment)
         return report
 

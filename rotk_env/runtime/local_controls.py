@@ -27,7 +27,13 @@ class LocalControls:
             raise
 
     def _refresh(self):
-        events = self.presentation.apply(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
+        consume = getattr(self.runtime, 'consume_presentation', None)
+        if consume is None:
+            events = self.presentation.apply(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
+        else:
+            # The authority facade publishes/consumes every intervening delta;
+            # the UI must never skip to the newest revision.
+            events = consume()
         if self.on_events is not None and events:
             self.on_events(events)
         return events
