@@ -73,44 +73,61 @@ def render_shell(system, ctx):
 def render_selection_and_log(world, ctx):
     ui = world.get_singleton_component(c.UIState)
     rect = ctx.layout.selection
-    with RMS.clip(ctx.layout.content):
-        ctx.panel(rect, 'Selected unit')
-        entity = ui.selected_unit if ui else None
-        unit = world.get_component(entity, c.Unit) if entity is not None else None
-        if not unit:
-            ctx.text('Select a human unit on the map.', (rect.x+10, rect.y+44), color=MUTED, max_width=rect.w-20)
-            ctx.text('1 infantry  /  2 cavalry  /  3–5 archers', (rect.x+10, rect.y+70), size=14, color=MUTED, max_width=rect.w-20)
+    entity = ui.selected_unit if ui else None
+    unit = world.get_component(entity, c.Unit) if entity is not None else None
+    heading = None
+    lines = []
+    if unit:
+        count = world.get_component(entity, c.UnitCount)
+        mp = world.get_component(entity, c.MovementPoints)
+        combat = world.get_component(entity, c.Combat)
+        pos = world.get_component(entity, c.HexPosition)
+        status = world.get_component(entity, c.UnitStatus)
+        heading = f'{unit.faction.value.upper()}  ·  {unit.unit_type.value.title()}'
+        if count:
+            lines.append(f'Strength: {count.current_count}/{count.max_count}')
+        if mp and count:
+            lines.append(f'Movement: {mp.current_mp:.1f}/{mp.get_effective_movement(count):.1f}')
+        if combat:
+            lines.append(f'Attack: {combat.base_attack}')
+        if pos:
+            lines.append(f'Location: ({pos.col}, {pos.row})')
+        if status:
+            lines.append(f'Status: {getattr(status.current_status, "value", status.current_status)}')
+    # Read current facts every frame. Cached pixels hold no World/component refs.
+    faction = unit.faction.value if unit else None
+    key = ('selection', heading, tuple(lines), faction, ctx.layout.scale,
+           tuple(id(ctx.font(size)) for size in (14,16,18,20)))
+    def paint_selection(surface):
+        surface.fill(PANEL)
+        pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+        surface.blit(ctx.text_surface('Selected unit', size=20, color=ACCENT), (10,8))
+        if heading is None:
+            surface.blit(ctx.text_surface('Select a human unit on the map.', color=MUTED, max_width=rect.w-20), (10,44))
+            surface.blit(ctx.text_surface('1 infantry  /  2 cavalry  /  3–5 archers', size=14, color=MUTED, max_width=rect.w-20), (10,70))
         else:
-            count = world.get_component(entity, c.UnitCount)
-            mp = world.get_component(entity, c.MovementPoints)
-            combat = world.get_component(entity, c.Combat)
-            pos = world.get_component(entity, c.HexPosition)
-            status = world.get_component(entity, c.UnitStatus)
-            faction_badge(unit.faction, (rect.x+15, rect.y+44))
-            ctx.text(f'{unit.faction.value.upper()}  ·  {unit.unit_type.value.title()}', (rect.x+30, rect.y+36), size=20, max_width=rect.w-40)
-            lines = []
-            if count:
-                lines.append(f'Strength: {count.current_count}/{count.max_count}')
-            if mp and count:
-                lines.append(f'Movement: {mp.current_mp:.1f}/{mp.get_effective_movement(count):.1f}')
-            if combat:
-                lines.append(f'Attack: {combat.base_attack}')
-            if pos:
-                lines.append(f'Location: ({pos.col}, {pos.row})')
-            if status:
-                value = getattr(status.current_status, 'value', status.current_status)
-                lines.append(f'Status: {value}')
+            badge = ctx.tactical_surface('badge:'+faction, (12,12))
+            surface.blit(badge, (9,38))
+            surface.blit(ctx.text_surface(heading,size=20,max_width=rect.w-40), (30,36))
             for index, line in enumerate(lines):
-                ctx.text(line, (rect.x+12, rect.y+64+index*21*ctx.layout.scale), size=16, max_width=rect.w-24)
+                surface.blit(ctx.text_surface(line,size=16,max_width=rect.w-24), (12,64+index*21*ctx.layout.scale))
+    with RMS.clip(ctx.layout.content):
+        RMS.draw(ctx.widget_surface(key, rect.size, paint_selection), rect.topleft)
         rect = ctx.layout.log
-        ctx.panel(rect)
-        ctx.text(f'Battle log  {"+" if ctx.log_collapsed else "−"}', (rect.x+10, rect.y+8), color=ACCENT)
         log = world.get_singleton_component(c.BattleLog)
-        if log and log.show_log and not ctx.log_collapsed:
-            with RMS.clip(pygame.Rect(rect.x+8, rect.y+32, rect.w-16, rect.h-38)):
-                for index, entry in enumerate(log.get_visible_entries()):
-                    ctx.text(f'[{entry.game_time_display or "00:00"}] {entry.message}',
-                             (rect.x+10, rect.y+34+index*19*ctx.layout.scale), size=14, color=MUTED, max_width=rect.w-20)
+        entries = tuple(f'[{entry.game_time_display or "00:00"}] {entry.message}'
+                        for entry in log.get_visible_entries()) if log and log.show_log and not ctx.log_collapsed else ()
+        key = ('log', ctx.log_collapsed, entries, ctx.layout.scale,
+               id(ctx.font(18)), id(ctx.font(14)))
+        def paint_log(surface):
+            surface.fill(PANEL)
+            pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+            surface.blit(ctx.text_surface(f'Battle log  {"+" if ctx.log_collapsed else "−"}',color=ACCENT), (10,8))
+            surface.set_clip((8,32,rect.w-16,rect.h-38))
+            for index, text in enumerate(entries):
+                surface.blit(ctx.text_surface(text,size=14,color=MUTED,max_width=rect.w-20), (10,34+index*19*ctx.layout.scale))
+            surface.set_clip(None)
+        RMS.draw(ctx.widget_surface(key, rect.size, paint_log), rect.topleft)
 
 
 def action_rects(panel, ctx):

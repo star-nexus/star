@@ -162,3 +162,19 @@ def test_python_pure_paint_preserves_full_authority_export(context):
         assert before==export_initial_state(w,display='window')
     finally:
         context.close();w.reset()
+
+
+def test_selection_paint_cache_reads_changed_component_fields(context):
+    from rotk_env.ui.painters import render_selection_and_log
+    w=World();entity=w.create_entity();w.add_singleton_component(c.UIState(selected_unit=entity))
+    w.add_component(entity,c.Unit(faction=Faction.WEI,unit_type=UnitType.INFANTRY))
+    w.add_component(entity,c.UnitCount(current_count=100,max_count=100))
+    target=pygame.display.get_surface();RMS.screen=target
+    render_selection_and_log(w,context);RMS.update()
+    before=pygame.image.tobytes(target.subsurface(context.layout.selection),'RGB')
+    entries=context.cache_stats()['widget_entries']
+    render_selection_and_log(w,context);RMS.update()
+    assert context.cache_stats()['widget_entries']==entries
+    w.get_component(entity,c.UnitCount).current_count=20
+    render_selection_and_log(w,context);RMS.update()
+    assert pygame.image.tobytes(target.subsurface(context.layout.selection),'RGB')!=before
