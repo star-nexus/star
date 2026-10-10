@@ -30,20 +30,26 @@ def render_shell(system, ctx):
     state = world.get_singleton_component(c.GameState)
     clock = world.get_singleton_component(c.GameTime)
     mode = 'Real time' if state and state.game_mode == GameMode.REAL_TIME else 'Turn based'
-    timing = clock.get_current_time_display() if clock else f'Turn {getattr(state, "turn_number", 0)}'
+    timing = clock.get_current_time_display() if clock and state and state.game_mode == GameMode.REAL_TIME else f'Turn {getattr(state, "turn_number", 0)}'
     phase = 'Simultaneous turns' if state and state.game_mode == GameMode.REAL_TIME else f'Active: {getattr(getattr(state, "current_player", None), "value", "—")}'
-    ctx.text(f'{mode}  /  {timing}  /  {phase}', (170, 12), size=20, max_width=layout.top.w-400)
+    ui = world.get_singleton_component(c.UIState)
+    fog = world.get_singleton_component(c.FogOfWar)
+    view = getattr(ui, 'view_faction', None) or getattr(state, 'current_player', None)
+    view_label = getattr(view, 'value', '—').upper() if fog and fog.enabled else 'ALL'
+    if state and state.game_over:
+        phase = 'Game over'
+    ctx.text(f'{mode}  /  {timing}  /  {phase}  /  View: {view_label}', (170, 12), size=20, max_width=layout.top.w-400)
     llm = next((s for s in world.systems if type(s).__name__ == 'LLMSystem'), None)
     client = getattr(llm, 'client', None)
     stats = world.get_singleton_component(c.GameStats)
     registered = len(getattr(stats, 'agent_id_to_faction', {})) if stats else 0
     if ctx.controller == 'hub':
-        controller = f'Hub {"connected" if getattr(client, "connected", False) else "disconnected"}  /  Registered: {registered}'
+        controller = f'Hub {"connected" if getattr(client, "connected", False) else "disconnected"}'
     elif ctx.controller == 'mock_ai':
         controller = 'Local rule BOT'
     else:
         controller = 'Offline  /  Static AI slots — no controller'
-    ctx.text(f'{ctx.backend.upper()}  /  {controller}', (170, 37), size=16, color=MUTED, max_width=layout.top.w-400)
+    ctx.text(f'{ctx.backend.upper()}  /  {controller}  /  Registered: {registered}', (170, 37), size=16, color=MUTED, max_width=layout.top.w-400)
     counts = system._current_faction_counts()
     RMS.rect(PANEL, (0, layout.viewport.bottom-34, min(350, layout.viewport.w), 34))
     x = 16

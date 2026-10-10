@@ -147,7 +147,7 @@ class UiContext:
             while text and font.size(text+"...")[0] > max_width:
                 text = text[:-1]
             text += "..."
-        key = (font.get_height(), text, color)
+        key = (id(font), text, color)
         surface = self._text.get(key)
         if surface is None:
             surface = font.render(text, True, color)
@@ -215,7 +215,11 @@ class UiContext:
         return bool((ui and (ui.show_help or ui.show_stats)) or (confirm and confirm.visible))
 
     def owns(self, pos, world):
-        return self.modal_visible(world) or not self.layout.viewport.collidepoint(pos)
+        view = self.layout.viewport
+        overlays = (pygame.Rect(8, view.y+8, 310, 26),
+                    pygame.Rect(0, view.bottom-34, min(350, view.w), 34))
+        return (self.modal_visible(world) or not view.collidepoint(pos)
+                or any(rect.collidepoint(pos) for rect in overlays))
 
     def handle_click(self, pos, world):
         if self.layout.content.collidepoint(pos) and pygame.Rect(self.layout.log.x, self.layout.log.y, self.layout.log.w, 28).collidepoint(pos):
@@ -231,7 +235,7 @@ class UiContext:
             self.scroll = min(self.layout.max_scroll, max(0, self.scroll-int(amount)*36))
             self.sync(world)
             return True
-        return not self.layout.viewport.collidepoint(pos)
+        return self.owns(pos, world)
 
     def cache_stats(self):
         return dict(tactical_entries=len(self._surfaces), tactical_bytes=self._surface_bytes,

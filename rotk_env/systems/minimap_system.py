@@ -306,19 +306,10 @@ class MiniMapSystem(System):
         min_y = min(corner[1] for corner in minimap_corners)
         max_y = max(corner[1] for corner in minimap_corners)
 
-        viewport_x = max(0, min_x)
-        viewport_y = max(0, min_y)
-        viewport_w = min(minimap.width - viewport_x, max_x - min_x)
-        viewport_h = min(minimap.height - viewport_y, max_y - min_y)
-
-        # Draw viewport rectangle
-        if viewport_w > 0 and viewport_h > 0:
-            pygame.draw.rect(
-                surface,
-                (255, 255, 255),
-                (viewport_x, viewport_y, viewport_w, viewport_h),
-                2,
-            )
+        rect = pygame.Rect(min_x, min_y, max_x-min_x, max_y-min_y).clip(
+            pygame.Rect(0, 0, minimap.width, minimap.height))
+        if rect.w > 0 and rect.h > 0:
+            pygame.draw.rect(surface, (255,255,255), rect, 2)
 
     def handle_click(self, mouse_pos: Tuple[int, int]) -> bool:
         """Handle minimap click; returns True if the click was on the minimap."""

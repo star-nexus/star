@@ -386,3 +386,14 @@ Rust ENV默认复用经当前TileInfo精确签名验证的单格编码，仍逐�
 215项受影响契约（含真实owner native1/4接口）通过；100tick固定前缀、2253请求、139观测的完整权威/响应/wire/事件/增量核验通过。一对10秒预热+30秒真实Cocoa窗口运行通过：本地观测周期排队16.06→1.89ms，完成18.24→4.37ms，后台世界约30Hz，5000 Units/1000 Agents及线程收尾正常。实时轨迹不同，不是固定输入配对因果证明或生产网络验收；旧完整输入与kernel证据原位复用。复算/内外SHA/精确节点见E12 Lab采用包。
 
 阶段完成范围限于现有离线Rust场景和运行时接口。Hub/BOT/scale-harness仍为既有未接入项；长期背压容量最小值、完整新宿主轨迹/像素验收和实际网络仍未证明。G001–G003历史、G008/G009 OPEN、R001/R002 RISK不关闭，容量/Frontier不更新，5000Agents暂缓。[正式实现和回退](native-authority-scheduling.md)。
+
+## UI-v2 visual input version (2026-10-10)
+
+The ordinary pygame window now uses `starbench-ui-v2`: shared menu/HUD layout,
+translucent tactical markers, map clipping and synchronized RTS controls.
+VLM observes that changed actual screen through the existing capture and
+star-protocol fields/encoding/permissions. Record the visual version alongside
+image-based results; older and newer pictures are intentionally not identical.
+The global UI/view capture boundary remains. This UI acceptance does not close
+any protocol/network, authority lifecycle or capacity GAP. See
+[window UI and controls](starbench-ui.md) and the Lab UI refresh experiment.

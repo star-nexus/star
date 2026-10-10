@@ -335,11 +335,13 @@ class FastUnitRenderSystem(UnitRenderSystem):
         self, camera_offset: List[float], zoom: float
     ) -> List[int]:
         """Cull screen first and fetch fog/view state once per frame."""
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world)
         margin = 100
-        screen_left = (-camera_offset[0] - margin) / zoom
-        screen_right = (GameConfig.WINDOW_WIDTH - camera_offset[0] + margin) / zoom
-        screen_top = (-camera_offset[1] - margin) / zoom
-        screen_bottom = (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom
+        screen_left = (viewport.left-camera_offset[0]-margin) / zoom
+        screen_right = (viewport.right-camera_offset[0]+margin) / zoom
+        screen_top = (viewport.top-camera_offset[1]-margin) / zoom
+        screen_bottom = (viewport.bottom-camera_offset[1]+margin) / zoom
 
         game_state = self.world.get_singleton_component(GameState)
         fog = self.world.get_singleton_component(FogOfWar)

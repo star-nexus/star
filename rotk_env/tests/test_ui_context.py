@@ -86,6 +86,8 @@ def test_panel_background_and_modal_block_map_clicks(context):
     w = _World(); context.attach(w); system = _system(w)
     system._get_visible_unit_at_screen_position = lambda pos: pytest.fail('HUD click reached map')
     system._handle_mouse_click(SimpleNamespace(button=1,pos=context.layout.sidebar.center))
+    system._handle_mouse_click(SimpleNamespace(button=1,pos=(20,context.layout.viewport.y+15)))
+    system._handle_mouse_click(SimpleNamespace(button=1,pos=(20,context.layout.viewport.bottom-15)))
     w.ui_state.show_help = True
     system._handle_mouse_click(SimpleNamespace(button=1,pos=context.layout.viewport.center))
 
@@ -105,3 +107,27 @@ def test_slots_are_distinct_stable_alive_and_escape_has_two_steps(context):
     system._targeting_action = 'attack'; system._targeting_unit = 9
     system._action_clear_selection(); assert w.ui_state.selected_unit == 9 and system._targeting_action is None
     system._action_clear_selection(); assert w.ui_state.selected_unit is None
+
+
+def test_pointer_zoom_preserves_pick_and_sidebar_wheel_leaves_camera(context):
+    w = _World(); context.attach(w); system = _system(w)
+    system.min_zoom, system.max_zoom = .15, 3
+    point = system._hex_to_screen((3,4))
+    assert system._screen_to_hex(point) == (3,4)
+    system._handle_mouse_wheel(SimpleNamespace(pos=point,y=1))
+    assert system._screen_to_hex(point) == (3,4)
+    zoom, offset = w.camera.zoom, w.camera.get_offset()
+    system._handle_mouse_wheel(SimpleNamespace(pos=context.layout.sidebar.center,y=-3))
+    assert w.camera.zoom == zoom and w.camera.get_offset() == offset
+    assert context.scroll > 0
+
+
+def test_minimap_inverse_matches_terrain_world_projection(context):
+    w = World(); w.add_singleton_component(c.Camera(zoom=.7))
+    w.add_singleton_component(c.MapData(width=7,height=7,tiles={(q,r):1 for q in range(-3,4) for r in range(-3,4)}))
+    context.attach(w); system = MiniMapSystem(); system.world=w
+    system._calculate_world_bounds(w.get_singleton_component(c.MapData)); b=system._world_bounds
+    for pos in ((-2,-2),(0,0),(3,2)):
+        x,y = system.hex_converter.hex_to_pixel(*pos)
+        rel=((x-b['min_x'])/(b['max_x']-b['min_x']), (y-b['min_y'])/(b['max_y']-b['min_y']))
+        assert system._minimap_to_world_pos(rel) == pos
