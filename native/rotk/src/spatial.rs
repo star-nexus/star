@@ -92,6 +92,8 @@ impl Spatial {
                 }
             }
         }
+        // Derived tile layout: bounded dense maps, original sparse fallback.
+        out.tiles.set_dense(true);
         Ok(out)
     }
     pub fn occupied(&self, cell: Hex, mover: u64) -> bool {

@@ -8,6 +8,10 @@ from star_native import NativeRuntime
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.tests.test_native_movement import make_world
 from rotk_env.prefabs.config import TerrainType
+from rotk_env.runtime.native import ActionRequest, RustRuntime
+from rotk_env.systems.llm_system import LLMSystem
+from rotk_env.tests.test_native_vision import make_vision_world
+from rotk_env.tests.test_native_request_batch import frozen
 
 
 @pytest.mark.parametrize('threads', [1, 4])
@@ -31,6 +35,10 @@ def test_paths_wire_full_state_and_modes(threads, display, variant):
     elif variant == 'game_over':initial['singletons']['GameState'] = dict(game_over=True, winner='wei')
     a, b = NativeRuntime(json.dumps(initial), threads), NativeRuntime(json.dumps(initial), threads)
     try:
+        a._set_map_lookup_mode('baseline')
+        layout = json.loads(b._map_lookup_diagnostics_json())
+        assert layout['requested'] is True
+        assert layout['active'] is (variant not in ('sparse', 'empty'))
         before = b.export_state_json();b._set_map_lookup_mode('dense_tile')
         assert b.export_state_json() == before == a.export_state_json()
         ops = [dict(kind='reachable', unit_id=i) for i in ids]
@@ -55,7 +63,42 @@ def test_paths_wire_full_state_and_modes(threads, display, variant):
             a.step(.1, 100.+tick);b.step(.1, 100.+tick)
             assert a.export_state_json() == b.export_state_json()
             assert a.take_presentation_delta_json() == b.take_presentation_delta_json()
-        b.reset(json.dumps(initial));assert json.loads(b._map_lookup_diagnostics_json())['requested'] is False
+        b._set_map_lookup_mode('baseline')
+        b.reset(json.dumps(initial))
+        assert json.loads(b._map_lookup_diagnostics_json()) == layout
         b.close();assert retained == saved
         with pytest.raises(RuntimeError):b._set_map_lookup_mode('dense_tile')
     finally:a.close();b.close()
+
+
+@pytest.mark.parametrize('threads', [1, 4])
+def test_default_public_requests_and_batch_match_explicit_baseline(threads, frozen):
+    world, ids, _ = make_vision_world('dummy')
+    world.add_system(LLMSystem())
+    initial = export_initial_state(world, display='dummy')
+    world.reset()
+    with RustRuntime(initial, threads=threads) as baseline, RustRuntime(initial, threads=threads) as candidate:
+        baseline._native._set_map_lookup_mode('baseline')
+        assert json.loads(candidate._native._map_lookup_diagnostics_json())['active'] is True
+        registration = dict(faction='wei', provider='synthetic', model_id='fake')
+        for runtime in (baseline, candidate):
+            result = runtime.execute_action('register_agent_info', registration, agent_id='alpha',
+                wall_time=frozen[0], registration_time='2026-09-12T12:00:00')
+            assert result['success'] is True
+        assert candidate.get_faction_state_json('wei', agent_id='alpha', wall_time=frozen[0]) == baseline.get_faction_state_json('wei', agent_id='alpha', wall_time=frozen[0])
+        requests = [ActionRequest('alpha', 'get_faction_state', dict(faction='wei', unit_ids=[uid]), frozen[0])
+                    for uid in ids[:2]]
+        assert candidate.execute_actions(requests) == baseline.execute_actions(requests)
+        assert candidate.export_state() == baseline.export_state()
+        assert candidate.take_presentation_delta() == baseline.take_presentation_delta()
+        for tick in range(3):
+            candidate.step(.1, wall_time=frozen[0]+tick)
+            baseline.step(.1, wall_time=frozen[0]+tick)
+            assert candidate.export_state() == baseline.export_state()
+            assert candidate.take_presentation_delta() == baseline.take_presentation_delta()
+        retained = candidate.get_faction_state('wei', agent_id='alpha', wall_time=frozen[0])
+        saved = copy.deepcopy(retained)
+        candidate.reset(initial)
+        assert json.loads(candidate._native._map_lookup_diagnostics_json())['active'] is True
+        assert candidate.get_faction_state('wei', agent_id='alpha')['error_code'] == 2005
+        assert retained == saved

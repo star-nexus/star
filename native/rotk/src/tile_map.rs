@@ -1,4 +1,4 @@
-//! E13 opt-in direct tile lookup. Values have one owner; iteration stays explicit.
+//! Bounded direct tile lookup with sparse fallback. Values have one owner.
 use crate::{hex::Hex, spatial::TileInfo};
 use std::collections::HashMap;
 

@@ -81,6 +81,18 @@ service time and 8.37% less request + step + presentation-extraction work. This
 is not a step/full-frame or capacity claim. See [cache and lifecycle contract](native-observation-terrain-research.md)
 and the [E11 Lab record](../../star-lab/experiments/2026-10-rust-observation-algorithm/README.md).
 
+## Bounded tile lookup: E13
+
+Rust constructs a direct coordinate index for nonempty maps whose bounding box
+contains at most twice the tile count and at most 1,000,000 slots. Other maps
+retain sparse HashMap lookup. Successful reset reapplies this choice; permissions,
+Fog, observation order, path rules and API18/schema5 remain unchanged. No additional
+threads are created. See [layout, fallback and measured tradeoff](native-map-search-research.md).
+
+The single fixed-input native1 screen improved observation time by 5.01% and
+request + step + extraction work by 4.20%; step itself increased by about 0.90%.
+This supports the chosen observation workload, without a full-frame or capacity claim.
+
 ## Compatibility checkpoint: R3d5 / API18
 
 API18 preserves the active CPython integer-string conversion limit for cumulative
