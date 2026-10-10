@@ -113,6 +113,18 @@ class NativeHubHost(LLMSystem):
         self.runtime.record_message(agent_id, expected_epoch=self.epoch)
 
     def _process_action_request(self, agent_id, action_id, action, params, *, send_response):
+        if not action or action == 'turn_start_ack':
+            # These legacy branches precede the business-action try/except.
+            # ACK/missing-name send failures propagate to on_message, which
+            # skips its post-action message counter and sends the raw error.
+            report = self.runtime.execute_host_action(action, {}, agent_id=agent_id,
+                connected_agents=len(self.client.connected_agents), defer_accounting=send_response)
+            if action == 'turn_start_ack':
+                self._pending_turn_start_ack.pop(agent_id, None)
+            result = report['response']
+            if send_response and agent_id:
+                self.client.response_to_agent(agent_id, action_id, result, 'str')
+            return result
         if action:
             self._pending_turn_start_ack.pop(agent_id, None)
         try:
@@ -171,8 +183,9 @@ class NativeHubHost(LLMSystem):
                 if requests:
                     self._pending_turn_start_ack.pop(agent_id, None)
                     replies = self.runtime.execute_actions(requests)
-                    self._batch_metrics['segments'] += 1
-                    self._batch_metrics['requests'] += len(requests)
+                    with self._lock:
+                        self._batch_metrics['segments'] += 1
+                        self._batch_metrics['requests'] += len(requests)
                     results.extend(dict(id=identifier, action='get_faction_state', response=reply,
                                         success=reply.get('success', True))
                                    for identifier, reply in zip(identifiers, replies))

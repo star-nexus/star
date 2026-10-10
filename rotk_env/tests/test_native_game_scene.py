@@ -16,7 +16,7 @@ from rotk_env.tests.test_native_request_batch import frozen
 def test_backend_cli_defaults_and_explicit_selection(monkeypatch):
     monkeypatch.setattr('sys.argv',['star'])
     args=parse_arguments()
-    assert args.backend=='python' and args.native_threads==1
+    assert args.backend=='rust' and args.native_threads==1
     monkeypatch.setattr('sys.argv',['star','--backend','rust','--native-threads','4','--no-hub'])
     kwargs=game_scene_kwargs_from_args(parse_arguments())
     assert kwargs['backend']=='rust' and kwargs['native_threads']==4 and kwargs['hub_url'] is None

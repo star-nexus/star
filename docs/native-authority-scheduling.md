@@ -1,6 +1,6 @@
 # Rust 场景的独立权威执行
 
-现有离线 Rust 场景默认使用单一后台权威执行器。Python UI、SDL、显示 World 和图像编码留在创建场景的主线程；权威状态、请求、控制、批次和结算查询由一个 owner 按序执行。`RustRuntime` 直接构造仍保留同步 API，`NativeSession.runtime` 提供相同公开调用的线程封装。native 默认线程数仍为1，已有工作池配置可选2/4，不创建第二个 Rust 线程池。
+现有离线与联网 Rust 场景默认使用单一后台权威执行器。Python UI、SDL、显示 World 和图像编码留在创建场景的主线程；权威状态、请求、控制、批次和结算查询由一个 owner 按序执行。`RustRuntime` 直接构造仍保留同步 API，`NativeSession.runtime` 提供相同公开调用的线程封装。native 默认线程数仍为1，已有工作池配置可选2/4，不创建第二个 Rust 线程池。
 
 封顶游戏以 `1/fps` 的固定 dt 在独立时钟推进。owner 在同一锁内以接纳时间与 tick deadline 确定顺序；deadline 前接纳的操作先于该 tick，后来的操作不会无限挤掉 tick。过载时保留固定 dt、降低实际频率，不突发补 tick。记录同一权威操作/dt/wall_time 顺序可重放同一游戏状态。操作异步到达本身与原实时游戏一样受实际到达顺序影响，不宣称跨机器墙钟轨迹一致。
 
@@ -14,4 +14,4 @@ VLM沿用现有当前UI视角。这里同步权威投影与捕获时机；按请
 
 串行回退：`star --backend rust --no-hub --native-scheduling serial`。直接会话可用 `NativeSession(authority_scheduling=False, ...)`；默认会话的手动 `step` 在独立时钟未启动时使用既有显式dt，调用 `runtime.start_clock(dt)` 后禁止混入手动推进。显式uncapped测量保留原逐帧wall dt，不自动启动独立固定时钟。
 
-覆盖范围为现有Rust离线场景及运行时接口；Rust Hub/BOT/scale-harness的既有未接入限制保持，Python路径和Agent实现不改。机制收益与CPU代价见E12研究报告；真实窗口验证另记Lab，不将模拟94%换算为生产网络、step、整帧或容量收益。
+联网现由 NativeHubHost 复用原 ENV WebSocket、Envelope、ACK 与结算政策。所有权威请求进入同一 owner，网络发送留在独立有界宿主线程；显示线程消费有序增量。BOT/scale-harness 尚未接入 Rust，Python 对照及 Agent 实现保留。具体合同和有限验收见 [联网宿主](native-hub-host.md)。机制收益与CPU代价见E12研究报告；真实窗口验证另记Lab，不将模拟94%换算为生产网络、step、整帧或容量收益。

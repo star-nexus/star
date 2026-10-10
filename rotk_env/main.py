@@ -5,6 +5,7 @@ Usage:
     python main.py [Options]
 
 Options:
+    --backend [rust|python]  ENV backend (default: rust)
     --mode [turn_based|real_time]  Game mode (default: turn_based)
     --scenario [default|chibi|three_kingdoms]  Game scenario (default: default)
     --players [human_vs_ai|ai_vs_ai|three_kingdoms|human_vs_two_ai]  Player configuration (default: human_vs_ai)
@@ -63,8 +64,8 @@ Victory Conditions:
         """,
     )
 
-    parser.add_argument("--backend", choices=("python", "rust"), default="python",
-                        help="Simulation backend. Rust is experimental/offline; requires its matching native wheel.")
+    parser.add_argument("--backend", choices=("python", "rust"), default="rust",
+                        help="ENV simulation backend (default: rust). Python remains an explicit reference/fallback.")
     parser.add_argument("--native-threads", type=int, choices=(1, 2, 4), default=1,
                         help="Native worker setting (currently serial; no parallel speedup claim).")
     parser.add_argument("--native-scheduling", choices=("threaded", "serial"), default="threaded",

@@ -14,3 +14,18 @@ module-name = "star_native._native"
 manifest-path = "Cargo.toml"
 features = ["pyo3/extension-module"]
 exclude = ["**/__pycache__/**", "**/*.pyc"]
+
+[tool.uv]
+# Include the sibling Rust crates: a cached binding must match ENV sources.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "python/**/*.py" },
+    { file = "../rotk/Cargo.toml" },
+    { file = "../rotk/src/**/*.rs" },
+    { file = "../core/Cargo.toml" },
+    { file = "../core/src/**/*.rs" },
+    { file = "../../Cargo.toml" },
+    { file = "../../Cargo.lock" },
+]

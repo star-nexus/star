@@ -84,7 +84,7 @@ def _find_recent_report(start_time: float) -> Optional[str]:
     return newest_path
 
 
-def _wait_for_env_ready(env_log_path: str, env_process: subprocess.Popen, timeout: int = 60, backend="python") -> bool:
+def _wait_for_env_ready(env_log_path: str, env_process: subprocess.Popen, timeout: int = 60, backend="rust") -> bool:
     """Wait for environment to be ready before starting agents."""
     deadline = time.time() + timeout
 
@@ -120,7 +120,7 @@ def run_match(
     players="ai_vs_ai",
     timeout=None,
     report_wait=60,
-    backend="python",
+    backend="rust",
     native_threads=1,
     native_scheduling="threaded",
 ):
@@ -351,7 +351,7 @@ def cleanup(env, wei, shu):
 
 def main():
     parser = argparse.ArgumentParser(description="Batch run StarBench matches")
-    parser.add_argument('--backend', choices=('python', 'rust'), default='python')
+    parser.add_argument('--backend', choices=('python', 'rust'), default='rust')
     parser.add_argument('--native-threads', type=int, choices=(1, 2, 4), default=1)
     parser.add_argument('--native-scheduling', choices=('threaded', 'serial'), default='threaded')
     parser.add_argument(

@@ -68,7 +68,7 @@ class GameScene(Scene):
         self._ready_announced = False
         self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
         self.scale_harness_socket = kwargs.get("scale_harness_socket")
-        self.backend = kwargs.get("backend", getattr(self.engine, "runtime_backend", "python"))
+        self.backend = kwargs.get("backend", getattr(self.engine, "runtime_backend", "rust"))
         self.native_threads = kwargs.get("native_threads", getattr(self.engine, "native_threads", 1))
         self.native_scheduling = kwargs.get("native_scheduling", getattr(self.engine, "native_scheduling", "threaded"))
         if self.native_scheduling not in ("threaded", "serial"):

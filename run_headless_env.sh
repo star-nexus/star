@@ -4,7 +4,7 @@
 # --headless 参数确保跳过开始界面，直接进入游戏逻辑
 
 export HEADLESS=1
-env_backend=python
+env_backend=rust
 args=("$@")
 for ((i=0; i<${#args[@]}; i++)); do
     case "${args[$i]}" in

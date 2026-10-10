@@ -40,7 +40,7 @@ def _scene(backend):
 
     scene = StartScene.__new__(StartScene)
     scene.world = _World(config)
-    scene.engine = SimpleNamespace(scene_manager=_SceneManager())
+    scene.engine = SimpleNamespace(runtime_backend='python', scene_manager=_SceneManager())
     scene.game_config = None
     scene._pending_game_config = None
     # Unit-test the handoff contract without requiring an SDL display window.

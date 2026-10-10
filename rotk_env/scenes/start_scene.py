@@ -42,7 +42,7 @@ class StartScene(Scene):
         """Called when entering the scene."""
         super().enter(**kwargs)
         from ..ui.context import UiContext
-        self.ui_context = UiContext(backend=getattr(self.engine, "runtime_backend", "python"))
+        self.ui_context = UiContext(backend=getattr(self.engine, "runtime_backend", "rust"))
         self.world._ui_context = self.ui_context
         config = StartMenuConfig()
         # Display the canonical name for the existing CLI default alias.
@@ -194,7 +194,7 @@ class StartScene(Scene):
                 return
         for rect, (controller, _) in zip(geom['controller_rects'], START_CONTROLLER_OPTIONS):
             if rect.collidepoint(pos):
-                if controller_available(getattr(self.engine, 'runtime_backend', 'python'), controller):
+                if controller_available(getattr(self.engine, 'runtime_backend', 'rust'), controller):
                     config.selected_controller_backend = controller
                 return
         for index, rect in scenario_option_rects(config, geom):
@@ -227,7 +227,7 @@ class StartScene(Scene):
             return
 
         from ..ui.context import controller_available
-        if not controller_available(getattr(self.engine, "runtime_backend", "python"), config.selected_controller_backend):
+        if not controller_available(getattr(self.engine, "runtime_backend", "rust"), config.selected_controller_backend):
             return
         enable_mock_ai, use_hub = controller_backend_flags(
             config.selected_controller_backend

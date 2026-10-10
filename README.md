@@ -157,8 +157,9 @@ git clone https://github.com/star-nexus/GameServer.git
 
 cd star
 
-# Install dependencies using uv (fastest)
-uv sync
+# Install ENV dependencies (Rust toolchain required for the local native build)
+uv sync --extra native
+# Agent / protocol SDK alone: uv sync (no native extra required)
 ```
 
 ### Configuration
@@ -209,11 +210,21 @@ Second, launch the RoTK environment.
 
 ```bash
 cd star
-uv run rotk_env/main.py
+uv run --extra native rotk_env/main.py
 ```
 
-Choose the ENV modes: `Dynamic Real-Time` + `AI v.s. AI Battle`
-Click the `Star Game` button.
+Choose `Dynamic Real-Time`, the desired player slots, and `External Agent / Hub`.
+Click `Start Game`. Static AI slots have no controller until Agents join.
+
+RoTK ENV now defaults to **Rust**, for windows, headless runs and `auto_test.py`.
+Python/Rust is an internal ENV choice: the four layers (ECS Framework,
+star-protocol, ENV and Agent), Hub, `env_id` / `agent_id`, and Agent commands
+remain the same. Explicit reference/fallback: `uv run rotk_env/main.py --backend python`.
+`--no-hub` deliberately selects offline operation. The local rule BOT remains
+Python-only (`--backend python --no-hub --mock-ai`).
+
+[ENV backend and launch contract](docs/native-hub-host.md) documents dependency
+checks, queue ownership, run manifests, and the validated scope.
 
 Next, launch LLM Agents for different factions.
 
@@ -319,9 +330,14 @@ deepseek,glm_47
 glm_46,deepseek
 ```
 
-Then, start the script to launch the evaluation in batch.
+Then, start the script to launch the evaluation in batch. It defaults to Rust ENV
+(native1, threaded authority), loads the ENV native extra, and waits for both world
+initialization and Hub confirmation before launching Agents. Use `--backend python`
+for the reference path; `--native-threads 1|2|4` and
+`--native-scheduling threaded|serial` are forwarded to each ENV.
+Each match writes its backend/source/extension identity to `logs/run_<pid>/match_<n>_runtime.json`.
 ```bash
-python auto_test.py --mode [real_time | turn_based] --players ai_vs_ai --report-wait 120 --list provider.txt
+uv run python auto_test.py --mode real_time --players ai_vs_ai --report-wait 120 --list provider.txt
 
 ```
 

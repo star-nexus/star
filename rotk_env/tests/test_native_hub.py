@@ -46,6 +46,8 @@ def wait(session, condition):
 def hosts(monkeypatch, frozen, request):
     world, ids, _, oracle = setup('none')
     from rotk_env.prefabs.config import Faction
+    world.get_singleton_component(c.GameState).current_player = Faction.WEI
+    from rotk_env.prefabs.config import Faction
     world.get_singleton_component(c.GameStats).initial_unit_counts = {Faction.WEI:2, Faction.SHU:1}
     initial = export_initial_state(world)
     monkeypatch.setattr(module, 'prepare_display_world', lambda **kw: (World(), deepcopy(initial)))
@@ -91,8 +93,24 @@ def test_wire_permissions_team_batch_and_malformed_prefix(hosts):
     check(dict(type='action_batch', id='broken', actions=[
         {'action':'claim_units','parameters':{'unit_ids':[a]}}, 7]))
     check(single('end_turn', {'faction':'wei'}))
-    check(single('ack_turn_start', {'turn_number':2,'faction':'shu'}), agent='b')
+    check(single('turn_start_ack', {'turn_number':2,'faction':'shu'}), agent='b')
+    check(single('turn_start_ack'), send_failure=True)
+    check(single(None), send_failure=True)
     check(single('register_agent_info', REG, id='failed-send'), send_failure=True)
+
+def test_turn_retry_budget_ack_and_other_action_cancellation(hosts, frozen):
+    _, _, oracle, session, host, check = hosts
+    check(single('register_agent_info', REG))
+    check(single('register_agent_info', dict(REG,faction='shu')),agent='b')
+    check(single('end_turn',dict(faction='wei')))
+    assert host._pending_turn_start_ack == oracle._pending_turn_start_ack
+    assert 'b' in host._pending_turn_start_ack
+    for _ in range(6):
+        frozen[0]+=8
+        oracle.update(0)
+        wait(session,lambda:host._pending_turn_start_ack==oracle._pending_turn_start_ack)
+        assert host.client.packets == oracle.client.packets
+    assert not host._pending_turn_start_ack
 
 def test_game_end_wait_and_authoritative_report(hosts, frozen, monkeypatch):
     world, ids, oracle, session, host, check = hosts

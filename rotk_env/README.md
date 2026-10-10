@@ -2,42 +2,46 @@
 
 STAR 的 **ENV** 层：六边形 ECS 战场、动作网关、观测与结算。评测怎么起 Hub、起 Agent、配 API key，以仓库根目录 [README.md](../README.md) 为准，这里不重复。
 
-四层分工：`rotk_agent`（模型侧）→ GameServer（Hub）→ **`rotk_env`（本目录）** → `framework`（引擎 / ECS）。本目录的入口是 `rotk_env/main.py`，不是独立发行的三国小游戏。
+四层分工：**ECS Framework、star-protocol、STARBench ENV、Agent**。GameServer 路由现有协议；不同 ENV 和 Agent 继续通过 `env_id` / `agent_id` 通信。Rust 只替换本目录 ENV 的权威执行，不要求更改 Hub、协议或参与者 Agent。
 
 ## 入口
 
-需要先有本地 Hub（见根 README）。常见命令：
+先启动现有 Hub（见根 README），Rust 工具链与 Python 3.13 需要可用：
 
 ```bash
-# 跳过开始界面，窗口开一局 BOT 对 BOT（仍会连本地 Hub）
-uv run rotk_env/main.py --skip-start --players ai_vs_ai
+# 默认 Rust：窗口菜单，选择 External Agent / Hub 后开始
+uv run --extra native rotk_env/main.py
 
-# 评测 / CI：dummy 显示，结束自动退。仍然连 Hub，所以 auto_test 要先起 GameServer
-uv run rotk_env/main.py --headless --players three_kingdoms
+# 跳过菜单：联网三阵营评测
+uv run --extra native rotk_env/main.py --skip-start --players three_kingdoms --mode real_time
 
-# 无窗口、也不连 Hub：规则 BOT 对打，不需要 GameServer
-uv run rotk_env/main.py --headless --no-hub --players ai_vs_ai
+# 无窗口联网评测；auto_test.py 也默认 Rust
+./run_headless_env.sh --players three_kingdoms --mode real_time
 
-# 人打两 BOT
-uv run rotk_env/main.py --skip-start --players human_vs_two_ai
+# 明确离线（静态 AI 槽没有控制器）
+uv run --extra native rotk_env/main.py --headless --no-hub --players ai_vs_ai
 
-# 赤壁图
-uv run rotk_env/main.py --skip-start --scenario chibi
+# Python 对照 / 回退；本地规则 BOT 暂只在 Python 下可用
+uv run rotk_env/main.py --backend python --skip-start --no-hub --mock-ai --players human_vs_two_ai
 ```
 
-`--headless` 只关窗口（dummy 显示）。连不连 Hub 是另一件事：默认连 `ws://localhost:8000/ws/metaverse`，`--hub-url` 可改地址，`--no-hub` 完全不打开 websocket。
+`--headless` 只关窗口；`--no-hub` 才关闭联网。Hub 地址继续采用 `--hub-url`、`$STAR_HUB_URL`、`ws://localhost:8000/ws/metaverse` 的原有优先顺序。Rust 扩展缺失、oracle/API 或宿主能力不匹配会明确报错，不自动换成 Python。
 
 | 参数 | 作用 |
 | :--- | :--- |
+| `--backend rust\|python` | 默认 Rust；显式 Python 对照 |
+| `--native-threads 1\|2\|4` | 默认 1；仅 ENV 内部配置 |
+| `--native-scheduling threaded\|serial` | 默认独立权威时钟；serial 为帧驱动回退，联网仍使用单一权威执行器 |
 | `--mode turn_based\|real_time` | 回合制或实时 |
-| `--players` | `human_vs_ai` / `ai_vs_ai` / `three_kingdoms` / `human_vs_two_ai`。不带 `--skip-start` / `--headless` 时仍进开始界面 |
-| `--scenario` | `default` / `chibi`（`rotk_env/maps/*.json`）/ `three_kingdoms`（仍用 `river_split.json`，只改阵营数） |
-| `--seed` | 锁地图生成和战斗掷骰，不是整局逐帧回放。优先级：`--seed` > `$STAR_SEED` > `.configs.toml` |
-| `--env-id` | Hub 上的环境 id |
-| `--hub-url` | Hub websocket。省略时用 `$STAR_HUB_URL`，再没有就用本地默认地址 |
-| `--no-hub` | 不连 Hub。规则测试和离线 BOT 用这个 |
+| `--players` | 槽位拓扑，独立于控制器选择 |
+| `--scenario` / `--seed` | 地图及 RNG 种子；不锁定网络到达顺序 |
+| `--env-id` / `--hub-url` | 现有 Hub 身份及地址 |
+| `--no-hub` | 明确离线 |
+| `--runtime-manifest PATH` | 本地运行清单；不增加协议字段 |
 
-本地操作（人机窗口）：左键选/移动/攻击，右键取消，WASD 移镜头，空格结束回合，Tab 统计，F1 帮助，Esc 取消选择。
+快捷键：`1` 步兵、`2` 骑兵、`3/4/5` 三名弓兵；`M/A` 移动/攻击；`W/G/C/F` 等待/驻防/占领/筑垒；方向键及 `+/-` 镜头；`Shift+1` 迷雾，`Shift+2/3/4` 阵营视角；F1 帮助，Esc 先取消目标再取消选择。
+
+实现与有限联网验收见 [Rust ENV 宿主](../docs/native-hub-host.md)。
 
 ## 规则以代码为准
 
@@ -64,7 +68,7 @@ uv run rotk_env/main.py --skip-start --scenario chibi
 
 入局 `register_agent_info` 同时返回 `map.home_bases` 和 `game_actions`（本局名单与文档）。Agent 写进 system prompt，不把主表当允许列表。第三方 Agent 的接线合同是仓库根目录 [`docs/agent-protocol.md`](../docs/agent-protocol.md)，不是本目录的 LLM handler 内部文档。
 
-`get_faction_state` 的 `faction` 必须是调用方自己的阵营（否则 2005）。返回的是 **observation + 当前动作掩码**：己方全量单位（每条带 `owner` / `commandable`，以及 `reachable` / `attackable`），当前视野内的敌军（`visible_enemy_units`：编号、兵种、位置、人数，不带掩码），以及 `visible_terrain`。`reachable` 是此刻 `move` 会接受的格子，不是 MP 半径；`attackable` 是此刻 `attack` 会接受的 `target_id`。敌方单位不给这两项。合同见 [`docs/observation-affordance.md`](../docs/observation-affordance.md)。迷雾打开时，可见区域是己方所有单位视野的并集；按 `1` 关闭迷雾后，可见区域是整张地图。人、BOT、Agent 共用这一条开关。各阵营基地坐标在入局 `register_agent_info` 的 `map.home_bases` 里（开局布阵中心，带 `home_bases_meaning`）。Agent 把它们写进 system prompt 的地图章节，不进 `get_faction_state`。同阵营已认领单位只有主人能下令。
+`get_faction_state` 的 `faction` 必须是调用方自己的阵营（否则 2005）。返回的是 **observation + 当前动作掩码**：己方全量单位（每条带 `owner` / `commandable`，以及 `reachable` / `attackable`），当前视野内的敌军（`visible_enemy_units`：编号、兵种、位置、人数，不带掩码），以及 `visible_terrain`。`reachable` 是此刻 `move` 会接受的格子，不是 MP 半径；`attackable` 是此刻 `attack` 会接受的 `target_id`。敌方单位不给这两项。合同见 [`docs/observation-affordance.md`](../docs/observation-affordance.md)。迷雾打开时，可见区域是己方所有单位视野的并集；按 `Shift+1` 关闭迷雾后，可见区域是整张地图。人、BOT、Agent 共用这一条开关。各阵营基地坐标在入局 `register_agent_info` 的 `map.home_bases` 里（开局布阵中心，带 `home_bases_meaning`）。Agent 把它们写进 system prompt 的地图章节，不进 `get_faction_state`。同阵营已认领单位只有主人能下令。
 
 ## BOT
 
