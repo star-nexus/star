@@ -311,6 +311,7 @@ class LLMSystem(System):
         self.name = "LLMSystem"
         self.server_url = server_url
         self.env_id = env_id
+        self._hub_confirmed = False
 
         # Game-end notification state
         self.game_end_notified = False
@@ -666,48 +667,7 @@ class LLMSystem(System):
                     size = 0
                 print(f"[LLM SYSTEM] Handling batched actions: count={size}")
 
-                batch_results: List[Dict[str, Any]] = []
-                for idx, item in enumerate(actions):
-                    action_name = item.get("action")
-                    action_request_id = _inbound_id(
-                        item.get("id"), fallback=f"{batch_id}_{idx}"
-                    )
-                    if not action_name:
-                        error_result = self._create_system_error_response(
-                            "unknown",
-                            "Missing action name in batch item",
-                            2007,
-                        )
-                        batch_results.append(
-                            {
-                                "id": action_request_id,
-                                "action": action_name,
-                                "response": error_result,
-                                "success": False,
-                            }
-                        )
-                        continue
-
-                    params = self._prepare_parameters(item.get("parameters", {}))
-
-                    result = self._process_action_request(
-                        agent_id=agent_id,
-                        action_id=action_request_id,
-                        action=action_name,
-                        params=params,
-                        send_response=False,
-                    )
-                    success_flag = True
-                    if isinstance(result, dict):
-                        success_flag = result.get("success", True)
-                    batch_results.append(
-                        {
-                            "id": action_request_id,
-                            "action": action_name,
-                            "response": result,
-                            "success": success_flag,
-                        }
-                    )
+                batch_results = self._process_batch_actions(actions, agent_id, batch_id)
 
                 if agent_id:
                     batch_outcome = {
@@ -730,6 +690,52 @@ class LLMSystem(System):
             if "sender" in locals():
                 self.send_error_response(sender, f"Message processing error: {e}")
     
+    def _process_batch_actions(self, actions, agent_id, batch_id):
+        """Ordered batch hook; transport framing/accounting remains shared."""
+        batch_results: List[Dict[str, Any]] = []
+        for idx, item in enumerate(actions):
+            action_name = item.get("action")
+            action_request_id = _inbound_id(
+                item.get("id"), fallback=f"{batch_id}_{idx}"
+            )
+            if not action_name:
+                error_result = self._create_system_error_response(
+                    "unknown",
+                    "Missing action name in batch item",
+                    2007,
+                )
+                batch_results.append(
+                    {
+                        "id": action_request_id,
+                        "action": action_name,
+                        "response": error_result,
+                        "success": False,
+                    }
+                )
+                continue
+
+            params = self._prepare_parameters(item.get("parameters", {}))
+
+            result = self._process_action_request(
+                agent_id=agent_id,
+                action_id=action_request_id,
+                action=action_name,
+                params=params,
+                send_response=False,
+            )
+            success_flag = True
+            if isinstance(result, dict):
+                success_flag = result.get("success", True)
+            batch_results.append(
+                {
+                    "id": action_request_id,
+                    "action": action_name,
+                    "response": result,
+                    "success": success_flag,
+                }
+            )
+        return batch_results
+
     def _enforce_message_cooldown(self, agent_id: Optional[str], message_id: Union[int, str]) -> bool:
         """Simple message-level cooldown: limits how often the same Agent can send messages, encouraging batching multiple actions into one message."""
         try:
@@ -765,9 +771,11 @@ class LLMSystem(System):
             return True
 
     def on_connect(self, message):
+        self._hub_confirmed = True
         print("LLMSystem connected", message)
 
     def on_disconnect(self, message):
+        self._hub_confirmed = False
         print("LLMSystem disconnected", message)
 
     def on_error(self, error):

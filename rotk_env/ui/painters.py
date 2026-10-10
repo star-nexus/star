@@ -43,8 +43,13 @@ def render_shell(system, ctx):
     client = getattr(llm, 'client', None)
     stats = world.get_singleton_component(c.GameStats)
     registered = len(getattr(stats, 'agent_id_to_faction', {})) if stats else 0
+    native_facts = getattr(world, '_native_hub_facts', None)
+    connected = getattr(client, 'connected', False)
+    if native_facts is not None:
+        registered = native_facts['registered_agents']
+        connected = native_facts['connected']
     if ctx.controller == 'hub':
-        controller = f'Hub {"connected" if getattr(client, "connected", False) else "disconnected"}'
+        controller = f'Hub {"connected" if connected else "disconnected"}'
     elif ctx.controller == 'mock_ai':
         controller = 'Local rule BOT'
     else:

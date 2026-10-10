@@ -20,6 +20,7 @@ class AuthorityRuntime:
         'execute_actions_diagnostic', 'get_faction_state', 'get_faction_state_json',
         'finish_human_turn', 'start_capture', 'set_clock', 'export_state',
         'diagnostics', 'take_presentation_delta',
+        'execute_host_action', 'commit_host_action',
     })
 
     def __init__(self, runtime, *, on_publication, capture_frame=None,

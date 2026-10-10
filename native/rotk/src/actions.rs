@@ -379,6 +379,10 @@ impl Runtime {
         None
     }
     fn record_action_result<T: From<Value>>(&mut self, request: &Request, mut result: T) -> T {
+        if let Some(count) = self.deferred_host_count.as_mut() {
+            *count = true;
+            return result;
+        }
         let action = request.action.as_deref().unwrap_or("");
         let agent = request.agent_id.as_deref().filter(|a| !a.is_empty());
         if let Some(agent) = agent {
@@ -486,6 +490,27 @@ impl Runtime {
     }
     pub fn execute_request(&mut self, request: Request) -> Result<Response, String> {
         self.execute_request_with_read_cache(request, &mut None, None)
+    }
+    /// Single wire requests send their response before counting the action.
+    /// Only the trusted ENV host uses this boundary; ordinary calls are unchanged.
+    pub fn execute_host_request(
+        &mut self,
+        request: Request,
+        defer_accounting: bool,
+    ) -> Result<(Response, bool), String> {
+        if self.deferred_host_count.is_some() {
+            return Err("nested host accounting is not supported".into());
+        }
+        if defer_accounting {
+            self.deferred_host_count = Some(false);
+        }
+        let result = self.execute_request(request);
+        let count = self.deferred_host_count.take().unwrap_or(false);
+        Ok((result?, count))
+    }
+    pub fn commit_host_action(&mut self, request: &Request) -> Value {
+        self.wall_time = request.wall_time;
+        self.record_action_result(request, json!({"success":true}))
     }
     /// Research ingress only. All timing, authorization and accounting retain
     /// the single-request order; only owned observation facts may survive.

@@ -78,7 +78,7 @@ def test_shortcuts_modifier_conflicts_and_rust_capabilities():
     assert binding_for_key(pygame.K_w).action == 'unit_wait'
     assert binding_for_key(pygame.K_1,pygame.KMOD_CTRL) is None
     assert controller_available('rust','none')
-    assert not controller_available('rust','hub')
+    assert controller_available('rust','hub')
     assert not controller_available('rust','mock_ai')
 
 

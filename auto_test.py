@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 import argparse
+import json
 from typing import Optional, Tuple
 
 try:
@@ -83,9 +84,8 @@ def _find_recent_report(start_time: float) -> Optional[str]:
     return newest_path
 
 
-def _wait_for_env_ready(env_log_path: str, env_process: subprocess.Popen, timeout: int = 60) -> bool:
+def _wait_for_env_ready(env_log_path: str, env_process: subprocess.Popen, timeout: int = 60, backend="python") -> bool:
     """Wait for environment to be ready before starting agents."""
-    ready_markers = ("LLMSystem connected", "Game started!")
     deadline = time.time() + timeout
 
     while time.time() < deadline:
@@ -96,8 +96,14 @@ def _wait_for_env_ready(env_log_path: str, env_process: subprocess.Popen, timeou
             if os.path.exists(env_log_path):
                 with open(env_log_path, "r") as f:
                     content = f.read()
-                if any(marker in content for marker in ready_markers):
-                    return True
+                for line in content.splitlines():
+                    if line.startswith('STAR_ENV_READY '):
+                        try:
+                            ready = json.loads(line.removeprefix('STAR_ENV_READY '))
+                        except json.JSONDecodeError:
+                            continue
+                        if ready.get('backend') == backend and ready.get('hub_connected') is True:
+                            return True
         except OSError:
             pass
 
@@ -114,6 +120,9 @@ def run_match(
     players="ai_vs_ai",
     timeout=None,
     report_wait=60,
+    backend="python",
+    native_threads=1,
+    native_scheduling="threaded",
 ):
     print(
         f"\n>>> Starting Match {match_index}: "
@@ -143,6 +152,9 @@ def run_match(
         "--mode", mode,
         "--scenario", "default"
     ]
+    env_cmd.extend(['--backend', backend, '--native-threads', str(native_threads),
+                    '--native-scheduling', native_scheduling, '--runtime-manifest',
+                    f'{log_dir}/match_{match_index}_runtime.json'])
     
     env_log_path = f"{log_dir}/match_{match_index}_env.log"
     wei_log_path = f"{log_dir}/match_{match_index}_wei.log"
@@ -164,7 +176,7 @@ def run_match(
     )
     
     # 等待环境完成初始化（WebSocket 服务启动）
-    if not _wait_for_env_ready(env_log_path, env_process, timeout=60):
+    if not _wait_for_env_ready(env_log_path, env_process, timeout=60, backend=backend):
         print("  Environment did not become ready in time. Terminating...")
         env_process.terminate()
         cleanup(env_process, None, None)
@@ -339,6 +351,9 @@ def cleanup(env, wei, shu):
 
 def main():
     parser = argparse.ArgumentParser(description="Batch run StarBench matches")
+    parser.add_argument('--backend', choices=('python', 'rust'), default='python')
+    parser.add_argument('--native-threads', type=int, choices=(1, 2, 4), default=1)
+    parser.add_argument('--native-scheduling', choices=('threaded', 'serial'), default='threaded')
     parser.add_argument(
         "--list",
         default="match_list.txt",
@@ -377,6 +392,9 @@ def main():
                         players=args.players,
                         timeout=None if args.timeout <= 0 else args.timeout,
                         report_wait=args.report_wait,
+                        backend=args.backend,
+                        native_threads=args.native_threads,
+                        native_scheduling=args.native_scheduling,
                     )
                     
                     # 局间休息，确保端口释放

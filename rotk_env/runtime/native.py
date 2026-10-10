@@ -24,6 +24,9 @@ def load_native():
     actual_api = getattr(star_native, 'API_VERSION', None)
     if actual_api != NATIVE_API_VERSION:
         raise RuntimeError(f'Rust API version mismatch: {actual_api}; expected {NATIVE_API_VERSION}. Rebuild/install the matching star-native wheel.')
+    if not all(hasattr(NativeRuntime, name) for name in
+               ('_execute_host_action_json', '_commit_host_action_json')):
+        raise RuntimeError('Rust ENV host extension mismatch. Rebuild/install the matching star-native wheel.')
     return NativeRuntime
 
 
@@ -223,6 +226,24 @@ class RustRuntime:
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None, connected_agents=0):
         request = ActionRequest(agent_id, action, parameters, wall_time, registration_time, connected_agents)
         return _complete_result(action, json.loads(self._native.execute_action_json(json.dumps(request.to_wire(), allow_nan=False))), self._frame_capture)
+
+    @_serialized
+    def execute_host_action(self, action, parameters=None, *, agent_id, wall_time=None,
+                            registration_time=None, connected_agents=0, defer_accounting=False):
+        request = ActionRequest(agent_id, action, parameters, wall_time,
+                                registration_time, connected_agents).to_wire()
+        result = json.loads(self._native._execute_host_action_json(
+            json.dumps(request, allow_nan=False), defer_accounting))
+        result['response'] = _complete_result(action, result['response'], self._frame_capture)
+        result['accounting'] = request if result.pop('count_needed') else None
+        result['turn_context'] = self.turn_start_context(wall_time=request['wall_time']) if (
+            action == 'end_turn' and result['response'].get('success')) else None
+        return result
+
+    @_serialized
+    def commit_host_action(self, request, *, expected_epoch=None):
+        return json.loads(self._native._commit_host_action_json(
+            json.dumps(request, allow_nan=False), expected_epoch))
 
     def execute_actions(self, requests):
         """Execute supplied envelopes in order; prior commands are not rolled back on failure.

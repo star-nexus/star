@@ -22,6 +22,7 @@ class GameScene(Scene):
         self.native_session = None
         self.native_host = None
         self._authority_clock_started = False
+        self._ready_announced = True
 
         # Default configuration, will be overridden in enter
         self.players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
@@ -63,6 +64,8 @@ class GameScene(Scene):
         # still attaches to the default local Hub.
         self.hub_url = kwargs["hub_url"] if "hub_url" in kwargs else DEFAULT_HUB_URL
         self.env_id = kwargs.get("env_id")
+        self.runtime_manifest = kwargs.get('runtime_manifest', getattr(self.engine, 'runtime_manifest', None))
+        self._ready_announced = False
         self.enable_mock_ai = bool(kwargs.get("enable_mock_ai", False))
         self.scale_harness_socket = kwargs.get("scale_harness_socket")
         self.backend = kwargs.get("backend", getattr(self.engine, "runtime_backend", "python"))
@@ -100,10 +103,20 @@ class GameScene(Scene):
                 raise ValueError("Rust scale-harness host is not connected yet")
             from ..runtime.session import NativeSession
             from ..runtime.settlement import OfflineSettlementHost
+            from ..runtime.hub import NativeHubHost
             self.native_session = NativeSession(threads=self.native_threads,
-                authority_scheduling=self.native_scheduling == "threaded", **options)
+                authority_scheduling=self.hub_url is not None or self.native_scheduling == "threaded",
+                **dict(options, hub_url=None))
             self.world = self.native_session.world
-            self.native_host = OfflineSettlementHost(self.native_session)
+            try:
+                self.native_host = (NativeHubHost(self.native_session, self.hub_url, self.env_id)
+                                    if self.hub_url is not None else OfflineSettlementHost(self.native_session))
+            except BaseException:
+                self.native_session.close()
+                self.native_session = None
+                raise
+            if self.native_session.ui_context:
+                self.native_session.ui_context.controller = 'hub' if self.hub_url is not None else 'none'
         else:
             build_skirmish_world(world=self.world, **options)
 
@@ -159,6 +172,13 @@ class GameScene(Scene):
                 map_tiles=len(map_data.tiles),
             )
         profiler.set_metadata(**metadata)
+        from ..runtime.identity import runtime_identity
+        import os
+        self.runtime_identity = runtime_identity(self.backend,
+            env_id=self.env_id or os.environ.get('ENV_ID', 'env_1'), mode=mode_label,
+            scenario=self.scenario, seed=self.seed, scheduling=self.native_scheduling,
+            threads=self.native_threads)
+        profiler.set_metadata(**self.runtime_identity)
 
         # Drop menu/scene-switch/map-initialization frames. The first complete
         # gameplay render still performs lazy UI/font/surface initialization, so
@@ -173,6 +193,18 @@ class GameScene(Scene):
     def update(self, delta_time: float) -> None:
         """Update scene"""
         if self.is_active:
+            if not self._ready_announced:
+                if self.hub_url is None:
+                    connected = False
+                elif self.native_host is not None:
+                    connected = self.native_host.snapshot()['connected']
+                else:
+                    llm = next((s for s in self.world.systems if hasattr(s, '_hub_confirmed')), None)
+                    connected = bool(llm and llm._hub_confirmed)
+                if self.hub_url is None or connected:
+                    from ..runtime.identity import announce_ready
+                    announce_ready(self.runtime_identity, hub_connected=connected, manifest=self.runtime_manifest)
+                    self._ready_announced = True
             if self._profile_warmup_pending:
                 self._profile_warmup_pending = False
                 if profiler.enabled:
@@ -222,7 +254,10 @@ class GameScene(Scene):
                     import time
 
                     elapsed = time.time() - self.game_end_wait_start
-                    if elapsed >= self.game_end_wait_timeout:
+                    # Online settlement owns the original full 60-second
+                    # deadline; a UI frame must not race its report publication.
+                    report_pending = self.native_host is not None and hasattr(self.native_host, 'snapshot') and self.native_host.snapshot()['settlement_started']
+                    if elapsed >= self.game_end_wait_timeout and not report_pending:
                         print(
                             f"[GameScene] Waiting for settlement report timeout ({elapsed:.1f}s), switching to game over scene"
                         )
@@ -303,11 +338,17 @@ class GameScene(Scene):
         """Called when exiting scene"""
         super().exit()
         if self.native_session is not None:
-            self.native_session.close()
-            self.native_session = None
-            self.native_host = None
-            self._authority_clock_started = False
-            self.initialized = False
+            try:
+                if self.native_host is not None and hasattr(self.native_host, 'close'):
+                    self.native_host.close()
+            finally:
+                try:
+                    self.native_session.close()
+                finally:
+                    self.native_session = None
+                    self.native_host = None
+                    self._authority_clock_started = False
+                    self.initialized = False
         else:
             context = getattr(self.world, "_ui_context", None)
             if context:

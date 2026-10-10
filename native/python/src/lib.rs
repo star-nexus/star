@@ -206,6 +206,34 @@ impl NativeRuntime {
             Ok(r.host_status().to_string())
         })
     }
+    /// Private ENV transport hook, not a Protocol verb or an authority schema field.
+    fn _execute_host_action_json(
+        &self,
+        py: Python<'_>,
+        request_json: String,
+        defer_accounting: bool,
+    ) -> PyResult<String> {
+        let request = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid host request: {e}")))?;
+        self.with_runtime(py, |r| {
+            let (response, count) = r.execute_host_request(request, defer_accounting)?;
+            Ok(serde_json::json!({"response":response,"count_needed":count}).to_string())
+        })
+    }
+    #[pyo3(signature=(request_json, expected_epoch=None))]
+    fn _commit_host_action_json(
+        &self,
+        py: Python<'_>,
+        request_json: String,
+        expected_epoch: Option<u64>,
+    ) -> PyResult<String> {
+        let request = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid host accounting: {e}")))?;
+        self.with_runtime(py, |r| {
+            check_control_epoch(r, expected_epoch)?;
+            Ok(r.commit_host_action(&request).to_string())
+        })
+    }
     #[pyo3(signature=(agent_id, expected_epoch=None))]
     fn record_message(
         &self,

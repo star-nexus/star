@@ -66,7 +66,7 @@ def test_scene_reuses_native_session_and_headless_settlement_exit(mode,fonts,sdl
     assert listeners()==before
 
 
-@pytest.mark.parametrize('extra',[{'hub_url':'ws://invalid'},{'enable_mock_ai':True},{'scale_harness_socket':'/tmp/not-used'}])
+@pytest.mark.parametrize('extra',[{'enable_mock_ai':True},{'scale_harness_socket':'/tmp/not-used'}])
 def test_rust_scene_rejects_unconnected_hosts_before_starting_world(extra):
     scene=GameScene(SimpleNamespace(runtime_backend='rust',native_threads=1))
     with pytest.raises(ValueError):

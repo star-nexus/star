@@ -69,6 +69,8 @@ Victory Conditions:
                         help="Native worker setting (currently serial; no parallel speedup claim).")
     parser.add_argument("--native-scheduling", choices=("threaded", "serial"), default="threaded",
                         help="Rust authority scheduling; serial keeps the frame-driven fallback.")
+    parser.add_argument('--runtime-manifest', default=None,
+                        help='Write ENV runtime identity/readiness JSON outside the wire protocol.')
     parser.add_argument(
         "--headless",
         action="store_true",
@@ -228,6 +230,7 @@ def game_scene_kwargs_from_args(args) -> dict:
         "backend": getattr(args, "backend", "python"),
         "native_threads": getattr(args, "native_threads", 1),
         "native_scheduling": getattr(args, "native_scheduling", "threaded"),
+        "runtime_manifest": getattr(args, "runtime_manifest", None),
     }
 
 
@@ -292,6 +295,7 @@ def main():
         engine.runtime_backend = args.backend
         engine.native_threads = args.native_threads
         engine.native_scheduling = args.native_scheduling
+        engine.runtime_manifest = args.runtime_manifest
         if not args.headless:
             GameConfig.WINDOW_WIDTH = engine.width
             GameConfig.WINDOW_HEIGHT = engine.height

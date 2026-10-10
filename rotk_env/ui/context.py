@@ -39,7 +39,7 @@ def viewport_for(world):
 
 
 def controller_available(runtime_backend, controller):
-    return runtime_backend != "rust" or controller == "none"
+    return runtime_backend != "rust" or controller in ("none", "hub")
 
 
 class UiContext:

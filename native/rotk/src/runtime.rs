@@ -99,6 +99,8 @@ pub struct Runtime {
     pub(crate) visibility_tracker: Option<crate::statistics::VisibilityTracker>,
     pub(crate) wall_time: f64,
     pub(crate) team: Option<crate::team::Team>,
+    // Transient transport boundary. Never exported or retained between calls.
+    pub(crate) deferred_host_count: Option<bool>,
     pub(crate) visuals: crate::presentation::Visuals,
     pub(crate) query_cache: crate::named_observation::QueryCache,
     pub(crate) observation_terrain_reuse: bool,
@@ -303,6 +305,7 @@ impl Runtime {
             visibility_tracker,
             wall_time,
             team,
+            deferred_host_count: None,
             clock,
             rng,
             singletons,
