@@ -3,7 +3,7 @@
 <div align="center">
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.13%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
 [Introduction](#introduction) • [Components](#Components) • [Architecture](#System-Architecture) • [Quick Start](#quick-start)
@@ -133,38 +133,83 @@ Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizo
 <a id="quick-start"></a>
 ## 🛠️ Quick Start
 
-### Prerequisites
-*   Python 3.13
-*   `uv` (recommended) or `pip`
+### 1. Install once
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the
+[Rust toolchain](https://www.rust-lang.org/tools/install), then open a new terminal.
+`uv` manages the project's Python 3.13 and dependencies. Rust is needed for the
+first ENV build from this source checkout; running an Agent or the protocol SDK
+alone does not require it.
 
 ```bash
-# You can install uv on macOS and Linux.
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# on Windows.
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# or with pip.
-pip install uv
-```
-
-### Installation
-
-```bash
-# Clone the repository
 git clone https://github.com/star-nexus/star.git
-git clone https://github.com/star-nexus/GameServer.git
-
 cd star
-
-# Install ENV dependencies (Rust toolchain required for the local native build)
-uv sync --extra native
-# Agent / protocol SDK alone: uv sync (no native extra required)
 ```
 
-### Configuration
+There is no separate dependency-install command. The launcher prepares the
+selected ENV automatically; the first launch includes compilation and may take
+longer. Subsequent launches reuse the build when its inputs are unchanged.
 
-Before running any agent, you need to specify the API keys for the providers you intend to use. Create a `.configs.toml` file in the project root:
+### 2. Explore the battlefield — no API key or Hub needed
+
+```bash
+uv run starbench.py --no-hub
+```
+
+The configuration menu opens. Choose a map and click **Start Game** to inspect
+the battlefield, select units, and try the controls. Offline AI slots are static:
+this preview has no automated opponent and makes no model calls.
+
+Use `1` / `2` / `3–5` to select infantry / cavalry / archers, `M` / `A` to choose
+a move / attack target, and **F1** for help.
+
+### 3. Connect your Agents for a benchmark
+
+**Terminal 1 — start the existing GameServer Hub.** Clone it alongside `star`:
+
+```bash
+git clone https://github.com/star-nexus/GameServer.git
+cd GameServer
+uv run fastapi dev gameserver/main.py
+```
+
+Keep this terminal running. **Terminal 2 — open a terminal in `star` and start ENV:**
+
+```bash
+uv run starbench.py --env-id env_1
+```
+
+In the menu, choose **Strategic Turn-Based**, the desired AI player slots, and
+**External Agent / Hub**, then click **Start Game**. For three factions, choose
+the three-faction benchmark layout. Wait for the Hub connection to be confirmed
+before connecting Agents. ENV and Agent processes use the same `env_id`;
+each Agent uses a distinct `agent_id`.
+
+**Terminal 3 — check the connection without spending model tokens:**
+
+```bash
+uv run rotk_agent/main.py \
+    --env-id env_1 --agent-id agent_1 --faction wei \
+    --provider fake --mode turn_based
+```
+
+`fake` is a scripted reference participant for checking the connection, not an
+LLM evaluation. To use real-time instead, select **Dynamic Real-Time** in the
+ENV menu and pass `--mode real_time` to every Agent. Static slots do not act until
+a controller joins.
+
+To plug in your **own Agent architecture**, use `protocol.AgentClient` and the
+[Agent–ENV protocol](docs/agent-protocol.md). You do not need to import
+`rotk_agent`, `rotk_env`, or the Rust extension. A no-LLM protocol probe is also
+available:
+
+```bash
+uv run python examples/protocol_conformance.py --faction wei --mode turn_based
+```
+
+### Optional: run the reference LLM Agents
+
+Create `.configs.toml` in `star` only when using a model provider:
 
 ```toml
 [deepseek]
@@ -174,108 +219,29 @@ base_url = "https://api.deepseek.com/chat/completions"
 max_tokens = 8192
 ```
 
-### Running a Demo (AI v.s. AI)
-
-Experience the *Romance of the Three Kingdoms* scenario directly:
-
-The project supports **three factions** (Wei, Shu, Wu). Each faction can run **multiple agents**, and each agent controls **units** in the env. The commands below start one agent per faction as an example; you can launch more agents per faction with different `--agent-id` values.
-
-First, launch the ENVs/Agents bridge
+Open one terminal in `star` for each participant. The following example connects
+one Agent per faction to a three-faction, turn-based ENV:
 
 ```bash
-cd GameServer
-uv run fastapi dev gameserver/main.py
-```
-
-> **VPN/Proxy notice:** Ensure `localhost`, `127.0.0.1`, and `::1` bypass your VPN or proxy before starting the ENV. Otherwise the ENV or Agents cannot reach the local GameServer.
->
-> On macOS this bites even with no proxy environment variables set, because the
-> websocket client reads the system proxy settings directly. The failure looks
-> unrelated to networking — the ENV exits immediately with:
->
-> ```
-> Game running error: Connection failed: python-socks is required to use a SOCKS proxy
-> Game Over
-> ```
->
-> The quickest fix is to export a bypass list for every STAR process (ENV and Agents alike):
->
-> ```bash
-> export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
-> ```
->
-> Otherwise, add the bypass rule in your VPN/proxy client, or disable it while running STAR.
-
-Second, launch the RoTK environment.
-
-```bash
-cd star
-uv run --extra native rotk_env/main.py
-```
-
-Choose `Dynamic Real-Time`, the desired player slots, and `External Agent / Hub`.
-Click `Start Game`. Static AI slots have no controller until Agents join.
-
-RoTK ENV now defaults to **Rust**, for windows, headless runs and `auto_test.py`.
-Python/Rust is an internal ENV choice: the four layers (ECS Framework,
-star-protocol, ENV and Agent), Hub, `env_id` / `agent_id`, and Agent commands
-remain the same. Explicit reference/fallback: `uv run rotk_env/main.py --backend python`.
-`--no-hub` deliberately selects offline operation. The local rule BOT remains
-Python-only (`--backend python --no-hub --mock-ai`).
-
-[ENV backend and launch contract](docs/native-hub-host.md) documents dependency
-checks, queue ownership, run manifests, and the validated scope.
-
-Next, launch LLM Agents for different factions.
-
-All agents share one entry point, `rotk_agent/main.py`. Which model API it talks
-is derived from `--provider` by the profile table in `rotk_agent/profiles.py`, so
-adding a model normally means adding a section to `.configs.toml` and nothing else.
-
-```bash
-# Launch an agent for the first faction (Wei).
+# Wei
 uv run rotk_agent/main.py \
-    --env-id env_1 \
-    --agent-id agent_1 \
-    --faction "wei" \
-    --provider deepseek \
-    --mode real_time
+    --env-id env_1 --agent-id agent_1 --faction wei \
+    --provider deepseek --mode turn_based
 
-# Launch an agent for the second faction (Shu)
+# Shu
 uv run rotk_agent/main.py \
-    --env-id env_1 \
-    --agent-id agent_2 \
-    --faction "shu" \
-    --provider deepseek \
-    --mode real_time
+    --env-id env_1 --agent-id agent_2 --faction shu \
+    --provider deepseek --mode turn_based
 
-# Launch an agent for the third faction (Wu). Requires Three Kingdoms Epic mode.
+# Wu — requires the three-faction benchmark layout
 uv run rotk_agent/main.py \
-    --env-id env_1 \
-    --agent-id agent_3 \
-    --faction "wu" \
-    --provider deepseek \
-    --mode real_time
+    --env-id env_1 --agent-id agent_3 --faction wu \
+    --provider deepseek --mode turn_based
 ```
 
-`--mode` must match how the ENV was started: `real_time` or `turn_based`.
-`./run_agent.sh ENV_ID AGENT_ID FACTION PROVIDER MODE` is a shorthand for the above.
-
-To check the wiring without spending tokens, run an agent with `--provider fake`.
-It plays a short scripted game (look, move, attack, end turn) through the real
-hub and ENV, which exercises everything except the model itself:
-
-```bash
-uv run rotk_agent/main.py --faction wei --provider fake --mode turn_based
-```
-
-To plug in a **custom architecture**, implement the
-[Agent–ENV protocol](docs/agent-protocol.md) with `protocol.AgentClient` only
-(no `rotk_agent` / `rotk_env` imports). A no-LLM MUST-sequence probe:
-
-```bash
-uv run python examples/protocol_conformance.py --faction wei --mode turn_based
-```
+You can connect multiple Agents per faction using unique `--agent-id` values.
+All reference Agents share `rotk_agent/main.py`; `--provider` selects their model
+profile. `./run_agent.sh ENV_ID AGENT_ID FACTION PROVIDER MODE` remains available.
 
 #### Controlling reasoning
 
@@ -319,6 +285,61 @@ inherits = "deepseek-v4-flash"
 enable_thinking = false
 ```
 
+### Common ENV commands
+
+| Goal | Command |
+| --- | --- |
+| Open the configuration menu | `uv run starbench.py` |
+| Explore offline | `uv run starbench.py --no-hub` |
+| Run a connected, three-faction real-time ENV without a window | `uv run starbench.py --headless --players three_kingdoms --mode real_time --env-id env_1` |
+| Use the Python reference implementation | `uv run starbench.py --backend python` |
+| Show startup help | `uv run starbench.py --help` |
+
+Window and headless ENV launchers, and `auto_test.py`, default to **Rust**.
+`--headless` removes the window; `--no-hub` explicitly disables networking.
+The launcher selects dependencies internally. GameServer, star-protocol,
+`env_id` / `agent_id`, and participants' Agent commands remain unchanged.
+
+Further ENV options and the explicit Python-only local BOT demo are documented
+in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and
+`run_headless_env.sh` remain supported.
+
+<details>
+<summary>Advanced ENV settings and developer entry point</summary>
+
+The default worker count is 1. To enable eligible internal parallel tasks, use
+`uv run starbench.py --native-threads 4`; this does not run every System in parallel.
+`--native-scheduling threaded` is the default authority/display scheduling policy.
+
+The original developer entry point remains available:
+`uv run --extra native rotk_env/main.py`. The `native` extra belongs only to ENV;
+Agent and protocol SDK dependencies stay independent. Missing or mismatched Rust
+extensions fail explicitly rather than silently changing the backend.
+
+See [ENV backend and launch contract](docs/native-hub-host.md) for version checks,
+queue ownership, run manifests, and the validated scope.
+
+</details>
+
+<details>
+<summary>Troubleshooting: the local Hub cannot be reached</summary>
+
+Ensure GameServer is running and ENV and Agents use the same Hub URL. The default
+is `ws://localhost:8000/ws/metaverse`; use `--hub-url` or `STAR_HUB_URL` for a remote Hub.
+
+If you use a VPN/proxy, allow `localhost`, `127.0.0.1`, and `::1` to bypass it.
+On macOS, the WebSocket client also reads system proxy settings. An error such as
+`python-socks is required to use a SOCKS proxy` can indicate this configuration.
+For macOS/Linux, set the following in each ENV/Agent terminal before launching:
+
+```bash
+export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
+```
+
+You can also configure local bypass rules in your VPN/proxy application.
+
+</details>
+
 ### Running Agent Evaluation in Batch
 
 If you want to evaluate agents in batch, you can run the headless evaluation mode:
@@ -331,7 +352,7 @@ glm_46,deepseek
 ```
 
 Then, start the script to launch the evaluation in batch. It defaults to Rust ENV
-(native1, threaded authority), loads the ENV native extra, and waits for both world
+(native1, threaded authority), prepares ENV dependencies automatically, and waits for both world
 initialization and Hub confirmation before launching Agents. Use `--backend python`
 for the reference path; `--native-threads 1|2|4` and
 `--native-scheduling threaded|serial` are forwarded to each ENV.

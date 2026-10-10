@@ -6,21 +6,22 @@ STAR 仍严格分为 **ECS Framework、star-protocol、STARBench ENV、Agent**�
 
 ## 启动
 
-先按根 README 启动现有 Hub。首次构建 native extra 需要 Rust 工具链和 Python 3.13；缺失/规则/API/宿主能力不匹配会明确失败，不静默回退。
+先按根 README 启动现有 Hub。统一启动器自动准备 ENV 依赖；首次源码构建需要 Rust 工具链，uv 管理 Python 3.13。缺失/规则/API/宿主能力不匹配会明确失败，不静默回退。
 
 ```bash
-uv sync --extra native
-uv run --extra native rotk_env/main.py
+uv run starbench.py
 # 菜单选择 External Agent / Hub
 
 ./run_headless_env.sh --players three_kingdoms --mode real_time
 uv run python auto_test.py --mode real_time --players ai_vs_ai --list provider.txt
 
 # 显式 Python 对照或离线 BOT
-uv run rotk_env/main.py --backend python --no-hub --mock-ai --skip-start
+uv run starbench.py --backend python --no-hub --mock-ai --skip-start
 ```
 
 Hub 地址、Agent 启动及身份方式沿用原设置；`--no-hub` 只表示明确离线。Rust 的 External Agent / Hub 已开放，本地 BOT 与 scale-harness 暂仍需 Python。静态 AI 槽不会自行行动。
+
+`starbench.py` 是纯标准库启动器（PEP 723 无依赖脚本），帮助不加载 pygame 或 Rust。它在仓库根目录调用原 ENV 入口，Rust 时由内部 `uv run --extra native` 准备扩展，显式 Python 时不请求 native extra；参数、退出状态和 ENV 默认配置保持。POSIX 用 exec 保留信号语义，Windows 用子进程路径。原 ENV/Shell 入口继续支持；构建排障时可显式使用 `uv sync --extra native`。
 
 native 默认 1 线程，`--native-threads 2|4` 可选。`--native-scheduling threaded` 默认采用独立固定时钟；serial 保留帧驱动，但联网请求仍进入同一个权威执行器。
 

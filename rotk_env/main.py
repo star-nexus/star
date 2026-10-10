@@ -67,7 +67,7 @@ Victory Conditions:
     parser.add_argument("--backend", choices=("python", "rust"), default="rust",
                         help="ENV simulation backend (default: rust). Python remains an explicit reference/fallback.")
     parser.add_argument("--native-threads", type=int, choices=(1, 2, 4), default=1,
-                        help="Native worker setting (currently serial; no parallel speedup claim).")
+                        help="Rust worker count (default: 1). 2/4 enables eligible internal tasks; Systems retain their defined order.")
     parser.add_argument("--native-scheduling", choices=("threaded", "serial"), default="threaded",
                         help="Rust authority scheduling; serial keeps the frame-driven fallback.")
     parser.add_argument('--runtime-manifest', default=None,

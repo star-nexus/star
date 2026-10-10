@@ -6,23 +6,33 @@ STAR 的 **ENV** 层：六边形 ECS 战场、动作网关、观测与结算。�
 
 ## 入口
 
-先启动现有 Hub（见根 README），Rust 工具链与 Python 3.13 需要可用：
+推荐统一入口 `uv run starbench.py`，自动准备所选 ENV 的依赖。首次从源码构建需要 Rust 工具链；uv 管理 Python 3.13。联网评测先启动现有 Hub（见根 README）；离线预览无需 Hub 或模型密钥。
+
+```bash
+# 第一次体验：离线查看战场，AI 槽静止，没有自动对手
+uv run starbench.py --no-hub
+
+# 简短启动帮助，无需构建 Rust
+uv run starbench.py --help
+```
+
+其他运行方式：
 
 ```bash
 # 默认 Rust：窗口菜单，选择 External Agent / Hub 后开始
-uv run --extra native rotk_env/main.py
+uv run starbench.py
 
 # 跳过菜单：联网三阵营评测
-uv run --extra native rotk_env/main.py --skip-start --players three_kingdoms --mode real_time
+uv run starbench.py --skip-start --players three_kingdoms --mode real_time
 
 # 无窗口联网评测；auto_test.py 也默认 Rust
-./run_headless_env.sh --players three_kingdoms --mode real_time
+uv run starbench.py --headless --players three_kingdoms --mode real_time
 
 # 明确离线（静态 AI 槽没有控制器）
-uv run --extra native rotk_env/main.py --headless --no-hub --players ai_vs_ai
+uv run starbench.py --headless --no-hub --players ai_vs_ai
 
 # Python 对照 / 回退；本地规则 BOT 暂只在 Python 下可用
-uv run rotk_env/main.py --backend python --skip-start --no-hub --mock-ai --players human_vs_two_ai
+uv run starbench.py --backend python --skip-start --no-hub --mock-ai --players human_vs_two_ai
 ```
 
 `--headless` 只关窗口；`--no-hub` 才关闭联网。Hub 地址继续采用 `--hub-url`、`$STAR_HUB_URL`、`ws://localhost:8000/ws/metaverse` 的原有优先顺序。Rust 扩展缺失、oracle/API 或宿主能力不匹配会明确报错，不自动换成 Python。
@@ -40,6 +50,8 @@ uv run rotk_env/main.py --backend python --skip-start --no-hub --mock-ai --playe
 | `--runtime-manifest PATH` | 本地运行清单；不增加协议字段 |
 
 快捷键：`1` 步兵、`2` 骑兵、`3/4/5` 三名弓兵；`M/A` 移动/攻击；`W/G/C/F` 等待/驻防/占领/筑垒；方向键及 `+/-` 镜头；`Shift+1` 迷雾，`Shift+2/3/4` 阵营视角；F1 帮助，Esc 先取消目标再取消选择。
+
+`starbench.py` 只负责选择依赖并把 ENV 参数原样交给原入口，不接管协议、Hub、Agent 或游戏调度。原 `run_env.sh` / `run_headless_env.sh` 仍可用；开发者也可直接使用 `uv run --extra native rotk_env/main.py`。完整 ENV 参数见 `uv run --extra native rotk_env/main.py --help`。
 
 实现与有限联网验收见 [Rust ENV 宿主](../docs/native-hub-host.md)。
 
