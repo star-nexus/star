@@ -16,11 +16,13 @@ from rotk_env.tests.test_native_request_batch import frozen
 
 @pytest.mark.parametrize('threads', [1, 4])
 @pytest.mark.parametrize('display', ['none', 'dummy', 'window'])
-@pytest.mark.parametrize('variant', ['normal', 'holes', 'sparse', 'empty', 'missing', 'paused', 'game_over'])
+@pytest.mark.parametrize('variant', ['normal', 'one_hole', 'holes', 'sparse', 'empty', 'missing', 'paused', 'game_over'])
 def test_paths_wire_full_state_and_modes(threads, display, variant):
     world, ids = make_world(display, {(0, 1): TerrainType.FOREST, (1, 0): TerrainType.WATER})
     initial = export_initial_state(world, display=display);world.reset()
-    if variant == 'holes':
+    if variant == 'one_hole':
+        initial['singletons']['MapData']['tiles']['$map'] = [p for p in initial['singletons']['MapData']['tiles']['$map'] if p[0] != [0, 0]]
+    elif variant == 'holes':
         initial['singletons']['MapData']['tiles']['$map'] = initial['singletons']['MapData']['tiles']['$map'][::2]
     elif variant == 'sparse':
         pairs = initial['singletons']['MapData']['tiles']['$map']
@@ -38,7 +40,8 @@ def test_paths_wire_full_state_and_modes(threads, display, variant):
         a._set_map_lookup_mode('baseline')
         layout = json.loads(b._map_lookup_diagnostics_json())
         assert layout['requested'] is True
-        assert layout['active'] is (variant not in ('sparse', 'empty'))
+        # The half-removed fixture has 19 cells / 42 bbox slots and must fall back.
+        assert layout['active'] is (variant not in ('holes', 'sparse', 'empty'))
         before = b.export_state_json();b._set_map_lookup_mode('dense_tile')
         assert b.export_state_json() == before == a.export_state_json()
         ops = [dict(kind='reachable', unit_id=i) for i in ids]
@@ -80,7 +83,7 @@ def test_default_public_requests_and_batch_match_explicit_baseline(threads, froz
     with RustRuntime(initial, threads=threads) as baseline, RustRuntime(initial, threads=threads) as candidate:
         baseline._native._set_map_lookup_mode('baseline')
         assert json.loads(candidate._native._map_lookup_diagnostics_json())['active'] is True
-        registration = dict(faction='wei', provider='synthetic', model_id='fake')
+        registration = dict(faction='wei', provider='synthetic', model_id='fake', base_url='https://host/v1/')
         for runtime in (baseline, candidate):
             result = runtime.execute_action('register_agent_info', registration, agent_id='alpha',
                 wall_time=frozen[0], registration_time='2026-09-12T12:00:00')
