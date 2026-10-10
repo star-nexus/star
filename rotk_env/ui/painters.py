@@ -127,13 +127,16 @@ def render_actions(panel, ctx):
             ctx.text('Choose a unit or a target.', (rect.x+10, rect.y+44), size=16, color=MUTED, max_width=rect.w-20)
             return
         for action, button in zip(panel.available_actions, action_rects(panel, ctx)):
-            RMS.rect((39, 56, 68) if action.enabled else BACKGROUND, button)
-            RMS.rect(BORDER, button, 1)
-            color = TEXT if action.enabled else MUTED
-            ctx.text(action.label, (button.x+8, button.y+4), size=18, color=color)
             key = action_hotkey(action.action_type.value)
-            ctx.text(f'[{key}]', (button.right-33, button.y+4), size=16, color=ACCENT if action.enabled else MUTED)
-            ctx.text(action.cost_description, (button.x+8, button.y+20), size=14, color=MUTED, max_width=button.w-16)
+            visual_key = ('action', action.label, action.cost_description, key,
+                          action.enabled, id(ctx.font(18)), id(ctx.font(16)), id(ctx.font(14)))
+            def paint(surface):
+                surface.fill((39,56,68) if action.enabled else BACKGROUND)
+                pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+                surface.blit(ctx.text_surface(action.label, size=18, color=TEXT if action.enabled else MUTED), (8,4))
+                surface.blit(ctx.text_surface(f'[{key}]', size=16, color=ACCENT if action.enabled else MUTED), (button.w-33,4))
+                surface.blit(ctx.text_surface(action.cost_description, size=14, color=MUTED, max_width=button.w-16), (8,20))
+            RMS.draw(ctx.widget_surface(visual_key, button.size, paint), button.topleft)
 
 
 def render_modal(system, ctx):

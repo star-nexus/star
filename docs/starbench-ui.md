@@ -39,7 +39,8 @@ from the same binding table as input and action-button hints.
 
 A scene-owned `UiContext` supplies layout, theme, input ownership and bounded
 pygame caches. It lives outside authority/schema. Tactical surfaces use SRCALPHA
-and are bounded to 128 entries and 32 MiB; text to 1024 entries and 8 MiB. Exit
+and are bounded to 128 entries and 32 MiB; text to 1024 entries and 8 MiB. Static panels and action rows use a separate
+128-entry / 8 MiB cache keyed only by their visual content. Exit
 releases these caches. Render commands snapshot nested clipping, keep painter
 order and batch only adjacent blits with identical clips. SDL, fonts, painting
 and screenshots run on the display thread; Rust's single authority owner and

@@ -59,6 +59,8 @@ class UiContext:
         self._fonts = {}
         self._text = OrderedDict()
         self._surfaces = OrderedDict()
+        self._widgets = OrderedDict()
+        self._widget_bytes = 0
         self._surface_bytes = 0
         self._text_bytes = 0
         self.closed = False
@@ -140,7 +142,7 @@ class UiContext:
             self._fonts[px] = pygame.font.Font(None, px)
         return self._fonts[px]
 
-    def text(self, text, pos, *, size=18, color=TEXT, max_width=None, centered=False):
+    def text_surface(self, text, *, size=18, color=TEXT, max_width=None):
         text = str(text)
         font = self.font(size)
         if max_width is not None and font.size(text)[0] > max_width:
@@ -159,6 +161,10 @@ class UiContext:
                 self._text_bytes -= discarded.get_pitch()*discarded.get_height()
         else:
             self._text.move_to_end(key)
+        return surface
+
+    def text(self, text, pos, *, size=18, color=TEXT, max_width=None, centered=False):
+        surface = self.text_surface(text, size=size, color=color, max_width=max_width)
         if centered:
             pos = (pos[0]-surface.get_width()//2, pos[1])
         RMS.draw(surface, pos)
@@ -201,9 +207,31 @@ class UiContext:
                 self._surface_bytes -= discarded.get_pitch()*discarded.get_height()
         return surface
 
+    def widget_surface(self, key, size, paint):
+        """Immutable paint fragments; keys contain only visual facts, not ECS refs."""
+        key = (key, tuple(size))
+        surface = self._widgets.get(key)
+        if surface is not None:
+            self._widgets.move_to_end(key)
+            return surface
+        surface = pygame.Surface(size)
+        paint(surface)
+        cost = surface.get_pitch()*surface.get_height()
+        if cost <= 8*1024*1024:
+            self._widgets[key] = surface
+            self._widget_bytes += cost
+            while len(self._widgets) > 128 or self._widget_bytes > 8*1024*1024:
+                _, discarded = self._widgets.popitem(last=False)
+                self._widget_bytes -= discarded.get_pitch()*discarded.get_height()
+        return surface
+
     def panel(self, rect, title=None):
-        RMS.rect(PANEL, rect)
-        RMS.rect(BORDER, rect, 1)
+        if rect.w <= 0 or rect.h <= 0:
+            return
+        def paint(surface):
+            surface.fill(PANEL)
+            pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+        RMS.draw(self.widget_surface('panel', rect.size, paint), rect.topleft)
         if title:
             self.text(title, (rect.x+10, rect.y+8), color=ACCENT, size=20)
 
@@ -239,7 +267,8 @@ class UiContext:
 
     def cache_stats(self):
         return dict(tactical_entries=len(self._surfaces), tactical_bytes=self._surface_bytes,
-                    text_entries=len(self._text), text_bytes=self._text_bytes)
+                    text_entries=len(self._text), text_bytes=self._text_bytes,
+                    widget_entries=len(self._widgets), widget_bytes=self._widget_bytes)
 
     def unbind(self):
         for system, original in self._bound:
@@ -250,6 +279,8 @@ class UiContext:
     def close(self):
         self.unbind()
         self._surfaces.clear()
+        self._widgets.clear()
+        self._widget_bytes = 0
         self._text.clear()
         self._fonts.clear()
         self._surface_bytes = self._text_bytes = 0

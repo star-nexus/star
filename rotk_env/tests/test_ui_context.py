@@ -131,3 +131,34 @@ def test_minimap_inverse_matches_terrain_world_projection(context):
         x,y = system.hex_converter.hex_to_pixel(*pos)
         rel=((x-b['min_x'])/(b['max_x']-b['min_x']), (y-b['min_y'])/(b['max_y']-b['min_y']))
         assert system._minimap_to_world_pos(rel) == pos
+
+
+def test_widget_cache_reuses_only_identical_visual_content_and_is_bounded(context):
+    count=[]
+    def paint(surface):
+        count.append(1); surface.fill('red')
+    first=context.widget_surface(('action','Wait'),(200,32),paint)
+    assert context.widget_surface(('action','Wait'),(200,32),paint) is first
+    assert len(count)==1
+    assert context.widget_surface(('action','Attack'),(200,32),paint) is not first
+    for n in range(150):context.widget_surface(('test',n),(200,32),paint)
+    assert context.cache_stats()['widget_entries']<=128
+    assert context.cache_stats()['widget_bytes']<=8*1024*1024
+    context.close();assert context.cache_stats()['widget_bytes']==0
+
+
+def test_python_pure_paint_preserves_full_authority_export(context):
+    from rotk_env.prefabs.world_builder import build_skirmish_world
+    from rotk_env.runtime.bootstrap import export_initial_state
+    w=build_skirmish_world(display='window',scenario='river_split',seed=42,hub_url=None,ui_context=context)
+    try:
+        RMS.screen=pygame.display.get_surface()
+        w.get_singleton_component(c.UIState).selected_unit=next(iter(w.query().with_component(c.Unit).ordered_entities()))
+        before=export_initial_state(w,display='window')
+        for system in w.systems:
+            if type(system).__name__ in ('MapRenderSystem','UnitRenderSystem','EffectRenderSystem','PanelRenderSystem','UIRenderSystem','MiniMapSystem','UnitActionButtonSystem','UIButtonSystem'):
+                system.update(0)
+        RMS.update()
+        assert before==export_initial_state(w,display='window')
+    finally:
+        context.close();w.reset()
