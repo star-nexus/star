@@ -60,6 +60,9 @@ class MiniMapSystem(System):
         if not minimap or not minimap.visible:
             return
 
+        ctx = getattr(self.world, "_ui_context", None)
+        if ctx:
+            minimap.width, minimap.height = ctx.layout.minimap.w, ctx.layout.minimap.h-22
         self._render_minimap(minimap)
 
     def _render_minimap(self, minimap: MiniMap):
@@ -140,6 +143,10 @@ class MiniMapSystem(System):
 
     def _get_screen_rect(self, minimap: MiniMap) -> Tuple[int, int, int, int]:
         """Get the minimap's screen rectangle."""
+        ctx = getattr(self.world, "_ui_context", None)
+        if ctx:
+            rect = ctx.layout.minimap
+            return (rect.x, rect.y+22, rect.w, rect.h-22)
         x, y = minimap.position
         # Position minimap in the top-right corner
         rect_x = GameConfig.WINDOW_WIDTH - minimap.width - x
@@ -266,16 +273,10 @@ class MiniMapSystem(System):
         # Compute the region currently visible by the camera in world coordinates
         camera_offset = camera.get_offset()
 
-        screen_width = GameConfig.WINDOW_WIDTH
-        screen_height = GameConfig.WINDOW_HEIGHT
-
-        # Four corners of the camera viewport (world coordinates)
-        viewport_corners = [
-            (-camera_offset[0], -camera_offset[1]),                              # top-left
-            (-camera_offset[0] + screen_width, -camera_offset[1]),               # top-right
-            (-camera_offset[0], -camera_offset[1] + screen_height),              # bottom-left
-            (-camera_offset[0] + screen_width, -camera_offset[1] + screen_height),  # bottom-right
-        ]
+        from ..ui.context import viewport_for
+        view = viewport_for(self.world)
+        viewport_corners = [((x-camera_offset[0])/camera.zoom, (y-camera_offset[1])/camera.zoom)
+                            for x, y in (view.topleft, view.topright, view.bottomleft, view.bottomright)]
 
         # Ensure world bounds have been computed
         if not hasattr(self, "_world_bounds"):
@@ -325,6 +326,10 @@ class MiniMapSystem(System):
         if not minimap or not minimap.visible or not minimap.clickable:
             return False
 
+        ctx = getattr(self.world, "_ui_context", None)
+        if ctx and (ctx.modal_visible(self.world) or not ctx.layout.content.collidepoint(mouse_pos)):
+            return False
+
         # Check if click landed on the minimap area
         if not self._is_point_inside(minimap, mouse_pos):
             return False
@@ -368,8 +373,16 @@ class MiniMapSystem(System):
     ) -> Optional[Tuple[int, int]]:
         """Convert minimap-relative coordinates to world hex coordinates."""
         map_data = self.world.get_singleton_component(MapData)
-        if not map_data:
+        if not map_data or not map_data.tiles:
             return None
+
+        if getattr(self.world, '_ui_context', None):
+            if not hasattr(self, '_world_bounds'):
+                self._calculate_world_bounds(map_data)
+            b = self._world_bounds
+            wx = b['min_x']+rel_pos[0]*(b['max_x']-b['min_x'])
+            wy = b['min_y']+rel_pos[1]*(b['max_y']-b['min_y'])
+            return self.hex_converter.pixel_to_hex(wx, wy)
 
         # Compute tile coordinate bounds
         min_q = min(coord[0] for coord in map_data.tiles.keys())
@@ -396,13 +409,17 @@ class MiniMapSystem(System):
         world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
 
         # Set camera offset to center the target position on screen
-        camera_x = GameConfig.WINDOW_WIDTH // 2 - world_x
-        camera_y = GameConfig.WINDOW_HEIGHT // 2 - world_y
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world)
+        camera_x = viewport.centerx - world_x*camera.zoom
+        camera_y = viewport.centery - world_y*camera.zoom
 
         camera.set_offset(camera_x, camera_y)
 
     def _handle_mouse_click(self, event: MouseButtonDownEvent):
-        """Handle minimap mouse click event."""
+        """Legacy standalone route; shared window input routes it exactly once."""
+        if getattr(self.world, "_ui_context", None):
+            return
         minimap = self.world.get_singleton_component(MiniMap)
         if not minimap or not minimap.visible:
             return

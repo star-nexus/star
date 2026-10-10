@@ -268,7 +268,9 @@ class MapRenderSystem(System):
         keeps culling independent of offset-grid orientation details.
         """
         current_camera_pos = (camera_offset[0], camera_offset[1])
-        viewport_size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world)
+        viewport_size = tuple(viewport)
 
         # Reuse cache if camera, zoom, and viewport haven't meaningfully changed.
         if (
@@ -289,10 +291,10 @@ class MapRenderSystem(System):
         # screen pixels, so divide it by zoom together with the viewport.
         margin = GameConfig.HEX_SIZE * 2
         screen_bounds = {
-            "left": (-camera_offset[0] - margin) / zoom,
-            "right": (GameConfig.WINDOW_WIDTH - camera_offset[0] + margin) / zoom,
-            "top": (-camera_offset[1] - margin) / zoom,
-            "bottom": (GameConfig.WINDOW_HEIGHT - camera_offset[1] + margin) / zoom,
+            "left": (viewport.left-camera_offset[0]-margin) / zoom,
+            "right": (viewport.right-camera_offset[0]+margin) / zoom,
+            "top": (viewport.top-camera_offset[1]-margin) / zoom,
+            "bottom": (viewport.bottom-camera_offset[1]+margin) / zoom,
         }
 
         visible_tiles: Set[Tuple[int, int]] = set()

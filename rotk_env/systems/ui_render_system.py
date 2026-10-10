@@ -49,7 +49,12 @@ class UIRenderSystem(System):
 
     def update(self, delta_time: float) -> None:
         """Update UI rendering"""
-        self._render_ui()
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.painters import render_shell
+            render_shell(self, ctx)
+        else:
+            self._render_ui()
 
     def _render_ui(self):
         """Render UI interface"""

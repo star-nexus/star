@@ -14,13 +14,20 @@ from framework.ecs import profiling
 
 class NativeSession:
     def __init__(self, *, display="none", threads=1, on_events=None,
-                 authority_scheduling=True, **scene_options):
+                 authority_scheduling=True, ui_context=None, **scene_options):
         self.runtime = None
         self.world = None
         self.closed = False
         self.failure = None
+        self.ui_context = None
+        if display == "window":
+            from ..ui.context import UiContext
+            self.ui_context = ui_context or UiContext(backend="rust", controller="none")
+            scene_options['ui_context'] = self.ui_context
         try:
             self.world, initial = prepare_display_world(display=display, **scene_options)
+            if self.ui_context:
+                self.ui_context.unbind()
             self.runtime = RustRuntime(initial, threads=threads)
             self.presentation = WorldPresentation(self.world)
             if authority_scheduling:
@@ -38,6 +45,7 @@ class NativeSession:
                 from rotk_env.systems.window_minimap_system import MiniMapSystem
 
                 attach_battlefield_renderers(self.presentation)
+                self.ui_context.attach(self.world)
                 for system in (InputHandlingSystem(self.controls), UnitActionButtonSystem(self.controls),
                                UIButtonSystem(self.controls), PanelRenderSystem(), UIRenderSystem(), MiniMapSystem()):
                     self._mount(system)
@@ -93,7 +101,13 @@ class NativeSession:
             self.world.bump_revision()
             for system in self.world.systems:
                 is_input = getattr(system, "controls", None) is self.controls
-                if system.enabled and (inputs if is_input else rendering):
+                if system.enabled and is_input and hasattr(system, 'render_only'):
+                    if inputs:
+                        system.update_control_state(dt)
+                    if rendering:
+                        with profiling.profiler.time_system(type(system).__name__):
+                            system.render_only(dt)
+                elif system.enabled and (inputs if is_input else rendering):
                     with profiling.profiler.time_system(type(system).__name__):
                         system.update(dt)
             self._check_open()
@@ -106,6 +120,8 @@ class NativeSession:
         # A partial subscription failure otherwise escapes World.reset cleanup.
         try:
             self.world.add_system(system)
+            if self.ui_context:
+                self.ui_context.bind(system)
         except BaseException:
             cleanup = getattr(system, "cleanup", None)
             if cleanup is not None:
@@ -138,6 +154,8 @@ class NativeSession:
             if self.runtime is not None:
                 self.runtime.close()
         finally:
+            if self.ui_context is not None:
+                self.ui_context.close()
             if self.world is not None:
                 self.world.reset()
 

@@ -244,6 +244,8 @@ class EffectRenderSystem(FastEffectRenderSystem):
             overlay, radius = self._movement_overlay(zoom)
 
         margin = radius + 2
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world).inflate(margin*2, margin*2)
         submitted = 0
         with profiling.profiler.time_system(
             "effect_movement_overlay_submit", category="render"
@@ -254,10 +256,7 @@ class EffectRenderSystem(FastEffectRenderSystem):
                 world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
                 screen_x = world_x * zoom + camera_offset[0]
                 screen_y = world_y * zoom + camera_offset[1]
-                if not (
-                    -margin <= screen_x <= GameConfig.WINDOW_WIDTH + margin
-                    and -margin <= screen_y <= GameConfig.WINDOW_HEIGHT + margin
-                ):
+                if not viewport.collidepoint(screen_x, screen_y):
                     continue
                 RMS.draw(
                     overlay,

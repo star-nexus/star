@@ -29,3 +29,15 @@ def test_input_update_pumps_once_then_drains_without_second_pump(monkeypatch):
     system.update()
 
     assert calls == ["pump", ("get", False)]
+
+
+def test_key_event_preserves_sdl_modifier_snapshot(monkeypatch):
+    system = _bare_input_system()
+    received = []
+    event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_1, mod=pygame.KMOD_SHIFT)
+    monkeypatch.setattr(pygame.event, 'pump', lambda: None)
+    monkeypatch.setattr(pygame.event, 'get', lambda **kwargs: [event])
+    monkeypatch.setattr(system, '_publisher', received.append)
+    system.update()
+    assert received[0].key == pygame.K_1
+    assert received[0].mod == pygame.KMOD_SHIFT

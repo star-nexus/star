@@ -8,7 +8,7 @@ import pygame
 from typing import Tuple, Optional
 from framework import System, World
 from framework.ecs import profiling
-from framework.engine import QuitEvent, KeyDownEvent, MouseButtonDownEvent, MouseMotionEvent
+from framework.engine import QuitEvent, KeyDownEvent, MouseButtonDownEvent, MouseMotionEvent, MouseWheelEvent
 from framework.engine.events import EBS
 
 from ..components import (
@@ -80,11 +80,19 @@ class InputHandlingSystem(System):
         world_h = max(ys) - min(ys) + pad * 2
         if world_w <= 0 or world_h <= 0:
             return 1.0
-        zx = GameConfig.WINDOW_WIDTH / world_w
-        zy = GameConfig.WINDOW_HEIGHT / world_h
+        from ..ui.context import viewport_for
+        view = viewport_for(self.world)
+        zx = view.w / world_w
+        zy = view.h / world_h
         return max(0.15, min(1.0, min(zx, zy) * 0.92))
 
     def _follow_window_resize(self) -> None:
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            ctx.sync(self.world)
+            self.min_zoom = min(0.5, max(0.15, self._zoom_to_fit_map(self.world.get_singleton_component(MapData)) * .75))
+            self._window_size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
+            return
         size = (GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT)
         if self._window_size is None:
             self._window_size = size
@@ -106,10 +114,12 @@ class InputHandlingSystem(System):
         """Subscribe input events to handlers."""
         EBS.subscribe(KeyDownEvent, self._handle_key_down)
         EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_click)
+        EBS.subscribe(MouseWheelEvent, self._handle_mouse_wheel)
 
     def cleanup(self) -> None:
         EBS.unsubscribe(KeyDownEvent, self._handle_key_down)
         EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_click)
+        EBS.unsubscribe(MouseWheelEvent, self._handle_mouse_wheel)
 
     def update(self, delta_time: float) -> None:
         """Process input per frame (mouse position, hover tile, held keys)."""
@@ -131,7 +141,8 @@ class InputHandlingSystem(System):
         # If not over UI, update map hover
         # if not mouse_over_ui:
         hex_pos = self._screen_to_hex(mouse_pos)
-        ui_state.hovered_tile = hex_pos
+        ctx = getattr(self.world, "_ui_context", None)
+        ui_state.hovered_tile = None if ctx and ctx.owns(mouse_pos, self.world) else hex_pos
         # else:
         #     # Over UI: clear map hover
         #     ui_state.hovered_tile = None
@@ -236,12 +247,82 @@ class InputHandlingSystem(System):
         """Handle key down (edge-triggered actions from the shared keymap)."""
         if self.world is None or self.world.get_singleton_component(UIState) is None:
             return
-        binding = binding_for_key(event.key)
+        ctx = getattr(self.world, '_ui_context', None)
+        ui = self.world.get_singleton_component(UIState)
+        if ctx and ctx.modal_visible(self.world) and event.key not in (pygame.K_F1, pygame.K_TAB, pygame.K_ESCAPE):
+            return
+        binding = binding_for_key(event.key, getattr(event, 'mod', 0))
         if binding is None:
             return
         handler = getattr(self, f"_action_{binding.action}", None)
         if handler is not None:
             handler()
+
+    def _handle_mouse_wheel(self, event):
+        ctx = getattr(self.world, '_ui_context', None)
+        pos = getattr(event, 'pos', pygame.mouse.get_pos())
+        if ctx and ctx.scroll_at(pos, event.y, self.world):
+            return
+        camera = self.world.get_singleton_component(Camera)
+        if camera:
+            old = camera.zoom
+            new = min(self.max_zoom, max(self.min_zoom, old*(1.12**event.y)))
+            wx, wy = (pos[0]-camera.offset_x)/old, (pos[1]-camera.offset_y)/old
+            camera.zoom = new
+            camera.set_offset(pos[0]-wx*new, pos[1]-wy*new)
+
+    def _select_slot(self, kind, slot=0):
+        from ..components import UnitCount
+        candidates = []
+        for entity in self.world.query().with_all(Unit, UnitCount).ordered_entities():
+            unit = self.world.get_component(entity, Unit)
+            count = self.world.get_component(entity, UnitCount)
+            if unit and count and unit.unit_type.value == kind and count.current_count > 0 and self._should_select_unit(entity):
+                candidates.append(entity)
+        if slot < len(candidates):
+            self.world.get_singleton_component(UIState).selected_unit = sorted(candidates)[slot]
+            cancel = getattr(self, 'cancel_targeting', None)
+            if cancel:
+                cancel(refresh_panel=True)
+            EBS.publish(UnitSelectedEvent(sorted(candidates)[slot]))
+
+    def _action_select_infantry(self):
+        self._select_slot('infantry')
+
+    def _action_select_cavalry(self):
+        self._select_slot('cavalry')
+
+    def _action_select_archer_1(self):
+        self._select_slot('archer', 0)
+
+    def _action_select_archer_2(self):
+        self._select_slot('archer', 1)
+
+    def _action_select_archer_3(self):
+        self._select_slot('archer', 2)
+
+    def _unit_hotkey(self, key):
+        system = self._get_action_button_system()
+        if system:
+            system.trigger_hotkey(key)
+
+    def _action_unit_move(self):
+        self._unit_hotkey('M')
+
+    def _action_unit_attack(self):
+        self._unit_hotkey('A')
+
+    def _action_unit_wait(self):
+        self._unit_hotkey('W')
+
+    def _action_unit_garrison(self):
+        self._unit_hotkey('G')
+
+    def _action_unit_capture(self):
+        self._unit_hotkey('C')
+
+    def _action_unit_fortify(self):
+        self._unit_hotkey('F')
 
     def _action_end_turn(self):
         print("End current turn")
@@ -265,7 +346,17 @@ class InputHandlingSystem(System):
         ui_state = self.world.get_singleton_component(UIState)
         if not ui_state:
             return
-        print("Clear selection")
+        from ..components.unit_action_buttons import ActionConfirmDialog
+        confirm = self.world.get_singleton_component(ActionConfirmDialog)
+        if confirm and confirm.visible:
+            confirm.hide()
+            return
+        if ui_state.show_help or ui_state.show_stats:
+            ui_state.show_help = ui_state.show_stats = False
+            return
+        if getattr(self, '_targeting_action', None):
+            self.cancel_targeting(refresh_panel=True)
+            return
         ui_state.selected_unit = None
 
     def _action_battle_log_up(self):
@@ -336,21 +427,31 @@ class InputHandlingSystem(System):
         if not camera:
             return
 
+        ctx = getattr(self.world, "_ui_context", None)
+        if ctx and ctx.modal_visible(self.world):
+            return
+
         # Camera movement
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+        if keys[pygame.K_UP]:
             camera.move(0, camera.speed * delta_time)
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if keys[pygame.K_DOWN]:
             camera.move(0, -camera.speed * delta_time)
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        if keys[pygame.K_LEFT]:
             camera.move(camera.speed * delta_time, 0)
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if keys[pygame.K_RIGHT]:
             camera.move(-camera.speed * delta_time, 0)
 
-        # Camera zoom
+        # Keep the viewport centre over the same world point during keyboard zoom.
+        from ..ui.context import viewport_for
+        center = viewport_for(self.world).center
+        old_zoom = camera.zoom
         if keys[pygame.K_PLUS] or keys[pygame.K_EQUALS]:  # plus: zoom in
             camera.zoom = min(camera.zoom + 2.0 * delta_time, self.max_zoom)
         if keys[pygame.K_MINUS]:  # minus: zoom out
             camera.zoom = max(camera.zoom - 2.0 * delta_time, self.min_zoom)
+        if camera.zoom != old_zoom:
+            camera.offset_x = center[0]-(center[0]-camera.offset_x)*camera.zoom/old_zoom
+            camera.offset_y = center[1]-(center[1]-camera.offset_y)*camera.zoom/old_zoom
 
     def _screen_to_hex(self, screen_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """Convert screen coordinates to hex (high-precision)."""
@@ -378,8 +479,8 @@ class InputHandlingSystem(System):
 
         camera_offset = camera.get_offset()
         world_x, world_y = self.hex_converter.hex_to_pixel(*hex_pos)
-        screen_x = world_x + camera_offset[0]
-        screen_y = world_y + camera_offset[1]
+        screen_x = world_x*camera.zoom + camera_offset[0]
+        screen_y = world_y*camera.zoom + camera_offset[1]
         return screen_x, screen_y
 
     def _get_unit_at_position(self, hex_pos: Tuple[int, int]) -> Optional[int]:

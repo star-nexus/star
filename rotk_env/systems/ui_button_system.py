@@ -58,6 +58,29 @@ class UIButtonSystem(System):
         collection = self.world.get_singleton_component(UIButtonCollection)
         if not collection:
             return
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.context import PANEL, TEXT, BORDER
+            side = ctx.layout.sidebar
+            specs = {'help': pygame.Rect(side.right-88, 16, 76, 30),
+                     'stats': pygame.Rect(side.right-174, 16, 76, 30),
+                     'end_turn': ctx.layout.footer}
+            for name in ("help", "stats", "end_turn", "settings"):
+                entity = collection.get_button(name)
+                button = self.world.get_component(entity, UIButton)
+                if not button:
+                    continue
+                if name == 'settings':
+                    button.is_visible = False
+                    continue
+                rect = specs.get(name)
+                if rect:
+                    button.x, button.y, button.width, button.height = tuple(rect)
+                    button.background_color = PANEL
+                    button.hover_color = (55, 73, 88)
+                    button.text_color = TEXT
+                    button.border_color = BORDER
+            return
         w, h = GameConfig.WINDOW_WIDTH, GameConfig.WINDOW_HEIGHT
         specs = {
             "end_turn": (w - 150, h - 60),
@@ -200,6 +223,9 @@ class UIButtonSystem(System):
                 button.x <= mouse_x <= button.x + button.width
                 and button.y <= mouse_y <= button.y + button.height
             ):
+                ctx = getattr(self.world, '_ui_context', None)
+                if ctx and ctx.modal_visible(self.world) and button.callback_name not in ('toggle_help', 'toggle_stats'):
+                    return
                 self._handle_button_callback(button)
                 break
 
@@ -277,6 +303,15 @@ class UIButtonSystem(System):
 
     def _render_button(self, button: UIButton):
         """Render single button"""
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.context import MUTED
+            rect = pygame.Rect(button.x, button.y, button.width, button.height)
+            RMS.rect(button.hover_color if button.is_hovered and button.is_enabled else button.background_color, rect)
+            RMS.rect(button.border_color, rect, 1)
+            ctx.text(button.text, (rect.centerx, rect.centery-ctx.font(18).get_height()//2),
+                     size=18, color=button.text_color if button.is_enabled else MUTED, centered=True)
+            return
         # Choose background color
         if button.is_hovered and button.is_enabled:
             bg_color = button.hover_color

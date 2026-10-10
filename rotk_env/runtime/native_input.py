@@ -70,6 +70,14 @@ class UnitActionButtonSystem(_ActionButtons):
             raise ValueError("Prepare action panel before native handoff")
         self.world = world
 
+    def update_control_state(self, dt):
+        self.refresh_actions()
+
+    def render_only(self, dt):
+        from framework.engine import RMS
+        with RMS.layer(120):
+            super().update(dt)
+
     def _execute_wait_action(self, unit_entity):
         self.controls.execute("wait", unit_id=unit_entity)
 
@@ -98,6 +106,18 @@ class UIButtonSystem(_Toolbar):
         if world.get_singleton_component(UIButtonCollection) is None:
             raise ValueError("Prepare toolbar entities before native handoff")
         self.world = world
+
+    def update_control_state(self, dt):
+        self._layout_ui_buttons()
+        self._update_button_states()
+        self._handle_button_clicks()
+
+    def render_only(self, dt):
+        from framework.engine import RMS
+        with RMS.layer(130):
+            self._layout_ui_buttons()
+            self._update_button_states()
+            self._render_buttons()
 
     def _end_turn(self):
         self.controls.execute("toolbar_end_turn")

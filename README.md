@@ -374,3 +374,7 @@ If you find this project useful in your research, please consider citing:
       url={https://arxiv.org/abs/2603.09337}, 
 }
 ```
+
+## Window interface
+
+The pygame menu and battlefield use `starbench-ui-v2`. See [window layout, controls and VLM visual version](docs/starbench-ui.md). The CLI and star-protocol Agent integration remain unchanged.

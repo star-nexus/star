@@ -114,7 +114,7 @@ def test_event_bus_cannot_hide_native_failure_and_continue_world(monkeypatch, fo
         def fail(*args, **kwargs):
             raise RuntimeError("injected native fault")
         monkeypatch.setattr(scene.runtime, "execute_control", fail)
-        EBS.publish(KeyDownEvent(key=pygame.K_1, sender="test", timestamp=0))
+        EBS.publish(KeyDownEvent(key=pygame.K_1, mod=pygame.KMOD_SHIFT, sender="test", timestamp=0))
         assert str(scene.failure) == "injected native fault"
         for operation in (lambda: scene.step(1/30), lambda: scene.update_display(1/30)):
             with pytest.raises(RuntimeError, match="Native session failed") as error:

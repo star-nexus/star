@@ -54,6 +54,12 @@ class UnitRenderSystem(_BaseUnitRenderSystem):
             color = GameConfig.FACTION_COLORS.get(unit.faction, (255, 255, 255))
             RMS.circle(color, (int(screen_x), int(screen_y)), unit_radius)
             RMS.circle((0, 0, 0), (int(screen_x), int(screen_y)), unit_radius, 2)
+        if getattr(self.world, '_ui_context', None):
+            from ..components import UIState
+            ui = self.world.get_singleton_component(UIState)
+            if ui and ui.selected_unit == entity:
+                RMS.circle((200, 166, 106), (int(screen_x), int(screen_y)), max(6, int(base_size*.5)), 2)
+            self._render_unit_icon(screen_x, screen_y, unit, zoom)
         if unit_count.current_count < unit_count.max_count:
             self._render_simple_health_bar(screen_x, screen_y, unit_count, base_size)
 

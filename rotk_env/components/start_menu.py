@@ -18,11 +18,11 @@ START_SCENARIO_COL_W = 270
 START_PLAYER_OPTIONS = (
     (
         {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI},
-        "Human Commander vs AI Strategist",
+        "Human Wei vs Agent Shu",
     ),
     (
         {Faction.WEI: PlayerType.AI, Faction.SHU: PlayerType.AI},
-        "AI vs AI Slots",
+        "Two Agent factions",
     ),
     (
         {
@@ -30,7 +30,7 @@ START_PLAYER_OPTIONS = (
             Faction.SHU: PlayerType.AI,
             Faction.WU: PlayerType.AI,
         },
-        "Human Wei vs Shu & Wu AI",
+        "Human Wei vs Shu & Wu Agents",
     ),
     (
         {
@@ -38,7 +38,7 @@ START_PLAYER_OPTIONS = (
             Faction.SHU: PlayerType.AI,
             Faction.WU: PlayerType.AI,
         },
-        "Three Kingdoms - All AI/Agent (Benchmark)",
+        "Three Agent factions (Benchmark)",
     ),
 )
 
@@ -47,8 +47,8 @@ CONTROLLER_MOCK_AI = "mock_ai"
 CONTROLLER_HUB = "hub"
 
 START_CONTROLLER_OPTIONS = (
-    (CONTROLLER_NONE, "No Controller (Static AI Slots)"),
-    (CONTROLLER_MOCK_AI, "Local Rule BOT (MockLLMAISystem)"),
+    (CONTROLLER_NONE, "Static slots — no controller"),
+    (CONTROLLER_MOCK_AI, "Local rule BOT"),
     (CONTROLLER_HUB, "External Agent / Hub"),
 )
 
@@ -62,69 +62,53 @@ def controller_backend_flags(backend: str) -> tuple[bool, bool]:
     return False, False
 
 
-def start_panel_layout(
-    catalog_len: int = 0,
-    screen_width: int | None = None,
-    screen_height: int | None = None,
-) -> Dict[str, int]:
-    """Shared geometry for start-scene render and click hit-testing."""
-    if screen_width is None:
-        screen_width = GameConfig.WINDOW_WIDTH
-    if screen_height is None:
-        screen_height = GameConfig.WINDOW_HEIGHT
-    catalog_len = max(0, int(catalog_len))
-    total_rows = (
-        catalog_len + START_SCENARIO_COLS - 1
-    ) // START_SCENARIO_COLS
-    panel_x = (screen_width - START_PANEL_WIDTH) // 2
-    panel_y = 170
-    player_y = panel_y + 145
-    player_option_y = player_y + 60
+def start_panel_layout(catalog_len=0, screen_width=None, screen_height=None) -> Dict[str, Any]:
+    """Measured layout and shared hit rectangles; no independent UI offsets."""
+    import pygame
+    pygame.font.init()
+    w = screen_width or GameConfig.WINDOW_WIDTH
+    h = screen_height or GameConfig.WINDOW_HEIGHT
+    scale = min(1.25, max(1., min(w/1200, h/800)))
+    line = max(32, pygame.font.Font(None, round(18*scale)).get_linesize()+14)
+    width = min(round(880*scale), w-80)
+    height = min(round(590*scale), h-180)
+    x, y = (w-width)//2, max(124, (h-height)//2)
+    left, right = x+28, x+width//2+20
+    mode_y, player_y = y+24, y+24
+    controller_y = y+150
+    scenario_y = y+310
+    option_y = scenario_y+34
+    clip_bottom = y+height-96
+    visible_rows = max(1, (clip_bottom-option_y)//line)
+    col_w = (width-56)//2
+    row_rect = lambda xx, yy, ww: pygame.Rect(xx, yy, ww, line-4)
+    return dict(panel_x=x, panel_y=y, panel_width=width, panel_height=height,
+        mode_y=mode_y, player_y=player_y, controller_y=controller_y,
+        controller_option_y=controller_y+34, controller_spacing=line,
+        mode_rects=[row_rect(left, mode_y+34+i*line, width//2-48) for i in range(2)],
+        player_rects=[row_rect(right, player_y+34+i*line, width//2-48) for i in range(4)],
+        controller_rects=[row_rect(left, controller_y+34+i*line, width-56) for i in range(3)],
+        scenario_y=scenario_y, scenario_option_y=option_y,
+        scenario_clip_bottom=clip_bottom, scenario_visible_rows=visible_rows,
+        scenario_total_rows=(max(0,catalog_len)+1)//2, scenario_row_h=line,
+        scenario_col_w=col_w, scenario_cols=2,
+        scenario_clip=pygame.Rect(left, option_y, width-56, max(line,clip_bottom-option_y)),
+        start_rect=pygame.Rect(x+width-276, y+height-57, 164, 36),
+        quit_rect=pygame.Rect(x+width-100, y+height-57, 72, 36),
+        summary_rect=pygame.Rect(left, y+height-85, width-56, 22))
 
-    # Controller backend is a separate section below the topology choices.
-    last_player_bottom = (
-        player_option_y + (len(START_PLAYER_OPTIONS) - 1) * 45 + 30
-    )
-    controller_y = last_player_bottom + 18
-    controller_option_y = controller_y + 45
-    controller_spacing = 34
-    last_controller_bottom = (
-        controller_option_y
-        + (len(START_CONTROLLER_OPTIONS) - 1) * controller_spacing
-        + 28
-    )
 
-    scenario_y = last_controller_bottom + 18
-    scenario_option_y = scenario_y + 40
-    content_h = (
-        scenario_option_y
-        - panel_y
-        + 25
-        + max(1, total_rows) * START_SCENARIO_ROW_H
-    )
-    panel_height = max(1, min(screen_height - panel_y - 170, content_h))
-    clip_bottom = panel_y + panel_height - 8
-    visible_h = max(0, clip_bottom - scenario_option_y)
-    visible_rows = visible_h // START_SCENARIO_ROW_H
-    return {
-        "panel_x": panel_x,
-        "panel_y": panel_y,
-        "panel_width": START_PANEL_WIDTH,
-        "panel_height": panel_height,
-        "mode_y": panel_y + 24,
-        "player_y": player_y,
-        "controller_y": controller_y,
-        "controller_option_y": controller_option_y,
-        "controller_spacing": controller_spacing,
-        "scenario_y": scenario_y,
-        "scenario_option_y": scenario_option_y,
-        "scenario_clip_bottom": clip_bottom,
-        "scenario_visible_rows": visible_rows,
-        "scenario_total_rows": total_rows,
-        "scenario_row_h": START_SCENARIO_ROW_H,
-        "scenario_col_w": START_SCENARIO_COL_W,
-        "scenario_cols": START_SCENARIO_COLS,
-    }
+def scenario_option_rects(config, geom):
+    import pygame
+    scroll = clamp_scenario_scroll(config.scenario_scroll, len(config.scenario_catalog or []), geom)
+    rects = []
+    for i, item in enumerate(config.scenario_catalog or []):
+        row = i//2-scroll
+        if 0 <= row < geom['scenario_visible_rows']:
+            rects.append((i, pygame.Rect(geom['panel_x']+28+(i%2)*geom['scenario_col_w'],
+                geom['scenario_option_y']+row*geom['scenario_row_h'],
+                geom['scenario_col_w']-12, geom['scenario_row_h']-4)))
+    return rects
 
 
 def clamp_scenario_scroll(scroll: int, catalog_len: int, geom: Dict[str, int]) -> int:

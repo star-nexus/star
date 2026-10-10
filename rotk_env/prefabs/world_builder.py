@@ -89,6 +89,7 @@ def build_skirmish_world(
     display: DisplayKind = "none",
     enable_mock_ai: bool = False,
     world: Optional[World] = None,
+    ui_context=None,
 ) -> World:
     """Build a match World.
 
@@ -126,6 +127,10 @@ def build_skirmish_world(
         enable_mock_ai=enable_mock_ai,
     )
     assembler.assemble()
+    if display == "window":
+        from ..ui.context import UiContext
+        context = ui_context or UiContext(backend="python", controller="mock_ai" if enable_mock_ai else "hub" if hub_url else "none")
+        context.attach(assembler.world)
     return assembler.world
 
 

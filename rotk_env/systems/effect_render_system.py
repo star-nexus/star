@@ -252,75 +252,35 @@ class EffectRenderSystem(System):
 
         map_data = self.world.get_singleton_component(MapData)
 
-        # Render attack range overlays
+        from ..ui.context import viewport_for
+        ctx = getattr(self.world, '_ui_context', None)
+        viewport = viewport_for(self.world)
+        radius = max(2, int(GameConfig.HEX_SIZE * zoom))
+        if ctx:
+            # Pixel geometry is shared by all tiles; alpha is composited on blit.
+            points = [(round(x*zoom+radius+1), round(y*zoom+radius+1))
+                      for x, y in self.hex_converter.get_hex_corners(0, 0)]
+            outline = ctx.tactical_surface('attack', (radius*2+2, radius*2+2), points)
+            enemy_ring = ctx.tactical_surface('enemy', (radius*2+2, radius*2+2))
         for tile_col, tile_row in attack_tiles:
-            # Skip the unit's own tile
-            if tile_col == position.col and tile_row == position.row:
+            if (tile_col, tile_row) == (position.col, position.row):
                 continue
-
-            # Skip tiles outside the loaded map (combat range is unchanged)
             if map_data is not None and (tile_col, tile_row) not in map_data.tiles:
                 continue
-
-            # Convert to screen coordinates
             world_x, world_y = self.hex_converter.hex_to_pixel(tile_col, tile_row)
             screen_x = world_x * zoom + camera_offset[0]
             screen_y = world_y * zoom + camera_offset[1]
-
-            # Skip tiles off-screen
-            if not (
-                0 <= screen_x < GameConfig.WINDOW_WIDTH
-                and 0 <= screen_y < GameConfig.WINDOW_HEIGHT
-            ):
+            if not viewport.inflate(radius*2, radius*2).collidepoint(screen_x, screen_y):
                 continue
-
-            # Check for enemy unit at this tile
-            enemy_unit = self._get_enemy_unit_at_position(
-                (tile_col, tile_row), unit.faction
-            )
-            if enemy_unit:
-                # Highlight in red if an enemy is present
-                radius = int(GameConfig.HEX_SIZE * 0.7 * zoom)
-                # pygame.draw.circle(
-                #     RMS.screen, (255, 0, 0, 150), (int(screen_x), int(screen_y)), radius
-                # )
-                # pygame.draw.circle(
-                #     RMS.screen, (255, 0, 0), (int(screen_x), int(screen_y)), radius, 3
-                # )
-                RMS.circle(
-                    (255, 0, 0, 150),
-                    (int(screen_x), int(screen_y)),
-                    radius,
-                )
-                # RMS.circle(
-                #     (255, 0, 0),
-                #     (int(screen_x), int(screen_y)),
-                #     radius,
-                #     1,
-                # )
+            enemy = self._get_enemy_unit_at_position((tile_col, tile_row), unit.faction)
+            if ctx:
+                RMS.draw(outline, (screen_x-radius-1, screen_y-radius-1))
+                if enemy:
+                    RMS.draw(enemy_ring, (screen_x-radius-1, screen_y-radius-1))
             else:
-                # Show orange range indicator if tile is empty
-                radius = int(GameConfig.HEX_SIZE * 0.5 * zoom)
-                # pygame.draw.circle(
-                #     RMS.screen,
-                #     (255, 165, 0, 80),
-                #     (int(screen_x), int(screen_y)),
-                #     radius,
-                # )
-                # pygame.draw.circle(
-                #     RMS.screen, (255, 165, 0), (int(screen_x), int(screen_y)), radius, 2
-                # )
-                RMS.circle(
-                    (255, 165, 0, 80),
-                    (int(screen_x), int(screen_y)),
-                    radius,
-                )
-                # RMS.circle(
-                #     (255, 165, 0),
-                #     (int(screen_x), int(screen_y)),
-                #     radius,
-                #     1,
-                # )
+                RMS.circle((255, 0, 0, 150) if enemy else (255, 165, 0, 80),
+                           (int(screen_x), int(screen_y)),
+                           int(GameConfig.HEX_SIZE * (.7 if enemy else .5) * zoom))
 
     def _render_tile_hover(self, camera_offset: List[float], zoom: float = 1.0):
         """Render tile hover highlight effect"""

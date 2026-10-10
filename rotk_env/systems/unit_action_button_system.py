@@ -111,6 +111,36 @@ class UnitActionButtonSystem(System):
 
     def update(self, delta_time: float) -> None:
         self._frame_text_cache_misses = 0
+        self.refresh_actions()
+        action_panel = self.world.get_singleton_component(UnitActionPanel)
+        if not action_panel:
+            return
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.painters import render_actions
+            render_actions(action_panel, ctx)
+        elif action_panel.visible:
+            with profiling.profiler.time_system(
+                "unit_action_render_panel", category="render"
+            ):
+                self._render_action_panel(action_panel)
+
+        confirm_dialog = self.world.get_singleton_component(ActionConfirmDialog)
+        if confirm_dialog and confirm_dialog.visible:
+            with profiling.profiler.time_system(
+                "unit_action_render_confirm", category="render"
+            ):
+                with RMS.layer(210):
+                    self._render_confirm_dialog(confirm_dialog)
+
+        profiling.profiler.set_frame_metric(
+            "unit_action_text_cache_misses", self._frame_text_cache_misses
+        )
+        profiling.profiler.set_frame_metric(
+            "unit_action_text_cache_size", len(self._text_surface_cache)
+        )
+
+    def refresh_actions(self):
         ui_state = self.world.get_singleton_component(UIState)
         action_panel = self.world.get_singleton_component(UnitActionPanel)
         if not ui_state or not action_panel:
@@ -118,8 +148,13 @@ class UnitActionButtonSystem(System):
 
         # Anchor the panel to the live right edge so it remains outside the
         # playable map as the window size changes.
-        action_panel.x = max(20, GameConfig.WINDOW_WIDTH - action_panel.width - 20)
-        action_panel.y = 100
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            action_panel.x, action_panel.y = ctx.layout.actions.topleft
+            action_panel.width = ctx.layout.actions.w
+        else:
+            action_panel.x = max(20, GameConfig.WINDOW_WIDTH - action_panel.width - 20)
+            action_panel.y = 100
 
         if ui_state.selected_unit != action_panel.selected_unit:
             with profiling.profiler.time_system(
@@ -134,25 +169,6 @@ class UnitActionButtonSystem(System):
                 else:
                     action_panel.clear()
 
-        if action_panel.visible:
-            with profiling.profiler.time_system(
-                "unit_action_render_panel", category="render"
-            ):
-                self._render_action_panel(action_panel)
-
-        confirm_dialog = self.world.get_singleton_component(ActionConfirmDialog)
-        if confirm_dialog and confirm_dialog.visible:
-            with profiling.profiler.time_system(
-                "unit_action_render_confirm", category="render"
-            ):
-                self._render_confirm_dialog(confirm_dialog)
-
-        profiling.profiler.set_frame_metric(
-            "unit_action_text_cache_misses", self._frame_text_cache_misses
-        )
-        profiling.profiler.set_frame_metric(
-            "unit_action_text_cache_size", len(self._text_surface_cache)
-        )
 
     def _is_player_unit(self, unit_entity: int) -> bool:
         unit = self.world.get_component(unit_entity, Unit)
@@ -331,11 +347,36 @@ class UnitActionButtonSystem(System):
             lines.append(current_line)
         return lines
 
+    def trigger_hotkey(self, key):
+        from ..prefabs.controls import action_hotkey
+        ui = self.world.get_singleton_component(UIState)
+        panel = self.world.get_singleton_component(UnitActionPanel)
+        if not ui or not panel or ui.selected_unit is None or not self._is_player_unit(ui.selected_unit):
+            return False
+        panel.update_available_actions(ui.selected_unit, self.world)
+        action = next((a for a in panel.available_actions if action_hotkey(a.action_type.value) == key), None)
+        if action is None or not action.enabled:
+            return False
+        self._execute_action(action.action_type, panel.selected_unit)
+        return True
+
     def handle_panel_click(self, mouse_pos):
         action_panel = self.world.get_singleton_component(UnitActionPanel)
         if not action_panel or not action_panel.visible:
             return False
 
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.painters import action_rects
+            if ctx.modal_visible(self.world) or not ctx.layout.content.collidepoint(mouse_pos):
+                return False
+            if not ctx.layout.actions.collidepoint(mouse_pos):
+                return False
+            for action, rect in zip(action_panel.available_actions, action_rects(action_panel, ctx)):
+                if rect.collidepoint(mouse_pos) and action.enabled:
+                    self._execute_action(action.action_type, action_panel.selected_unit)
+                    break
+            return True
         button_height = 35
         button_margin = 5
         panel_height = 60 + len(action_panel.available_actions) * (

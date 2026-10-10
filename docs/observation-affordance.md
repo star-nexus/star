@@ -55,7 +55,7 @@ Those are environment mechanics, not tactical intelligence.
 | `visible_enemy_units` | observation | visible enemies | id, type, position, count. No MP/AP, no masks |
 | `visible_terrain` | observation | visible tiles | Every currently visible hex, **including plains**. `type`, enter-cost, `passable`. |
 
-Fog on: vision is the union of that faction’s unit vision. Fog off (key 1): the
+Fog on: vision is the union of that faction’s unit vision. Fog off (Shift+1): the
 whole map. Human, BOT, and agents share the switch.
 
 Own-unit AP/MP on the wire are **remaining** points this snapshot

@@ -32,11 +32,13 @@ class UnitRenderSystem(_BaseUnitRenderSystem):
         if index is None or zoom <= 0:
             return super()._get_visible_units(camera_offset, zoom)
 
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world)
         margin = float(GameConfig.HEX_SIZE) * self.CULL_WORLD_MARGIN_HEX_RADII
-        left = (-camera_offset[0]) / zoom - margin
-        right = (GameConfig.WINDOW_WIDTH - camera_offset[0]) / zoom + margin
-        top = (-camera_offset[1]) / zoom - margin
-        bottom = (GameConfig.WINDOW_HEIGHT - camera_offset[1]) / zoom + margin
+        left = (viewport.left-camera_offset[0]) / zoom - margin
+        right = (viewport.right-camera_offset[0]) / zoom + margin
+        top = (viewport.top-camera_offset[1]) / zoom - margin
+        bottom = (viewport.bottom-camera_offset[1]) / zoom + margin
 
         # Fog/view state is frame-global.  Resolve it once instead of repeating
         # singleton + component lookups for every spatial candidate.

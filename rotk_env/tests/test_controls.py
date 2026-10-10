@@ -26,7 +26,9 @@ def test_cli_controls_match_live_keymap():
     text = format_cli_controls()
     assert "F1: Toggle help" in text
     assert "Middle Mouse" not in text
-    assert "WASD / arrows" in text
+    assert "Arrows: Move camera" in text
+    assert "A: Choose attack target" in text
+    assert "Shift+1:" in text
 
 
 def test_every_key_binding_has_an_input_action():

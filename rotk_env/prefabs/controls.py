@@ -25,6 +25,7 @@ class KeyBinding:
     label: str
     help: str
     action: str
+    modifiers: int = 0
 
 
 @dataclass(frozen=True)
@@ -46,35 +47,53 @@ KEY_BINDINGS: Tuple[KeyBinding, ...] = (
     KeyBinding(pygame.K_SPACE, "SPACE", "End turn", "end_turn"),
     KeyBinding(pygame.K_TAB, "Tab", "Toggle statistics", "toggle_stats"),
     KeyBinding(pygame.K_F1, "F1", "Toggle help", "toggle_help"),
-    KeyBinding(pygame.K_ESCAPE, "ESC", "Cancel selection", "clear_selection"),
+    KeyBinding(pygame.K_ESCAPE, "ESC", "Cancel target, then selection", "clear_selection"),
     KeyBinding(pygame.K_PAGEUP, "Page Up", "Scroll battle log up", "battle_log_up"),
     KeyBinding(
         pygame.K_PAGEDOWN, "Page Down", "Scroll battle log down", "battle_log_down"
     ),
     KeyBinding(pygame.K_END, "End", "Jump battle log to bottom", "battle_log_bottom"),
     KeyBinding(pygame.K_h, "H", "Toggle hex orientation", "toggle_hex_orientation"),
-    KeyBinding(pygame.K_1, "1", "Toggle fog (whole map / unit vision)", "toggle_fog"),
-    KeyBinding(pygame.K_2, "2", "Wei spectator view (fog on)", "view_wei"),
-    KeyBinding(pygame.K_3, "3", "Shu spectator view (fog on)", "view_shu"),
-    KeyBinding(pygame.K_4, "4", "Wu spectator view (fog on)", "view_wu"),
+    KeyBinding(pygame.K_1, "Shift+1", "Toggle fog (whole map / unit vision)", "toggle_fog", pygame.KMOD_SHIFT),
+    KeyBinding(pygame.K_1, "1", "Select infantry", "select_infantry"),
+    KeyBinding(pygame.K_2, "2", "Select cavalry", "select_cavalry"),
+    KeyBinding(pygame.K_3, "3", "Select first archer", "select_archer_1"),
+    KeyBinding(pygame.K_4, "4", "Select second archer", "select_archer_2"),
+    KeyBinding(pygame.K_5, "5", "Select third archer", "select_archer_3"),
+    KeyBinding(pygame.K_m, "M", "Choose movement target", "unit_move"),
+    KeyBinding(pygame.K_a, "A", "Choose attack target", "unit_attack"),
+    KeyBinding(pygame.K_w, "W", "Wait", "unit_wait"),
+    KeyBinding(pygame.K_g, "G", "Garrison", "unit_garrison"),
+    KeyBinding(pygame.K_c, "C", "Capture", "unit_capture"),
+    KeyBinding(pygame.K_f, "F", "Fortify", "unit_fortify"),
+    KeyBinding(pygame.K_2, "Shift+2", "Wei spectator view (fog on)", "view_wei", pygame.KMOD_SHIFT),
+    KeyBinding(pygame.K_3, "Shift+3", "Shu spectator view (fog on)", "view_shu", pygame.KMOD_SHIFT),
+    KeyBinding(pygame.K_4, "Shift+4", "Wu spectator view (fog on)", "view_wu", pygame.KMOD_SHIFT),
     KeyBinding(pygame.K_v, "V", "Toggle coordinate overlay", "toggle_coordinates"),
 )
 
 HOLD_BINDINGS: Tuple[HoldBinding, ...] = (
-    HoldBinding("WASD / arrows", "Move camera"),
+    HoldBinding("Arrows", "Move camera"),
     HoldBinding("+ / -", "Zoom in / out"),
 )
 
 RULE_NOTES: Tuple[str, ...] = (
     "Move spends MP along the path; attack spends AP.",
-    "Fog on = your units' vision; key 1 = the whole map.",
+    "Fog on = your units' vision; Shift+1 toggles the whole map.",
 )
 
-_KEY_BY_CODE = {b.key: b for b in KEY_BINDINGS}
+def binding_for_key(key: int, modifiers: int = 0) -> Optional[KeyBinding]:
+    # Lock keys do not change physical shortcuts. Other modifier combinations
+    # are reserved, rather than falling through to a different action.
+    if modifiers & (pygame.KMOD_CTRL | pygame.KMOD_ALT | pygame.KMOD_GUI):
+        return None
+    shifted = bool(modifiers & pygame.KMOD_SHIFT)
+    return next((b for b in KEY_BINDINGS if b.key == key and bool(b.modifiers) == shifted), None)
 
 
-def binding_for_key(key: int) -> Optional[KeyBinding]:
-    return _KEY_BY_CODE.get(key)
+def action_hotkey(action: str) -> str:
+    binding = next((b for b in KEY_BINDINGS if b.action == 'unit_'+action), None)
+    return binding.label if binding else ''
 
 
 def help_panel_lines() -> List[str]:

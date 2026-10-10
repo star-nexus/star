@@ -65,6 +65,16 @@ class InputHandlingSystem(BaseInputHandlingSystem):
         if not ui_state:
             return
 
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            ctx.sync(self.world)
+            if ctx.modal_visible(self.world):
+                return
+        if event.button != 1:
+            if event.button == 3 and not (ctx and ctx.owns(event.pos, self.world)):
+                ui_state.selected_unit = None
+                self.cancel_targeting(refresh_panel=False)
+            return
         profiler = profiling.profiler
 
         with profiler.time_system("input_click_ui", category="input"):
@@ -82,6 +92,9 @@ class InputHandlingSystem(BaseInputHandlingSystem):
                 minimap_system and minimap_system.handle_click(event.pos)
             )
         if consumed_by_minimap:
+            return
+
+        if ctx and ctx.handle_click(event.pos, self.world):
             return
 
         if event.button == 1:

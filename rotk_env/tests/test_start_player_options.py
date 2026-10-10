@@ -25,7 +25,7 @@ def test_start_menu_three_faction_topologies_match_cli_presets():
 
     assert agent_cfg == PLAYER_PRESETS["three_kingdoms"]
     assert all(player_type == PlayerType.AI for player_type in agent_cfg.values())
-    assert "AI/Agent" in agent_label
+    assert "Agent" in agent_label
 
 
 def test_controller_backend_is_independent_and_defaults_to_cli_like_none():
@@ -43,18 +43,10 @@ def test_controller_backend_is_independent_and_defaults_to_cli_like_none():
 
 def test_player_and_controller_stacks_do_not_overlap_scenario_section():
     geom = start_panel_layout(catalog_len=8, screen_width=2480, screen_height=1268)
-    last_player_bottom = (
-        geom["player_y"]
-        + 60
-        + (len(START_PLAYER_OPTIONS) - 1) * 45
-        + 30
-    )
-    last_controller_bottom = (
-        geom["controller_option_y"]
-        + (len(START_CONTROLLER_OPTIONS) - 1) * geom["controller_spacing"]
-        + 28
-    )
-
-    assert geom["controller_y"] >= last_player_bottom
-    assert geom["scenario_y"] >= last_controller_bottom
-    assert geom["scenario_option_y"] > geom["scenario_y"]
+    options = geom['mode_rects'] + geom['player_rects'] + geom['controller_rects']
+    for i, rect in enumerate(options):
+        assert rect.bottom <= geom['scenario_y']
+        for other in options[i+1:]:
+            assert not rect.colliderect(other)
+    assert geom['scenario_option_y'] > geom['scenario_y']
+    assert geom['scenario_clip'].bottom <= geom['summary_rect'].top

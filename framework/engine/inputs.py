@@ -100,6 +100,7 @@ class InputSystem:
                         self._publisher(
                             KeyDownEvent(
                                 key=event.key,
+                                mod=getattr(event, 'mod', 0),
                                 sender=type(self).__name__,
                                 timestamp=pygame.time.get_ticks(),
                             )

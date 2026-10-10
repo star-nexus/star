@@ -17,6 +17,7 @@ from ..components.start_menu import (
     controller_backend_flags,
     start_panel_layout,
     clamp_scenario_scroll,
+    scenario_option_rects,
 )
 from ..systems.start_scene_render_system import StartSceneRenderSystem
 
@@ -40,7 +41,14 @@ class StartScene(Scene):
     def enter(self, **kwargs) -> None:
         """Called when entering the scene."""
         super().enter(**kwargs)
-        self.world.add_singleton_component(StartMenuConfig())
+        from ..ui.context import UiContext
+        self.ui_context = UiContext(backend=getattr(self.engine, "runtime_backend", "python"))
+        self.world._ui_context = self.ui_context
+        config = StartMenuConfig()
+        # Display the canonical name for the existing CLI default alias.
+        from ..maps.map_file import SCENARIO_ALIASES
+        config.selected_scenario = SCENARIO_ALIASES.get(config.selected_scenario, config.selected_scenario).removesuffix('.json')
+        self.world.add_singleton_component(config)
 
         screen_width = GameConfig.WINDOW_WIDTH
         screen_height = GameConfig.WINDOW_HEIGHT
@@ -71,6 +79,7 @@ class StartScene(Scene):
             StartMenuButtons(buttons=buttons, options={})
         )
         self.world.add_system(StartSceneRenderSystem())
+        self._layout_buttons()
         self.subscribe_events()
 
         auto_start_config = kwargs.get("auto_start_config")
@@ -132,21 +141,15 @@ class StartScene(Scene):
         )
 
     def _layout_buttons(self) -> None:
-        buttons_component = self.world.get_singleton_component(StartMenuButtons)
-        if not buttons_component:
+        buttons = self.world.get_singleton_component(StartMenuButtons)
+        config = self.world.get_singleton_component(StartMenuConfig)
+        if not buttons:
             return
-        screen_width = GameConfig.WINDOW_WIDTH
-        screen_height = GameConfig.WINDOW_HEIGHT
-        start = buttons_component.buttons.get("start_game")
-        quit_btn = buttons_component.buttons.get("quit")
-        if start:
-            start["rect"] = pygame.Rect(
-                screen_width // 2 - 100, screen_height - 150, 200, 50
-            )
-        if quit_btn:
-            quit_btn["rect"] = pygame.Rect(
-                screen_width // 2 - 100, screen_height - 80, 200, 50
-            )
+        geom = start_panel_layout(len(config.scenario_catalog or []) if config else 0)
+        for name, key in (("start_game", "start_rect"), ("quit", "quit_rect")):
+            if name in buttons.buttons:
+                buttons.buttons[name]["rect"] = geom[key].copy()
+
 
     def _update_hover_state(self, event: MouseMotionEvent) -> None:
         """Update hover state."""
@@ -163,6 +166,7 @@ class StartScene(Scene):
         if not self.is_active:
             return
         GameConfig.sync_from_display()
+        self._layout_buttons()
         pos = event.pos
 
         buttons_component = self.world.get_singleton_component(StartMenuButtons)
@@ -175,63 +179,29 @@ class StartScene(Scene):
         self._handle_config_click(pos)
 
     def _handle_config_click(self, pos: tuple) -> None:
-        """Handle configuration option clicks."""
         config = self.world.get_singleton_component(StartMenuConfig)
         if not config:
             return
-
+        from ..ui.context import controller_available
         geom = start_panel_layout(len(config.scenario_catalog or []))
-        panel_x = geom["panel_x"]
-
-        mode_y = geom["mode_y"] + 60
-        for i, mode in enumerate([GameMode.TURN_BASED, GameMode.REAL_TIME]):
-            option_rect = pygame.Rect(panel_x + 50, mode_y + i * 45, 250, 30)
-            if option_rect.collidepoint(pos):
+        for rect, mode in zip(geom['mode_rects'], (GameMode.TURN_BASED, GameMode.REAL_TIME)):
+            if rect.collidepoint(pos):
                 config.selected_mode = mode
                 return
-
-        player_y = geom["player_y"] + 60
-        for i, (player_config, _label) in enumerate(START_PLAYER_OPTIONS):
-            option_rect = pygame.Rect(panel_x + 50, player_y + i * 45, 500, 30)
-            if option_rect.collidepoint(pos):
-                config.selected_players = player_config.copy()
+        for rect, (players, _) in zip(geom['player_rects'], START_PLAYER_OPTIONS):
+            if rect.collidepoint(pos):
+                config.selected_players = players.copy()
+                return
+        for rect, (controller, _) in zip(geom['controller_rects'], START_CONTROLLER_OPTIONS):
+            if rect.collidepoint(pos):
+                if controller_available(getattr(self.engine, 'runtime_backend', 'python'), controller):
+                    config.selected_controller_backend = controller
+                return
+        for index, rect in scenario_option_rects(config, geom):
+            if geom['scenario_clip'].collidepoint(pos) and rect.collidepoint(pos):
+                config.selected_scenario = config.scenario_catalog[index]['scenario']
                 return
 
-        controller_y = geom["controller_option_y"]
-        controller_spacing = geom["controller_spacing"]
-        for i, (backend, _label) in enumerate(START_CONTROLLER_OPTIONS):
-            option_rect = pygame.Rect(
-                panel_x + 50,
-                controller_y + i * controller_spacing,
-                500,
-                28,
-            )
-            if option_rect.collidepoint(pos):
-                config.selected_controller_backend = backend
-                return
-
-        catalog = config.scenario_catalog or []
-        option_y = geom["scenario_option_y"]
-        cols = geom["scenario_cols"]
-        col_w = geom["scenario_col_w"]
-        row_h = geom["scenario_row_h"]
-        visible_rows = geom["scenario_visible_rows"]
-        scroll = clamp_scenario_scroll(config.scenario_scroll, len(catalog), geom)
-        config.scenario_scroll = scroll
-        for i, item in enumerate(catalog):
-            col = i % cols
-            vis_row = i // cols - scroll
-            if vis_row < 0 or vis_row >= visible_rows:
-                continue
-            option_rect = pygame.Rect(
-                panel_x + 50 + col * col_w,
-                option_y + vis_row * row_h,
-                col_w - 20,
-                row_h - 4,
-            )
-            if option_rect.collidepoint(pos):
-                config.selected_scenario = item["scenario"]
-                return
 
     def _handle_mouse_wheel(self, event: MouseWheelEvent) -> None:
         if not self.is_active:
@@ -241,6 +211,9 @@ class StartScene(Scene):
             return
         GameConfig.sync_from_display()
         geom = start_panel_layout(len(config.scenario_catalog or []))
+        pos = getattr(event, "pos", pygame.mouse.get_pos())
+        if not geom["scenario_clip"].collidepoint(pos):
+            return
         config.scenario_scroll = clamp_scenario_scroll(
             config.scenario_scroll - int(event.y),
             len(config.scenario_catalog or []),
@@ -253,6 +226,9 @@ class StartScene(Scene):
         if not config:
             return
 
+        from ..ui.context import controller_available
+        if not controller_available(getattr(self.engine, "runtime_backend", "python"), config.selected_controller_backend):
+            return
         enable_mock_ai, use_hub = controller_backend_flags(
             config.selected_controller_backend
         )
@@ -276,6 +252,8 @@ class StartScene(Scene):
 
     def cleanup(self) -> None:
         """Cleanup scene resources."""
+        if getattr(self, "ui_context", None):
+            self.ui_context.close()
         if self.world:
             self.world.reset()
         EBS.unsubscribe(MouseMotionEvent, self._update_hover_state)

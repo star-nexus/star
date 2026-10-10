@@ -14,6 +14,8 @@ PointType = Tuple[int, int]
 class RenderCommand(ABC):
     """渲染命令基类"""
 
+    __slots__ = ("clip_rect",)
+
     @abstractmethod
     def execute(self, screen: pygame.Surface) -> None:
         """执行渲染命令"""
@@ -81,6 +83,7 @@ class RenderEngine:
             return
         self._screen = None
         self.current_layer = 0
+        self._current_clip = None
         self._render_queue: Dict[int, List[RenderCommand]] = defaultdict(list)
         self._initialized = True
 
@@ -118,8 +121,26 @@ class RenderEngine:
     ) -> "RenderEngine":
         """添加渲染命令"""
         target_layer = layer if layer is not None else self.current_layer
+        command.clip_rect = getattr(self, "_current_clip", None)
         self._render_queue[target_layer].append(command)
         return self
+
+    @contextmanager
+    def clip(self, rect):
+        """Snapshot nested screen-space clipping on deferred commands.
+
+        Geometry is copied to an immutable tuple at enqueue time; changing a
+        caller's Rect or leaving this context cannot change queued work.
+        """
+        previous = getattr(self, "_current_clip", None)
+        requested = pygame.Rect(rect)
+        if previous is not None:
+            requested = requested.clip(previous)
+        self._current_clip = tuple(requested)
+        try:
+            yield self
+        finally:
+            self._current_clip = previous
 
     # 基础绘制方法
     def draw(
@@ -277,55 +298,69 @@ class RenderEngine:
 
         # Preserve layer and command order exactly. Only consecutive plain blits
         # are collapsed; any geometry/custom command is an ordering barrier.
-        with profiler.time_system("render_queue_submit", category="render"):
-            for layer in layer_keys:
-                commands = self._render_queue[layer]
-                index = 0
-                while index < len(commands):
-                    command = commands[index]
-                    if isinstance(command, BlitCommand) and command.batchable:
-                        batch_runs += 1
-                        with profiler.time_system("render_batch_pack", category="render"):
-                            batch = []
-                            while index < len(commands):
-                                candidate = commands[index]
-                                if (
-                                    not isinstance(candidate, BlitCommand)
-                                    or not candidate.batchable
+        original_clip = self.screen.get_clip()
+        active_clip = tuple(original_clip)
+        requested_clip = object()
+        try:
+            with profiler.time_system("render_queue_submit", category="render"):
+                for layer in layer_keys:
+                    commands = self._render_queue[layer]
+                    index = 0
+                    while index < len(commands):
+                        command = commands[index]
+                        clip = getattr(command, "clip_rect", None)
+                        if clip != requested_clip:
+                            effective_clip = tuple(original_clip.clip(clip)) if clip is not None else tuple(original_clip)
+                            if effective_clip != active_clip:
+                                self.screen.set_clip(effective_clip)
+                                active_clip = effective_clip
+                            requested_clip = clip
+                        if isinstance(command, BlitCommand) and command.batchable:
+                            batch_runs += 1
+                            with profiler.time_system("render_batch_pack", category="render"):
+                                batch = []
+                                while index < len(commands):
+                                    candidate = commands[index]
+                                    if (
+                                        not isinstance(candidate, BlitCommand)
+                                        or not candidate.batchable
+                                        or getattr(candidate, "clip_rect", None) != clip
+                                    ):
+                                        break
+                                    batch.append((candidate.surface, candidate.dest))
+                                    index += 1
+
+                            batch_size = len(batch)
+                            simple_blits += batch_size
+                            max_batch_size = max(max_batch_size, batch_size)
+
+                            if batch_size >= 2:
+                                with profiler.time_system(
+                                    "render_batch_blits", category="render"
                                 ):
-                                    break
-                                batch.append((candidate.surface, candidate.dest))
-                                index += 1
+                                    self.screen.blits(batch, False)
+                                blit_batches += 1
+                            else:
+                                single_plain_blits += 1
+                                with profiler.time_system(
+                                    "render_scalar_execute", category="render"
+                                ):
+                                    command.execute(self.screen)
+                            continue
 
-                        batch_size = len(batch)
-                        simple_blits += batch_size
-                        max_batch_size = max(max_batch_size, batch_size)
-
-                        if batch_size >= 2:
-                            with profiler.time_system(
-                                "render_batch_blits", category="render"
-                            ):
-                                self.screen.blits(batch, False)
-                            blit_batches += 1
+                        if isinstance(command, BlitCommand):
+                            nonbatch_blits += 1
+                        elif isinstance(command, DrawCommand):
+                            draw_commands += 1
                         else:
-                            single_plain_blits += 1
-                            with profiler.time_system(
-                                "render_scalar_execute", category="render"
-                            ):
-                                command.execute(self.screen)
-                        continue
-
-                    if isinstance(command, BlitCommand):
-                        nonbatch_blits += 1
-                    elif isinstance(command, DrawCommand):
-                        draw_commands += 1
-                    else:
-                        other_commands += 1
-                    with profiler.time_system(
-                        "render_scalar_execute", category="render"
-                    ):
-                        command.execute(self.screen)
-                    index += 1
+                            other_commands += 1
+                        with profiler.time_system(
+                            "render_scalar_execute", category="render"
+                        ):
+                            command.execute(self.screen)
+                        index += 1
+        finally:
+            self.screen.set_clip(original_clip)
 
         scalar_commands = nonbatch_blits + draw_commands + other_commands
         profiler.set_frame_metric("render_simple_blits", simple_blits)

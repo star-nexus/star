@@ -13,11 +13,12 @@ class QuitEvent(Event):
 
 @dataclass
 class KeyDownEvent(Event):
-    """键盘按下事件"""
+    """Keyboard press, including the modifiers captured by SDL for this event."""
 
     key: Any
     sender: str
     timestamp: int
+    mod: int = 0
 
 
 @dataclass

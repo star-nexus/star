@@ -309,6 +309,9 @@ class GameScene(Scene):
             self._authority_clock_started = False
             self.initialized = False
         else:
+            context = getattr(self.world, "_ui_context", None)
+            if context:
+                context.close()
             self.world.reset()
 
     def pause(self):

@@ -58,6 +58,8 @@ class UnitActionPanel(Component):
 
     def add_action(self, action_button: UnitActionButton):
         """Add an action button."""
+        from ..prefabs.controls import action_hotkey
+        action_button.hotkey = action_hotkey(action_button.action_type.value)
         self.available_actions.append(action_button)
 
     def update_available_actions(self, unit_entity: int, world):

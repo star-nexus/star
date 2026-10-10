@@ -111,6 +111,7 @@ class UnitRenderSystem(FastUnitRenderSystem):
         with profiling.profiler.time_system("unit_visible_cull", category="render"):
             visible_units = self._get_visible_units(camera_offset, zoom)
 
+        self._ui_dense = len(visible_units) > 20
         if len(visible_units) <= 20:
             self._full_featured_occupancy_index = (
                 self._build_full_featured_occupancy_snapshot()
@@ -173,6 +174,27 @@ class UnitRenderSystem(FastUnitRenderSystem):
         )
 
     def _render_unit_icon(self, screen_x, screen_y, unit, zoom, scale=1.0):
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.context import PANEL
+            badge = ctx.tactical_surface('badge:'+unit.faction.value, (10,10))
+            RMS.draw(badge, (int(screen_x-18*zoom)-5, int(screen_y-18*zoom)-5))
+            ui = self.world.get_singleton_component(UIState)
+            selected = ui and self.world.get_component(ui.selected_unit, Unit) is unit
+            hovered = False
+            if ui and ui.hovered_tile:
+                hx, hy = self.hex_converter.hex_to_pixel(*ui.hovered_tile)
+                camera = self.world.get_singleton_component(Camera)
+                hovered = abs(hx*camera.zoom+camera.offset_x-screen_x) < GameConfig.HEX_SIZE*zoom*.6 and abs(hy*camera.zoom+camera.offset_y-screen_y) < GameConfig.HEX_SIZE*zoom*.6
+            if (zoom < .65 or getattr(self, '_ui_dense', False)) and not (selected or hovered):
+                return
+            label = self.UNIT_LABELS.get(unit.unit_type, '?')
+            font = ctx.font(16)
+            w, h = font.size(label)
+            y = int(screen_y+max(12, 22*zoom))
+            RMS.rect(PANEL, (int(screen_x-w/2)-3, y-1, w+6, h+2))
+            ctx.text(label, (int(screen_x), y), size=16, centered=True)
+            return
         requested_size = int(14 * zoom * scale)
         if requested_size < 8:
             return

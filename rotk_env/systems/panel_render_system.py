@@ -52,6 +52,11 @@ class PanelRenderSystem(System):
 
     def update(self, delta_time: float) -> None:
         """Update panel rendering"""
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            from ..ui.painters import render_selection_and_log
+            render_selection_and_log(self.world, ctx)
+            return
         self._render_selected_unit_info()
         self._render_battle_log()
         self._render_view_mode_info()  # New: render view mode info

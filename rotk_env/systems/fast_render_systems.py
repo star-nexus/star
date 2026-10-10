@@ -442,6 +442,11 @@ class FastEffectRenderSystem(EffectRenderSystem):
 
     def _movement_overlay(self, zoom: float) -> Tuple[pygame.Surface, int]:
         radius = max(1, int(GameConfig.HEX_SIZE * zoom))
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            points = [(round(x*zoom+radius+1), round(y*zoom+radius+1))
+                      for x, y in self.hex_converter.get_hex_corners(0, 0)]
+            return ctx.tactical_surface('move', (radius*2+2, radius*2+2), points), radius
         cached = self._move_overlay_cache.get(radius)
         if cached is not None:
             return cached, radius
@@ -482,16 +487,15 @@ class FastEffectRenderSystem(EffectRenderSystem):
 
         overlay, radius = self._movement_overlay(zoom)
         margin = radius + 2
+        from ..ui.context import viewport_for
+        viewport = viewport_for(self.world).inflate(margin*2, margin*2)
         for q, r in self._movement_cache:
             if (q, r) == (position.col, position.row):
                 continue
             world_x, world_y = self.hex_converter.hex_to_pixel(q, r)
             screen_x = world_x * zoom + camera_offset[0]
             screen_y = world_y * zoom + camera_offset[1]
-            if not (
-                -margin <= screen_x <= GameConfig.WINDOW_WIDTH + margin
-                and -margin <= screen_y <= GameConfig.WINDOW_HEIGHT + margin
-            ):
+            if not viewport.collidepoint(screen_x, screen_y):
                 continue
             RMS.draw(overlay, (screen_x - radius - 1, screen_y - radius - 1))
 
