@@ -45,6 +45,48 @@ selects the faction-state ablation pack. `--reasoning-effort low|high|max` (defa
 `low`) and `--no-carry-reasoning` control thinking budget and whether the
 chain stays in context.
 
+## Controlling reasoning
+
+Two flags govern how much the model thinks and how much of that thinking stays
+in context. They only affect model families that expose the corresponding knob
+(DeepSeek and the Responses API); elsewhere they are ignored.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--reasoning-effort low\|high\|max` | `low` | Per-turn thinking budget. |
+| `--carry-reasoning` / `--no-carry-reasoning` | on | Keep the model's own reasoning in the conversation history. |
+
+Reasoning is off entirely for a provider whose `.configs.toml` section sets
+`enable_thinking = false`, which is how the baseline control group is defined.
+
+`--carry-reasoning` is on by default because DeepSeek's tool-calling protocol
+requires the field back on every later request, and sending the chain verbatim
+lets the model continue its previous thought — which is usually cheaper than
+re-deriving it as new output tokens. Pass `--no-carry-reasoning` to echo an
+empty field instead (still valid, but the model re-thinks each turn). Strategy
+scoring reads the reasoning from the reply either way, so the metric is unaffected.
+
+Each successful API call logs `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`.
+Those totals are included in the end-of-game report sent to the ENV.
+
+`max_tokens` defaults to 8192 (reasoning plus the answer). Set it in
+`.configs.toml` per provider to override.
+
+Model variants can be defined without duplicating credentials by using
+`inherits` in `.configs.toml`:
+
+```toml
+[deepseek-v4-flash]
+model_id = "deepseek-v4-flash"
+api_key = "sk-..."
+base_url = "https://api.deepseek.com/chat/completions"
+max_tokens = 8192
+
+[deepseek-v4-flash-off]
+inherits = "deepseek-v4-flash"
+enable_thinking = false
+```
+
 ## Tools the model sees
 
 The LLM only calls what is registered as a tool. There is one shared

@@ -148,90 +148,38 @@ Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizo
 <a id="quick-start"></a>
 ## 🛠️ Quick Start
 
-**STARBench uses the Rust ENV by default.** The standard entry point is
-`uv run starbench.py`; the launcher prepares the required ENV dependencies.
-The same default applies to desktop, Web, headless and batch evaluation. Agent
-startup and STAR Protocol connections remain unchanged.
+**Run your first LLM-vs-LLM match:** start a Hub, launch the battlefield, then
+connect one Agent for each faction. You can watch the same Rust-powered game in
+**a local Pygame window** or **a Three.js browser view**. Opening the battlefield
+alone does not start an LLM Agent.
 
-### 1. Install once
+The steps below run a two-faction, turn-based match: Wei and Shu, controlled by
+reference LLM Agents. If you only want to try the controls first, jump to
+[the optional offline preview](#optional-try-the-battlefield-without-llm-agents).
+
+### 1. Install STAR
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the
-[Rust toolchain](https://www.rust-lang.org/tools/install), then open a new terminal.
-`uv` manages the project's Python 3.13 and dependencies. Rust is needed for the
-first ENV build from this source checkout; running an Agent or the protocol SDK
-alone does not require it.
+[Rust toolchain](https://www.rust-lang.org/tools/install), then open a new terminal:
 
 ```bash
 git clone https://github.com/star-nexus/star.git
 cd star
 ```
 
-There is no separate dependency-install command. The launcher prepares the
-selected ENV automatically; the first launch includes compilation and may take
-longer. Subsequent launches reuse the build when its inputs are unchanged.
-Run commands from the repository root, rather than an internal implementation
-directory.
-
-### 2. Explore the battlefield — no API key or Hub needed
+Run STAR commands from this repository root. `uv` manages Python 3.13 and the
+project dependencies. The ENV launcher builds Rust on first use, which may take
+longer; later launches reuse the build. **For the browser view**, also install
+Node/npm and run this once:
 
 ```bash
-uv run starbench.py --no-hub
+npm ci --prefix rotk_env/rendering/web/client
 ```
 
-The configuration menu opens. Choose a map and click **Start Game** to inspect
-the battlefield, select units, and try the controls. Offline AI slots are static:
-this preview has no automated opponent and makes no model calls.
+### 2. Configure your model
 
-Use `1` / `2` / `3–5` to select infantry / cavalry / archers, `M` / `A` to choose
-a move / attack target, and **F1** for help.
-
-### 3. Connect your Agents for a benchmark
-
-**Terminal 1 — start the existing GameServer Hub.** Clone it alongside `star`:
-
-```bash
-git clone https://github.com/star-nexus/GameServer.git
-cd GameServer
-uv run fastapi dev gameserver/main.py
-```
-
-Keep this terminal running. **Terminal 2 — open a terminal in `star` and start ENV:**
-
-```bash
-uv run starbench.py --env-id env_1
-```
-
-In the menu, choose **Strategic Turn-Based**, the desired AI player slots, and
-**External Agent / Hub**, then click **Start Game**. For three factions, choose
-the three-faction benchmark layout. Wait for the Hub connection to be confirmed
-before connecting Agents. ENV and Agent processes use the same `env_id`;
-each Agent uses a distinct `agent_id`.
-
-**Terminal 3 — check the connection without spending model tokens:**
-
-```bash
-uv run rotk_agent/main.py \
-    --env-id env_1 --agent-id agent_1 --faction wei \
-    --provider fake --mode turn_based
-```
-
-`fake` is a scripted reference participant for checking the connection, not an
-LLM evaluation. To use real-time instead, select **Dynamic Real-Time** in the
-ENV menu and pass `--mode real_time` to every Agent. Static slots do not act until
-a controller joins.
-
-To plug in your **own Agent architecture**, use `protocol.AgentClient` and the
-[Agent–ENV protocol](docs/agent-protocol.md). You do not need to import
-`rotk_agent`, `rotk_env`, or the Rust extension. A no-LLM protocol probe is also
-available:
-
-```bash
-uv run python examples/protocol_conformance.py --faction wei --mode turn_based
-```
-
-### Optional: run the reference LLM Agents
-
-Create `.configs.toml` in `star` only when using a model provider:
+Create `.configs.toml` in `star` with your model endpoint and API key. This
+example uses the reference Agent's DeepSeek profile:
 
 ```toml
 [deepseek]
@@ -241,127 +189,141 @@ base_url = "https://api.deepseek.com/chat/completions"
 max_tokens = 8192
 ```
 
-Open one terminal in `star` for each participant. The following example connects
-one Agent per faction to a three-faction, turn-based ENV:
+Replace `YOUR_API_KEY` with your own key. Both Agents below use this profile;
+each makes model calls during play. You can give them different provider
+profiles to compare models. For model options, see
+[the reference Agent guide](rotk_agent/README.md).
+
+### 3. Start the Hub — Terminal 1
+
+The Hub connects Agents to the battlefield. Clone GameServer alongside `star`
+(run these commands from the directory containing `star/`):
 
 ```bash
-# Wei
-uv run rotk_agent/main.py \
-    --env-id env_1 --agent-id agent_1 --faction wei \
-    --provider deepseek --mode turn_based
-
-# Shu
-uv run rotk_agent/main.py \
-    --env-id env_1 --agent-id agent_2 --faction shu \
-    --provider deepseek --mode turn_based
-
-# Wu — requires the three-faction benchmark layout
-uv run rotk_agent/main.py \
-    --env-id env_1 --agent-id agent_3 --faction wu \
-    --provider deepseek --mode turn_based
+git clone https://github.com/star-nexus/GameServer.git
+cd GameServer
+uv run fastapi dev gameserver/main.py
 ```
 
-You can connect multiple Agents per faction using unique `--agent-id` values.
-All reference Agents share `rotk_agent/main.py`; `--provider` selects their model
-profile. `./run_agent.sh ENV_ID AGENT_ID FACTION PROVIDER MODE` remains available.
+Keep this terminal running. The following ENV and Agent commands all use
+`ws://localhost:8000/ws/metaverse` and match ID `env_1`.
 
-#### Controlling reasoning
+### 4. Start the battlefield — Terminal 2
 
-Two flags govern how much the model thinks and how much of that thinking stays
-in context. They only affect model families that expose the corresponding knob
-(DeepSeek and the Responses API); elsewhere they are ignored.
+Open a terminal in `star` and choose **one** of these viewers. Both commands
+start the same map, factions, mode and seed, with Rust running the game rules.
 
-| Flag | Default | Effect |
-| --- | --- | --- |
-| `--reasoning-effort low\|high\|max` | `low` | Per-turn thinking budget. |
-| `--carry-reasoning` / `--no-carry-reasoning` | on | Keep the model's own reasoning in the conversation history. |
+**Local window — Pygame (default):**
 
-Reasoning is off entirely for a provider whose `.configs.toml` section sets
-`enable_thinking = false`, which is how the baseline control group is defined.
-
-`--carry-reasoning` is on by default because DeepSeek's tool-calling protocol
-requires the field back on every later request, and sending the chain verbatim
-lets the model continue its previous thought — which is usually cheaper than
-re-deriving it as new output tokens. Pass `--no-carry-reasoning` to echo an
-empty field instead (still valid, but the model re-thinks each turn). Strategy
-scoring reads the reasoning from the reply either way, so the metric is unaffected.
-
-Each successful API call logs `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`.
-Those totals are included in the end-of-game report sent to the ENV.
-
-`max_tokens` defaults to 8192 (reasoning plus the answer). Set it in
-`.configs.toml` per provider to override.
-
-Model variants can be defined without duplicating credentials by using
-`inherits` in `.configs.toml`:
-
-```toml
-[deepseek-v4-flash]
-model_id = "deepseek-v4-flash"
-api_key = "sk-..."
-base_url = "https://api.deepseek.com/chat/completions"
-max_tokens = 8192
-
-[deepseek-v4-flash-off]
-inherits = "deepseek-v4-flash"
-enable_thinking = false
+```bash
+uv run starbench.py --skip-start --players ai_vs_ai --mode turn_based \
+  --scenario chibi-small --seed 42 --env-id env_1 \
+  --hub-url ws://localhost:8000/ws/metaverse
 ```
 
-### Common ENV commands
+The desktop battlefield opens directly, without the configuration menu.
 
-| Goal | Command |
-| --- | --- |
-| Open the configuration menu | `uv run starbench.py` |
-| Explore offline | `uv run starbench.py --no-hub` |
-| Open the Three.js browser renderer | `uv run starbench.py --renderer web --no-hub` |
-| Run a connected, three-faction real-time ENV without a window | `uv run starbench.py --headless --players three_kingdoms --mode real_time --env-id env_1` |
-| Use the Python reference implementation | `uv run starbench.py --backend python` |
-| Show startup help | `uv run starbench.py --help` |
+**Browser — Three.js:**
 
-Window and headless ENV launchers, and `auto_test.py`, default to **Rust**.
-`--headless` removes the window; `--no-hub` explicitly disables networking.
-The launcher selects dependencies internally. GameServer, star-protocol,
-`env_id` / `agent_id`, and participants' Agent commands remain unchanged.
-Use `--backend python` only when explicitly selecting the reference implementation;
-the launcher does not silently fall back when the Rust ENV cannot start.
+```bash
+uv run starbench.py --renderer web --players ai_vs_ai --mode turn_based \
+  --scenario chibi-small --seed 42 --env-id env_1 \
+  --hub-url ws://localhost:8000/ws/metaverse
+```
 
-Further ENV options and the explicit Python-only local BOT demo are documented
-in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and
-`run_headless_env.sh` remain supported.
+Open the spectator link printed in the terminal to watch the match. Rust runs
+in the server process on your computer; Three.js draws the browser view.
+Browser links for AI factions and spectators are read-only.
 
-For Web, install the pinned frontend dependency once with
-`npm ci --prefix rotk_env/rendering/web/client`, then open a faction or spectator
-link printed by the launcher. Rust runs on the server. The Web host prepares
-pure scene data without installing or importing pygame. The desktop launcher
-selects the optional pygame dependency and does not load Three.js assets. See
-[browser setup and Agent connections](docs/integration.md#play-in-a-browser)
-for commands, view permissions and Hub access.
-The Web map displays FPS by default, sampled from completed browser render frames
-once per second; `?perf=1` adds local state-update and draw-call diagnostics.
-Selecting a unit shows movement and attack ranges supplied by the authorized
-server view. Each browser keeps its own selection; previewing does not advance
-the game or issue Agent actions.
+Keep Terminal 2 running and wait for the Hub connection to be confirmed.
+**The battlefield is waiting for its Agents at this point.** An AI slot does
+not create a model process automatically. Do not use `--no-hub` for this match:
+it prevents external Agents from joining.
+
+### 5. Connect both LLM Agents — Terminals 3 and 4
+
+Open two more terminals in `star`. Start Wei in one:
+
+```bash
+uv run rotk_agent/main.py \
+  --env-id env_1 --agent-id agent_1 --faction wei \
+  --provider deepseek --mode turn_based \
+  --hub-url ws://localhost:8000/ws/metaverse
+```
+
+Start Shu in the other:
+
+```bash
+uv run rotk_agent/main.py \
+  --env-id env_1 --agent-id agent_2 --faction shu \
+  --provider deepseek --mode turn_based \
+  --hub-url ws://localhost:8000/ws/metaverse
+```
+
+**You now have an LLM-vs-LLM match.** Confirm that both Agent terminals register
+successfully and show model calls/action outcomes; watch the units act and turns
+advance in your chosen viewer. Keep all four processes running for the match.
+
+To check the connection without model calls, replace `--provider deepseek` with
+`--provider fake` in both Agent commands. `fake` is scripted and is not an LLM
+evaluation. Every participant needs a unique `agent_id`; its `env_id`, faction
+and mode must match the ENV.
+
+For a human-vs-LLM match, use `--players human_vs_ai` in either ENV command and
+start only the Shu Agent; you control Wei. For real-time play, use
+`--mode real_time` in ENV and all Agents. See the
+[usage and integration guide](docs/integration.md) for other match setups, or
+[the Agent–ENV protocol](docs/agent-protocol.md) to connect your own Agent.
+
+### Optional: try the battlefield without LLM Agents
+
+This is a separate offline experience: **no Hub, no model calls, and no automated
+opponent in AI slots**. You control human units yourself.
+
+**Local Pygame window:**
+
+```bash
+uv run starbench.py --no-hub
+```
+
+The configuration menu opens. Choose a map and human player slots, then click
+**Start Game**. Use `1` / `2` / `3–5` to select infantry / cavalry / archers,
+`M` / `A` to choose a move / attack target, and **F1** for help.
+
+**Three.js browser view** (requires the npm install from step 1):
+
+```bash
+uv run starbench.py --renderer web --no-hub --seed 42
+```
+
+Open a control link printed by the terminal. This starts two human factions;
+use each faction's link to control it, or the spectator link to observe.
+Select a unit for movement/attack previews; scroll to zoom, drag to pan and
+press **F** to fit the map. Read [game rules and controls](docs/game-rules.md).
+
+Offline previews cannot accept external Agents. To play with LLM Agents,
+stop the preview and follow steps 2–5 above.
 
 <details>
-<summary>Troubleshooting: the local Hub cannot be reached</summary>
+<summary>Troubleshooting: the battlefield opens, but Agents do not act</summary>
 
-Ensure GameServer is running and ENV and Agents use the same Hub URL. The default
-is `ws://localhost:8000/ws/metaverse`; use `--hub-url` or `STAR_HUB_URL` for a remote Hub.
+Check that GameServer, ENV and both Agents are running. They must use the same
+Hub URL and `env_id`, distinct Agent IDs, and matching factions and game modes.
+For the example above, ENV uses `ai_vs_ai`, and Agents join `wei` and `shu`.
+Confirm that neither ENV command includes `--no-hub`; Web needs the explicit
+`--hub-url` shown above. If registration succeeds but model calls fail, check
+the provider profile and endpoint in `.configs.toml`.
 
-If you use a VPN/proxy, allow `localhost`, `127.0.0.1`, and `::1` to bypass it.
-On macOS, the WebSocket client also reads system proxy settings. An error such as
-`python-socks is required to use a SOCKS proxy` can indicate this configuration.
-For macOS/Linux, set the following in each ENV/Agent terminal before launching:
+If a local Hub connection fails while a VPN/proxy is active, exclude local
+traffic. On macOS/Linux, set this in each ENV/Agent terminal before launching:
 
 ```bash
 export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
 ```
 
-You can also configure local bypass rules in your VPN/proxy application.
-
 </details>
 
-### Running Agent Evaluation in Batch
+## Running Agent Evaluation in Batch
 
 If you want to evaluate agents in batch, you can run the headless evaluation mode:
 
