@@ -1,8 +1,8 @@
 """Existing local input/panels with gameplay writes redirected to Rust commands.
 
 Mount on a prepared presentation World after removing its simulation systems.
-Keep the historical class names used by renderer/panel discovery. In particular,
-do not re-create UI entities after importing the native external-ID stream.
+Keep the historical class names used by renderer/panel discovery. UI resources
+are mounted after handoff; local negative IDs cannot collide with native IDs.
 """
 
 from rotk_env.components import Camera, HexPosition, InputState, MapData, UIState, UIButtonCollection
@@ -23,7 +23,7 @@ class _NativeInput:
         if world is not self.controls.presentation.world:
             raise ValueError("Input must use the native presentation World")
         if any(world.get_singleton_component(cls) is None for cls in (Camera, InputState, UIState)):
-            raise ValueError("Prepare camera and UI before native handoff")
+            super().initialize(world)
         self.world = world
         fit = self._zoom_to_fit_map(world.get_singleton_component(MapData))
         self.min_zoom = min(0.5, max(0.15, fit * 0.75))
@@ -67,7 +67,7 @@ class UnitActionButtonSystem(_ActionButtons):
         if world is not self.controls.presentation.world:
             raise ValueError("Action panel must use the native presentation World")
         if any(world.get_singleton_component(cls) is None for cls in (UnitActionPanel, ActionConfirmDialog)):
-            raise ValueError("Prepare action panel before native handoff")
+            super().initialize(world)
         self.world = world
 
     def update_control_state(self, dt):
@@ -103,9 +103,9 @@ class UIButtonSystem(_Toolbar):
     def initialize(self, world):
         if world is not self.controls.presentation.world:
             raise ValueError("Toolbar must use the native presentation World")
-        if world.get_singleton_component(UIButtonCollection) is None:
-            raise ValueError("Prepare toolbar entities before native handoff")
         self.world = world
+        if world.get_singleton_component(UIButtonCollection) is None:
+            self._create_ui_buttons(create_entity=world.create_local_entity)
 
     def update_control_state(self, dt):
         self._layout_ui_buttons()

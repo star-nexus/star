@@ -1,0 +1,109 @@
+{
+  "passed": true,
+  "modes": {
+    "turn_based": {
+      "none_web_authority_and_agent_hashes_unchanged": true,
+      "previous_pygame": {
+        "entity_counter": 241,
+        "ui_buttons": [
+          {
+            "id": 225,
+            "callback": "end_turn"
+          },
+          {
+            "id": 226,
+            "callback": "show_settings"
+          },
+          {
+            "id": 227,
+            "callback": "toggle_help"
+          },
+          {
+            "id": 228,
+            "callback": "toggle_stats"
+          }
+        ],
+        "unit_ids": {
+          "wei_infantry_1": 231,
+          "wei_archer_2": 232,
+          "wei_archer_3": 233,
+          "wei_archer_4": 234,
+          "wei_cavalry_5": 235,
+          "shu_infantry_1": 236,
+          "shu_archer_2": 237,
+          "shu_archer_3": 238,
+          "shu_archer_4": 239,
+          "shu_cavalry_5": 240
+        }
+      },
+      "current_pygame": {
+        "entity_counter": 237,
+        "ui_buttons": [],
+        "unit_ids": {
+          "wei_infantry_1": 227,
+          "wei_archer_2": 228,
+          "wei_archer_3": 229,
+          "wei_archer_4": 230,
+          "wei_cavalry_5": 231,
+          "shu_infantry_1": 232,
+          "shu_archer_2": 233,
+          "shu_archer_3": 234,
+          "shu_archer_4": 235,
+          "shu_cavalry_5": 236
+        }
+      }
+    },
+    "real_time": {
+      "none_web_authority_and_agent_hashes_unchanged": true,
+      "previous_pygame": {
+        "entity_counter": 241,
+        "ui_buttons": [
+          {
+            "id": 225,
+            "callback": "end_turn"
+          },
+          {
+            "id": 226,
+            "callback": "show_settings"
+          },
+          {
+            "id": 227,
+            "callback": "toggle_help"
+          },
+          {
+            "id": 228,
+            "callback": "toggle_stats"
+          }
+        ],
+        "unit_ids": {
+          "wei_infantry_1": 231,
+          "wei_archer_2": 232,
+          "wei_archer_3": 233,
+          "wei_archer_4": 234,
+          "wei_cavalry_5": 235,
+          "shu_infantry_1": 236,
+          "shu_archer_2": 237,
+          "shu_archer_3": 238,
+          "shu_archer_4": 239,
+          "shu_cavalry_5": 240
+        }
+      },
+      "current_pygame": {
+        "entity_counter": 237,
+        "ui_buttons": [],
+        "unit_ids": {
+          "wei_infantry_1": 227,
+          "wei_archer_2": 228,
+          "wei_archer_3": 229,
+          "wei_archer_4": 230,
+          "wei_cavalry_5": 231,
+          "shu_infantry_1": 232,
+          "shu_archer_2": 233,
+          "shu_archer_3": 234,
+          "shu_archer_4": 235,
+          "shu_cavalry_5": 236
+        }
+      }
+    }
+  }
+}

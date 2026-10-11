@@ -29,14 +29,8 @@ class NativeSession:
             if display != 'none':
                 raise ValueError("Web renderer requires display='none'")
             scene_options.setdefault('simulation_profile', 'interactive')
-        if display == "window":
-            from ..ui.context import UiContext
-            self.ui_context = ui_context or UiContext(backend="rust", controller="none")
-            scene_options['ui_context'] = self.ui_context
         try:
             self.world, initial = prepare_display_world(display=display, **scene_options)
-            if self.ui_context:
-                self.ui_context.unbind()
             self.runtime = RustRuntime(initial, threads=threads)
             self.presentation = WorldPresentation(self.world)
             from rotk_env.rendering import create_renderer
@@ -56,6 +50,9 @@ class NativeSession:
                 on_events=on_events, on_error=self._fail, on_publication=self.renderer.apply)
             self.controls.refresh()
             if display == "window":
+                from ..ui.context import UiContext
+                self.ui_context = ui_context or UiContext(backend="rust", controller="none")
+                self.ui_context.unbind()
                 self.renderer.mount(self.controls, self.ui_context, self._mount)
             elif display == "dummy":
                 from .native_input import CoordinateInputHandlingSystem

@@ -2,9 +2,9 @@
 
 2026-10-11，在 `codex/render-adapters` 实现。沿用[已确认的顶层设计](architecture/renderers/proposed.html)：服务端 Rust 执行权威规则，pygame / Three.js 读取展示投影。浏览器不运行 Rust/WASM。
 
-当前 Web 视觉版本为 `starbench-web-v4`。v4 补上选中单位的移动、攻击范围及可见目标提示；[验收及视觉记录](render-adapters-v4/README.md)包含截图与范围隔离检查。v3 的默认 FPS 和[依赖边界检查](render-adapters-v3/README.md)、v2 的插值与[对象复用](render-adapters-v2/README.md)继续保留。pygame 仍为 `starbench-ui-v6`。
+当前 Web 视觉版本为 `starbench-web-v4`。v4 补上选中单位的移动、攻击范围及可见目标提示；[验收及视觉记录](render-adapters-v4/README.md)包含截图与范围隔离检查。v3 的默认 FPS 和[依赖边界检查](render-adapters-v3/README.md)、v2 的插值与[对象复用](render-adapters-v2/README.md)继续保留。pygame 当前为 `starbench-ui-v7`，记录 PNG 观测编码修复和 UI 实体隔离。
 
-[整体架构验收](render-adapters-acceptance/README.md)记录本分支的完整回归和三适配器对照：基础功能及引擎依赖隔离通过；pygame 初始化仍将 UI 按钮放入 native 数据并改变实体 ID，严格跨渲染器一致性尚未通过。
+[整体架构验收](render-adapters-acceptance/README.md)保留首次评估结果。[后续修复验收](render-adapters-fixes/README.md)已解决 UI 初始化改变 native ID、截图实际 TGA 而标签为 PNG 的问题；三适配器完整权威状态和 Agent 响应一致。
 
 ## 启动
 
@@ -110,7 +110,9 @@ flowchart LR
 
 API18/schema5 内部的历史 `display="window"` 字段仍表示这套 native 策略。Web 的实际准备必须使用 `display="none"`；它既不创建 pygame 窗口，也不导入 pygame。没有修改 Rust 源码或重编译二进制，已有原生优化开关和默认 worker=1 保留。Python 仍进行一次纯数据场景准备，之后卸载所有 Python 模拟系统，Rust 独占规则推进。通用动画轨迹和生命周期位于 `systems/`，pygame 字体和绘制位于 `rendering/pygame/`。Web 宿主从磁盘传送共享 PNG 素材，浏览器解码；场景初始化不加载字体或构造 Surface。
 
-展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。选中 pygame 的会话安装 `PygameFrameProvider`；桌面入口的历史 headless/dummy 路径也显式安装它。pygame 截图沿用原字节、视角、错误和格式标签；历史格式问题不在本次更改中修正。
+展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。选中 pygame 的会话安装 `PygameFrameProvider`；桌面入口的历史 headless/dummy 路径也显式安装它。pygame 截图使用显式 PNG 编码，与 `frame_format="png"` 一致；原有视角、错误和发布围栏保留。ui-v7 的固定画面解码像素与保存的 ui-v6 基线一致，字节格式由 TGA 改为 PNG。
+
+Native 初始数据在纯规则场景中生成，window 模式也不导入渲染引擎。之后 pygame 适配器挂载输入、相机和 UI，工具栏实体使用独立的负数本地 ID。权威实体和原生动画保持非负 ID，新增 UI 不占用 native 的分配计数；初始化导出排除本地展示实体，并拒绝其携带权威组件。
 
 底层 `RustRuntime`、`AuthorityRuntime` 和 Python `LLMActionHandler` 不再默认导入 `RenderEngine` 或 pygame 来补齐截图。直接调用这些 API 的宿主如需图像，显式传入 `frame_capture` 回调；`NativeSession` 从其 `FrameProvider` 注入。未配置提供器时，成功的 VLM 请求保留结构化状态，返回 `frame_base64=None`、`frame_format=None` 与 `frame_error="No Agent observation frame provider configured"`。规则、star-protocol、Hub 和 Agent 的动作接口保持原样。
 
@@ -159,4 +161,4 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m pytest -q \
   rotk_env/tests/test_web_commands.py rotk_env/tests/test_web_server.py
 ```
 
-证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)、[首次依赖隔离](render-adapters-isolation/README.md)、[v3 FPS](render-adapters-v3/README.md)与[v4 范围高亮](render-adapters-v4/README.md)。pygame 保持 `starbench-ui-v6`，Web 当前为 `starbench-web-v4`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。
+证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)、[首次依赖隔离](render-adapters-isolation/README.md)、[v3 FPS](render-adapters-v3/README.md)、[v4 范围高亮](render-adapters-v4/README.md)与[验收问题修复](render-adapters-fixes/README.md)。pygame 当前为 `starbench-ui-v7`，Web 为 `starbench-web-v4`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。

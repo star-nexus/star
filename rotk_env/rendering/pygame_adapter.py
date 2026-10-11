@@ -27,7 +27,9 @@ class PygameRenderer(ProjectionRenderer):
         from rotk_env.systems.window_minimap_system import MiniMapSystem
 
         attach_battlefield_renderers(self.presentation)
-        ui_context.attach(self.presentation.world)
         for system in (InputHandlingSystem(controls), UnitActionButtonSystem(controls),
-                       UIButtonSystem(controls), PanelRenderSystem(), UIRenderSystem(), MiniMapSystem()):
+                       UIButtonSystem(controls)):
+            mount(system)
+        ui_context.attach(self.presentation.world)
+        for system in (PanelRenderSystem(), UIRenderSystem(), MiniMapSystem()):
             mount(system)

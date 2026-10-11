@@ -73,9 +73,9 @@ def test_vlm_permissions_filters_bytes_and_reset_match_python(mode, display, thr
                 assert runtime.export_state() == export_initial_state(world, display=display)
             payload = expected[-1]
             data = base64.b64decode(payload['frame_base64'])
-            assert payload['frame_format'] == 'png'  # Preserved legacy mislabel, not a new encoding claim.
-            assert not data.startswith(b'\x89PNG\r\n\x1a\n')
-            decoded = pygame.image.load(io.BytesIO(data), 'frame.tga')
+            assert payload['frame_format'] == 'png'
+            assert data.startswith(b'\x89PNG\r\n\x1a\n')
+            decoded = pygame.image.load(io.BytesIO(data), 'frame.png')
             assert decoded.get_size() == screen.get_size()
             assert pygame.image.tobytes(decoded, 'RGB') == pygame.image.tobytes(screen, 'RGB')
             runtime.reset(initial)

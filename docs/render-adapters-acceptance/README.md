@@ -1,5 +1,7 @@
 # 同一内核、多渲染器：整体验收
 
+本报告保留首次验收的结果。随后已修复下文的 P1 / P2；当前结论、兼容变化和通过证据见[验收问题修复](../render-adapters-fixes/README.md)。
+
 2026-10-11，评估 `codex/render-adapters` 的 `bcb22ba89bc365b5fe8fab7072d53476bf312f97`。对照[已接受的建议架构](../architecture/renderers/proposed.html)和[原实施验收要求](../rendering-architecture-assessment.md)。用户原 `.archify` 链接与仓库中的建议图字节一致。本轮只新增验收脚本、证据和文档，不修改运行代码、Rust 二进制、协议或视觉版本。
 
 **结论：在线多渲染器的主干和基础功能通过；严格的跨渲染器权威数据一致性暂不通过。** 游戏可以继续使用，已有原生规则和性能路径保留；目前不能签署“展示数据彻底排除在权威初始化之外、仅更换 renderer 后完整状态与 Agent 响应相同”的完整验收。

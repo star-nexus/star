@@ -1,13 +1,25 @@
 """Renderer substitution preserves authority and closes presentation resources."""
 import subprocess
 import sys
+import datetime
+import time
 
 import pytest
 pytest.importorskip('star_native')
 from rotk_env.rendering import register_renderer
 from rotk_env.rendering.adapters import ProjectionRenderer
 from rotk_env.runtime.session import NativeSession
-from rotk_env.tests.test_native_request_batch import frozen
+
+
+@pytest.fixture
+def frozen(monkeypatch):
+    # Keep this gate runnable without importing desktop oracle test fixtures.
+    monkeypatch.setattr(time, 'time', lambda: 1720000000.0)
+    class Frozen(datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 12, 12)
+    monkeypatch.setattr(datetime, 'datetime', Frozen)
 
 
 def test_framework_contracts_do_not_import_pygame():
@@ -84,3 +96,43 @@ def test_default_adapter_and_web_do_not_change_rules_or_native_schema(frozen):
             states.append(s.runtime.export_state())
     assert states[0] == states[1]
     assert states[0]['schema'] == 5
+
+
+def test_window_authority_preparation_does_not_import_any_renderer():
+    code = '''
+import importlib.abc, sys
+class RejectRenderer(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname == 'pygame' or fullname.startswith(('pygame.', 'rotk_env.ui.',
+            'rotk_env.rendering.pygame', 'rotk_env.rendering.web', 'framework.engine.renders')):
+            raise AssertionError('Authority preparation imported ' + fullname)
+sys.meta_path.insert(0, RejectRenderer())
+from rotk_env.runtime.bootstrap import prepare_display_world
+from rotk_env.components import UIButton, Camera
+world, initial = prepare_display_world(display='window', scenario='chibi-small', seed=42)
+try:
+    assert initial['display'] == 'window'
+    assert world.systems == []
+    assert world.get_singleton_component(Camera) is None
+    assert not world.query().with_component(UIButton).entities()
+    assert initial['entity_counter'] == 237
+    assert 'pygame' not in sys.modules
+finally:
+    world.reset()
+'''
+    subprocess.run([sys.executable, '-c', code], check=True)
+
+
+def test_authority_export_rejects_rule_components_on_local_entities(frozen):
+    from rotk_env.components import UIButton, HexPosition
+    from rotk_env.runtime.bootstrap import export_initial_state, prepare_display_world
+    world, _ = prepare_display_world(scenario='chibi-small', seed=42)
+    try:
+        uid = world.create_local_entity()
+        world.add_component(uid, UIButton(x=0, y=0, width=10, height=10, text='Test'))
+        assert all(row['id'] >= 0 for row in export_initial_state(world)['entities'])
+        world.add_component(uid, HexPosition(0, 0))
+        with pytest.raises(ValueError, match='authoritative components'):
+            export_initial_state(world)
+    finally:
+        world.reset()

@@ -430,7 +430,7 @@ If you find this project useful in your research, please consider citing:
 
 ## Window interface
 
-The pygame menu and battlefield use `starbench-ui-v6`. The default window starts
+The pygame menu and battlefield use `starbench-ui-v7`. The default window starts
 at 1200×900 (800 high on smaller desktops); the opening map fits the area beside
 the sidebar. Toolbar buttons highlight on hover and darken/depress on click.
 See [window layout, controls and VLM visual version](docs/starbench-ui.md).

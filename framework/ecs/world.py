@@ -71,6 +71,8 @@ class World:
 
         # Entity ID counter
         self.entity_counter = 0
+        # Local derived entities never consume IDs adopted from an authority.
+        self._local_entity_counter = -1
 
         # Monotonic world revision. Observation caches key on this so a
         # move in the same wall-clock second cannot return a stale view.
@@ -237,6 +239,15 @@ class World:
         """Create a new entity and return its ID."""
         entity_id = self.entity_counter
         self.ensure_entity(entity_id)
+        return entity_id
+
+    def create_local_entity(self) -> Entity:
+        """Allocate a local auxiliary ID, disjoint from non-negative external IDs."""
+        entity_id = self._local_entity_counter
+        self._local_entity_counter -= 1
+        self.entities[entity_id] = {}
+        for key in tuple(self._population_query_keys):
+            self._drop_cache_entry(key)
         return entity_id
 
     def ensure_entity(self, entity_id: Entity) -> Entity:
@@ -440,6 +451,7 @@ class World:
         self._type_to_cache_keys.clear()
         self.systems.clear()
         self.entity_counter = 0
+        self._local_entity_counter = -1
         self._cache_version = 0
         self.revision = 0
         print("World has been reset")

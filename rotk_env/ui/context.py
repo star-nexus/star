@@ -8,7 +8,7 @@ import pygame
 from framework.ecs import profiling
 from framework.engine import RMS
 
-VISUAL_VERSION = "starbench-ui-v6"
+VISUAL_VERSION = "starbench-ui-v7"
 BACKGROUND = (14, 22, 30)
 PANEL = (24, 36, 47)
 RAISED = (33, 48, 61)
