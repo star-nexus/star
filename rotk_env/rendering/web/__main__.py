@@ -4,6 +4,10 @@ import asyncio
 import os
 import signal
 
+# Scene preparation still imports pygame for existing ENV assets and fonts.
+# Its support banner does not describe the selected browser renderer.
+os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
+
 from rotk_env.prefabs.config import Faction, PlayerType, PLAYER_PRESETS
 from rotk_env.runtime.session import NativeSession
 from .server import WebHost

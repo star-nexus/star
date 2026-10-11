@@ -12,15 +12,17 @@ export class DisplayState {
     if (packet.kind !== 'delta' || !previous || packet.epoch !== previous.epoch ||
         packet.view !== previous.view || packet.base_sequence !== previous.sequence ||
         packet.sequence < previous.sequence) return false;
+    const owned = structuredClone(packet);
     const merge = (rows, updates, removed = []) => {
+      if (!updates.length && !removed.length) return rows;
       const next = new Map(rows.map(row => [row.id, row]));
       removed.forEach(id => next.delete(id));
-      updates.forEach(row => next.set(row.id, structuredClone(row)));
+      updates.forEach(row => next.set(row.id, row));
       return [...next.values()];
     };
-    this.snapshot = {...previous, ...structuredClone(packet), kind: 'snapshot',
-      units: merge(previous.units, packet.units, packet.removed),
-      tiles: merge(previous.tiles, packet.tiles)};
+    this.snapshot = {...previous, ...owned, kind: 'snapshot',
+      units: merge(previous.units, owned.units, owned.removed),
+      tiles: merge(previous.tiles, owned.tiles)};
     delete this.snapshot.base_sequence;
     delete this.snapshot.removed;
     return true;

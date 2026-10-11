@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-11",
+  "browser": "Codex in-app browser",
+  "visual_version": "starbench-web-v2",
+  "scenario": "chibi-small",
+  "seed": 42,
+  "players": "human_vs_human",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "canvas": {
+    "width": 1000,
+    "height": 648
+  },
+  "native_clock_hz": 60,
+  "display_limit_hz": 20,
+  "movement": {
+    "from": [
+      1,
+      3
+    ],
+    "to": [
+      0,
+      3
+    ],
+    "mp": [
+      4,
+      3
+    ],
+    "before_visible_position_frames": 10,
+    "after_visible_position_frames": 52,
+    "after_authoritative_position_packets": 9,
+    "before": "browser-before.json",
+    "after": "browser-after.json"
+  },
+  "pointer_pick_after_movement": {
+    "unit_type": "infantry",
+    "position": [
+      0,
+      3
+    ]
+  },
+  "mouse_end_turn": {
+    "view": "wei",
+    "ap": [
+      2,
+      1,
+      0,
+      2
+    ],
+    "current_player_after": "shu"
+  },
+  "space_end_turn": {
+    "view": "shu",
+    "ap": [
+      2,
+      1,
+      0,
+      2
+    ],
+    "current_player_after": "wei",
+    "round_after": 2
+  },
+  "camera": {
+    "zoom": true,
+    "pan": true,
+    "fit": true,
+    "labels_follow_camera": true
+  },
+  "narrow": {
+    "viewport": {
+      "width": 460,
+      "height": 820
+    },
+    "document_scroll_width": 460,
+    "aside_client_height": 204,
+    "aside_scroll_height": 204
+  },
+  "reload": true,
+  "credential_view_switch": true,
+  "console_errors_and_warnings": [],
+  "startup": {
+    "command": "uv run starbench.py --renderer web --no-hub --seed 42 --port 8766",
+    "pygame_support_banner": false,
+    "virtual_env_mismatch_warning": false,
+    "renderer_identity": "Rust ENV / Three.js"
+  },
+  "screenshots": {
+    "web-battlefield.jpg": {
+      "format": "JPEG",
+      "sha256": "c2499c2be2847f577ab64412429e586ff880e02dbaa9228a4248b38635a4cfb9"
+    },
+    "web-end-turn-ap-restored.jpg": {
+      "format": "JPEG",
+      "sha256": "1dee38218d494c6beb85527c83d0087300c2b614f35c413f66a408e6002cae48"
+    },
+    "web-narrow-window.jpg": {
+      "format": "JPEG",
+      "sha256": "ef8d75c2a88a5579c66c8d00a8a49677152db791d5186eb39a9355fd8de1f5d1"
+    },
+    "web-space-ap-restored.jpg": {
+      "format": "JPEG",
+      "sha256": "6076c365642ad2c552c9063347e2a919a1f8c84158ce66d7692ce808373cda09"
+    }
+  }
+}

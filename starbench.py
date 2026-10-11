@@ -90,12 +90,16 @@ def main(argv=None):
     print(f"Preparing STARBench ENV ({backend}). "
           "Dependencies are prepared automatically; the first launch may take longer.",
           flush=True)
+    # The outer PEP 723 `uv run starbench.py` owns a temporary environment.
+    # The inner uv invocation must select this checkout's project environment.
+    child_env = dict(os.environ)
+    child_env.pop('VIRTUAL_ENV', None)
     if os.name == "posix":
         # Keep the original signal/exit behaviour, with no extra supervisor.
         os.chdir(ROOT)
-        os.execv(uv, command)
+        os.execve(uv, command, child_env)
     try:
-        return subprocess.call(command, cwd=ROOT)
+        return subprocess.call(command, cwd=ROOT, env=child_env)
     except KeyboardInterrupt:
         return 130
 

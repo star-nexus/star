@@ -1,6 +1,8 @@
-# 多渲染器接入：第一版
+# 多渲染器接入
 
 2026-10-11，在 `codex/render-adapters` 实现。沿用[已确认的顶层设计](architecture/renderers/proposed.html)：服务端 Rust 执行权威规则，pygame / Three.js 读取展示投影。浏览器不运行 Rust/WASM。
+
+当前 Web 视觉版本为 `starbench-web-v2`。v2 修复单位移动的低频跳变、反复创建 GPU 对象和侧栏 DOM；[实测与视觉记录](render-adapters-v2/README.md)包含修复前后证据。pygame 仍为 `starbench-ui-v6`。
 
 ## 启动
 
@@ -12,6 +14,10 @@ uv run starbench.py --renderer web --no-hub --scenario chibi-small --seed 42
 ```
 
 打开终端打印的魏、蜀或旁观链接。默认两个人类槽位，分别使用对应链接，两个页面共享同一 Rust 对局。链接中的凭据绑定服务端视角，每次启动重新生成，使用 URL fragment 而不进入 HTTP 请求路径。普通启动仍为 pygame：`uv run starbench.py --no-hub`。
+
+Web 的 Python 场景准备仍导入 pygame，使用既有素材/字体支持；网页画面由 Three.js/WebGL2 绘制。Web 入口抑制 pygame 的库欢迎提示，输出明确的 `Rust ENV / Three.js`。启动器清除外层 PEP 723 临时环境的 `VIRTUAL_ENV` 后执行内层 uv，让它选择仓库 `.venv`，避免环境不匹配警告。
+
+更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。诊断时在链接的 `#token=...` 前加 `?perf=1`，例如 `http://127.0.0.1:8765/?perf=1#token=...`；左下角显示浏览器 FPS、状态更新频率与绘制调用数。这些指标仅在本地显示，不发送到外部。
 
 Web 的 Hub 接入使用原来的宿主与 SDK：
 
@@ -48,7 +54,8 @@ rotk_env/prefabs/              场景初始化及模拟策略选择
 rotk_env/systems/              原有系统与性能路径
 rotk_env/components/           原有组件
 rotk_env/maps/                 原有地图
-docs/render-adapters-v1/       验证记录、视觉版本、截图、桌面对照脚本
+docs/render-adapters-v1/       初版历史记录与可复用桌面对照脚本
+docs/render-adapters-v2/       移动/对象复用修复证据、视觉版本、截图
 ```
 
 `node_modules` 和 `.archify` 作者工具中间文件忽略；固定设计图保存在 `docs/architecture/renderers/`。
@@ -82,7 +89,7 @@ API18/schema5 内部的历史 `display="window"` 字段仍表示这套 native �
 
 展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。默认 pygame 截图沿用原字节、视角、错误和格式标签；历史格式问题不在本次更改中修正。
 
-Web v1 不提供 Agent 的图像观测。`get_faction_state_vlm` 返回原有无图像错误字段，不回退到旧窗口或未授权浏览器画面。浏览器截图仅是人工验证证据。要让 Web 对局支持 VLM，后续需要独立可信离屏 FrameProvider，并单独记录其视觉版本及验收结果。
+Web 不提供 Agent 的图像观测。`get_faction_state_vlm` 返回原有无图像错误字段，不回退到旧窗口或未授权浏览器画面。浏览器截图仅是人工验证证据。要让 Web 对局支持 VLM，后续需要独立可信离屏 FrameProvider，并单独记录其视觉版本及验收结果。
 
 ## 展示传输与人类输入
 
@@ -93,6 +100,8 @@ Web v1 不提供 Agent 的图像观测。`get_faction_state_vlm` 返回原有无
 服务端解析白名单人类命令，在权威线程同一次接纳内发布最新权限事实、核验阵营、存活单位、当前回合、目标视野、场景 epoch，然后调用已有 `execute_control / start_capture / finish_human_turn`。按钮与 Space 最终都进入人类 `finish_human_turn`；不会伪造 Agent 注册或绕过 Agent 动作网关。
 
 每连接展示邮箱容量=1，积压时换成完整快照；命令结果单独保留在容量=16 的队列中。最大16个连接、8KiB 入站消息、容量8的接收队列、每秒8个请求（突发12个）、认证5秒、发送超时2秒。慢浏览器发送由异步任务处理，不阻塞权威线程。原有 Agent/Hub 可靠消息不走可丢弃邮箱，也不合并或重放。
+
+Rust 权威时钟仍为60Hz，展示状态默认最多20Hz。v2 在浏览器动画帧之间插值收到的单位/投射物位置，不预测未收到的权威状态；延迟窗口最长100ms，长时间断流与完整重同步直接定位，消失/不可见单位立即移除。拾取、标签和选中圈跟随实际绘制位置。GPU 实例批次复用已有容量，只上传改变的位置/颜色；地格无变化时保留数组与缓冲，攻击线/效果对象按生命周期复用，侧栏节点保留。渲染器仍无游戏规则与时钟推进职责。
 
 第一版覆盖地图、Fog、领土标记、单位、资源、移动/攻击/基本行动、回合、视觉提示、镜头、重连与旁观。行动按现有场景能力启用；没有 TerritorySystem 的对局禁用占领/筑垒，不额外添加规则系统。桌面菜单、小地图、统计详页、结算报告页面暂未搬到 Web。新 Web 路径尚未做5000单位/1000 Agent 的长期容量验收；原有原生测量记录继续有效，不据此宣称浏览器具有相同容量。
 
@@ -109,4 +118,4 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m pytest -q \
   rotk_env/tests/test_web_commands.py rotk_env/tests/test_web_server.py
 ```
 
-证据见[验收与视觉记录](render-adapters-v1/README.md)。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。
+证据见[v1 初版验收](render-adapters-v1/README.md)与[v2 性能及视觉记录](render-adapters-v2/README.md)。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。

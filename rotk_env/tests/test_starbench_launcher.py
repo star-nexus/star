@@ -49,14 +49,15 @@ def test_real_entrypoint_preserves_args_cwd_and_exit_status(args, native, tmp_pa
     uv.write_text(
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
-        "print(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd()}))\n"
+        "print(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd(), 'venv': os.getenv('VIRTUAL_ENV')}))\n"
         "sys.exit(7)\n"
     )
     uv.chmod(0o755)
     result = subprocess.run(
         [sys.executable, str(starbench.ROOT / "starbench.py"), *args],
         cwd=tmp_path,
-        env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+        env={**os.environ, 'VIRTUAL_ENV': str(tmp_path / 'script-env'),
+             "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
         text=True, capture_output=True,
     )
     assert result.returncode == 7, result.stderr
@@ -64,7 +65,7 @@ def test_real_entrypoint_preserves_args_cwd_and_exit_status(args, native, tmp_pa
     original_args = args[1:] if args[:1] == ["env"] else args
     expected = ["run", *( ["--extra", "native"] if native else []),
                 "rotk_env/main.py", *original_args]
-    assert launched == {"args": expected, "cwd": str(starbench.ROOT)}
+    assert launched == {"args": expected, "cwd": str(starbench.ROOT), 'venv': None}
 
 
 def test_windows_path_uses_same_command_and_root(monkeypatch):
@@ -72,10 +73,20 @@ def test_windows_path_uses_same_command_and_root(monkeypatch):
     monkeypatch.setattr(starbench.os, "name", "nt")
     monkeypatch.setattr(starbench.shutil, "which", lambda _: "uv.exe")
     monkeypatch.setattr(starbench.subprocess, "call",
-                        lambda command, cwd: invoked.append((command, cwd)) or 9)
+                        lambda command, cwd, env: invoked.append((command, cwd, env.get('VIRTUAL_ENV'))) or 9)
     assert starbench.main(["--backend", "python", "--headless"]) == 9
     assert invoked == [(["uv.exe", "run", "rotk_env/main.py", "--backend",
-                         "python", "--headless"], starbench.ROOT)]
+                         "python", "--headless"], starbench.ROOT, None)]
+
+
+def test_web_entrypoint_identifies_renderer_without_pygame_support_banner():
+    env = dict(os.environ)
+    env.pop('PYGAME_HIDE_SUPPORT_PROMPT', None)
+    result = subprocess.run([sys.executable, '-m', 'rotk_env.rendering.web', '--help'],
+                            cwd=starbench.ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert 'server-side Rust' in result.stdout
+    assert 'pygame community' not in result.stdout and 'SDL ' not in result.stdout
 
 
 def test_renderer_launcher_uses_env_owned_module_without_changing_default():

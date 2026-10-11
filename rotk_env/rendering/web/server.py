@@ -93,6 +93,8 @@ class WebHost:
                  '/style.css': CLIENT / 'style.css', '/app.js': CLIENT / 'app.js',
                  '/renderer.js': CLIENT / 'renderer.js', '/state.js': CLIENT / 'state.js',
                  '/hex.js': CLIENT / 'hex.js',
+                 '/performance.js': CLIENT / 'performance.js',
+                 '/batches.js': CLIENT / 'batches.js', '/motion.js': CLIENT / 'motion.js',
                  '/vendor/three.module.js': CLIENT / 'node_modules/three/build/three.module.js',
                  '/vendor/three.core.js': CLIENT / 'node_modules/three/build/three.core.js'}
         target = files.get(path)

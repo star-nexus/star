@@ -4,6 +4,7 @@ Run from the repository root with its .venv/bin/python. The baseline source is
 read from Git; no branch, checkout or native binary is changed by this probe.
 """
 import base64
+import argparse
 import hashlib
 import json
 import os
@@ -26,7 +27,11 @@ from rotk_env.runtime.session import NativeSession
 from rotk_env.ui.context import VISUAL_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = Path(__file__).resolve().parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--output', type=Path, help='Write a new evidence folder without replacing v1 records')
+options = parser.parse_args()
+OUT = options.output.resolve() if options.output else Path(__file__).resolve().parent
+OUT.mkdir(parents=True, exist_ok=True)
 baseline = types.ModuleType('rotk_env.runtime.desktop_baseline')
 baseline.__package__ = 'rotk_env.runtime'
 exec(subprocess.check_output(['git', 'show', '2598697:rotk_env/runtime/session.py'], cwd=ROOT, text=True), baseline.__dict__)

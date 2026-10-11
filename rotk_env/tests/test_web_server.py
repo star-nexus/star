@@ -50,6 +50,8 @@ def endpoint(host):
 async def test_http_serves_local_modules_assets_and_rejects_path_escape(host):
     async with httpx.AsyncClient(base_url=host.url, trust_env=False) as client:
         for path, mime in [('/', 'text/html'), ('/app.js', 'javascript'),
+                           ('/batches.js', 'javascript'), ('/motion.js', 'javascript'),
+                           ('/performance.js', 'javascript'),
                            ('/vendor/three.module.js', 'javascript'),
                            ('/vendor/three.core.js', 'javascript'),
                            ('/assets/texture/units/wei/infantry.png', 'image/png')]:
