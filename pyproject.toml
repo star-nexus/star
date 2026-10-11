@@ -28,6 +28,14 @@ dev = [
 [project.optional-dependencies]
 native = ["star-native==0.1.0"]
 pygame = ["pygame>=2.6.1"]
+arena = [
+    "fastapi>=0.115,<1",
+    "mcp==2.3.0",
+    "psycopg[binary]>=3,<4",
+    "pyjwt[crypto]>=2.10,<3",
+    "sqlalchemy>=2,<3",
+    "uvicorn>=0.34,<1",
+]
 
 [tool.uv.workspace]
 members = ["rotk_env/native/python"]

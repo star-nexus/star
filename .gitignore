@@ -200,3 +200,8 @@ error_log_*
 
 # Renderer dependencies stay inside the ENV adapter.
 node_modules/
+
+# Local Arena databases, match process logs and deployment secrets
+.arena/
+arena.db*
+deploy/arena/.env
