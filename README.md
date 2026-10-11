@@ -89,7 +89,7 @@ and [STARBench UI, previews and visual versions](docs/starbench-ui.md).
 ## ✨ Key Features
 
 - Strategic multi-agent evaluation
-- Real-time and turn-based execution modes. Real-time keeps the world ticking while the model thinks (latency changes outcomes); turn-based is the reproducible bench. The loop is locked at 60 FPS.
+- Real-time and turn-based execution modes. Real-time keeps the world ticking while the model thinks (latency changes outcomes); turn-based is the reproducible bench. The interactive Rust host targets a 60 Hz authority clock; each renderer has an independent display loop.
 - Partial observability environments
 - Extensible environment and agent integration
 - Layered ECS runtime for scalable simulation

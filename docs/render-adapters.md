@@ -4,6 +4,8 @@
 
 当前 Web 视觉版本为 `starbench-web-v4`。v4 补上选中单位的移动、攻击范围及可见目标提示；[验收及视觉记录](render-adapters-v4/README.md)包含截图与范围隔离检查。v3 的默认 FPS 和[依赖边界检查](render-adapters-v3/README.md)、v2 的插值与[对象复用](render-adapters-v2/README.md)继续保留。pygame 仍为 `starbench-ui-v6`。
 
+[整体架构验收](render-adapters-acceptance/README.md)记录本分支的完整回归和三适配器对照：基础功能及引擎依赖隔离通过；pygame 初始化仍将 UI 按钮放入 native 数据并改变实体 ID，严格跨渲染器一致性尚未通过。
+
 ## 启动
 
 从仓库根目录执行，首次安装 Web 素材依赖需要 Node/npm：
@@ -17,7 +19,7 @@ uv run starbench.py --renderer web --no-hub --scenario chibi-small --seed 42
 
 Web 的场景准备、Rust 宿主、展示投影和 Hub 路径都不导入 pygame，也不初始化字体或 SDL。pygame 是可选依赖；启动器只在选择桌面渲染时请求 `pygame` extra，Web 只请求 `native` extra。桌面路径不加载 Web 服务、Web 投影或 Three.js 素材。Web 入口无需隐藏任何 pygame 提示。启动器清除外层 PEP 723 临时环境的 `VIRTUAL_ENV` 后执行内层 uv，让它选择仓库 `.venv`，避免环境不匹配警告。独立无 pygame 环境及双向导入隔离的证据见[依赖隔离记录](render-adapters-isolation/README.md)。
 
-更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。默认在地图左下角显示小型绿色 FPS 角标，窄屏移到地图右上侧；角标不接收鼠标事件。FPS 按浏览器完成的绘制帧计数，约每秒更新，从后台返回页面后重新采样，与 Rust 60Hz 时钟、展示状态 20Hz 分别计量。默认不采集详细诊断数组。
+更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。默认在地图左下角显示小型绿色 FPS 角标，窄屏移到地图右上侧；角标不接收鼠标事件。FPS 按浏览器绘制循环次数计数，约每秒更新并取整，不直接计量 GPU 完成或物理屏幕呈现。从后台返回页面后重新采样，与 Rust 60Hz 时钟、展示状态 20Hz 分别计量。默认不采集详细诊断数组。
 
 诊断时在链接的 `#token=...` 前加 `?perf=1`，例如 `http://127.0.0.1:8765/?perf=1#token=...`；角标额外显示状态更新频率与绘制调用数，保留本地 p95 等详细采样。这些指标仅在本地显示，不发送到外部。
 
