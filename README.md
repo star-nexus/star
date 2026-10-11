@@ -74,7 +74,8 @@ STAR adopts a hierarchical, modular architecture designed for scalability.
 ![System Architecture](docs/architecture.jpg)
 
 Developers working on the interactive renderer can also read the
-[window runtime and rendering architecture](docs/window-runtime-rendering.md).
+[window runtime and rendering architecture](docs/window-runtime-rendering.md)
+and [STARBench UI, previews and visual versions](docs/starbench-ui.md).
 
 | Layer | Component | Description |
 | :--- | :--- | :--- |
@@ -414,4 +415,8 @@ If you find this project useful in your research, please consider citing:
 
 ## Window interface
 
-The pygame menu and battlefield use `starbench-ui-v2`. See [window layout, controls and VLM visual version](docs/starbench-ui.md). The CLI and star-protocol Agent integration remain unchanged.
+The pygame menu and battlefield use `starbench-ui-v6`. The default window starts
+at 1200×900 (800 high on smaller desktops); the opening map fits the area beside
+the sidebar. Toolbar buttons highlight on hover and darken/depress on click.
+See [window layout, controls and VLM visual version](docs/starbench-ui.md).
+The CLI and star-protocol Agent integration remain unchanged.

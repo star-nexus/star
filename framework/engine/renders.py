@@ -5,6 +5,10 @@ from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from ..ecs import profiling
 
+# Terrain's transparent seams must blend into the original ground colour.
+# Shared by frame clearing, screenshot paint and opaque terrain composition.
+FRAME_CLEAR_COLOR = (135, 141, 106)
+
 # 类型别名
 ColorType = Union[pygame.Color, Tuple[int, int, int], Tuple[int, int, int, int]]
 PositionType = Union[pygame.Rect, Tuple[int, int]]

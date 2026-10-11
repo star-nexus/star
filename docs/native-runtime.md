@@ -414,10 +414,16 @@ movement/combat/resource state and never register a synthetic Agent.
 
 Human attack returns the legacy hit boolean. Local wait/garrison only spend AP;
 they do not apply the Agent `rest` status effects. Local fortification retains the
-existing real-time resource exception. Keyboard `finish_human_turn()` and toolbar
-`toolbar_end_turn()` remain distinct: the former resets actions and checks game
-termination, while the latter rotates the explicit `TurnManager` list without
-resource reset or turn events. These are compatibility behaviors, not new rules.
+existing real-time resource exception. Space and the visible End Turn button both
+use `LocalControls.finish_turn()` → `finish_human_turn()`: the established human
+flow resets actions, checks termination, rotates factions and publishes turn
+events. When the scene has no TurnSystem, both inputs are no-ops. Agent `end_turn`
+retains its separate faction/round reset timing and authenticated protocol path.
+
+The low-level `toolbar_end_turn` command is retained in the native API for legacy
+compatibility. It rotates `TurnManager` without resource reset or turn events;
+the window toolbar no longer dispatches it. No native binary/schema/API change
+was needed to correct the UI routing mismatch.
 
 `LocalControls(runtime, presentation, initial_state, on_events=...)` connects these
 commands to a `WorldPresentation`. Each command applies its display delta before

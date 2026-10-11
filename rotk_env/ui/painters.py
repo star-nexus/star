@@ -5,7 +5,7 @@ from framework.engine import RMS
 from .. import components as c
 from ..prefabs.config import GameMode
 from ..prefabs.controls import help_panel_lines, action_hotkey
-from .context import ACCENT, BACKGROUND, BORDER, MUTED, PANEL, TEXT
+from .context import ACCENT, BACKGROUND, BORDER, MUTED, PANEL, RAISED, TEXT
 
 
 def faction_badge(faction, center, radius=5):
@@ -26,7 +26,8 @@ def render_shell(system, ctx):
     layout = ctx.layout
     ctx.panel(layout.top)
     ctx.panel(layout.sidebar)
-    ctx.text('STARBench', (16, 16), size=26, color=ACCENT)
+    ctx.text('STARBench', (16, 12), size=26, color=ACCENT)
+    ctx.text('RoTK  /  BATTLEFIELD', (16, 39), size=14, color=MUTED)
     state = world.get_singleton_component(c.GameState)
     clock = world.get_singleton_component(c.GameTime)
     mode = 'Real time' if state and state.game_mode == GameMode.REAL_TIME else 'Turn based'
@@ -56,16 +57,26 @@ def render_shell(system, ctx):
         controller = 'Offline  /  Static AI slots — no controller'
     ctx.text(f'{ctx.backend.upper()}  /  {controller}  /  Registered: {registered}', (170, 37), size=16, color=MUTED, max_width=layout.top.w-400)
     counts = system._current_faction_counts()
-    RMS.rect(PANEL, (0, layout.viewport.bottom-34, min(350, layout.viewport.w), 34))
-    x = 16
-    for faction, count in counts.items():
-        faction_badge(faction, (x+4, layout.viewport.bottom-17))
-        label = f'{getattr(faction, "value", faction).upper()}: {count}'
-        ctx.text(label, (x+16, layout.viewport.bottom-24), size=16)
-        x += 110
+    roster = tuple((getattr(faction, 'value', faction), count) for faction, count in counts.items())
+    def paint_roster(surface):
+        surface.fill(PANEL)
+        pygame.draw.line(surface, BORDER, (0, 0), (surface.get_width(), 0))
+        for i, (faction, count) in enumerate(roster):
+            surface.blit(ctx.tactical_surface('badge:'+faction, (12,12)), (14+i*110,11))
+            surface.blit(ctx.text_surface(f'{faction.upper()}: {count}', size=16), (32+i*110,10))
+    RMS.draw(ctx.widget_surface(('roster', roster, id(ctx.font(16))),
+                               (min(350, layout.viewport.w), 34), paint_roster),
+             (0, layout.viewport.bottom-34))
     # Legend is limited to geometric meanings; it never advertises permission.
-    RMS.rect(PANEL, (8, layout.viewport.y+8, 310, 26))
-    ctx.text('Blue: reachable  /  Gold: attack range', (16, layout.viewport.y+12), size=16, color=TEXT)
+    def paint_legend(surface):
+        surface.fill(PANEL)
+        pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+        pygame.draw.rect(surface, (125,185,240), (8,9,8,8), border_radius=2)
+        surface.blit(ctx.text_surface('Reachable',size=16), (23,7))
+        pygame.draw.rect(surface, ACCENT, (120,9,8,8), 1, border_radius=2)
+        surface.blit(ctx.text_surface('Attack range',size=16), (135,7))
+    RMS.draw(ctx.widget_surface(('legend', id(ctx.font(16))), (310,26), paint_legend),
+             (8, layout.viewport.y+8))
     with RMS.clip(layout.content):
         ctx.text('Mini-map', (layout.minimap.x, layout.minimap.y-2), size=16, color=ACCENT)
     if layout.max_scroll:
@@ -82,6 +93,7 @@ def render_selection_and_log(world, ctx):
     unit = world.get_component(entity, c.Unit) if entity is not None else None
     heading = None
     lines = []
+    strength = None
     if unit:
         count = world.get_component(entity, c.UnitCount)
         mp = world.get_component(entity, c.MovementPoints)
@@ -90,6 +102,7 @@ def render_selection_and_log(world, ctx):
         status = world.get_component(entity, c.UnitStatus)
         heading = f'{unit.faction.value.upper()}  ·  {unit.unit_type.value.title()}'
         if count:
+            strength = (count.current_count, count.max_count)
             lines.append(f'Strength: {count.current_count}/{count.max_count}')
         if mp and count:
             lines.append(f'Movement: {mp.current_mp:.1f}/{mp.get_effective_movement(count):.1f}')
@@ -101,11 +114,13 @@ def render_selection_and_log(world, ctx):
             lines.append(f'Status: {getattr(status.current_status, "value", status.current_status)}')
     # Read current facts every frame. Cached pixels hold no World/component refs.
     faction = unit.faction.value if unit else None
-    key = ('selection', heading, tuple(lines), faction, ctx.layout.scale,
+    key = ('selection', heading, tuple(lines), strength, faction, ctx.layout.scale,
            tuple(id(ctx.font(size)) for size in (14,16,18,20)))
     def paint_selection(surface):
         surface.fill(PANEL)
         pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+        pygame.draw.rect(surface, RAISED, (1,1,rect.w-2,30))
+        pygame.draw.rect(surface, ACCENT, (1,1,3,30))
         surface.blit(ctx.text_surface('Selected unit', size=20, color=ACCENT), (10,8))
         if heading is None:
             surface.blit(ctx.text_surface('Select a human unit on the map.', color=MUTED, max_width=rect.w-20), (10,44))
@@ -115,7 +130,16 @@ def render_selection_and_log(world, ctx):
             surface.blit(badge, (9,38))
             surface.blit(ctx.text_surface(heading,size=20,max_width=rect.w-40), (30,36))
             for index, line in enumerate(lines):
-                surface.blit(ctx.text_surface(line,size=16,max_width=rect.w-24), (12,64+index*21*ctx.layout.scale))
+                gap = 6 if strength is not None and index > 0 else 0
+                surface.blit(ctx.text_surface(line,size=16,max_width=rect.w-24), (12,64+gap+index*21*ctx.layout.scale))
+            if strength is not None:
+                current, maximum = strength
+                fraction = max(0., min(1., current/maximum)) if maximum > 0 else 0.
+                bar = pygame.Rect(12, 68+ctx.font(16).get_height(), rect.w-24, 4)
+                pygame.draw.rect(surface, BACKGROUND, bar, border_radius=2)
+                if fraction:
+                    fill = bar.copy(); fill.w = max(1, round(bar.w*fraction))
+                    pygame.draw.rect(surface, ACCENT, fill, border_radius=2)
     with RMS.clip(ctx.layout.content):
         RMS.draw(ctx.widget_surface(key, rect.size, paint_selection), rect.topleft)
         rect = ctx.layout.log
@@ -127,6 +151,7 @@ def render_selection_and_log(world, ctx):
         def paint_log(surface):
             surface.fill(PANEL)
             pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+            pygame.draw.rect(surface, RAISED, (1,1,rect.w-2,26))
             surface.blit(ctx.text_surface(f'Battle log  {"+" if ctx.log_collapsed else "−"}',color=ACCENT), (10,8))
             surface.set_clip((8,32,rect.w-16,rect.h-38))
             for index, text in enumerate(entries):
@@ -153,11 +178,18 @@ def render_actions(panel, ctx):
             visual_key = ('action', action.label, action.cost_description, key,
                           action.enabled, id(ctx.font(18)), id(ctx.font(16)), id(ctx.font(14)))
             def paint(surface):
-                surface.fill((39,56,68) if action.enabled else BACKGROUND)
-                pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
-                surface.blit(ctx.text_surface(action.label, size=18, color=TEXT if action.enabled else MUTED), (8,4))
-                surface.blit(ctx.text_surface(f'[{key}]', size=16, color=ACCENT if action.enabled else MUTED), (button.w-33,4))
-                surface.blit(ctx.text_surface(action.cost_description, size=14, color=MUTED, max_width=button.w-16), (8,20))
+                surface.fill(PANEL)
+                pygame.draw.rect(surface, RAISED if action.enabled else BACKGROUND,
+                                 surface.get_rect(), border_radius=4)
+                pygame.draw.rect(surface, BORDER, surface.get_rect(), 1, border_radius=4)
+                chip = pygame.Rect(button.w-30, 5, 22, button.h-10)
+                pygame.draw.rect(surface, PANEL, chip, border_radius=3)
+                pygame.draw.rect(surface, BORDER, chip, 1, border_radius=3)
+                shortcut = ctx.text_surface(key, size=16, color=ACCENT if action.enabled else MUTED)
+                surface.blit(shortcut, shortcut.get_rect(center=chip.center))
+                surface.blit(ctx.text_surface(action.label, size=18, color=TEXT if action.enabled else MUTED,
+                                              max_width=button.w-44), (8,4))
+                surface.blit(ctx.text_surface(action.cost_description, size=14, color=MUTED, max_width=button.w-44), (8,20))
             RMS.draw(ctx.widget_surface(visual_key, button.size, paint), button.topleft)
 
 

@@ -1,0 +1,103 @@
+{
+  "passed": true,
+  "visual_version": "starbench-ui-v6",
+  "records": [
+    {
+      "backend": "python",
+      "entry": "space",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "wei",
+        1
+      ],
+      "after": [
+        "shu",
+        1
+      ],
+      "ap_before": 0,
+      "ap_after": 2,
+      "ap_max": 2,
+      "movement_reset": true,
+      "paint_authority_equal": true,
+      "image": "turn-parity-python-space.png",
+      "image_sha256": "03fffebf23ef201c55ad2f736102562b987eb77097eb1f1f1421ea34effeaf5a"
+    },
+    {
+      "backend": "python",
+      "entry": "button",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "shu",
+        1
+      ],
+      "after": [
+        "wei",
+        2
+      ],
+      "ap_before": 0,
+      "ap_after": 2,
+      "ap_max": 2,
+      "movement_reset": true,
+      "paint_authority_equal": true,
+      "image": "turn-parity-python-button.png",
+      "image_sha256": "02c2685c037bdef371d5765a24aeef5ef1686971bb12eb59e65136553bfc5003"
+    },
+    {
+      "backend": "rust",
+      "entry": "space",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "wei",
+        1
+      ],
+      "after": [
+        "shu",
+        1
+      ],
+      "ap_before": 0,
+      "ap_after": 2,
+      "ap_max": 2,
+      "movement_reset": true,
+      "paint_authority_equal": true,
+      "image": "turn-parity-rust-space.png",
+      "image_sha256": "f72bd6e8d56b5aa3d164a36f3ae9d6f1f250fa3a198474da24f7e1c6086297ac"
+    },
+    {
+      "backend": "rust",
+      "entry": "button",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "shu",
+        1
+      ],
+      "after": [
+        "wei",
+        2
+      ],
+      "ap_before": 0,
+      "ap_after": 2,
+      "ap_max": 2,
+      "movement_reset": true,
+      "paint_authority_equal": true,
+      "image": "turn-parity-rust-button.png",
+      "image_sha256": "d41344ec8da15b4ee5eea25925423d740e0132b06a746ef5738ae653a05a6646"
+    }
+  ],
+  "scope": "Cocoa SDL input and post-command display; no authority ticks, Agents or network"
+}

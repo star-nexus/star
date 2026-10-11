@@ -10,12 +10,16 @@ from rotk_env.components import (
 from rotk_env.prefabs.config import GameMode, Faction, UnitState
 from rotk_env.runtime.bootstrap import export_initial_state, encode
 from rotk_env.runtime.native import RustRuntime
+from rotk_env.runtime.local_controls import LocalControls
+from rotk_env.runtime.native_input import UIButtonSystem as NativeToolbar
+from rotk_env.runtime.world_presentation import WorldPresentation
 from rotk_env.systems.ui_button_system import UIButtonSystem
 from rotk_env.systems.unit_action_button_system import UnitActionButtonSystem
 from rotk_env.tests.test_native_combat_presentation import make
 from rotk_env.tests.test_native_lifecycle import snapshot, capture_events
 from rotk_env.tests.test_native_request_batch import frozen
 from rotk_env.tests.test_native_unit_actions import setup
+from rotk_env.tests.test_native_world_presentation import detached_world
 
 
 def panel(cls, world):
@@ -125,7 +129,7 @@ def test_human_fortify_preserves_realtime_resource_exception(mode, case, frozen)
 
 @pytest.mark.parametrize("mode", [GameMode.REAL_TIME, GameMode.TURN_BASED])
 @pytest.mark.parametrize("case", ["normal", "reverse", "empty", "unknown", "zero", "negative_index", "no_manager", "game_over"])
-def test_toolbar_end_turn_uses_manager_order_without_keyboard_reset(mode, case, frozen, monkeypatch):
+def test_toolbar_uses_human_turn_reset_and_events_independent_of_manager(mode, case, frozen, monkeypatch):
     world, (a, b, c), _, _ = setup(mode=mode)
     players = list(world.query().with_component(Player).ordered_entities())
     if case == "reverse": players.reverse()
@@ -137,17 +141,28 @@ def test_toolbar_end_turn_uses_manager_order_without_keyboard_reset(mode, case, 
     if case == "game_over": world.get_singleton_component(GameState).game_over = True
     world.get_component(a, ActionPoints).current_ap = 0
     buttons = panel(UIButtonSystem, world)
+    display = detached_world(world)
     events = capture_events(monkeypatch)
+    native_events = []
     try:
-        with RustRuntime(export_initial_state(world)) as native:
-            native.take_presentation_delta()
+        initial = export_initial_state(world)
+        with RustRuntime(initial) as native:
+            controls = LocalControls(native, WorldPresentation(display), initial,
+                                     on_events=native_events.extend)
+            controls.refresh()
+            toolbar = panel(NativeToolbar, display)
+            toolbar.controls = controls
             for _ in range(4):
-                assert native.execute_control("toolbar_end_turn") == buttons._end_turn()
+                assert toolbar._end_turn() == buttons._end_turn()
                 snapshot(world, native, "none")
-                assert native.take_presentation_delta()["events"] == events == []
-            assert world.get_component(a, ActionPoints).current_ap == 0
+                assert native_events == events
+                events.clear()
+                native_events.clear()
+            expected_ap = 6 if mode == GameMode.TURN_BASED else 0
+            assert world.get_component(a, ActionPoints).current_ap == expected_ap
     finally:
         world.reset()
+        display.reset()
 
 
 @pytest.mark.parametrize("present", [False, True])

@@ -1,0 +1,42 @@
+{
+  "passed": true,
+  "source_sha": "65941ef",
+  "probe_sha256": "1801bb0be26f6ccf306fc723f4a034ca0cf68a70000dcaf849cf9d939f2bb4fb",
+  "dependency_lock_sha256": "c3f1b848acf98504c9a2f6c0234ac66163c9f26dc06128986e5a0b1aeb7379ae",
+  "backend": "rust",
+  "task": "performance",
+  "units": 15,
+  "driver": "cocoa",
+  "python": "3.13.12 | packaged by Anaconda, Inc. | (main, Feb 24 2026, 16:07:20) [Clang 20.1.8 ]",
+  "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "warmup_s": 10,
+  "measurement_s": 30,
+  "render": {
+    "samples": 900,
+    "mean_ns": 6047949.581111111,
+    "p99_ns": 8168792,
+    "max_ns": 8526542
+  },
+  "present": {
+    "samples": 900,
+    "mean_ns": 1296444.7355555557,
+    "p99_ns": 2130542,
+    "max_ns": 2328709
+  },
+  "visual_version": "starbench-ui-v2",
+  "cache": {
+    "tactical_entries": 5,
+    "tactical_bytes": 89728,
+    "text_entries": 43,
+    "text_bytes": 164088,
+    "widget_entries": 11,
+    "widget_bytes": 2069376
+  },
+  "extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+  "files": {
+    "performance.png": "64114903a15a30b0480704a50d3ec6b03dbbb2666a2f2744034b14d6bbb6d4bd"
+  },
+  "raw_sha256": "371a190c90338eb08fbb645d32847f142353cc1e468cca9f79f69985ae8d3ed1",
+  "authority_scheduling": false,
+  "scope": "fixed display projection; no agents/network/authority throughput claim"
+}

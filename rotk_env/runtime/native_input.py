@@ -110,7 +110,6 @@ class UIButtonSystem(_Toolbar):
     def update_control_state(self, dt):
         self._layout_ui_buttons()
         self._update_button_states()
-        self._handle_button_clicks()
 
     def render_only(self, dt):
         from framework.engine import RMS
@@ -120,4 +119,4 @@ class UIButtonSystem(_Toolbar):
             self._render_buttons()
 
     def _end_turn(self):
-        self.controls.execute("toolbar_end_turn")
+        self.controls.finish_turn()

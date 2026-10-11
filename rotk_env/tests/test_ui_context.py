@@ -178,3 +178,53 @@ def test_selection_paint_cache_reads_changed_component_fields(context):
     w.get_component(entity,c.UnitCount).current_count=20
     render_selection_and_log(w,context);RMS.update()
     assert pygame.image.tobytes(target.subsurface(context.layout.selection),'RGB')!=before
+
+
+@pytest.mark.parametrize('orientation', ['flat_top', 'pointy_top'])
+@pytest.mark.parametrize('size', [(1200,800), (1200,900), (2480,1263)])
+def test_opening_board_fits_actual_viewport_at_nonzero_origin(context, monkeypatch, orientation, size):
+    from rotk_env.prefabs.config import GameConfig, HexOrientation
+    from rotk_env.utils.hex_utils import HexConverter
+    monkeypatch.setattr(GameConfig, 'HEX_ORIENTATION', HexOrientation[orientation.upper()])
+    pygame.display.set_mode(size)
+    world = World()
+    world.add_singleton_component(c.Camera())
+    board = c.MapData(width=17, height=29, tiles={(q,r):1 for q in range(11,28) for r in range(20,49)})
+    world.add_singleton_component(board)
+    context.attach(world)
+    camera = world.get_singleton_component(c.Camera)
+    converter = HexConverter(GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION)
+    corners = [p for q,r in board.tiles for p in converter.get_hex_corners(q,r)]
+    projected = [(x*camera.zoom+camera.offset_x, y*camera.zoom+camera.offset_y) for x,y in corners]
+    view = context.layout.viewport
+    xs, ys = zip(*projected)
+    assert min(xs) >= view.left+23 and max(xs) <= view.right-23
+    assert min(ys) >= view.top+41 and max(ys) <= view.bottom-45
+    assert (min(xs)+max(xs))/2 == pytest.approx(view.centerx)
+    # The framing leaves slightly more clearance for the bottom roster.
+    assert (min(ys)+max(ys))/2 == pytest.approx(view.centery-2)
+    assert max((max(xs)-min(xs))/(view.w-48), (max(ys)-min(ys))/(view.h-88)) == pytest.approx(1.)
+
+
+def test_reattach_scroll_and_resize_keep_manual_camera(context):
+    world = World()
+    world.add_singleton_component(c.Camera())
+    # Missing map at attachment is allowed; frame when it becomes available.
+    context.attach(world)
+    world.add_singleton_component(c.MapData(width=11, height=17, tiles={(q,r):1 for q in range(-5,6) for r in range(-8,9)}))
+    context.attach(world)
+    camera = world.get_singleton_component(c.Camera)
+    camera.zoom = 1.7
+    camera.set_offset(97, 203)
+    view = context.layout.viewport
+    centre = ((view.centerx-camera.offset_x)/camera.zoom, (view.centery-camera.offset_y)/camera.zoom)
+    context.attach(world)
+    assert camera.get_offset() == (97, 203) and camera.zoom == 1.7
+    context.scroll = 20
+    context.log_collapsed = True
+    context.sync(world)
+    pygame.display.set_mode((1920,1080))
+    context.sync(world)
+    view = context.layout.viewport
+    assert camera.zoom == 1.7
+    assert ((view.centerx-camera.offset_x)/camera.zoom, (view.centery-camera.offset_y)/camera.zoom) == centre

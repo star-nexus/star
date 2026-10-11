@@ -1,11 +1,13 @@
 """STARBench start menu: one measured layout for paint and picking."""
+import math
 import pygame
 from framework import System
 from framework.engine import RMS
 from ..components.start_menu import (StartMenuConfig, StartMenuButtons,
     START_PLAYER_OPTIONS, START_CONTROLLER_OPTIONS, start_panel_layout, scenario_option_rects)
 from ..prefabs.config import GameMode
-from ..ui.context import UiContext, ACCENT, BACKGROUND, BORDER, MUTED, TEXT, controller_available
+from ..ui.context import (UiContext, ACCENT, BACKGROUND, BORDER, MUTED, PANEL,
+                          RAISED, TEXT, controller_available)
 
 
 class StartSceneRenderSystem(System):
@@ -30,23 +32,51 @@ class StartSceneRenderSystem(System):
         w, h = ctx._size
         geom = start_panel_layout(len(config.scenario_catalog or []), w, h)
         RMS.fill(BACKGROUND)
-        ctx.text('STARBench', (w//2, 44), size=42, color=ACCENT, centered=True)
+        def paint_motif(surface):
+            surface.fill(BACKGROUND)
+            for col in range(3):
+                for row in range(5):
+                    x, y = 12+col*42, 24+row*48+(col%2)*24
+                    points = [(round(x+28*math.cos(n*math.pi/3)),
+                               round(y+28*math.sin(n*math.pi/3))) for n in range(6)]
+                    pygame.draw.polygon(surface, (31, 45, 56), points, 1)
+        motif = ctx.widget_surface('menu-motif', (124, 280), paint_motif)
+        RMS.draw(motif, (8, (h-280)//2))
+        RMS.draw(motif, (w-132, (h-280)//2))
+        ctx.text('STRATEGY  /  TACTICS  /  AGENTS', (w//2, 20), size=14, color=MUTED, centered=True)
+        ctx.text('STARBench', (w//2, 43), size=46, color=ACCENT, centered=True)
         ctx.text('Romance of the Three Kingdoms  /  LLM + Agent Benchmark',
                  (w//2, 94), size=20, color=MUTED, centered=True)
         panel = pygame.Rect(geom['panel_x'], geom['panel_y'], geom['panel_width'], geom['panel_height'])
-        ctx.panel(panel)
+        def paint_frame(surface):
+            surface.fill(PANEL)
+            pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
+            pygame.draw.rect(surface, ACCENT, (28, 0, 64, 3))
+            pygame.draw.rect(surface, BACKGROUND, (1, panel.h-94, panel.w-2, 93))
+            pygame.draw.line(surface, BORDER, (1, panel.h-94), (panel.w-2, panel.h-94))
+        RMS.draw(ctx.widget_surface('menu-frame', panel.size, paint_frame), panel.topleft)
         left = panel.x+28
-        ctx.text('Game mode', (left, geom['mode_y']), color=ACCENT, size=20)
-        ctx.text('Factions', (panel.x+panel.w//2+20, geom['player_y']), color=ACCENT, size=20)
-        ctx.text('Controller', (left, geom['controller_y']), color=ACCENT, size=20)
-        ctx.text('Scenario', (left, geom['scenario_y']), color=ACCENT, size=20)
+        ctx.text('01  GAME MODE', (left, geom['mode_y']), color=ACCENT, size=18)
+        ctx.text('02  FACTIONS', (panel.x+panel.w//2+20, geom['player_y']), color=ACCENT, size=18)
+        ctx.text('03  CONTROLLER', (left, geom['controller_y']), color=ACCENT, size=18)
+        ctx.text('04  SCENARIO', (left, geom['scenario_y']), color=ACCENT, size=18)
         def option(rect, label, selected, enabled=True):
-            if selected:
-                RMS.rect((43, 57, 67), rect)
-                RMS.rect(ACCENT, rect, 1)
-            RMS.circle(ACCENT if selected else BORDER, (rect.x+10, rect.centery), 4)
-            ctx.text(label, (rect.x+24, rect.y+7), size=18,
-                     color=TEXT if enabled else MUTED, max_width=rect.w-30)
+            key = ('menu-option', label, selected, enabled, id(ctx.font(18)))
+            def paint(surface):
+                surface.fill(PANEL)
+                pygame.draw.rect(surface, RAISED if selected else BACKGROUND,
+                                 surface.get_rect(), border_radius=4)
+                if selected:
+                    pygame.draw.rect(surface, ACCENT, surface.get_rect(), 1, border_radius=4)
+                    pygame.draw.rect(surface, ACCENT, (0, 5, 3, rect.h-10))
+                center = (13, rect.h//2)
+                pygame.draw.circle(surface, ACCENT if selected else BORDER, center, 5, 1)
+                if selected:
+                    pygame.draw.circle(surface, ACCENT, center, 2)
+                text = ctx.text_surface(label, size=18, color=TEXT if enabled else MUTED,
+                                        max_width=rect.w-40)
+                surface.blit(text, (28, (rect.h-text.get_height())//2))
+            RMS.draw(ctx.widget_surface(key, rect.size, paint), rect.topleft)
         for rect, mode, label in zip(geom['mode_rects'], [GameMode.TURN_BASED, GameMode.REAL_TIME], ['Turn based', 'Real time']):
             option(rect, label, config.selected_mode == mode)
         for rect, (players, label) in zip(geom['player_rects'], START_PLAYER_OPTIONS):
@@ -63,13 +93,16 @@ class StartSceneRenderSystem(System):
                 if 'width' in item:
                     label += f"  {item['width']}×{item['height']}"
                 option(rect, label, config.selected_scenario == item['scenario'])
-        explanation = 'Static slots: no automatic opponent actions.' if config.selected_controller_backend == 'none' else 'Controller explicitly selected.'
+        explanations = {
+            'none': 'Offline preview. Agent slots have no automatic controller.',
+            'hub': 'External Agents connect through the existing Hub after the game starts.',
+            'mock_ai': 'Local rule BOT controls the Agent factions.',
+        }
+        explanation = explanations[config.selected_controller_backend]
         ctx.text(f'{ctx.backend.upper()}  /  {explanation}', geom['summary_rect'].topleft, size=16, color=MUTED, max_width=panel.w-56)
         buttons = self.world.get_singleton_component(StartMenuButtons)
         if buttons:
             for name, button in buttons.buttons.items():
                 rect = geom['start_rect' if name == 'start_game' else 'quit_rect']
                 button['rect'] = rect.copy()
-                RMS.rect((63, 77, 86) if button['hover'] else (40, 55, 67), rect)
-                RMS.rect(ACCENT if name == 'start_game' else BORDER, rect, 1)
-                text = ctx.text(button['text'], (rect.x+12, rect.y+10), size=18)
+                ctx.button(rect, button['text'], primary=name == 'start_game', hovered=button['hover'])

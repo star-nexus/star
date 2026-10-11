@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "STAR 建议：同一 Rust 内核，多种展示适配器",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-star-renderers-20261011-040805/proposed.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "display",
+        "label": "新增展示通道",
+        "focus": [
+          "rust",
+          "views",
+          "pygame",
+          "web",
+          "null"
+        ],
+        "note": "建议设计，尚未实现。新增只读视角模型，适配器各自绘制。"
+      },
+      {
+        "id": "input",
+        "label": "命令与 Agent",
+        "focus": [
+          "human",
+          "gate",
+          "agents",
+          "owner",
+          "rust"
+        ],
+        "note": "保留 Agent 协议，人类操作经过宿主身份与权限验证。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "桌面 / Web 人类操作",
+      "sublabel": "选择 / 目标 / 操作意图",
+      "pos": [
+        30,
+        40
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "tag": "客户端"
+    },
+    {
+      "id": "gate",
+      "type": "security",
+      "label": "拟新增：CommandGateway",
+      "sublabel": "验证身份 / 阵营 / epoch",
+      "pos": [
+        450,
+        40
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "宿主边界"
+    },
+    {
+      "id": "owner",
+      "type": "backend",
+      "label": "保留：Python / PyO3 宿主",
+      "sublabel": "单权威执行器与既有调度",
+      "pos": [
+        450,
+        260
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "服务端"
+    },
+    {
+      "id": "agents",
+      "type": "messagebus",
+      "label": "保留：Agent / star-protocol",
+      "sublabel": "现有注册 / 动作 / 观测接口",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "tag": "服务端接入"
+    },
+    {
+      "id": "rust",
+      "type": "backend",
+      "label": "保留：Rust core + rotk",
+      "sublabel": "游戏规则 / 权威 ECS / 观测",
+      "pos": [
+        880,
+        260
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "复用内核"
+    },
+    {
+      "id": "views",
+      "type": "messagebus",
+      "label": "拟新增：只读视角模型",
+      "sublabel": "Baseline / Snapshot / Delta",
+      "pos": [
+        880,
+        520
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "过滤 / 分发 / 重同步"
+    },
+    {
+      "id": "pygame",
+      "type": "frontend",
+      "label": "pygame 展示适配器",
+      "sublabel": "复用现有绘制 / 缓存 / UI",
+      "pos": [
+        450,
+        520
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "桌面"
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "拟新增：Three.js 适配器",
+      "sublabel": "GPU 场景 / 相机 / Web UI",
+      "pos": [
+        880,
+        770
+      ],
+      "size": [
+        250,
+        84
+      ],
+      "tag": "浏览器"
+    },
+    {
+      "id": "null",
+      "type": "frontend",
+      "label": "无画面 / 回放适配器",
+      "sublabel": "独立消费状态与事件",
+      "pos": [
+        1300,
+        520
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "tag": "headless / 验收"
+    }
+  ],
+  "connections": [
+    {
+      "id": "human-gate",
+      "from": "human",
+      "to": "gate",
+      "label": "操作意图"
+    },
+    {
+      "id": "gate-owner",
+      "from": "gate",
+      "to": "owner",
+      "label": "受验证的人类命令",
+      "variant": "security"
+    },
+    {
+      "id": "agents-owner",
+      "from": "agents",
+      "to": "owner",
+      "label": "原 Agent API"
+    },
+    {
+      "id": "owner-rust",
+      "from": "owner",
+      "to": "rust",
+      "label": "同一权威入口",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rust-views",
+      "from": "rust",
+      "to": "views",
+      "label": "状态 / 事件",
+      "variant": "emphasis"
+    },
+    {
+      "id": "views-pygame",
+      "from": "views",
+      "to": "pygame",
+      "label": "本地只读数据"
+    },
+    {
+      "id": "views-web",
+      "from": "views",
+      "to": "web",
+      "label": "WebSocket 状态流"
+    },
+    {
+      "id": "views-null",
+      "from": "views",
+      "to": "null",
+      "label": "只读数据"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "建议复用",
+      "items": [
+        "Rust 规则和既有 native 优化留在服务端。",
+        "保留 Agent SDK、star-protocol、动作及响应语义。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "拟新增的展示合同",
+      "items": [
+        "每个连接只接收获准视角；隐藏和可见转换也要产生增量。",
+        "发布一次后分发；慢连接重同步，不拖住权威模拟。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "截图与后续 WASM",
+      "items": [
+        "独立 FrameProvider 固定 tick、视角、资产及 visual_version。",
+        "浏览器本地 Rust / WASM 是后续部署路线，需独立移植验收。"
+      ]
+    }
+  ]
+}

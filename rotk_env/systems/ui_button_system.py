@@ -3,17 +3,16 @@ UI Button System - Handles UI button rendering, interaction and callbacks
 """
 
 import pygame
+import time
 from pathlib import Path
 from framework import System
-from framework.engine import RMS
+from framework.engine import RMS, MouseButtonDownEvent, MouseButtonUpEvent, MouseMotionEvent
+from framework.engine.events import EBS
 from ..components import (
     UIButton,
     UIButtonCollection,
     UIPanel,
     InputState,
-    GameState,
-    TurnManager,
-    Player,
     UIState,
 )
 from ..prefabs.config import GameConfig
@@ -26,6 +25,12 @@ class UIButtonSystem(System):
         super().__init__(priority=2)  # High priority, process before UI rendering
         self.font = None
         self.button_font = None
+        # Presentation feedback only; callbacks still run once on mouse-down.
+        self._pointer_pos = None
+        self._feedback_button = None
+        self._press_held = False
+        self._press_feedback_until = 0.0
+        self._feedback_clock = time.monotonic
 
         # Initialize fonts
         pygame.font.init()
@@ -45,13 +50,20 @@ class UIButtonSystem(System):
 
     def subscribe_events(self):
         """Subscribe to events"""
-        pass
+        EBS.subscribe(MouseButtonDownEvent, self._handle_mouse_button_down)
+        EBS.subscribe(MouseButtonUpEvent, self._handle_mouse_button_up)
+        EBS.subscribe(MouseMotionEvent, self._handle_mouse_motion)
+
+    def cleanup(self):
+        EBS.unsubscribe(MouseButtonDownEvent, self._handle_mouse_button_down)
+        EBS.unsubscribe(MouseButtonUpEvent, self._handle_mouse_button_up)
+        EBS.unsubscribe(MouseMotionEvent, self._handle_mouse_motion)
+        self._clear_press_feedback()
 
     def update(self, delta_time: float) -> None:
         """Update button system"""
         self._layout_ui_buttons()
         self._update_button_states()
-        self._handle_button_clicks()
         self._render_buttons()
 
     def _layout_ui_buttons(self) -> None:
@@ -175,35 +187,72 @@ class UIButtonSystem(System):
         print("UI buttons creation completed!")
 
     def _update_button_states(self):
-        """Update button states"""
+        """Refresh hover and press feedback independently of game authority."""
         input_state = self.world.get_singleton_component(InputState)
-        if not input_state:
-            return
-
-        mouse_x, mouse_y = input_state.mouse_pos
+        pos = self._pointer_pos if self._pointer_pos is not None else (
+            input_state.mouse_pos if input_state else (0, 0))
+        ctx = getattr(self.world, '_ui_context', None)
+        modal = bool(ctx and ctx.modal_visible(self.world))
+        now = self._feedback_clock()
+        if not self._press_held and now >= self._press_feedback_until:
+            self._clear_press_feedback()
 
         # Update hover state for all buttons
         for entity in self.world.query().with_component(UIButton).ordered_entities():
             button = self.world.get_component(entity, UIButton)
-            if not button or not button.is_enabled or not button.is_visible:
+            if not button:
                 continue
-
-            # Check if mouse is over button
             rect = self._button_rect(button)
-            is_hovered = bool(rect and rect.collidepoint(mouse_x, mouse_y))
-            button.is_hovered = is_hovered
+            interactive = bool(button.is_enabled and button.is_visible and rect and (
+                not modal or button.callback_name in ('toggle_help', 'toggle_stats')))
+            button.is_hovered = bool(interactive and rect.collidepoint(pos))
+            if button is self._feedback_button and not interactive:
+                self._clear_press_feedback()
 
-    def _handle_button_clicks(self):
-        """Handle button clicks"""
-        input_state = self.world.get_singleton_component(InputState)
-        if not input_state:
+    def _button_is_pressed(self, button):
+        # UIButton is retained by legacy exports: do not animate its fields.
+        return bool(button.is_enabled and button.is_visible and
+                    button is self._feedback_button and
+                    (self._press_held or self._feedback_clock() < self._press_feedback_until))
+
+    def _clear_press_feedback(self):
+        self._feedback_button = None
+        self._press_held = False
+        self._press_feedback_until = 0.0
+
+    def _handle_mouse_button_up(self, event):
+        if event.button != 1:
             return
+        self._pointer_pos = event.pos
+        self._press_held = False
+        if self._feedback_button is not None:
+            rect = self._button_rect(self._feedback_button)
+            if not rect or not rect.collidepoint(event.pos):
+                self._clear_press_feedback()
+        self._update_button_states()
 
-        # Check if left mouse button was just pressed
-        if 1 not in input_state.mouse_pressed:  # 1 is left button
+    def _handle_mouse_motion(self, event):
+        self._pointer_pos = event.pos
+        if self._feedback_button is not None:
+            rect = self._button_rect(self._feedback_button)
+            if not rect or not rect.collidepoint(event.pos):
+                self._clear_press_feedback()
+            elif not event.buttons[0]:
+                self._press_held = False
+        self._update_button_states()
+
+    def _handle_mouse_button_down(self, event):
+        """Use the click's position once, without polling stale input state."""
+        if event.button != 1:
             return
-
-        mouse_x, mouse_y = input_state.mouse_pos
+        self._pointer_pos = event.pos
+        self._clear_press_feedback()
+        ctx = getattr(self.world, '_ui_context', None)
+        if ctx:
+            # Resize and click can arrive before the next gameplay frame.
+            ctx.sync(self.world)
+        else:
+            self._layout_ui_buttons()
 
         # Check clicked buttons
         for entity in self.world.query().with_component(UIButton).ordered_entities():
@@ -213,10 +262,14 @@ class UIButtonSystem(System):
 
             # Check if click is within button
             rect = self._button_rect(button)
-            if rect and rect.collidepoint(mouse_x, mouse_y):
-                ctx = getattr(self.world, '_ui_context', None)
+            if rect and rect.collidepoint(event.pos):
                 if ctx and ctx.modal_visible(self.world) and button.callback_name not in ('toggle_help', 'toggle_stats'):
                     return
+                self._feedback_button = button
+                self._press_held = True
+                # Keep a quick down/up pair visible for at least 120 ms.
+                self._press_feedback_until = self._feedback_clock() + 0.12
+                button.is_hovered = True
                 self._handle_button_callback(button)
                 break
 
@@ -238,32 +291,11 @@ class UIButtonSystem(System):
             self._toggle_stats()
 
     def _end_turn(self):
-        """End current turn"""
-        print("Executing end turn operation...")  # Debug output
-
-        game_state = self.world.get_singleton_component(GameState)
-        turn_manager = self.world.get_singleton_component(TurnManager)
-
-        if not game_state or not turn_manager:
-            print("Unable to get game state or turn manager")
-            return
-
-        # Switch to next player
-        current_index = turn_manager.current_player_index
-        turn_manager.next_player()
-
-        # If back to first player, increment turn number
-        if turn_manager.current_player_index == 0:
-            game_state.turn_number += 1
-            print(f"New turn started: {game_state.turn_number}")
-
-        # Update current player
-        current_player_entity = turn_manager.get_current_player()
-        if current_player_entity:
-            player = self.world.get_component(current_player_entity, Player)
-            if player:
-                game_state.current_player = player.faction
-                print(f"Switched to player: {player.faction.value}")
+        """Use the same human turn flow as the Space shortcut."""
+        for system in self.world.systems:
+            if system.__class__.__name__ == "TurnSystem":
+                system.end_turn()
+                return
 
     def _show_settings(self):
         """Show settings panel"""
@@ -297,14 +329,12 @@ class UIButtonSystem(System):
         """Render single button"""
         ctx = getattr(self.world, '_ui_context', None)
         if ctx:
-            from ..ui.context import MUTED, PANEL, BORDER, TEXT
             rect = self._button_rect(button)
             if rect is None:
                 return
-            RMS.rect((55,73,88) if button.is_hovered and button.is_enabled else PANEL, rect)
-            RMS.rect(BORDER, rect, 1)
-            ctx.text(button.text, (rect.centerx, rect.centery-ctx.font(18).get_height()//2),
-                     size=18, color=TEXT if button.is_enabled else MUTED, centered=True)
+            ctx.button(rect, button.text, primary=button.callback_name == 'end_turn',
+                       enabled=button.is_enabled, hovered=button.is_hovered,
+                       pressed=self._button_is_pressed(button))
             return
         # Choose background color
         if button.is_hovered and button.is_enabled:
@@ -315,6 +345,8 @@ class UIButtonSystem(System):
         # If button is disabled, use darker color
         if not button.is_enabled:
             bg_color = tuple(c // 2 for c in bg_color)
+        elif self._button_is_pressed(button):
+            bg_color = tuple(c * 3 // 4 for c in bg_color)
 
         # Create button surface
         button_surface = pygame.Surface((button.width, button.height))
@@ -339,7 +371,7 @@ class UIButtonSystem(System):
 
         text_surface = self.button_font.render(button.text, True, text_color)
         text_rect = text_surface.get_rect(
-            center=(button.width // 2, button.height // 2)
+            center=(button.width // 2, button.height // 2 + (2 if self._button_is_pressed(button) else 0))
         )
         button_surface.blit(text_surface, text_rect)
 

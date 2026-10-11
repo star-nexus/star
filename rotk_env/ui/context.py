@@ -8,13 +8,14 @@ import pygame
 from framework.ecs import profiling
 from framework.engine import RMS
 
-VISUAL_VERSION = "starbench-ui-v2"
-BACKGROUND = (16, 24, 32)
-PANEL = (27, 39, 51)
-BORDER = (59, 75, 88)
-ACCENT = (200, 166, 106)
-TEXT = (230, 232, 228)
-MUTED = (169, 180, 188)
+VISUAL_VERSION = "starbench-ui-v6"
+BACKGROUND = (14, 22, 30)
+PANEL = (24, 36, 47)
+RAISED = (33, 48, 61)
+BORDER = (57, 74, 87)
+ACCENT = (218, 181, 118)
+TEXT = (237, 239, 235)
+MUTED = (162, 178, 190)
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class UiContext:
         self._size = None
         self._layout_key = None
         self._camera_center = None
+        self._map_framed = False
         self._bound = []
         self._fonts = {}
         self._text = OrderedDict()
@@ -110,8 +112,38 @@ class UiContext:
     def attach(self, world):
         world._ui_context = self
         self.sync(world)
+        if not self._map_framed:
+            self._map_framed = self.frame_map(world)
         for system in world.systems:
             self.bind(system)
+
+    def frame_map(self, world):
+        """Fit actual tile corners once, after sidebar geometry is available.
+
+        This only changes the display camera. Ordinary layout sync preserves the
+        user's zoom and world centre, including across the native handoff.
+        """
+        from ..components import Camera, MapData
+        from ..prefabs.config import GameConfig
+        from ..utils.hex_utils import HexConverter
+        camera = world.get_singleton_component(Camera)
+        map_data = world.get_singleton_component(MapData)
+        if camera is None or map_data is None or not map_data.tiles:
+            return False
+        converter = HexConverter(GameConfig.HEX_SIZE, GameConfig.HEX_ORIENTATION)
+        min_x = min_y = float('inf')
+        max_x = max_y = float('-inf')
+        for col, row in map_data.tiles:
+            for x, y in converter.get_hex_corners(col, row):
+                min_x, min_y = min(min_x, x), min(min_y, y)
+                max_x, max_y = max(max_x, x), max(max_y, y)
+        view = self.layout.viewport
+        # Keep the top legend and bottom roster clear of board edges.
+        available = pygame.Rect(view.x+24, view.y+42, max(1, view.w-48), max(1, view.h-88))
+        camera.zoom = max(.15, min(3., available.w/(max_x-min_x), available.h/(max_y-min_y)))
+        camera.set_offset(available.centerx-(min_x+max_x)*camera.zoom/2,
+                          available.centery-(min_y+max_y)*camera.zoom/2)
+        return True
 
     def bind(self, system):
         name = type(system).__name__
@@ -231,9 +263,34 @@ class UiContext:
         def paint(surface):
             surface.fill(PANEL)
             pygame.draw.rect(surface, BORDER, surface.get_rect(), 1)
-        RMS.draw(self.widget_surface('panel', rect.size, paint), rect.topleft)
+            if title:
+                pygame.draw.rect(surface, RAISED, (1, 1, rect.w-2, 30))
+                pygame.draw.rect(surface, ACCENT, (1, 1, 3, 30))
+        RMS.draw(self.widget_surface(('panel', bool(title)), rect.size, paint), rect.topleft)
         if title:
             self.text(title, (rect.x+10, rect.y+8), color=ACCENT, size=20)
+
+    def button(self, rect, label, *, primary=False, enabled=True, hovered=False, pressed=False):
+        """Paint only; input continues to use the caller's existing rectangle."""
+        pressed = bool(pressed and enabled)
+        key = ('button', label, primary, enabled, hovered, pressed, id(self.font(18)))
+        def paint(surface):
+            surface.fill(PANEL)
+            fill = ((235, 200, 142) if hovered else ACCENT) if primary and enabled else (RAISED if enabled else BACKGROUND)
+            if pressed:
+                fill = (181, 143, 82) if primary else BACKGROUND
+            border = ACCENT if enabled and (primary or hovered) else BORDER
+            face = surface.get_rect()
+            if pressed:
+                face.y += 2
+                face.h -= 2
+            pygame.draw.rect(surface, fill, face, border_radius=5)
+            pygame.draw.rect(surface, border, face, 1, border_radius=5)
+            color = BACKGROUND if primary and enabled else (TEXT if enabled else MUTED)
+            text = self.text_surface(label, size=18, color=color, max_width=rect.w-16)
+            center = (surface.get_width() // 2, surface.get_height() // 2 + (2 if pressed else 0))
+            surface.blit(text, text.get_rect(center=center))
+        RMS.draw(self.widget_surface(key, rect.size, paint), rect.topleft)
 
     def modal_visible(self, world):
         from ..components import UIState

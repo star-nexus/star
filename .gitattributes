@@ -1,0 +1,3 @@
+
+# Standalone diagrams contain generated viewer source.
+docs/architecture/renderers/*.html linguist-generated=true -whitespace

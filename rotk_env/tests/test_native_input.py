@@ -153,7 +153,7 @@ def test_controls_missing_systems_are_noops_and_stale_scene_fails(frozen):
         display.reset()
 
 
-@pytest.mark.parametrize("command", ["move", "keyboard", "capture", "refresh"])
+@pytest.mark.parametrize("command", ["move", "keyboard", "toolbar", "capture", "refresh"])
 def test_stale_controls_neither_write_nor_drain_new_scene(command, frozen):
     source, (a, b, enemy), _ = make("dummy", GameMode.TURN_BASED, "melee")
     initial = export_initial_state(source, display="dummy")
@@ -167,6 +167,10 @@ def test_stale_controls_neither_write_nor_drain_new_scene(command, frozen):
             with pytest.raises(RuntimeError, match="epoch"):
                 if command == "move": controls.execute("move", unit_id=b, position=(-1, 1))
                 elif command == "keyboard": controls.finish_turn()
+                elif command == "toolbar":
+                    toolbar = ni.UIButtonSystem.__new__(ni.UIButtonSystem)
+                    toolbar.controls = controls
+                    toolbar._end_turn()
                 elif command == "capture": controls.start_capture(a, (-1, 0))
                 else: controls.refresh()
             assert native.export_state() == before
