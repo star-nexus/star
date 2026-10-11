@@ -274,3 +274,24 @@ protocol.
 
 The default evaluation is **one agent process per faction**. Team collab and
 the strategy rubric are not part of the competitive MUST surface.
+
+## Reliable operations (Rust ENV host)
+
+An action may carry an optional `operation_id` (nonempty string, at most 128
+characters) alongside its transport `id`. Each batch item may carry its own
+operation ID. `AgentClient.call(..., operation_id="...")` preserves this ID while
+allocating a fresh transport request ID. Reuse the operation ID after a lost
+reply; use a new ID for an intentional repeated command.
+
+Within an ENV epoch and logical agent, the same operation ID and canonical action
+payload return the original result without executing or accounting again.
+Reusing an ID for different parameters returns `operation_conflict`. This also
+covers consuming operations such as `read_team_messages`. Batch items are not
+transactional. No observation-age or action-delay rejection is added.
+
+`get_operation` with `{"operation_id": "..."}` retrieves `state` and, when
+completed, `result`. An interrupted operation reports an unknown outcome and is
+never automatically executed again. The journal survives transport reconnects,
+not ENV process loss. Arena must abort an unrecoverable match rather than replay
+uncertain effects into a new world. Legacy requests without IDs retain their
+existing semantics.

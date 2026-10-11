@@ -17,6 +17,7 @@ from rotk_env.systems.llm_system import LLMSystem, SyncEnvClient, _inbound_id
 from .authority import AuthorityRuntime
 from .native import ActionRequest
 from .settlement import NativeSettlementFormatter, report_world
+from protocol.operations import OperationJournal
 
 
 class NativeHubHost(LLMSystem):
@@ -45,6 +46,7 @@ class NativeHubHost(LLMSystem):
                            completed_messages=0, max_inbox=0, report_pending=False)
         self._registered = set()
         self._batch_metrics = dict(segments=0, requests=0)
+        self.operations = OperationJournal()
         # Membership is all on the worker; these handlers are never Python World calls.
         self.system_actions = self._init_system_actions()
         self.client = client_factory(server_url=server_url,
@@ -86,7 +88,7 @@ class NativeHubHost(LLMSystem):
                     if kind == 'message':
                         with self._lock:
                             self._facts['received_messages'] += 1
-                        super().on_message(data)
+                        self.on_message(data)
                         with self._lock:
                             self._facts['completed_messages'] += 1
                     elif kind == 'connect':
@@ -111,6 +113,50 @@ class NativeHubHost(LLMSystem):
 
     def _record_message(self, agent_id, _params):
         self.runtime.record_message(agent_id, expected_epoch=self.epoch)
+
+    def on_message(self, envelope):
+        """Opt-in reliable wire path; legacy framing and accounting stay intact."""
+        payload = envelope.get('payload') or {}
+        batch = payload.get('type') == 'action_batch'
+        items = payload.get('actions', []) if batch else [payload]
+        reliable = any(isinstance(i, dict) and ('operation_id' in i or i.get('action') == 'get_operation') for i in items)
+        if not reliable:
+            return super().on_message(envelope)
+        sender = envelope.get('sender', {})
+        agent = sender.get('id') if sender.get('type') == 'agent' else None
+        if not agent:
+            return
+        self.client.connected_agents[agent] = sender
+        results = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                results.append(dict(id=f'{payload.get("id")}_{index}', success=False,
+                                    response=dict(success=False, error='invalid_action')))
+                continue
+            action = item.get('action')
+            params = self._prepare_parameters(item.get('parameters', {}))
+            request_id = _inbound_id(item.get('id'), fallback=f'{payload.get("id")}_{index}')
+            if action == 'get_operation':
+                result = self.operations.get(self.epoch, agent, params.get('operation_id'))
+                result.pop('fingerprint', None)
+            else:
+                def execute():
+                    # Complete execution AND host accounting before caching or sending.
+                    result = self._process_action_request(agent, request_id, action, params, send_response=False)
+                    self._record_message(agent, params)
+                    return result
+                if 'operation_id' in item:
+                    result, _ = self.operations.execute(self.epoch, agent, item['operation_id'], action, params, execute)
+                else:
+                    result = execute()
+            results.append(dict(id=request_id, action=action, response=result,
+                                success=result.get('success', True)))
+        outcome = dict(results=results, count=len(results)) if batch else results[0]['response']
+        try:
+            self.client.response_to_agent(agent, _inbound_id(payload.get('id')), outcome, 'json')
+        except Exception as exc:
+            # The cached result remains queryable after an uncertain delivery.
+            print(f'[NativeHubHost] Reliable response delivery failed: {exc}')
 
     def _process_action_request(self, agent_id, action_id, action, params, *, send_response):
         if not action or action == 'turn_start_ack':

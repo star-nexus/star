@@ -141,3 +141,24 @@ def test_connection_failure_releases_transport_and_authority(monkeypatch):
             NativeHubHost(session,'ws://fixture',client_factory=Broken)
         assert not any(t.name=='star-env-hub' for t in __import__('threading').enumerate())
         assert session.runtime.export_state()['singletons']
+
+
+def test_reliable_response_loss_does_not_repeat_execution(hosts):
+    _, _, _, session, host, check = hosts
+    check(single('register_agent_info', REG))
+    def send(payload, fail=False):
+        host.client.fail_send = fail
+        n = host.snapshot()['completed_messages']
+        host._enqueue('message', dict(sender=dict(type='agent', id='a'), payload=payload))
+        wait(session, lambda: host.snapshot()['completed_messages'] == n + 1)
+        assert host.snapshot()['failure'] is None
+    payload = dict(single('read_team_messages', id='first'), operation_id='drain-once')
+    send(payload, fail=True)
+    state = session.runtime.export_state()
+    send(dict(payload, id='retry'))
+    assert session.runtime.export_state() == state
+    assert host.client.packets[-1][1]['id'] == 'retry'
+    send(dict(payload, id='conflict', action='end_turn'))
+    assert host.client.packets[-1][1]['outcome']['error'] == 'operation_conflict'
+    send(single('get_operation', {'operation_id': 'drain-once'}, id='lookup'))
+    assert host.client.packets[-1][1]['outcome']['state'] == 'completed'

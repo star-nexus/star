@@ -85,13 +85,15 @@ class AgentClient(AsyncWebSocketClient):
         action: str,
         parameters: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
+        *,
+        operation_id: Optional[str] = None,
     ) -> Any:
         """Send one action and return its outcome.
 
         Raises `ActionTimeout` if the ENV does not answer in time, or
         `ProtocolError` if it answers with a protocol-level error.
         """
-        request_id = await self.send_action(action, parameters)
+        request_id = await self.send_action(action, parameters, operation_id=operation_id)
         return await self.await_outcome(request_id, timeout, action=action)
 
     async def call_many(
@@ -123,6 +125,7 @@ class AgentClient(AsyncWebSocketClient):
         parameters: Optional[Dict[str, Any]] = None,
         *,
         expect_outcome: bool = True,
+        operation_id: Optional[str] = None,
     ) -> Any:
         """Send an action to the environment and return the request id.
 
@@ -142,6 +145,7 @@ class AgentClient(AsyncWebSocketClient):
                 "id": request_id,
                 "action": action,
                 "parameters": parameters,
+                **({"operation_id": operation_id} if operation_id is not None else {}),
             },
             what=f"action '{action}'",
         )
@@ -169,6 +173,7 @@ class AgentClient(AsyncWebSocketClient):
                     "id": item.get("id") or gen_id("call"),
                     "action": name,
                     "parameters": item.get("parameters", {}) or {},
+                    **({"operation_id": item["operation_id"]} if "operation_id" in item else {}),
                 }
             )
 

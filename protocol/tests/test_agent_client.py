@@ -84,6 +84,17 @@ async def test_call_returns_the_outcome(client):
     assert outcome == {"success": True, "action": "get_faction_state"}
 
 
+async def test_operation_identity_survives_new_transport_requests(client):
+    env = FakeEnv(client)
+    await client.call('move', {}, operation_id='stable')
+    await client.call('move', {}, operation_id='stable')
+    a, b = [x['payload'] for x in env.sent]
+    assert a['id'] != b['id']
+    assert a['operation_id'] == b['operation_id'] == 'stable'
+    await client.call_many([{'action': 'move', 'operation_id': 'batch-item'}])
+    assert env.sent[-1]['payload']['actions'][0]['operation_id'] == 'batch-item'
+
+
 async def test_call_sends_a_well_formed_action(client):
     env = FakeEnv(client)
     await client.call("move", {"unit_id": 3})
