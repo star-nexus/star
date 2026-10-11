@@ -276,10 +276,13 @@ def test_start_panel_layout_places_maps_below_players():
 
     geom = start_panel_layout(5, screen_width=1200, screen_height=800)
     assert geom["scenario_y"] > geom["player_y"]
-    assert geom["mode_y"] < geom["player_y"]
+    assert geom["mode_y"] == geom["player_y"]
+    assert geom["mode_rects"][0].right < geom["player_rects"][0].left
     assert geom["scenario_cols"] == 2
     assert geom["panel_height"] >= 1
-    assert geom["panel_y"] + geom["panel_height"] < 800 - 150
+    assert geom["panel_y"] + geom["panel_height"] < 800
+    assert geom["start_rect"].bottom <= geom["panel_y"] + geom["panel_height"]
+    assert geom["quit_rect"].bottom <= geom["panel_y"] + geom["panel_height"]
     assert geom["scenario_clip_bottom"] <= geom["panel_y"] + geom["panel_height"]
     if geom["scenario_visible_rows"] > 0:
         last_visible = (

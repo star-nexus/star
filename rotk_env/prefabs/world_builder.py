@@ -271,18 +271,19 @@ class _SkirmishAssembler:
         )
 
         if self.display in ("dummy", "window") or self.interactive:
-            if self.interactive:
-                # All visible launches share the same window-specific input and
-                # animation semantics. Dummy/headless keeps non-rendering
-                # systems so evaluation behavior is unchanged.
+            if self.display == 'none':
+                from ..systems.interactive_animation_lifecycle import AnimationSystem
+            elif self.interactive:
                 from ..systems.window_animation_system import AnimationSystem
-                from ..systems.window_input_system import InputHandlingSystem
             else:
                 from ..systems.animation_system import AnimationSystem
-                from ..systems.input_system import InputHandlingSystem
 
             systems.append(AnimationSystem())
             if self.display in ('dummy', 'window'):
+                if self.interactive:
+                    from ..systems.window_input_system import InputHandlingSystem
+                else:
+                    from ..systems.input_system import InputHandlingSystem
                 systems.append(InputHandlingSystem())
         if self.display == "window":
             from ..systems.optimized_render_systems import MapRenderSystem

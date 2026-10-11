@@ -15,7 +15,7 @@ uv run starbench.py --renderer web --no-hub --scenario chibi-small --seed 42
 
 打开终端打印的魏、蜀或旁观链接。默认两个人类槽位，分别使用对应链接，两个页面共享同一 Rust 对局。链接中的凭据绑定服务端视角，每次启动重新生成，使用 URL fragment 而不进入 HTTP 请求路径。普通启动仍为 pygame：`uv run starbench.py --no-hub`。
 
-Web 的 Python 场景准备仍导入 pygame，使用既有素材/字体支持；网页画面由 Three.js/WebGL2 绘制。Web 入口抑制 pygame 的库欢迎提示，输出明确的 `Rust ENV / Three.js`。启动器清除外层 PEP 723 临时环境的 `VIRTUAL_ENV` 后执行内层 uv，让它选择仓库 `.venv`，避免环境不匹配警告。
+Web 的场景准备、Rust 宿主、展示投影和 Hub 路径都不导入 pygame，也不初始化字体或 SDL。pygame 是可选依赖；启动器只在选择桌面渲染时请求 `pygame` extra，Web 只请求 `native` extra。桌面路径不加载 Web 服务、Web 投影或 Three.js 素材。Web 入口无需隐藏任何 pygame 提示。启动器清除外层 PEP 723 临时环境的 `VIRTUAL_ENV` 后执行内层 uv，让它选择仓库 `.venv`，避免环境不匹配警告。独立无 pygame 环境及双向导入隔离的证据见[依赖隔离记录](render-adapters-isolation/README.md)。
 
 更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。诊断时在链接的 `#token=...` 前加 `?perf=1`，例如 `http://127.0.0.1:8765/?perf=1#token=...`；左下角显示浏览器 FPS、状态更新频率与绘制调用数。这些指标仅在本地显示，不发送到外部。
 
@@ -42,6 +42,7 @@ rotk_env/rendering/
   __init__.py                  注册与延迟加载适配器
   adapters.py                  none / web 适配器与默认截图能力
   pygame_adapter.py            原桌面渲染、输入与 UI 挂载
+  pygame/animation.py          pygame 字体、Surface 与伤害数字绘制
   projection.py                RoTK 展示模型、视野过滤与视角增量
   commands.py                  服务端视角授权与人类命令校验
   web/
@@ -51,11 +52,17 @@ rotk_env/rendering/
       tests/                   浏览器状态与坐标单元测试
 rotk_env/runtime/              原有 Rust/PyO3 宿主、权威调度、Hub、生命周期
 rotk_env/prefabs/              场景初始化及模拟策略选择
-rotk_env/systems/              原有系统与性能路径
+rotk_env/systems/
+  animation_lifecycle.py       无引擎依赖的轨迹与生命周期
+  interactive_animation_lifecycle.py  interactive 浮动文字轨迹
+  animation_system.py          原 pygame 系统导入路径的兼容入口
+  window_animation_system.py  interactive 生命周期与 pygame 绘制组合
+  ...                         原有规则系统与性能路径
 rotk_env/components/           原有组件
 rotk_env/maps/                 原有地图
 docs/render-adapters-v1/       初版历史记录与可复用桌面对照脚本
 docs/render-adapters-v2/       移动/对象复用修复证据、视觉版本、截图
+docs/render-adapters-isolation/  依赖隔离、桌面像素对照与验收记录
 ```
 
 `node_modules` 和 `.archify` 作者工具中间文件忽略；固定设计图保存在 `docs/architecture/renderers/`。
@@ -85,7 +92,7 @@ flowchart LR
 
 `simulation_profile` 从实际绘制模式中分离。默认桌面仍使用原有 interactive 路径，原有 none/dummy/headless 默认保持参考路径。Web 无 SDL 窗口，但选择 interactive：复用空间索引、窗口版本 Vision / Movement / Combat / ResourceRecovery / Statistics / Realtime 的初始化，以及权威移动与视觉生命周期。
 
-API18/schema5 内部的历史 `display="window"` 字段仍表示这套 native 策略，**不代表 Web 创建了 pygame 窗口**。没有修改 Rust 源码或重编译二进制，已有原生优化开关和默认 worker=1 保留。Python 仍进行一次场景准备，之后卸载所有 Python 模拟系统，Rust 独占规则推进。素材、字体和准备代码仍依赖现有 Python ENV；这不是一个纯 Rust 独立服务器发行版。
+API18/schema5 内部的历史 `display="window"` 字段仍表示这套 native 策略。Web 的实际准备必须使用 `display="none"`；它既不创建 pygame 窗口，也不导入 pygame。没有修改 Rust 源码或重编译二进制，已有原生优化开关和默认 worker=1 保留。Python 仍进行一次纯数据场景准备，之后卸载所有 Python 模拟系统，Rust 独占规则推进。通用动画轨迹和生命周期位于 `systems/`，pygame 字体和绘制位于 `rendering/pygame/`。Web 宿主从磁盘传送共享 PNG 素材，浏览器解码；场景初始化不加载字体或构造 Surface。
 
 展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。默认 pygame 截图沿用原字节、视角、错误和格式标签；历史格式问题不在本次更改中修正。
 
@@ -110,12 +117,14 @@ Rust 权威时钟仍为60Hz，展示状态默认最多20Hz。v2 在浏览器动�
 可复跑的桌面对照：
 
 ```bash
+uv sync --extra native --extra pygame
 PYTHONPATH=. .venv/bin/python docs/render-adapters-v1/check_desktop.py
 npm test --prefix rotk_env/rendering/web/client
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m pytest -q \
   framework/tests/test_presentation_stream.py \
-  rotk_env/tests/test_renderer_adapters.py rotk_env/tests/test_render_projection.py \
+  rotk_env/tests/test_renderer_adapters.py rotk_env/tests/test_renderer_dependencies.py \
+  rotk_env/tests/test_render_projection.py \
   rotk_env/tests/test_web_commands.py rotk_env/tests/test_web_server.py
 ```
 
-证据见[v1 初版验收](render-adapters-v1/README.md)与[v2 性能及视觉记录](render-adapters-v2/README.md)。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。
+证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)与[引擎依赖隔离](render-adapters-isolation/README.md)。依赖拆分没有改变前端素材或绘制代码，桌面 RGB 与观测字节对照相同，继续使用 `starbench-web-v2` / `starbench-ui-v6`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。

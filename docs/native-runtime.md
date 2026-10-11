@@ -13,9 +13,10 @@ delivery. See the current [Hub scope](native-hub-host.md); the local rule BOT
 remains a Python-only explicit choice. There is no silent backend fallback.
 
 Display adapters now select pygame or server-side Rust + Three.js. Web reuses
-the interactive native preparation without an SDL window; headless evaluation
+the interactive native preparation without importing pygame or initializing SDL;
+headless evaluation
 keeps its existing preparation. Agent non-image observations are unchanged.
-pygame preserves existing VLM capture; Web v1 has no Agent frame provider.
+pygame preserves existing VLM capture; Web has no Agent frame provider.
 See [renderer adapters](render-adapters.md) for capture and visual version boundaries.
 
 ## Statistics internal compute: E2
@@ -161,14 +162,14 @@ not included. Build/install for development from the repository root:
 
 ```sh
 # Requires the pinned Rust toolchain on PATH for local source builds.
-uv sync --extra native
+uv sync --extra native --extra pygame
 cargo test -p star-core -p star-rotk --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-uv run --extra native pytest -q
+uv run --extra native --extra pygame pytest -q
 ```
 
 After editing Rust files, rebuild explicitly with
-`uv sync --extra native --reinstall-package star-native` to avoid an old extension
+`uv sync --extra native --extra pygame --reinstall-package star-native` to avoid an old extension
 in the active interpreter. Start a fresh Python process after rebuilding.
 Performance measurements must use a release wheel, with its hash recorded in Lab.
 Users of eventual published wheels will not need a Rust compiler. Cross-platform

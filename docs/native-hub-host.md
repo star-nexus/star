@@ -21,7 +21,7 @@ uv run starbench.py --backend python --no-hub --mock-ai --skip-start
 
 Hub 地址、Agent 启动及身份方式沿用原设置；`--no-hub` 只表示明确离线。Rust 的 External Agent / Hub 已开放，本地 BOT 与 scale-harness 暂仍需 Python。静态 AI 槽不会自行行动。
 
-`starbench.py` 是纯标准库启动器（PEP 723 无依赖脚本），帮助不加载 pygame 或 Rust。它在仓库根目录调用原 ENV 入口，Rust 时由内部 `uv run --extra native` 准备扩展，显式 Python 时不请求 native extra；参数、退出状态和 ENV 默认配置保持。POSIX 用 exec 保留信号语义，Windows 用子进程路径。原 ENV/Shell 入口继续支持；构建排障时可显式使用 `uv sync --extra native`。
+`starbench.py` 是纯标准库启动器（PEP 723 无依赖脚本），帮助不加载 pygame 或 Rust。它在仓库根目录选择入口，Rust 时请求 `native` extra，桌面渲染时另请求 `pygame` extra；Web 不安装或导入 pygame，显式 Python 时不请求 native extra。参数、退出状态和 ENV 默认配置保持。POSIX 用 exec 保留信号语义，Windows 用子进程路径。原 ENV/Shell 入口继续支持；桌面开发及完整测试使用 `uv sync --extra native --extra pygame`，仅 Web 使用 `uv sync --extra native`。原 headless 脚本沿用桌面入口的 pygame dummy 初始化；纯数据 Web 初始化与它独立。
 
 native 默认 1 线程，`--native-threads 2|4` 可选。`--native-scheduling threaded` 默认采用独立固定时钟；serial 保留帧驱动，但联网请求仍进入同一个权威执行器。
 

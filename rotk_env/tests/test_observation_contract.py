@@ -270,7 +270,7 @@ def test_execute_attack_rejects_insufficient_ap():
     assert result["error"] == "insufficient_action_points"
 
 
-def test_key_1_toggles_fog():
+def test_shift_1_toggles_fog():
     import pygame
 
     world = World()
@@ -281,7 +281,7 @@ def test_key_1_toggles_fog():
     system = InputHandlingSystem()
     system.world = world
 
-    event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1})
+    event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1, "mod": pygame.KMOD_SHIFT})
     ui_state.view_faction = Faction.WEI
     system._handle_key_down(event)
     assert fog.enabled is False

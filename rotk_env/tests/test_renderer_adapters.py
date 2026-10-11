@@ -15,12 +15,17 @@ def test_framework_contracts_do_not_import_pygame():
     subprocess.run([sys.executable, '-c', code], check=True)
 
 
-def test_web_uses_interactive_optimizations_and_animation_without_an_sdl_window():
+def test_web_uses_interactive_optimizations_and_animation_without_pygame():
     code = '''
-import pygame
+import importlib.abc, sys
+class BlockPygame(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname == 'pygame' or fullname.startswith('pygame.'):
+            raise AssertionError('Web must not import ' + fullname)
+sys.meta_path.insert(0, BlockPygame())
 from rotk_env.runtime.session import NativeSession
 with NativeSession(renderer='web', scenario='chibi-small', seed=42) as s:
-    assert not pygame.display.get_init()
+    assert 'pygame' not in sys.modules
     assert not s.world.systems
     state = s.runtime.export_state()
     assert state['display'] == 'window'  # API18's legacy simulation profile label.
@@ -33,6 +38,7 @@ with NativeSession(renderer='web', scenario='chibi-small', seed=42) as s:
     assert s.renderer.model.units[uid]['movement']['is_moving']
     s.step(1)
     assert s.renderer.model.units[uid]['position'] == {'col': 0, 'row': 3}
+assert 'pygame' not in sys.modules
 '''
     subprocess.run([sys.executable, '-c', code], check=True)
 

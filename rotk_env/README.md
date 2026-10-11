@@ -51,7 +51,7 @@ uv run starbench.py --backend python --skip-start --no-hub --mock-ai --players h
 
 快捷键：`1` 步兵、`2` 骑兵、`3/4/5` 三名弓兵；`M/A` 移动/攻击；`W/G/C/F` 等待/驻防/占领/筑垒；方向键及 `+/-` 镜头；`Shift+1` 迷雾，`Shift+2/3/4` 阵营视角；F1 帮助，Esc 先取消目标再取消选择。
 
-`starbench.py` 负责选择依赖和渲染入口，把其余参数交给对应 ENV 入口，不接管协议、Hub、Agent 或游戏调度。原 `run_env.sh` / `run_headless_env.sh` 仍可用；开发者也可直接使用 `uv run --extra native rotk_env/main.py`。完整桌面 ENV 参数见 `uv run --extra native rotk_env/main.py --help`。
+`starbench.py` 负责选择依赖和渲染入口，把其余参数交给对应 ENV 入口，不接管协议、Hub、Agent 或游戏调度。原 `run_env.sh` / `run_headless_env.sh` 仍可用；开发者也可直接使用 `uv run --extra native --extra pygame rotk_env/main.py`。完整桌面 ENV 参数见 `uv run --extra native --extra pygame rotk_env/main.py --help`。
 
 实现与有限联网验收见 [Rust ENV 宿主](../docs/native-hub-host.md)。
 
@@ -65,7 +65,8 @@ Web 默认两个人类槽位，终端给出各阵营和旁观链接；联网使�
 `--hub-url / --env-id / --players`。详见[实现、启动及边界](../docs/render-adapters.md)。
 
 渲染器和场景模拟策略分别选择；Web 复用桌面的 interactive/indexed 路径，
-不创建 SDL 窗口。原有 headless 评测及 pygame 默认行为保留。Web 视觉版本为
+场景准备和运行不导入 pygame，Web 依赖也不包含 pygame。桌面仅选择 pygame，
+不加载 Web 服务或 Three.js 素材；原有 headless 评测及 pygame 默认行为保留。Web 视觉版本为
 `starbench-web-v2`，尚无 Agent 图像观测提供器；pygame 观测保持 `starbench-ui-v6`。
 
 ## 规则以代码为准

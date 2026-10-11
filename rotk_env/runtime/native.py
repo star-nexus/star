@@ -82,8 +82,10 @@ def _serialized(method):
 def _complete_result(action, result, capture=None):
     result = _decode_result(result)
     if action == 'get_faction_state_vlm' and result.get('success'):
-        from framework.engine.frame_capture import capture_rendered_frame
-        frame, error = (capture or capture_rendered_frame)()
+        if capture is None:
+            from framework.engine.frame_capture import capture_rendered_frame
+            capture = capture_rendered_frame
+        frame, error = capture()
         result['frame_base64'] = frame
         result['frame_format'] = 'png' if frame else None
         if error is not None:

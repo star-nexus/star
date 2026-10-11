@@ -62,6 +62,7 @@ See README.md for setup and rotk_env/README.md for more ENV options.
     if options.renderer == 'web':
         command.extend(['python', '-m', 'rotk_env.rendering.web', *args])
     else:
+        command.extend(['--extra', 'pygame'])
         # The legacy ENV parser does not need to know presentation selection.
         forwarded = []
         skip = False
@@ -86,7 +87,7 @@ def main(argv=None):
               "and run this command again.", file=sys.stderr)
         return 127
     command[0] = uv
-    backend = "Rust" if "--extra" in command[:4] else "Python"
+    backend = "Rust" if "native" in command[:6] else "Python"
     print(f"Preparing STARBench ENV ({backend}). "
           "Dependencies are prepared automatically; the first launch may take longer.",
           flush=True)

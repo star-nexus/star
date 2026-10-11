@@ -618,7 +618,6 @@ dependencies = [
     { name = "openai" },
     { name = "pillow" },
     { name = "prompt-toolkit" },
-    { name = "pygame" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "rich" },
@@ -629,6 +628,9 @@ dependencies = [
 [package.optional-dependencies]
 native = [
     { name = "star-native" },
+]
+pygame = [
+    { name = "pygame" },
 ]
 
 [package.dev-dependencies]
@@ -646,7 +648,7 @@ requires-dist = [
     { name = "openai" },
     { name = "pillow", specifier = ">=11.2.1" },
     { name = "prompt-toolkit", specifier = ">=3.0.51" },
-    { name = "pygame", specifier = ">=2.6.1" },
+    { name = "pygame", marker = "extra == 'pygame'", specifier = ">=2.6.1" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=14.0.0" },
@@ -654,7 +656,7 @@ requires-dist = [
     { name = "toml" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["native"]
+provides-extras = ["native", "pygame"]
 
 [package.metadata.requires-dev]
 dev = [

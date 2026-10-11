@@ -26,6 +26,8 @@ class NativeSession:
         if (display == 'window') != (renderer == 'pygame'):
             raise ValueError('pygame requires window preparation; other renderers require none/dummy')
         if renderer == 'web':
+            if display != 'none':
+                raise ValueError("Web renderer requires display='none'")
             scene_options.setdefault('simulation_profile', 'interactive')
         if display == "window":
             from ..ui.context import UiContext

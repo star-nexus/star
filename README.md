@@ -308,7 +308,9 @@ in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and
 
 For Web, install the pinned frontend dependency once with
 `npm ci --prefix rotk_env/rendering/web/client`, then open a faction or spectator
-link printed by the launcher. Rust runs on the server. See
+link printed by the launcher. Rust runs on the server. The Web host prepares
+pure scene data without installing or importing pygame. The desktop launcher
+selects the optional pygame dependency and does not load Three.js assets. See
 [renderer adapters and Web scope](docs/render-adapters.md) for setup, permissions,
 Agent Hub reuse, and the separate visual/capture versions.
 
@@ -320,9 +322,10 @@ The default worker count is 1. To enable eligible internal parallel tasks, use
 `--native-scheduling threaded` is the default authority/display scheduling policy.
 
 The original developer entry point remains available:
-`uv run --extra native rotk_env/main.py`. The `native` extra belongs only to ENV;
+`uv run --extra native --extra pygame rotk_env/main.py`. The `native` extra belongs only to ENV;
 Agent and protocol SDK dependencies stay independent. Missing or mismatched Rust
 extensions fail explicitly rather than silently changing the backend.
+For the complete test suite, use `uv run --extra native --extra pygame pytest -q`.
 
 See [ENV backend and launch contract](docs/native-hub-host.md) for version checks,
 queue ownership, run manifests, and the validated scope.

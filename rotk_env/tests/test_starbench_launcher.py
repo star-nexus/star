@@ -64,7 +64,7 @@ def test_real_entrypoint_preserves_args_cwd_and_exit_status(args, native, tmp_pa
     launched = json.loads(result.stdout.splitlines()[-1])
     original_args = args[1:] if args[:1] == ["env"] else args
     expected = ["run", *( ["--extra", "native"] if native else []),
-                "rotk_env/main.py", *original_args]
+                '--extra', 'pygame', "rotk_env/main.py", *original_args]
     assert launched == {"args": expected, "cwd": str(starbench.ROOT), 'venv': None}
 
 
@@ -75,7 +75,7 @@ def test_windows_path_uses_same_command_and_root(monkeypatch):
     monkeypatch.setattr(starbench.subprocess, "call",
                         lambda command, cwd, env: invoked.append((command, cwd, env.get('VIRTUAL_ENV'))) or 9)
     assert starbench.main(["--backend", "python", "--headless"]) == 9
-    assert invoked == [(["uv.exe", "run", "rotk_env/main.py", "--backend",
+    assert invoked == [(["uv.exe", "run", '--extra', 'pygame', "rotk_env/main.py", "--backend",
                          "python", "--headless"], starbench.ROOT, None)]
 
 
@@ -94,6 +94,6 @@ def test_renderer_launcher_uses_env_owned_module_without_changing_default():
     assert starbench.launch_command(args, 'uv') == [
         'uv', 'run', '--extra', 'native', 'python', '-m', 'rotk_env.rendering.web', *args]
     assert starbench.launch_command(['--renderer=pygame', '--no-hub'], 'uv') == [
-        'uv', 'run', '--extra', 'native', 'rotk_env/main.py', '--no-hub']
+        'uv', 'run', '--extra', 'native', '--extra', 'pygame', 'rotk_env/main.py', '--no-hub']
     with pytest.raises(SystemExit):
         starbench.launch_command(['--renderer=web', '--backend=python'], 'uv')

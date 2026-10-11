@@ -59,14 +59,14 @@ def _enemy_ids(result):
     return {e["unit_id"] for e in result["visible_enemy_units"]}
 
 
-def _press_key_1(world):
+def _press_shift_1(world):
     import pygame
 
     from rotk_env.systems.input_system import InputHandlingSystem
 
     system = InputHandlingSystem()
     system.world = world
-    system._handle_key_down(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1}))
+    system._handle_key_down(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1, "mod": pygame.KMOD_SHIFT}))
 
 
 def _fog_switch_setup():
@@ -120,8 +120,8 @@ def test_fog_off_returns_every_living_enemy():
     assert by_id[far]["unit_status"]["current_count"] == 55
 
 
-def test_key_1_toggles_fog_for_get_faction_state():
-    """Same world: fog on → key 1 off → key 1 on. Own Units never shrink."""
+def test_shift_1_toggles_fog_for_get_faction_state():
+    """Same world: fog on → Shift+1 off → Shift+1 on. Own Units never shrink."""
     world, own, near, far, fog = _fog_switch_setup()
 
     on = _query(world)
@@ -130,14 +130,14 @@ def test_key_1_toggles_fog_for_get_faction_state():
     assert [u["unit_id"] for u in on["units"]] == [own]
     assert _enemy_ids(on) == {near}
 
-    _press_key_1(world)
+    _press_shift_1(world)
     off = _query(world)
     assert fog.enabled is False
     assert off["fog"] == "disabled"
     assert [u["unit_id"] for u in off["units"]] == [own]
     assert _enemy_ids(off) == {near, far}
 
-    _press_key_1(world)
+    _press_shift_1(world)
     back = _query(world)
     assert fog.enabled is True
     assert back["fog"] == "active"
@@ -205,13 +205,13 @@ def test_vision_system_feeds_faction_state_fog():
     assert _enemy_ids(on) == {seen}
     assert hidden not in _enemy_ids(on)
 
-    _press_key_1(world)
+    _press_shift_1(world)
     off = _query(world)
     assert fog.enabled is False
     assert off["fog"] == "disabled"
     assert _enemy_ids(off) == {seen, hidden}
 
-    _press_key_1(world)
+    _press_shift_1(world)
     back = _query(world)
     assert fog.enabled is True
     assert back["fog"] == "active"
@@ -285,12 +285,12 @@ def main():
     print(f"  own={own}  near(visible)={near}  far(hidden)={far}\n")
 
     _print_step("fog on", fog, _query(world))
-    _press_key_1(world)
-    _print_step("key 1 → off", fog, _query(world))
-    _press_key_1(world)
-    _print_step("key 1 → on", fog, _query(world))
+    _press_shift_1(world)
+    _print_step("Shift+1 → off", fog, _query(world))
+    _press_shift_1(world)
+    _print_step("Shift+1 → on", fog, _query(world))
 
-    test_key_1_toggles_fog_for_get_faction_state()
+    test_shift_1_toggles_fog_for_get_faction_state()
     test_set_fog_enabled_is_the_same_switch()
     test_vision_system_feeds_faction_state_fog()
     print("\nAssertions passed.")
