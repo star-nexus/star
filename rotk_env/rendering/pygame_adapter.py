@@ -6,6 +6,14 @@ from .adapters import ProjectionRenderer
 class PygameRenderer(ProjectionRenderer):
     renderer_id = 'pygame'
 
+    def __init__(self, **context):
+        super().__init__(**context)
+        from .pygame.frame_capture import PygameFrameProvider
+        self.frame_provider = PygameFrameProvider(self.presentation.world, self._update)
+
+    def capture(self):
+        return self.frame_provider.capture()
+
     @property
     def visual_version(self):
         from rotk_env.ui.context import VISUAL_VERSION

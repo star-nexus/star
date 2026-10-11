@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 from rotk_env.components.agent_info import AgentInfoRegistry
 from .bootstrap import ORACLE_VERSION, NATIVE_API_VERSION
+from framework.presentation.capture import capture_observation_frame
 
 _UNSET = object()
 
@@ -82,10 +83,7 @@ def _serialized(method):
 def _complete_result(action, result, capture=None):
     result = _decode_result(result)
     if action == 'get_faction_state_vlm' and result.get('success'):
-        if capture is None:
-            from framework.engine.frame_capture import capture_rendered_frame
-            capture = capture_rendered_frame
-        frame, error = capture()
+        frame, error = capture_observation_frame(capture)
         result['frame_base64'] = frame
         result['frame_format'] = 'png' if frame else None
         if error is not None:
@@ -157,9 +155,9 @@ class RustRuntime:
     """Owned native runtime; supported requests do not imply full gameplay readiness."""
     backend = 'rust'
 
-    def __init__(self, initial_state, *, threads=1):
+    def __init__(self, initial_state, *, threads=1, frame_capture=None):
         self._admission_lock = RLock()
-        self._frame_capture = None
+        self._frame_capture = frame_capture
         self._human_policy = None
         native = load_native()
         self._native = native(json.dumps(initial_state, allow_nan=False), threads)

@@ -156,7 +156,7 @@ class GameConfig:
 
     # Display. Real-time AP/MP recover 1/FPS seconds per frame; keep at 60.
     # WINDOW_* start at this floor; GameEngine grows to the desktop and
-    # sync_from_display() follows live resizes.
+    # The selected renderer supplies live viewport dimensions.
     MIN_WINDOW_WIDTH = 1200
     MIN_WINDOW_HEIGHT = 800
     WINDOW_WIDTH = 1200
@@ -317,17 +317,8 @@ class GameConfig:
     }
 
     @classmethod
-    def sync_from_display(cls) -> None:
-        """Copy the live pygame surface size into WINDOW_WIDTH/HEIGHT."""
-        try:
-            import pygame
-
-            surface = pygame.display.get_surface()
-        except Exception:
-            return
-        if surface is None:
-            return
-        width, height = surface.get_size()
+    def set_viewport_size(cls, width: int, height: int) -> None:
+        """Store dimensions supplied by the selected renderer."""
         if width >= 2 and height >= 2:
             cls.WINDOW_WIDTH = width
             cls.WINDOW_HEIGHT = height

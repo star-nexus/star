@@ -9,6 +9,7 @@ from pathlib import Path
 import platform
 import sys
 import time
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 
 def main():
@@ -38,7 +39,7 @@ def main():
     from rotk_env.scenes.start_scene import StartScene
     from star_native import _native
     engine = GameEngine(title='STARBench UI validation', width=1200, height=800)
-    GameConfig.sync_from_display()
+    sync_game_config_from_display()
     assert pygame.display.get_driver() == 'cocoa', 'real-window validation requires Cocoa'
     scene = None
     session = None
@@ -56,7 +57,7 @@ def main():
             for w, h in sizes:
                 engine.screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
                 RMS.screen = engine.screen
-                GameConfig.sync_from_display()
+                sync_game_config_from_display()
                 scene.update(0)
                 RMS.update()
                 pygame.display.flip()
@@ -102,7 +103,7 @@ def main():
             for w, h in sizes:
                 engine.screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
                 RMS.screen = engine.screen
-                GameConfig.sync_from_display()
+                sync_game_config_from_display()
                 ctx = getattr(world, '_ui_context', None)
                 if ctx:
                     ctx.sync(world)
@@ -191,7 +192,7 @@ def main():
                 mini._move_camera_to_position((0,0))
             engine.screen = pygame.display.set_mode((1440, 900), pygame.RESIZABLE)
             RMS.screen = engine.screen
-            GameConfig.sync_from_display()
+            sync_game_config_from_display()
             inp._follow_window_resize()
             draw()
             pygame.display.flip()

@@ -271,8 +271,9 @@ def test_click_accepts_the_east_edge_hex():
 def test_start_panel_layout_places_maps_below_players():
     from rotk_env.components.start_menu import (
         clamp_scenario_scroll,
-        start_panel_layout,
     )
+
+    from rotk_env.ui.start_layout import start_panel_layout
 
     geom = start_panel_layout(5, screen_width=1200, screen_height=800)
     assert geom["scenario_y"] > geom["player_y"]

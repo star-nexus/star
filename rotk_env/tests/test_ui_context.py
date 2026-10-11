@@ -7,8 +7,9 @@ from framework import World
 from framework.engine import RMS
 from rotk_env import components as c
 from rotk_env.ui.context import UiContext, controller_available
-from rotk_env.components.start_menu import start_panel_layout, scenario_option_rects, StartMenuConfig
-from rotk_env.prefabs.controls import binding_for_key
+from rotk_env.components.start_menu import StartMenuConfig
+from rotk_env.ui.start_layout import start_panel_layout, scenario_option_rects
+from rotk_env.rendering.pygame.controls import binding_for_key
 from rotk_env.prefabs.config import Faction, UnitType
 from rotk_env.tests.test_window_input_picking import _World, _system
 from rotk_env.systems.minimap_system import MiniMapSystem

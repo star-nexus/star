@@ -17,6 +17,9 @@ the interactive native preparation without importing pygame or initializing SDL;
 headless evaluation
 keeps its existing preparation. Agent non-image observations are unchanged.
 pygame preserves existing VLM capture; Web has no Agent frame provider.
+Capture is explicitly supplied by the selected host. Bare `RustRuntime`,
+`AuthorityRuntime` and Python action handlers never import a graphics engine
+to fill a missing frame capability.
 See [renderer adapters](render-adapters.md) for capture and visual version boundaries.
 
 ## Statistics internal compute: E2
@@ -569,11 +572,18 @@ faction checks, trusted identity, unit selection and structured observation run
 before any display read. Failed/unsupported queries do not capture a frame.
 
 The Rust kernel returns the authorized structured projection. The public Python
-adapter then copies the existing `RenderEngine.screen` and attaches the legacy
+adapter invokes its supplied frame callback and attaches the legacy
 `frame_base64`, `frame_format`, and optional `frame_error`. A capture failure keeps
 the successful structured query and its normal counters. The low-level
 `star_native.NativeRuntime` JSON methods are the kernel boundary and do not attach
 Python-rendered media; applications use `rotk_env.runtime.native.RustRuntime`.
+The selected desktop host supplies the callback that copies its existing
+`RenderEngine.screen`. Direct runtime callers must pass `frame_capture=...`
+when they need images; without it, the structured query remains successful with
+no image and `frame_error="No Agent observation frame provider configured"`.
+`NativeSession` injects its selected `FrameProvider` automatically. See the
+[current renderer boundary](render-adapters.md); the API11 record below describes
+the preserved desktop capture behavior.
 
 A batch is fully decoded and detached before execution. It splits at each VLM
 request so capture completes before later commands; adjacent ordinary faction

@@ -42,7 +42,7 @@ class NativeSession:
             from rotk_env.rendering import create_renderer
             from rotk_env.rendering.adapters import RendererFrameProvider
             self.renderer = create_renderer(renderer, presentation=self.presentation,
-                update=self._update_systems, capture=self._capture_frame, initial=initial)
+                update=self._update_systems, initial=initial)
             self.frame_provider = frame_provider or RendererFrameProvider(self.renderer)
             if renderer == 'web':
                 from rotk_env.rendering.commands import HumanCommandPolicy
@@ -86,18 +86,8 @@ class NativeSession:
         return self.controls.refresh()
 
     def _capture_frame(self):
-        # Called on the display thread after the owner's publication fence.
-        # Prepare/render the current projection without admitting inputs or
-        # advancing authority. Preserve the legacy bytes/label/error contract.
-        from framework.engine.renders import RenderEngine, FRAME_CLEAR_COLOR
-        from framework.engine.frame_capture import capture_rendered_frame
-        if any(type(s).__name__ == 'UnitRenderSystem' for s in self.world.systems):
-            render = RenderEngine()
-            if render.screen is not None:
-                render.screen.fill(FRAME_CLEAR_COLOR)
-                self._update_systems(0, inputs=False, rendering=True)
-                render.update()
-        return capture_rendered_frame()
+        # Compatibility hook: actual capture belongs to the selected provider.
+        return self.frame_provider.capture()
 
     def update_display(self, dt, *, inputs=True):
         """Run input/panels/rendering over derived data after the simulation step."""

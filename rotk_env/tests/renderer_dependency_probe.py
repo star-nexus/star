@@ -128,6 +128,7 @@ async def check_web():
 
 
 def check_pygame():
+    from rotk_env.rendering.pygame.display import sync_game_config_from_display
     os.environ.update(SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', HEADLESS='0')
     sys.meta_path.insert(0, RejectImports('rotk_env.rendering.web',
                                         'rotk_env.rendering.projection'))
@@ -135,7 +136,7 @@ def check_pygame():
     from rotk_env.prefabs.config import GameConfig
     from rotk_env.runtime.session import NativeSession
     engine = GameEngine(width=1200, height=900, title='Dependency probe')
-    GameConfig.sync_from_display()
+    sync_game_config_from_display()
     try:
         with NativeSession(display='window', scenario='chibi-small', seed=42) as session:
             state = session.runtime.export_state()

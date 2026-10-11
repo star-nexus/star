@@ -25,6 +25,7 @@ from framework.engine.renders import FRAME_CLEAR_COLOR
 from rotk_env.prefabs.config import GameConfig
 from rotk_env.runtime.session import NativeSession
 from rotk_env.ui.context import VISUAL_VERSION
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -36,7 +37,7 @@ baseline = types.ModuleType('rotk_env.runtime.desktop_baseline')
 baseline.__package__ = 'rotk_env.runtime'
 exec(subprocess.check_output(['git', 'show', '2598697:rotk_env/runtime/session.py'], cwd=ROOT, text=True), baseline.__dict__)
 engine = GameEngine(width=1200, height=900, title='Renderer parity probe')
-GameConfig.sync_from_display()
+sync_game_config_from_display()
 records = []
 def gameplay(state):
     return sorted((row['components'] for row in state['entities'] if 'Unit' in row['components']),

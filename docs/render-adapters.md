@@ -2,7 +2,7 @@
 
 2026-10-11，在 `codex/render-adapters` 实现。沿用[已确认的顶层设计](architecture/renderers/proposed.html)：服务端 Rust 执行权威规则，pygame / Three.js 读取展示投影。浏览器不运行 Rust/WASM。
 
-当前 Web 视觉版本为 `starbench-web-v2`。v2 修复单位移动的低频跳变、反复创建 GPU 对象和侧栏 DOM；[实测与视觉记录](render-adapters-v2/README.md)包含修复前后证据。pygame 仍为 `starbench-ui-v6`。
+当前 Web 视觉版本为 `starbench-web-v3`。v3 默认显示 FPS，并补齐内核与渲染器的依赖边界；[验收及视觉记录](render-adapters-v3/README.md)包含默认角标、窄屏和依赖检查证据。v2 的单位插值、GPU 对象和侧栏复用继续保留；[性能记录](render-adapters-v2/README.md)包含修复前后对照。pygame 仍为 `starbench-ui-v6`。
 
 ## 启动
 
@@ -17,7 +17,9 @@ uv run starbench.py --renderer web --no-hub --scenario chibi-small --seed 42
 
 Web 的场景准备、Rust 宿主、展示投影和 Hub 路径都不导入 pygame，也不初始化字体或 SDL。pygame 是可选依赖；启动器只在选择桌面渲染时请求 `pygame` extra，Web 只请求 `native` extra。桌面路径不加载 Web 服务、Web 投影或 Three.js 素材。Web 入口无需隐藏任何 pygame 提示。启动器清除外层 PEP 723 临时环境的 `VIRTUAL_ENV` 后执行内层 uv，让它选择仓库 `.venv`，避免环境不匹配警告。独立无 pygame 环境及双向导入隔离的证据见[依赖隔离记录](render-adapters-isolation/README.md)。
 
-更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。诊断时在链接的 `#token=...` 前加 `?perf=1`，例如 `http://127.0.0.1:8765/?perf=1#token=...`；左下角显示浏览器 FPS、状态更新频率与绘制调用数。这些指标仅在本地显示，不发送到外部。
+更新后停止旧服务，重新运行命令，再刷新网页。已有的 Web 会话凭据会随服务重启失效，需要使用新链接。默认在地图左下角显示小型绿色 FPS 角标，窄屏移到地图右上侧；角标不接收鼠标事件。FPS 按浏览器完成的绘制帧计数，约每秒更新，从后台返回页面后重新采样，与 Rust 60Hz 时钟、展示状态 20Hz 分别计量。默认不采集详细诊断数组。
+
+诊断时在链接的 `#token=...` 前加 `?perf=1`，例如 `http://127.0.0.1:8765/?perf=1#token=...`；角标额外显示状态更新频率与绘制调用数，保留本地 p95 等详细采样。这些指标仅在本地显示，不发送到外部。
 
 Web 的 Hub 接入使用原来的宿主与 SDK：
 
@@ -37,12 +39,16 @@ Agent 继续通过原来的 Hub 注册、认领单位、提交动作及读取观
 ```text
 framework/presentation/
   contracts.py                 RendererAdapter / FrameProvider 通用契约
+  capture.py                   显式截图回调；缺失能力时返回无图像错误
   stream.py                    可丢弃展示状态的一槽邮箱
 rotk_env/rendering/
   __init__.py                  注册与延迟加载适配器
-  adapters.py                  none / web 适配器与默认截图能力
+  adapters.py                  none / web 适配器与可选截图能力
   pygame_adapter.py            原桌面渲染、输入与 UI 挂载
   pygame/animation.py          pygame 字体、Surface 与伤害数字绘制
+  pygame/controls.py           pygame 键码到通用动作的转换
+  pygame/display.py            pygame 窗口尺寸读取
+  pygame/frame_capture.py      桌面与 dummy 窗口的 FrameProvider
   projection.py                RoTK 展示模型、视野过滤与视角增量
   commands.py                  服务端视角授权与人类命令校验
   web/
@@ -52,6 +58,8 @@ rotk_env/rendering/
       tests/                   浏览器状态与坐标单元测试
 rotk_env/runtime/              原有 Rust/PyO3 宿主、权威调度、Hub、生命周期
 rotk_env/prefabs/              场景初始化及模拟策略选择
+  controls.py                  通用键名、动作及帮助文案，不导入引擎
+rotk_env/ui/start_layout.py    pygame 菜单字体测量与点击矩形
 rotk_env/systems/
   animation_lifecycle.py       无引擎依赖的轨迹与生命周期
   interactive_animation_lifecycle.py  interactive 浮动文字轨迹
@@ -62,6 +70,7 @@ rotk_env/components/           原有组件
 rotk_env/maps/                 原有地图
 docs/render-adapters-v1/       初版历史记录与可复用桌面对照脚本
 docs/render-adapters-v2/       移动/对象复用修复证据、视觉版本、截图
+docs/render-adapters-v3/       默认 FPS、渲染边界补查与视觉记录
 docs/render-adapters-isolation/  依赖隔离、桌面像素对照与验收记录
 ```
 
@@ -94,9 +103,19 @@ flowchart LR
 
 API18/schema5 内部的历史 `display="window"` 字段仍表示这套 native 策略。Web 的实际准备必须使用 `display="none"`；它既不创建 pygame 窗口，也不导入 pygame。没有修改 Rust 源码或重编译二进制，已有原生优化开关和默认 worker=1 保留。Python 仍进行一次纯数据场景准备，之后卸载所有 Python 模拟系统，Rust 独占规则推进。通用动画轨迹和生命周期位于 `systems/`，pygame 字体和绘制位于 `rendering/pygame/`。Web 宿主从磁盘传送共享 PNG 素材，浏览器解码；场景初始化不加载字体或构造 Surface。
 
-展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。默认 pygame 截图沿用原字节、视角、错误和格式标签；历史格式问题不在本次更改中修正。
+展示适配器只执行 `apply / render / close`，不能推进权威时钟。`FrameProvider` 独立注入会话，在原来的发布与截图围栏上调用。选中 pygame 的会话安装 `PygameFrameProvider`；桌面入口的历史 headless/dummy 路径也显式安装它。pygame 截图沿用原字节、视角、错误和格式标签；历史格式问题不在本次更改中修正。
+
+底层 `RustRuntime`、`AuthorityRuntime` 和 Python `LLMActionHandler` 不再默认导入 `RenderEngine` 或 pygame 来补齐截图。直接调用这些 API 的宿主如需图像，显式传入 `frame_capture` 回调；`NativeSession` 从其 `FrameProvider` 注入。未配置提供器时，成功的 VLM 请求保留结构化状态，返回 `frame_base64=None`、`frame_format=None` 与 `frame_error="No Agent observation frame provider configured"`。规则、star-protocol、Hub 和 Agent 的动作接口保持原样。
 
 Web 不提供 Agent 的图像观测。`get_faction_state_vlm` 返回原有无图像错误字段，不回退到旧窗口或未授权浏览器画面。浏览器截图仅是人工验证证据。要让 Web 对局支持 VLM，后续需要独立可信离屏 FrameProvider，并单独记录其视觉版本及验收结果。
+
+## 引擎依赖检查
+
+组件定义、通用动作/快捷键、配置、ECS、协议、规则系统和权威 runtime 不承担窗口、字体、键码或截图实现。菜单字体测量和 `pygame.Rect` 从 `components/start_menu.py` 移到 `ui/start_layout.py`；窗口读取从 `GameConfig` 移到 pygame 适配器，配置只接收 `set_viewport_size(width, height)`；pygame 键码在输入适配器中转换为通用键名。运行身份的视觉版本由选中的宿主传入，内核默认 `none`。
+
+`test_renderer_boundaries.py` 作为回归门禁，检查受保护模块的直接、间接以及函数内部导入，阻止其到达具体引擎、UI 和渲染实现；检查 Rust 依赖锁没有图形引擎；在新进程中拒绝图形导入，执行场景准备、原生和 Python 成功 VLM 请求、会话关闭。场景构建器和 `NativeSession` 是选择渲染器的组装入口，可以按所选分支导入桌面实现；它们的 none/Web 分支由运行时拒绝导入检查覆盖。历史桌面系统保留原路径作为明确列出的展示叶节点，新规则模块默认受静态保护，新引擎实现应放在 `rendering/`。
+
+无 pygame 的独立环境还验证 Web 素材、WebSocket、结束回合恢复 AP、原有 Hub 路径与 VLM 无截图回退。桌面独立进程反向拒绝导入 Web 服务、投影和 Three.js 素材。
 
 ## 展示传输与人类输入
 
@@ -122,9 +141,10 @@ PYTHONPATH=. .venv/bin/python docs/render-adapters-v1/check_desktop.py
 npm test --prefix rotk_env/rendering/web/client
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m pytest -q \
   framework/tests/test_presentation_stream.py \
+  rotk_env/tests/test_renderer_boundaries.py \
   rotk_env/tests/test_renderer_adapters.py rotk_env/tests/test_renderer_dependencies.py \
   rotk_env/tests/test_render_projection.py \
   rotk_env/tests/test_web_commands.py rotk_env/tests/test_web_server.py
 ```
 
-证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)与[引擎依赖隔离](render-adapters-isolation/README.md)。依赖拆分没有改变前端素材或绘制代码，桌面 RGB 与观测字节对照相同，继续使用 `starbench-web-v2` / `starbench-ui-v6`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。
+证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)、[首次依赖隔离](render-adapters-isolation/README.md)与[v3 FPS 及边界补查](render-adapters-v3/README.md)。v3 桌面 RGB 与观测字节对照相同，pygame 保持 `starbench-ui-v6`；Web 加入默认角标后记录为 `starbench-web-v3`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。

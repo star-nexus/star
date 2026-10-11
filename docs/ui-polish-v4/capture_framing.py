@@ -12,11 +12,12 @@ from rotk_env.prefabs.world_builder import build_skirmish_world
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.runtime.session import NativeSession
 from rotk_env.ui.context import VISUAL_VERSION
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-e=GameEngine();GameConfig.sync_from_display();default=e.screen.get_size();records=[]
+e=GameEngine();sync_game_config_from_display();default=e.screen.get_size();records=[]
 for size in (default,(1200,900),(2480,1263)):
  for scenario in ('default','river_split'):
-  e.screen=pygame.display.set_mode(size,pygame.RESIZABLE);RMS.screen=e.screen;GameConfig.sync_from_display()
+  e.screen=pygame.display.set_mode(size,pygame.RESIZABLE);RMS.screen=e.screen;sync_game_config_from_display()
   opts=dict(display='window',scenario=scenario,seed=42,hub_url=None)
   session=NativeSession(authority_scheduling=False,**opts) if a.backend=='rust' else None
   w=session.world if session else build_skirmish_world(**opts);cam=w.get_singleton_component(c.Camera);ctx=w._ui_context

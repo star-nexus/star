@@ -91,6 +91,7 @@ def build_skirmish_world(
     enable_mock_ai: bool = False,
     world: Optional[World] = None,
     ui_context=None,
+    frame_capture=None,
 ) -> World:
     """Build a match World.
 
@@ -133,6 +134,7 @@ def build_skirmish_world(
         display=display,
         simulation_profile=simulation_profile,
         enable_mock_ai=enable_mock_ai,
+        frame_capture=frame_capture,
     )
     assembler.assemble()
     if display == "window":
@@ -156,6 +158,7 @@ class _SkirmishAssembler:
         display: DisplayKind,
         simulation_profile: str | None,
         enable_mock_ai: bool,
+        frame_capture=None,
     ):
         self.world = world
         self.players = players
@@ -165,6 +168,7 @@ class _SkirmishAssembler:
         self.seed_source = seed_source
         self.hub_url = hub_url
         self.env_id = env_id
+        self.frame_capture = frame_capture
         self.display = display
         self.interactive = (display == 'window' if simulation_profile is None
                             else simulation_profile == 'interactive')
@@ -264,7 +268,8 @@ class _SkirmishAssembler:
 
         systems.extend(
             [
-                LLMSystem(server_url=self.hub_url, env_id=self.env_id),
+                LLMSystem(server_url=self.hub_url, env_id=self.env_id,
+                          frame_capture=self.frame_capture),
                 statistics_system,
                 SettlementReportSystem(),
             ]

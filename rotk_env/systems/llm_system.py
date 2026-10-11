@@ -306,11 +306,13 @@ class LLMSystem(System):
         self,
         server_url: Optional[str] = None,
         env_id: Optional[str] = None,
+        *, frame_capture=None,
     ):
         super().__init__()
         self.name = "LLMSystem"
         self.server_url = server_url
         self.env_id = env_id
+        self._frame_capture = frame_capture
         self._hub_confirmed = False
 
         # Game-end notification state
@@ -338,7 +340,7 @@ class LLMSystem(System):
         self._observation_batch_context = None
         self.observation_system = LLMObservationSystem(world)
         self.action_handler = LLMActionHandler(
-            world, observation_system=self.observation_system
+            world, observation_system=self.observation_system, frame_capture=self._frame_capture
         )
 
         # Initialize ActionExecutor

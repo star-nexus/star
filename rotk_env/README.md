@@ -67,7 +67,9 @@ Web 默认两个人类槽位，终端给出各阵营和旁观链接；联网使�
 渲染器和场景模拟策略分别选择；Web 复用桌面的 interactive/indexed 路径，
 场景准备和运行不导入 pygame，Web 依赖也不包含 pygame。桌面仅选择 pygame，
 不加载 Web 服务或 Three.js 素材；原有 headless 评测及 pygame 默认行为保留。Web 视觉版本为
-`starbench-web-v2`，尚无 Agent 图像观测提供器；pygame 观测保持 `starbench-ui-v6`。
+`starbench-web-v3`，地图默认显示每秒更新的 FPS 角标，`?perf=1` 可查看额外诊断。
+Web 尚无 Agent 图像观测提供器；pygame 观测保持 `starbench-ui-v6`。
+截图能力须由宿主显式注入，内核和规则代码不会隐式导入图形引擎。
 
 ## 规则以代码为准
 

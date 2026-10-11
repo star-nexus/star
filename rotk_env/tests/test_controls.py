@@ -5,10 +5,10 @@ import pygame
 from rotk_env.components.game_over import GameOverButton
 from rotk_env.prefabs.controls import (
     KEY_BINDINGS,
-    binding_for_key,
     format_cli_controls,
     help_panel_lines,
 )
+from rotk_env.rendering.pygame.controls import binding_for_key
 from rotk_env.systems.input_system import InputHandlingSystem
 
 

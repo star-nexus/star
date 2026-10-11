@@ -1,0 +1,12 @@
+{
+  "ariaLive": "off",
+  "diagnostics": false,
+  "fps": 100,
+  "fpsText": "100 FPS",
+  "pointerEvents": "none",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "visualVersion": "starbench-web-v3"
+}

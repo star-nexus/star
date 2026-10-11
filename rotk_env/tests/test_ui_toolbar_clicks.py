@@ -13,6 +13,7 @@ from rotk_env import components as c
 from rotk_env.prefabs.config import Faction, GameConfig, PlayerType
 from rotk_env.prefabs.world_builder import build_skirmish_world
 from rotk_env.utils.env_events import TurnStartEvent
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 
 @pytest.fixture(params=['python', 'rust-serial', 'rust-threaded'])
@@ -20,7 +21,7 @@ def toolbar(request, monkeypatch):
     pygame.display.init()
     pygame.font.init()
     pygame.display.set_mode((1200, 900))
-    GameConfig.sync_from_display()
+    sync_game_config_from_display()
     RMS.screen = pygame.display.get_surface()
     prior = {kind: tuple(callbacks) for kind, callbacks in EBS._listeners.items() if callbacks}
     options = dict(display='window', scenario='river_split', mode='turn_based',

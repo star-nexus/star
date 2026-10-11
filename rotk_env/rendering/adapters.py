@@ -1,11 +1,12 @@
 """Adapters over the existing presentation World; no Python simulation runs here."""
+from framework.presentation.capture import capture_observation_frame
 
 
 class ProjectionRenderer:
     renderer_id = 'none'
     visual_version = 'none'
 
-    def __init__(self, *, presentation, update, capture, initial):
+    def __init__(self, *, presentation, update, initial, capture=None):
         self.presentation = presentation
         self._update = update
         self._capture = capture
@@ -17,7 +18,7 @@ class ProjectionRenderer:
         self._update(dt, inputs=inputs, rendering=True)
 
     def capture(self):
-        return self._capture()
+        return capture_observation_frame(self._capture)
 
     def close(self):
         pass
@@ -25,7 +26,7 @@ class ProjectionRenderer:
 
 class WebRenderer(ProjectionRenderer):
     renderer_id = 'threejs'
-    visual_version = 'starbench-web-v2'
+    visual_version = 'starbench-web-v3'
 
     def __init__(self, **context):
         super().__init__(**context)

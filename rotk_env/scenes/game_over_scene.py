@@ -19,6 +19,7 @@ from ..components.game_over import (
 from ..systems.game_over_render_system import GameOverRenderSystem
 from ..systems.settlement_report_render_system import SettlementReportRenderSystem
 from ..prefabs.config import Faction, GameConfig
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 
 class GameOverScene(Scene):
@@ -115,7 +116,7 @@ class GameOverScene(Scene):
 
     def update(self, dt: float) -> None:
         """Update scene world."""
-        GameConfig.sync_from_display()
+        sync_game_config_from_display()
         self._layout_buttons()
         if self.world:
             self.world.update(dt)

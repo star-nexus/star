@@ -313,6 +313,8 @@ pure scene data without installing or importing pygame. The desktop launcher
 selects the optional pygame dependency and does not load Three.js assets. See
 [renderer adapters and Web scope](docs/render-adapters.md) for setup, permissions,
 Agent Hub reuse, and the separate visual/capture versions.
+The Web map displays FPS by default, sampled from completed browser render frames
+once per second; `?perf=1` adds local state-update and draw-call diagnostics.
 
 <details>
 <summary>Advanced ENV settings and developer entry point</summary>

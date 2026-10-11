@@ -25,6 +25,8 @@ Hub 地址、Agent 启动及身份方式沿用原设置；`--no-hub` 只表示�
 
 native 默认 1 线程，`--native-threads 2|4` 可选。`--native-scheduling threaded` 默认采用独立固定时钟；serial 保留帧驱动，但联网请求仍进入同一个权威执行器。
 
+Agent 截图由宿主显式注入 `FrameProvider`，内核及动作处理器没有 pygame 默认回退。桌面和历史 headless 入口提供原有 pygame 截图；Web 与纯数据 runtime 未配置图像能力时保留结构化观测并返回无图像错误字段。见[渲染器边界检查](render-adapters.md#引擎依赖检查)。
+
 ## 所有权及兼容合同
 
 先准备世界、Rust 实例和展示系统，再连接 Hub。网络回调深拷贝已收到的请求，进入有界宿主队列（32）；单个宿主线程复用原 `LLMSystem` 的解析、Envelope 包装和冷却政策，把世界操作交给 `AuthorityRuntime`。网络发送/ACK/重试不访问展示 World，也不占用 Rust owner 等待发送。权威 inbox32、展示 output8 仍使用背压，无丢弃、覆盖或新错误码。

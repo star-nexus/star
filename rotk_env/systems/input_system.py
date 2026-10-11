@@ -25,7 +25,7 @@ from ..components import (
     set_fog_enabled,
 )
 from ..prefabs.config import GameConfig, HexOrientation, Faction, GameMode, PlayerType
-from ..prefabs.controls import binding_for_key
+from ..rendering.pygame.controls import binding_for_key
 from ..utils.hex_utils import HexConverter
 from ..utils.env_events import TileClickedEvent, UnitSelectedEvent
 

@@ -10,6 +10,7 @@ from copy import deepcopy
 import math
 from threading import Condition, Thread, get_ident
 import time
+from framework.presentation.capture import capture_observation_frame
 
 
 class AuthorityRuntime:
@@ -139,10 +140,7 @@ class AuthorityRuntime:
             for result in captures:
                 try:
                     capture = self._capture_frame or self._old_capture
-                    if capture is None:
-                        from framework.engine.frame_capture import capture_rendered_frame
-                        capture = capture_rendered_frame
-                    result.set_result(capture())
+                    result.set_result(capture_observation_frame(capture))
                 except BaseException as exc:
                     result.set_exception(exc)
         except BaseException as exc:

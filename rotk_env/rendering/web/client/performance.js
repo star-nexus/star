@@ -1,4 +1,18 @@
 /** Local display diagnostics. Never submits data or advances the simulation. */
+export class FrameRateCounter {
+  constructor() { this.reset(); }
+  reset() { this.start = null; this.frames = 0; }
+  frame(time) {
+    if (this.start === null) { this.start = time; return null; }
+    this.frames++;
+    const elapsed = time - this.start;
+    if (elapsed < 1000) return null;
+    const fps = this.frames * 1000 / elapsed;
+    this.start = time; this.frames = 0;
+    return fps;
+  }
+}
+
 export class DisplayMetrics {
   constructor(canvas, enabled = false) {
     this.canvas = canvas;
@@ -8,12 +22,21 @@ export class DisplayMetrics {
     this.lastFrame = null; this.windowStart = null; this.windowPackets = 0;
     this.motionFrames = 0; this.motionPackets = 0;
     this.framePositions = new Map(); this.packetPositions = new Map();
-    if (enabled) {
-      this.panel = document.createElement('output');
-      this.panel.className = 'display-performance';
-      this.panel.setAttribute('aria-label', '本地渲染性能');
-      canvas.parentElement.append(this.panel);
-    }
+    this.rate = new FrameRateCounter();
+    this.panel = document.createElement('output');
+    this.panel.className = enabled ? 'display-fps display-performance' : 'display-fps';
+    this.panel.setAttribute('aria-label', '渲染帧率');
+    this.panel.setAttribute('aria-live', 'off');
+    this.panel.textContent = '— FPS';
+    canvas.parentElement.append(this.panel);
+    this.visibility = () => {
+      this.rate.reset(); this.lastFrame = this.windowStart = null;
+      this.frames = 0; this.cpu.length = this.intervals.length = 0;
+      this.windowPackets = this.packets;
+      this.panel.textContent = '— FPS';
+      delete this.canvas.dataset.fps;
+    };
+    document.addEventListener('visibilitychange', this.visibility);
   }
 
   motion(rows, packet = false) {
@@ -34,6 +57,7 @@ export class DisplayMetrics {
   }
 
   begin(time) {
+    if (!this.enabled || document.hidden) return;
     if (this.lastFrame != null) this.intervals.push(time - this.lastFrame);
     this.lastFrame = time;
     this.windowStart ??= time;
@@ -41,14 +65,20 @@ export class DisplayMetrics {
   }
 
   end(time, info, motion = false) {
+    if (document.hidden) return;
+    const fps = this.rate.frame(time);
+    if (!this.enabled) {
+      if (fps !== null) this.showFps(fps);
+      return;
+    }
     this.frames++;
     this.cpu.push(performance.now() - this.started);
     if (motion) this.motionFrames++;
     const elapsed = time - this.windowStart;
-    if (elapsed < 1000) return;
+    if (fps === null) return;
     const p95 = values => [...values].sort((a, b) => a - b)[Math.floor((values.length - 1) * .95)] || 0;
     const sample = {
-      fps: +(this.frames * 1000 / elapsed).toFixed(1),
+      fps: +fps.toFixed(1),
       frame_p95_ms: +p95(this.intervals).toFixed(2),
       render_cpu_p95_ms: +p95(this.cpu).toFixed(2),
       packets_hz: +((this.packets - this.windowPackets) * 1000 / elapsed).toFixed(1),
@@ -61,10 +91,19 @@ export class DisplayMetrics {
     this.samples.push(sample);
     if (this.samples.length > 20) this.samples.shift();
     this.canvas.dataset.performance = JSON.stringify(this.samples);
-    if (this.panel) this.panel.textContent = `${sample.fps} FPS · 状态 ${sample.packets_hz}/s · 绘制 ${sample.draw_calls}`;
+    this.showFps(fps, ` · 状态 ${sample.packets_hz}/s · 绘制 ${sample.draw_calls}`);
     this.frames = 0; this.cpu.length = 0; this.intervals.length = 0;
     this.windowStart = time; this.windowPackets = this.packets;
   }
 
-  close() { this.panel?.remove(); }
+  showFps(fps, details = '') {
+    const value = String(Math.round(fps)), text = `${value} FPS${details}`;
+    if (this.panel.textContent !== text) this.panel.textContent = text;
+    this.canvas.dataset.fps = value;
+  }
+
+  close() {
+    document.removeEventListener('visibilitychange', this.visibility);
+    this.panel.remove();
+  }
 }

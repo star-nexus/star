@@ -195,7 +195,7 @@ class RenderProjection:
         clock = self.state.get('GameTime', {})
         return deepcopy(dict(schema=1, kind='snapshot', epoch=str(self.epoch),
             revision=str(self.revision), tick=str(self.tick), sequence=self.sequence,
-            renderer_id='threejs', visual_version='starbench-web-v2', view=view,
+            renderer_id='threejs', visual_version='starbench-web-v3', view=view,
             scene=self.scene, units=list(units.values()), tiles=tiles,
             visuals=self._visual_rows(faction, units),
             hud={key: state.get(key) for key in ('current_player', 'turn_number', 'game_over', 'winner', 'end_reason')}
