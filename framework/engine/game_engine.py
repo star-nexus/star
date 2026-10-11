@@ -6,7 +6,7 @@ import tomllib
 from typing import Any, Optional
 
 from .scenes import SceneManager
-from .renders import RenderEngine
+from .renders import RenderEngine, FRAME_CLEAR_COLOR
 from .inputs import InputSystem
 from .events import EventBus
 from ..ecs.world import World
@@ -162,7 +162,7 @@ class GameEngine:
     def _choose_window_size(
         self, width: Optional[int], height: Optional[int]
     ) -> tuple[int, int]:
-        """Grow to the desktop when the caller does not pin a size."""
+        """Start compact while preserving explicitly requested dimensions."""
         min_w, min_h = MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
         if width and height:
             return width, height
@@ -172,8 +172,7 @@ class GameEngine:
         auto_w = min_w
         auto_h = min_h
         if desktop_w >= min_w and desktop_h >= min_h:
-            auto_w = max(min_w, desktop_w - 80)
-            auto_h = max(min_h, desktop_h - 100)
+            auto_h = max(min_h, min(900, desktop_h - 100))
         return width or auto_w, height or auto_h
 
     def _init_managers(self) -> None:
@@ -301,7 +300,7 @@ class GameEngine:
 
         if not self.headless:
             with profiler.time_system("screen_fill", category="render"):
-                self.screen.fill((135, 141, 106))  # clear screen
+                self.screen.fill(FRAME_CLEAR_COLOR)
 
         with profiler.time_system("input_system", category="input"):
             self.input_manager.update()

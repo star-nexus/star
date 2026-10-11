@@ -1,0 +1,79 @@
+{
+  "passed": true,
+  "visual_version": "starbench-ui-v6",
+  "scope": "Real Cocoa window, SDL event pump, real display feedback clock; no Agents/network or authority ticks; RGB parity is capture repaint, encoded SDL-decoder difference retained separately",
+  "records": [
+    {
+      "backend": "python",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "wei",
+        1
+      ],
+      "after_quick_click": [
+        "shu",
+        1
+      ],
+      "pressed_frames_at_60fps": 7,
+      "feedback_recovered": true,
+      "press_pixels_distinct": true,
+      "paint_authority_equal": true,
+      "hit_rectangle_unchanged": true,
+      "cache_stats": {
+        "tactical_entries": 4,
+        "tactical_bytes": 1952,
+        "text_entries": 21,
+        "text_bytes": 128600,
+        "widget_entries": 12,
+        "widget_bytes": 2194592
+      },
+      "artifact_sha256": {
+        "pressed": "e5ba577bb2b3de482d70b481bf50c5fee16edc78376f8d237dcf010a0f103a71",
+        "recovered": "9bc91039a9f76c5bfd17dd9860297060970def7151ed80c8203ed45d3a5a029e",
+        "rest": "c980af358f5c12963bfdc3bd09dae294b35033c56754ff1876d6ccdc2b16aa29"
+      },
+      "rust_vlm_repaint_window_rgb_equal": null,
+      "legacy_tga_sdl_decode_rgb_equal": null
+    },
+    {
+      "backend": "rust",
+      "driver": "cocoa",
+      "size": [
+        1200,
+        900
+      ],
+      "before": [
+        "wei",
+        1
+      ],
+      "after_quick_click": [
+        "shu",
+        1
+      ],
+      "pressed_frames_at_60fps": 6,
+      "feedback_recovered": true,
+      "press_pixels_distinct": true,
+      "paint_authority_equal": true,
+      "hit_rectangle_unchanged": true,
+      "cache_stats": {
+        "tactical_entries": 4,
+        "tactical_bytes": 1952,
+        "text_entries": 22,
+        "text_bytes": 143856,
+        "widget_entries": 12,
+        "widget_bytes": 2194592
+      },
+      "artifact_sha256": {
+        "pressed": "5edc258c43a0396decfa00bc3f0dca95bc740da9b2d8e5c3e854f142fa375bb0",
+        "recovered": "10956f0230076f93706ca0780935088ca677a83ae32fc6af907037e550588dd4",
+        "rest": "0ee2dedc6e5c8d593f8e29ec9c5fde5bd3be9af8d496b2c5dd09b7cbf12fb4c6"
+      },
+      "rust_vlm_repaint_window_rgb_equal": true,
+      "legacy_tga_sdl_decode_rgb_equal": false
+    }
+  ]
+}

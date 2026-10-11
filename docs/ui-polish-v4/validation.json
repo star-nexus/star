@@ -1,0 +1,898 @@
+{
+  "visual_version": "starbench-ui-v4",
+  "date": "2026-10-11",
+  "branch": "codex/ui-polish",
+  "base_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+  "source_dirty": true,
+  "source_sha256": {
+    "framework/engine/game_engine.py": "3480382438f8c86011af690dbd0b4fd26ed30ddc27f0f2a570e8bf049c863594",
+    "framework/engine/renders.py": "d05f7ae3ac376dbab736a6a66e9ef73670f24b69cdf38964fb3a1831abacfc79",
+    "rotk_env/ui/context.py": "63d021b69039df9399de05c709cf79b73b951f22150bdc91e0036fabc573c3dd",
+    "rotk_env/systems/terrain_presentation_cache.py": "62f4f921242635351a79e140811a1c34428918e70008c3c440fc88a8c1a2f117",
+    "rotk_env/runtime/session.py": "97b90fd9dc490b0e4fbaf7af41e18d1f860f545a1c16339ca9e85ceb7abd6bc2",
+    "tools/capture_ui_previews.py": "41c10d5bb48a34df9e27196df55c82fa0ab0cf9b9866e516b1187f44aa11a7f9",
+    "rotk_env/tests/test_ui_context.py": "0b9f55b7cdf717b37d0171298549444e44ea9c6064b93d3515bffb37eb1d606a",
+    "framework/tests/test_game_engine_window_size.py": "b1d4ad58976a39dc58daa7f794b1f956a6fcb57e2728d03383b5a3147076d3a7"
+  },
+  "checks": {
+    "affected_ui_input_native_hub_protocol_window": {
+      "passed": 164
+    },
+    "focused_terrain_render_picking": {
+      "passed": 18
+    },
+    "portable_performance_contracts": {
+      "passed": 94
+    },
+    "suites_overlap": true,
+    "runtime_identity_version": true,
+    "active_profiler_version": true,
+    "authority_equal_both_backends": true,
+    "native_vlm_window_rgb_equal": true,
+    "cocoa_interactive_smoke_both_backends": true
+  },
+  "exact_raster": {
+    "rust": {
+      "visual_version": "starbench-ui-v4",
+      "backend": "rust",
+      "source_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+      "source_dirty": true,
+      "driver": "dummy",
+      "pure_paint_authority_equal": true,
+      "scope": "Exact-size raster QA; no real-window, network or capacity claim.",
+      "files": {
+        "menu-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "8abfdee5ad03edc1bfad3ddcd850c17abccf13a768e880527e0b191bc083924b"
+        },
+        "menu-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "d0013be82dd63c9a9eb64ae0d5f669eec88f6e6113f5a31d13dfab49ab1d0efe"
+        },
+        "menu-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "0698e2c491c13e65567023d14f7fa32aed90aa6ab514cd09705bcfcc9f5cb7d8"
+        },
+        "menu-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "683c874683dbfe5903d4d1c0d041b9d59d853b8bdb54eb0f2bef59cfbf75ac6e"
+        },
+        "menu-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "076c50287c7de761d8c4ead5a93390731da8676cebbc6d7e392775db38c75254"
+        },
+        "battle-initial-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "1a606d261f7323e6921fa422d4b7d37e16fc5d93b19c4d3a794ab43181f02475"
+        },
+        "battle-selected-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "f2db42280c9d3961647b30ba084edf934eed6e1f0bca502a8ea0f47ab7bfae84"
+        },
+        "battle-help-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "6ac7df668725350fd94ebbff5729068e9cc1020d3bdbebcac18642cd271f3852"
+        },
+        "battle-initial-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "a6dd859a6df6b30a8b3dc988b8cd2e62ea1808ac6a26d9dcc0f88ed76865e4d7"
+        },
+        "battle-selected-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "75fa9cc3598badb59b804356a7f60a563522b9ea65026863ceca444e7fcf9edb"
+        },
+        "battle-help-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "052438167e70dc44fa5c6195032333f6983dc9947c1548b702a9f93187588e4b"
+        },
+        "battle-initial-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "b8d9ae80d4b0349948d92a818ab44d56c91a9c70da3c7d7c606abe92f5869dda"
+        },
+        "battle-selected-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "9f64f62378c03c9d9dec38cc8da79119f5eaecd18d1bf30c1902298497035b0b"
+        },
+        "battle-help-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "4d13bcfafeef4b361269e8e4fc2fa3e3cba51bbd098578e50007656b2d26b7f7"
+        },
+        "battle-initial-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "ebefe8e351c9f04a1827cd75de9961c79bbae2e3f8e0cbf0fef145731c313c3c"
+        },
+        "battle-selected-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "828256a00e85dc7e9c1d048461e67c49152d87d01adb3550660b77408d8fb0fd"
+        },
+        "battle-help-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "bba81a4d738aa0ac2ce1c16afdd2e4167eb1b7182c3e46e6afe8c2b833a74c8a"
+        },
+        "battle-initial-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "abff05268a4607f5b52c1d5ececb65d6087019dfab49380f2e40247cdc5aa69a"
+        },
+        "battle-selected-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "0d6f4f7b52ae6b1b9ba3ba82773e205e3acff07f2c6adecf2f404b8b336ff413"
+        },
+        "battle-help-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "41cc07190018543e8a140f8d8095e09a6409d032ab5c6c285f7e62750f7ca848"
+        }
+      },
+      "extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0"
+    },
+    "python": {
+      "visual_version": "starbench-ui-v4",
+      "backend": "python",
+      "source_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+      "source_dirty": true,
+      "driver": "dummy",
+      "pure_paint_authority_equal": true,
+      "scope": "Exact-size raster QA; no real-window, network or capacity claim.",
+      "files": {
+        "menu-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "d448548308c476d0dc92d4ea1a4f787ca48b527db475c1d1405313affc439e0a"
+        },
+        "menu-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "187e59e66886ac09b160bc31c5e12b804455d5f6402424164221c9392a04ac97"
+        },
+        "menu-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "bbd4bded90233fd19558935041e4aac23c17fafba308eadf05489820b415b99a"
+        },
+        "menu-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "06c967be72455c5af4846522a63532c0ff946c51760b825526b38fbf18c16a52"
+        },
+        "menu-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "15bd04b3be1473512174ede8a2458b4515a35b034d720880ac4f017200de719d"
+        },
+        "battle-initial-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "5678f753562a214f6bd10b7d0f43634c419b913ede106330f68b7cac40f69006"
+        },
+        "battle-selected-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "d19c3ae925f59a94f9743882a55e43d7128cf771b8c298f027f2635e363162bd"
+        },
+        "battle-help-1200x800.png": {
+          "size": [
+            1200,
+            800
+          ],
+          "sha256": "936b22e9257a9539c98f5533dba5a07e03800bd68e9a547cb41d1691f3815853"
+        },
+        "battle-initial-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "ffa78a912f23751ef15cb13e80ee5c3d9d0224edf13f6b8cf20e0da1215619f5"
+        },
+        "battle-selected-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "3b1944cc3c3324c78dc18d7aa07fa0cf6f2dcc09e7eb46457ba54de2761ee97f"
+        },
+        "battle-help-1200x900.png": {
+          "size": [
+            1200,
+            900
+          ],
+          "sha256": "faaf6569613523277a719116084c6beacb88400079b84d04aa468bcb87de4669"
+        },
+        "battle-initial-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "656216d7aebe2a2aa435818b2e42d9e38a81b1b89c7e6ee61aa680d59e4a0151"
+        },
+        "battle-selected-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "db1c25b8217ebf98b479d7316ba3a0e514a5072eec34a1147d56be7897ce2267"
+        },
+        "battle-help-1440x900.png": {
+          "size": [
+            1440,
+            900
+          ],
+          "sha256": "e02f3555b0b279b5e5dc538a3bf12c37cfda5e66c07f2ff2976d3e3d4cfaec45"
+        },
+        "battle-initial-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "8be7e0410d01c15fd46dd8063491931e74f398b8583245723e01ea3fa4145e69"
+        },
+        "battle-selected-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "71065123fb1635193344899b8671646c5fe93d8c61208bb91293b3349381e561"
+        },
+        "battle-help-1920x1080.png": {
+          "size": [
+            1920,
+            1080
+          ],
+          "sha256": "49229735041d60cb5ce5490fbbfaac5242a967ce91baea9e3e52cc9d9e30d1de"
+        },
+        "battle-initial-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "48f23abb92e8282a49e890f315d40a5524d444274278c3c5df6b1c27ceda311e"
+        },
+        "battle-selected-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "d953ce87fdb913643424611d81c63f8d80fb9de78247071da50a054e68cb8b77"
+        },
+        "battle-help-2480x1263.png": {
+          "size": [
+            2480,
+            1263
+          ],
+          "sha256": "be13b7e2557f91a9e238901bf5129969b481048d5618629d258416a098e1e8f3"
+        }
+      }
+    }
+  },
+  "cocoa_framing": {
+    "before": {
+      "backend": "rust",
+      "default_size": [
+        2480,
+        1235
+      ],
+      "visual_version": "starbench-ui-v3",
+      "driver": "cocoa",
+      "captures": [
+        {
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7804982138956159,
+          "offset": [
+            1035.0,
+            656.5
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            2480,
+            1235
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        },
+        {
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7804982138956159,
+          "offset": [
+            1035.0,
+            656.5
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            2480,
+            1235
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        },
+        {
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5687841234866837,
+          "offset": [
+            436.0,
+            482.0
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            1200,
+            900
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        },
+        {
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5687841234866837,
+          "offset": [
+            436.0,
+            482.0
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            1200,
+            900
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        },
+        {
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7804982138956159,
+          "offset": [
+            1035.0,
+            656.5
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        },
+        {
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7804982138956159,
+          "offset": [
+            1035.0,
+            656.5
+          ],
+          "authority_equal": true,
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "note": "Cocoa display dimensions read from captured PNG; desktop can clamp requested height."
+        }
+      ]
+    },
+    "after": {
+      "backend": "rust",
+      "default_size": [
+        1200,
+        900
+      ],
+      "visual_version": "starbench-ui-v4",
+      "driver": "cocoa",
+      "captures": [
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7948809512584912,
+          "offset": [
+            1035.0,
+            672.2096774193549
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7948809512584912,
+          "offset": [
+            1035.0,
+            672.2096774193549
+          ],
+          "authority_equal": true
+        }
+      ]
+    },
+    "after-python": {
+      "backend": "python",
+      "default_size": [
+        1200,
+        900
+      ],
+      "visual_version": "starbench-ui-v4",
+      "driver": "cocoa",
+      "captures": [
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            1200,
+            900
+          ],
+          "size": [
+            1200,
+            900
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            64,
+            872,
+            836
+          ],
+          "zoom": 0.5572361307791485,
+          "offset": [
+            436.0,
+            492.06451612903226
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "default",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7948809512584912,
+          "offset": [
+            1035.0,
+            672.2096774193549
+          ],
+          "authority_equal": true
+        },
+        {
+          "requested_size": [
+            2480,
+            1263
+          ],
+          "size": [
+            2480,
+            1235
+          ],
+          "scenario": "river_split",
+          "viewport": [
+            0,
+            80,
+            2070,
+            1155
+          ],
+          "zoom": 0.7948809512584912,
+          "offset": [
+            1035.0,
+            672.2096774193549
+          ],
+          "authority_equal": true
+        }
+      ]
+    }
+  },
+  "cocoa_smoke": {
+    "rust": {
+      "passed": true,
+      "source_sha": "65941ef-ui-v4",
+      "probe_sha256": "343c2096f8b4526b3b98bb9bef6aea2007195bcebc8c3fcbf2b11bed8bbc6d01",
+      "dependency_lock_sha256": "c3f1b848acf98504c9a2f6c0234ac66163c9f26dc06128986e5a0b1aeb7379ae",
+      "backend": "rust",
+      "task": "smoke",
+      "units": 15,
+      "driver": "cocoa",
+      "python": "3.13.12 | packaged by Anaconda, Inc. | (main, Feb 24 2026, 16:07:20) [Clang 20.1.8 ]",
+      "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "warmup_s": null,
+      "measurement_s": null,
+      "render": null,
+      "present": null,
+      "visual_version": "starbench-ui-v4",
+      "cache": {
+        "tactical_entries": 9,
+        "tactical_bytes": 32928,
+        "text_entries": 113,
+        "text_bytes": 606248,
+        "widget_entries": 29,
+        "widget_bytes": 7327352
+      },
+      "extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+      "files": {
+        "capture.png": "e6a5f328b75ecabcb6b619e84944b1a0a3f6ea688807a199f1b7f52934b05050",
+        "smoke-rust.png": "34af171e4651a75bdd66d40862a495ade1c25defd7194d0dd82e3c252d178650"
+      },
+      "raw_sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+      "authority_scheduling": true,
+      "scope": "fixed display projection; no agents/network/authority throughput claim"
+    },
+    "python": {
+      "passed": true,
+      "source_sha": "65941ef-ui-v4",
+      "probe_sha256": "343c2096f8b4526b3b98bb9bef6aea2007195bcebc8c3fcbf2b11bed8bbc6d01",
+      "dependency_lock_sha256": "c3f1b848acf98504c9a2f6c0234ac66163c9f26dc06128986e5a0b1aeb7379ae",
+      "backend": "python",
+      "task": "smoke",
+      "units": 15,
+      "driver": "cocoa",
+      "python": "3.13.12 | packaged by Anaconda, Inc. | (main, Feb 24 2026, 16:07:20) [Clang 20.1.8 ]",
+      "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "warmup_s": null,
+      "measurement_s": null,
+      "render": null,
+      "present": null,
+      "visual_version": "starbench-ui-v4",
+      "cache": {
+        "tactical_entries": 9,
+        "tactical_bytes": 32928,
+        "text_entries": 113,
+        "text_bytes": 608232,
+        "widget_entries": 29,
+        "widget_bytes": 7327352
+      },
+      "extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+      "files": {
+        "smoke-python.png": "77d29df44ac287f8eabbd34173f9f39d8ae9e1e46d19383e4b7a73d6131679f8"
+      },
+      "raw_sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+      "authority_scheduling": false,
+      "scope": "fixed display projection; no agents/network/authority throughput claim"
+    }
+  },
+  "preserved": [
+    "game rules",
+    "native authority owner and ordered deltas",
+    "native schema 5 and API 18",
+    "star-protocol and Agent access",
+    "global shared screen/view policy",
+    "historical frame encoding/label",
+    "opaque compact terrain cache, incremental Fog, ordered blit batching",
+    "manual camera/zoom and resize centre"
+  ],
+  "visual_changes": [
+    "compact automatic startup",
+    "one-time viewport-aware framing of actual hex corners",
+    "shared slate frame-clear/opaque-composition/capture background, including map-edge and transparent-seam pixels"
+  ],
+  "scope": "Finite visual and structural regression validation. No new timed capacity, network or end-to-end latency result. v3 timings are historical.",
+  "artifact_sha256": {
+    "exact-python.json": "9db59d1c0eca7c18a363803382b9e847060966ed442e18e4aa5f3f6254a7b3bc",
+    "framing-after.json": "3614ea4979215b4bf7e62b6efa0392e54c8feb9e3164769a08496051d6836c63",
+    "capture_framing.py": "bdf2959d05dfe7cd06a6b83bfc71174e68681d48c1495d42efff97196a750624",
+    "framing-after-python.json": "b71a5ec0b601dd194eeebc2e80dc3e7a8e38b184a58b65198a504cb339fb74d6",
+    "exact-rust.json": "5e76f08b2d9deca959e6f72977de681a69f5fdc71c3e21604af85afc751accc1",
+    "wide-battle.png": "abff05268a4607f5b52c1d5ececb65d6087019dfab49380f2e40247cdc5aa69a",
+    "before-compact.png": "df302c1e5c59b10a0ad53e0fbaeb5091f28b98da5a1d6d2895addc2b6d4222a3",
+    "selected.png": "75fa9cc3598badb59b804356a7f60a563522b9ea65026863ceca444e7fcf9edb",
+    "menu.png": "d0013be82dd63c9a9eb64ae0d5f669eec88f6e6113f5a31d13dfab49ab1d0efe",
+    "help.png": "052438167e70dc44fa5c6195032333f6983dc9947c1548b702a9f93187588e4b",
+    "framing-before.json": "c77bbe62947fb4246dfd503b77bd0f5ea4ae05dcd84da2375a22ef8e9780420f",
+    "battle.png": "0245b9ae116f980a5b0b1687a2e06e300b8e296606210376ed43971e46c557f4",
+    "before-battle.png": "7e7f8f47ef80c8f957e3f6e2fffed78b6cc1e45c7d5c4ff8841c5c5ab13eb374",
+    "smoke.py": "343c2096f8b4526b3b98bb9bef6aea2007195bcebc8c3fcbf2b11bed8bbc6d01",
+    "smoke/python/result.json": "977928863c3d16db3bf31f8ff4db0e9ae99366254d209e8964d99f70df62eb2e",
+    "smoke/python/smoke-python.png": "77d29df44ac287f8eabbd34173f9f39d8ae9e1e46d19383e4b7a73d6131679f8",
+    "smoke/rust/smoke-rust.png": "34af171e4651a75bdd66d40862a495ade1c25defd7194d0dd82e3c252d178650",
+    "smoke/rust/result.json": "511448fd348eff3a6b200122133c007da34d50930ebd48077e8f19f05433df7f",
+    "smoke/rust/capture.png": "e6a5f328b75ecabcb6b619e84944b1a0a3f6ea688807a199f1b7f52934b05050"
+  }
+}

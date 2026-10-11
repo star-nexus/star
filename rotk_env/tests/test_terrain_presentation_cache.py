@@ -49,9 +49,13 @@ def setup_module():
     pygame.init()
     if pygame.display.get_surface() is None:
         pygame.display.set_mode((64, 64))
+    # A prior module may have quit the display retained by the global renderer.
+    RMS.screen = pygame.display.get_surface()
 
 
 def teardown_module():
+    RMS.clear()
+    RMS._screen = None
     pygame.quit()
 
 

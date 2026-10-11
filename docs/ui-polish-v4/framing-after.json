@@ -1,0 +1,149 @@
+{
+  "backend": "rust",
+  "default_size": [
+    1200,
+    900
+  ],
+  "visual_version": "starbench-ui-v4",
+  "driver": "cocoa",
+  "captures": [
+    {
+      "requested_size": [
+        1200,
+        900
+      ],
+      "size": [
+        1200,
+        900
+      ],
+      "scenario": "default",
+      "viewport": [
+        0,
+        64,
+        872,
+        836
+      ],
+      "zoom": 0.5572361307791485,
+      "offset": [
+        436.0,
+        492.06451612903226
+      ],
+      "authority_equal": true
+    },
+    {
+      "requested_size": [
+        1200,
+        900
+      ],
+      "size": [
+        1200,
+        900
+      ],
+      "scenario": "river_split",
+      "viewport": [
+        0,
+        64,
+        872,
+        836
+      ],
+      "zoom": 0.5572361307791485,
+      "offset": [
+        436.0,
+        492.06451612903226
+      ],
+      "authority_equal": true
+    },
+    {
+      "requested_size": [
+        1200,
+        900
+      ],
+      "size": [
+        1200,
+        900
+      ],
+      "scenario": "default",
+      "viewport": [
+        0,
+        64,
+        872,
+        836
+      ],
+      "zoom": 0.5572361307791485,
+      "offset": [
+        436.0,
+        492.06451612903226
+      ],
+      "authority_equal": true
+    },
+    {
+      "requested_size": [
+        1200,
+        900
+      ],
+      "size": [
+        1200,
+        900
+      ],
+      "scenario": "river_split",
+      "viewport": [
+        0,
+        64,
+        872,
+        836
+      ],
+      "zoom": 0.5572361307791485,
+      "offset": [
+        436.0,
+        492.06451612903226
+      ],
+      "authority_equal": true
+    },
+    {
+      "requested_size": [
+        2480,
+        1263
+      ],
+      "size": [
+        2480,
+        1235
+      ],
+      "scenario": "default",
+      "viewport": [
+        0,
+        80,
+        2070,
+        1155
+      ],
+      "zoom": 0.7948809512584912,
+      "offset": [
+        1035.0,
+        672.2096774193549
+      ],
+      "authority_equal": true
+    },
+    {
+      "requested_size": [
+        2480,
+        1263
+      ],
+      "size": [
+        2480,
+        1235
+      ],
+      "scenario": "river_split",
+      "viewport": [
+        0,
+        80,
+        2070,
+        1155
+      ],
+      "zoom": 0.7948809512584912,
+      "offset": [
+        1035.0,
+        672.2096774193549
+      ],
+      "authority_equal": true
+    }
+  ]
+}

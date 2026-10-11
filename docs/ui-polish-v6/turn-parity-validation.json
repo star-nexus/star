@@ -1,0 +1,146 @@
+{
+  "date": "2026-10-11",
+  "branch": "codex/ui-polish",
+  "base_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+  "source_dirty": true,
+  "visual_version": "starbench-ui-v6",
+  "pixel_style_changed": false,
+  "bug": "Toolbar rotated TurnManager only, bypassing the keyboard human-turn reset/check/event flow.",
+  "fix": {
+    "python": "UIButtonSystem -> TurnSystem.end_turn, same as Space",
+    "rust": "native toolbar -> LocalControls.finish_turn -> finish_human_turn, same as Space",
+    "native_legacy_command": "Retained in binary/API but no longer used by the window toolbar"
+  },
+  "checks": {
+    "affected_tests_passed": 373,
+    "focused_tests_passed": 37,
+    "new_sdl_resource_entry_cases": 6,
+    "before_fix_space_passed": 3,
+    "before_fix_button_failed": 3,
+    "sdl_queue_cases_total": 21,
+    "native_manager_mode_game_over_parity_cases": 16,
+    "native_stale_toolbar_epoch_guard": true,
+    "cocoa_both_backends_space_button_ap_restored": true,
+    "cocoa_movement_reset_and_paint_authority_equal": true
+  },
+  "source_sha256": {
+    "rotk_env/systems/ui_button_system.py": "d818f374260106ac4de62920ed2f2c38584c85a4abfbf836b656e28046b5e45f",
+    "rotk_env/runtime/native_input.py": "6a34e500eb4c94a59b8dfdb4c5fa694c7083d6b4f6da5f3240422f397552b7cb",
+    "rotk_env/tests/test_ui_toolbar_clicks.py": "766cb230473e5e6783421079523b16cfd93d0018ef55a63a50d07670ae30f72a",
+    "rotk_env/tests/test_native_controls.py": "0e66dbd60680450142cb67e69d78e9ae7522b7df35265936d290e8dc624f141f",
+    "rotk_env/tests/test_native_input.py": "beca3e70bab2c12677d762101dfb2000fd99f8311a460b9f08d3ef27ca31f54c"
+  },
+  "native_extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+  "artifact_sha256": {
+    "turn-parity-cocoa.json": "d0858db8eed983579716f7fc93716c17dcda0ea15ef4d43c1a1087c7d6037ea4",
+    "turn-parity-probe.py": "5df5f91e9e37ae8bb827eace10f1d3301cccb3787503d88a6d9f858e6be77c3a",
+    "turn-parity-python-button.png": "02c2685c037bdef371d5765a24aeef5ef1686971bb12eb59e65136553bfc5003",
+    "turn-parity-python-space.png": "03fffebf23ef201c55ad2f736102562b987eb77097eb1f1f1421ea34effeaf5a",
+    "turn-parity-rust-button.png": "d41344ec8da15b4ee5eea25925423d740e0132b06a746ef5738ae653a05a6646",
+    "turn-parity-rust-space.png": "f72bd6e8d56b5aa3d164a36f3ae9d6f1f250fa3a198474da24f7e1c6086297ac"
+  },
+  "cocoa": {
+    "passed": true,
+    "visual_version": "starbench-ui-v6",
+    "records": [
+      {
+        "backend": "python",
+        "entry": "space",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "wei",
+          1
+        ],
+        "after": [
+          "shu",
+          1
+        ],
+        "ap_before": 0,
+        "ap_after": 2,
+        "ap_max": 2,
+        "movement_reset": true,
+        "paint_authority_equal": true,
+        "image": "turn-parity-python-space.png",
+        "image_sha256": "03fffebf23ef201c55ad2f736102562b987eb77097eb1f1f1421ea34effeaf5a"
+      },
+      {
+        "backend": "python",
+        "entry": "button",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "shu",
+          1
+        ],
+        "after": [
+          "wei",
+          2
+        ],
+        "ap_before": 0,
+        "ap_after": 2,
+        "ap_max": 2,
+        "movement_reset": true,
+        "paint_authority_equal": true,
+        "image": "turn-parity-python-button.png",
+        "image_sha256": "02c2685c037bdef371d5765a24aeef5ef1686971bb12eb59e65136553bfc5003"
+      },
+      {
+        "backend": "rust",
+        "entry": "space",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "wei",
+          1
+        ],
+        "after": [
+          "shu",
+          1
+        ],
+        "ap_before": 0,
+        "ap_after": 2,
+        "ap_max": 2,
+        "movement_reset": true,
+        "paint_authority_equal": true,
+        "image": "turn-parity-rust-space.png",
+        "image_sha256": "f72bd6e8d56b5aa3d164a36f3ae9d6f1f250fa3a198474da24f7e1c6086297ac"
+      },
+      {
+        "backend": "rust",
+        "entry": "button",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "shu",
+          1
+        ],
+        "after": [
+          "wei",
+          2
+        ],
+        "ap_before": 0,
+        "ap_after": 2,
+        "ap_max": 2,
+        "movement_reset": true,
+        "paint_authority_equal": true,
+        "image": "turn-parity-rust-button.png",
+        "image_sha256": "d41344ec8da15b4ee5eea25925423d740e0132b06a746ef5738ae653a05a6646"
+      }
+    ],
+    "scope": "Cocoa SDL input and post-command display; no authority ticks, Agents or network"
+  },
+  "scope": "Input routing correction using established human-turn behavior; no native kernel/binary, Agent rule, protocol, renderer style or screenshot encoding change; no capacity claim."
+}

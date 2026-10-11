@@ -1,0 +1,26 @@
+{
+  "visual_version": "starbench-ui-v5",
+  "date": "2026-10-11",
+  "branch": "codex/ui-polish",
+  "base_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+  "source_dirty": true,
+  "source_sha256": {
+    "framework/engine/renders.py": "681a903e9f58a499f8b3be23461bbf501ad73a5e938ba320f1dee6aa09075bd7",
+    "rotk_env/ui/context.py": "b9cfc0546a24e251dd39a1740bfa7c8c7b71779b2dd6128c880f9279144b52df",
+    "tools/capture_ui_previews.py": "41c10d5bb48a34df9e27196df55c82fa0ab0cf9b9866e516b1187f44aa11a7f9"
+  },
+  "checks": {
+    "relevant_regression_passed": 66,
+    "cocoa_both_backends_authority_equal": true,
+    "rust_vlm_window_rgb_equal": true
+  },
+  "change": "Restore original (135,141,106) terrain frame/composition clear; keep UI theme independent. Retain compact startup and framing. No rules, Fog or protocol change.",
+  "scope": "Finite raster and Cocoa regression; no new timed capacity claim.",
+  "native_extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+  "artifact_sha256": {
+    "framing-rust.json": "1da3c8d2719525635f9ea5c22bd412574169d2e7808bf7726bfc18a8eef6128f",
+    "framing-python.json": "9b47d2a3907bb804a289d14bf39c800658111873dbaaba81e39b52429274267a",
+    "selected.png": "26523616dd9fe1a923ff4cd502dd6ead7a491f67fb2f0bc463e17c97305891b1",
+    "battle.png": "6f94593a39d207165ec3aa14f4d4c2895bd04c867589acb7a02169e6a251bb97"
+  }
+}

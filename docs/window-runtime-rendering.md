@@ -4,6 +4,20 @@ STAR's interactive window uses the same authoritative ECS components and game
 rules as headless execution. Window-specific systems replace repeated global
 scans and transient raster work with derived, bounded state.
 
+## Window framing
+
+Unpinned visible startup uses a compact 1200×900 window, falling back to 800 high
+on smaller desktops. Explicit dimensions and manual resizing remain supported.
+After the sidebar layout is available, the scene-owned UiContext fits actual
+tile corners to the remaining map viewport once. Later resize and native
+renderer handoff retain user zoom and the world point at viewport centre.
+Frame clear, opaque terrain composition and native screenshot repaint share
+`FRAME_CLEAR_COLOR`, the original grass colour that blends the terrain's
+transparent seams. UI panels retain a separate deep-slate background.
+The resulting screenshot condition is `starbench-ui-v6`. Toolbar press feedback
+uses display-only mouse state and a 120 ms minimum pulse for quick clicks;
+widget cache keys use a boolean pressed state, never animation timestamps.
+
 ## Frame clock modes
 
 Normal interactive play keeps the production 60 FPS cap and the established

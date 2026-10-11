@@ -1,0 +1,70 @@
+{
+  "visual_version": "starbench-ui-v5",
+  "date": "2026-10-11",
+  "branch": "codex/ui-polish",
+  "base_sha": "65941ef0bc31016bb610591e95ac0ded4ba03ea7",
+  "source_dirty": true,
+  "change": "Use SDL mouse-down events and event coordinates for existing toolbar callbacks; remove polling of never-updated mouse_pressed. Retain callbacks, modal/enabled/visible guards and listener lifecycle.",
+  "checks": {
+    "affected_tests_passed": 256,
+    "new_sdl_queue_regression_cases": 9,
+    "red_before_fix": 9,
+    "source_sha256": {
+      "rotk_env/systems/ui_button_system.py": "20be835aafdce5519a07740a905d818d6164102f2aa4cb72d34aac7a08282ebe",
+      "rotk_env/runtime/native_input.py": "ef68a337ee3f4c75a9e67c00eb8d21a0fb1ce89b1408f9a1a805821d5fb596c3",
+      "rotk_env/tests/test_ui_toolbar_clicks.py": "bf915f99afae74bdb839a43b83dbd66534ac3654785290cf5cc64511e6327c43"
+    }
+  },
+  "cocoa": {
+    "passed": true,
+    "visual_version": "starbench-ui-v5",
+    "scope": "Cocoa window, SDL mouse event dispatch and pure paint; no Agents or network",
+    "records": [
+      {
+        "backend": "python",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "wei",
+          1
+        ],
+        "after_click": [
+          "shu",
+          1
+        ],
+        "after_second_click": [
+          "wei",
+          2
+        ],
+        "paint_authority_equal": true,
+        "image_sha256": "c980af358f5c12963bfdc3bd09dae294b35033c56754ff1876d6ccdc2b16aa29"
+      },
+      {
+        "backend": "rust",
+        "driver": "cocoa",
+        "size": [
+          1200,
+          900
+        ],
+        "before": [
+          "wei",
+          1
+        ],
+        "after_click": [
+          "shu",
+          1
+        ],
+        "after_second_click": [
+          "wei",
+          2
+        ],
+        "paint_authority_equal": true,
+        "image_sha256": "528e2967df85d7103345fd912eb80520903aa7d751e7c1960924a27d4083292b"
+      }
+    ]
+  },
+  "scope": "No new visual styling, rule, protocol or capacity claim."
+}

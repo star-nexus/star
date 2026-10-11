@@ -24,6 +24,7 @@ import pygame
 
 from framework.ecs import profiling
 from framework.engine import RMS
+from framework.engine.renders import FRAME_CLEAR_COLOR
 
 from ..prefabs.config import GameConfig
 
@@ -33,7 +34,7 @@ class OpaqueTerrainPresentationMixin:
     # Must match GameEngine's per-frame screen clear colour. Keeping the colour
     # here is deliberate: transparent pixels in the semantic overscan raster are
     # flattened exactly once, before any units/effects/fog are composited.
-    TERRAIN_PRESENT_CLEAR_COLOR = (135, 141, 106)
+    TERRAIN_PRESENT_CLEAR_COLOR = FRAME_CLEAR_COLOR
 
     def __init__(self, *args, **kwargs):
         self._terrain_present_surface: Optional[pygame.Surface] = None

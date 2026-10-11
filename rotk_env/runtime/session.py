@@ -81,12 +81,12 @@ class NativeSession:
         # Called on the display thread after the owner's publication fence.
         # Prepare/render the current projection without admitting inputs or
         # advancing authority. Preserve the legacy bytes/label/error contract.
-        from framework.engine.renders import RenderEngine
+        from framework.engine.renders import RenderEngine, FRAME_CLEAR_COLOR
         from framework.engine.frame_capture import capture_rendered_frame
         if any(type(s).__name__ == 'UnitRenderSystem' for s in self.world.systems):
             render = RenderEngine()
             if render.screen is not None:
-                render.screen.fill((135, 141, 106))
+                render.screen.fill(FRAME_CLEAR_COLOR)
                 self._update_systems(0, inputs=False, rendering=True)
                 render.update()
         return capture_rendered_frame()
