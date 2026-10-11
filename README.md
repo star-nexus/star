@@ -292,6 +292,7 @@ enable_thinking = false
 | --- | --- |
 | Open the configuration menu | `uv run starbench.py` |
 | Explore offline | `uv run starbench.py --no-hub` |
+| Open the Three.js browser renderer | `uv run starbench.py --renderer web --no-hub` |
 | Run a connected, three-faction real-time ENV without a window | `uv run starbench.py --headless --players three_kingdoms --mode real_time --env-id env_1` |
 | Use the Python reference implementation | `uv run starbench.py --backend python` |
 | Show startup help | `uv run starbench.py --help` |
@@ -304,6 +305,12 @@ The launcher selects dependencies internally. GameServer, star-protocol,
 Further ENV options and the explicit Python-only local BOT demo are documented
 in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and
 `run_headless_env.sh` remain supported.
+
+For Web, install the pinned frontend dependency once with
+`npm ci --prefix rotk_env/rendering/web/client`, then open a faction or spectator
+link printed by the launcher. Rust runs on the server. See
+[renderer adapters and Web scope](docs/render-adapters.md) for setup, permissions,
+Agent Hub reuse, and the separate visual/capture versions.
 
 <details>
 <summary>Advanced ENV settings and developer entry point</summary>

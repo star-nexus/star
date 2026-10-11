@@ -158,6 +158,7 @@ class RustRuntime:
     def __init__(self, initial_state, *, threads=1):
         self._admission_lock = RLock()
         self._frame_capture = None
+        self._human_policy = None
         native = load_native()
         self._native = native(json.dumps(initial_state, allow_nan=False), threads)
 
@@ -167,6 +168,8 @@ class RustRuntime:
     @_serialized
     def reset(self, initial_state):
         self._native.reset(json.dumps(initial_state, allow_nan=False))
+        if self._human_policy is not None:
+            self._human_policy = type(self._human_policy)(initial_state)
 
     @_serialized
     def step(self, dt, *, wall_time=None):
@@ -221,6 +224,21 @@ class RustRuntime:
             time.time() if wall_time is None else wall_time,
             expected_epoch,
         ))
+
+    @_serialized
+    def execute_human_command(self, kind, parameters, *, faction, expected_epoch=None):
+        """Host-granted Web input, validated and executed in one owner admission."""
+        if self._human_policy is None:
+            raise PermissionError('Human command ingress is not installed')
+        status = self.host_status(expected_epoch=expected_epoch)
+        self._human_policy.validate(kind, parameters, faction, status)
+        if kind == 'end_turn':
+            self.finish_human_turn(expected_epoch=expected_epoch)
+            return True
+        if kind == 'capture':
+            return self.start_capture(parameters['unit_id'], parameters['position'], expected_epoch=expected_epoch)
+        result = self.execute_control(kind, expected_epoch=expected_epoch, **parameters)
+        return True if kind in ('wait', 'garrison') else result
 
     @_serialized
     def execute_action(self, action, parameters=None, *, agent_id, wall_time=None, registration_time=None, connected_agents=0):
@@ -333,7 +351,10 @@ class RustRuntime:
 
     @_serialized
     def take_presentation_delta(self, *, expected_epoch=None):
-        return json.loads(self._native.take_presentation_delta_json(expected_epoch))
+        delta = json.loads(self._native.take_presentation_delta_json(expected_epoch))
+        if self._human_policy is not None:
+            self._human_policy.observe(delta)
+        return delta
 
     @_serialized
     def close(self):

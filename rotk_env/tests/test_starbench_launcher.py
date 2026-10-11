@@ -76,3 +76,13 @@ def test_windows_path_uses_same_command_and_root(monkeypatch):
     assert starbench.main(["--backend", "python", "--headless"]) == 9
     assert invoked == [(["uv.exe", "run", "rotk_env/main.py", "--backend",
                          "python", "--headless"], starbench.ROOT)]
+
+
+def test_renderer_launcher_uses_env_owned_module_without_changing_default():
+    args = ['--renderer', 'web', '--no-hub', '--scenario', 'chibi-small']
+    assert starbench.launch_command(args, 'uv') == [
+        'uv', 'run', '--extra', 'native', 'python', '-m', 'rotk_env.rendering.web', *args]
+    assert starbench.launch_command(['--renderer=pygame', '--no-hub'], 'uv') == [
+        'uv', 'run', '--extra', 'native', 'rotk_env/main.py', '--no-hub']
+    with pytest.raises(SystemExit):
+        starbench.launch_command(['--renderer=web', '--backend=python'], 'uv')

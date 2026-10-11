@@ -20,7 +20,7 @@ class AuthorityRuntime:
         'execute_actions_diagnostic', 'get_faction_state', 'get_faction_state_json',
         'finish_human_turn', 'start_capture', 'set_clock', 'export_state',
         'diagnostics', 'take_presentation_delta',
-        'execute_host_action', 'commit_host_action',
+        'execute_host_action', 'commit_host_action', 'execute_human_command',
     })
 
     def __init__(self, runtime, *, on_publication, capture_frame=None,
@@ -204,6 +204,10 @@ class AuthorityRuntime:
                 if self._publications:
                     raise RuntimeError('consume old-epoch publications before reset')
             return self._runtime.reset(*args, **kwargs)
+        if method == 'execute_human_command':
+            # Refresh permission facts on the owner, then validate and execute
+            # without another admitted command or tick crossing this boundary.
+            self._publish()
         return getattr(self._runtime, method)(*args, **kwargs)
 
     def _run(self):

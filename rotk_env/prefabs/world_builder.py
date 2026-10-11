@@ -87,6 +87,7 @@ def build_skirmish_world(
     hub_url: Optional[str] = None,
     env_id: Optional[str] = None,
     display: DisplayKind = "none",
+    simulation_profile: Literal['reference', 'interactive'] | None = None,
     enable_mock_ai: bool = False,
     world: Optional[World] = None,
     ui_context=None,
@@ -98,6 +99,10 @@ def build_skirmish_world(
       * ``dummy`` — same as ``GameScene`` with ``--headless`` (input + animation,
         no render systems).
       * ``window`` — full interactive system list.
+
+    ``simulation_profile`` independently selects the existing rule/optimization
+    preparation. By default window uses interactive and other displays retain
+    reference behavior. A Web host uses interactive with no SDL window.
 
     ``hub_url=None`` keeps ``LLMSystem`` offline. Pass ``DEFAULT_HUB_URL``
     (or another websocket URL) to attach to a Hub.
@@ -113,6 +118,8 @@ def build_skirmish_world(
             mode = GameMode.TURN_BASED
     if players is None:
         players = {Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI}
+    if simulation_profile not in (None, 'reference', 'interactive'):
+        raise ValueError('Invalid simulation profile')
 
     assembler = _SkirmishAssembler(
         world=world or World(),
@@ -124,6 +131,7 @@ def build_skirmish_world(
         hub_url=hub_url,
         env_id=env_id,
         display=display,
+        simulation_profile=simulation_profile,
         enable_mock_ai=enable_mock_ai,
     )
     assembler.assemble()
@@ -146,6 +154,7 @@ class _SkirmishAssembler:
         hub_url: Optional[str],
         env_id: Optional[str],
         display: DisplayKind,
+        simulation_profile: str | None,
         enable_mock_ai: bool,
     ):
         self.world = world
@@ -157,6 +166,8 @@ class _SkirmishAssembler:
         self.hub_url = hub_url
         self.env_id = env_id
         self.display = display
+        self.interactive = (display == 'window' if simulation_profile is None
+                            else simulation_profile == 'interactive')
         self.enable_mock_ai = bool(enable_mock_ai)
         self._temp_initial_unit_counts: Dict[Faction, int] = {}
 
@@ -218,7 +229,7 @@ class _SkirmishAssembler:
         combat_system = CombatSystem()
         recovery_system = ResourceRecoverySystem()
 
-        if self.display == "window":
+        if self.interactive:
             from ..systems.window_vision_system import VisionSystem as WindowVisionSystem
             from ..systems.window_movement_system import MovementSystem as WindowMovementSystem
             from ..systems.window_combat_system import CombatSystem as WindowCombatSystem
@@ -244,7 +255,7 @@ class _SkirmishAssembler:
             systems.append(MockLLMAISystem())
 
         statistics_system = StatisticsSystem()
-        if self.display == "window":
+        if self.interactive:
             from ..systems.window_statistics_system import (
                 StatisticsSystem as WindowStatisticsSystem,
             )
@@ -259,8 +270,8 @@ class _SkirmishAssembler:
             ]
         )
 
-        if self.display in ("dummy", "window"):
-            if self.display == "window":
+        if self.display in ("dummy", "window") or self.interactive:
+            if self.interactive:
                 # All visible launches share the same window-specific input and
                 # animation semantics. Dummy/headless keeps non-rendering
                 # systems so evaluation behavior is unchanged.
@@ -270,7 +281,9 @@ class _SkirmishAssembler:
                 from ..systems.animation_system import AnimationSystem
                 from ..systems.input_system import InputHandlingSystem
 
-            systems.extend([AnimationSystem(), InputHandlingSystem()])
+            systems.append(AnimationSystem())
+            if self.display in ('dummy', 'window'):
+                systems.append(InputHandlingSystem())
         if self.display == "window":
             from ..systems.optimized_render_systems import MapRenderSystem
             from ..systems.window_unit_render_system import UnitRenderSystem
@@ -295,7 +308,7 @@ class _SkirmishAssembler:
             )
         if self.game_mode == GameMode.REAL_TIME:
             realtime_system = RealtimeSystem()
-            if self.display == "window":
+            if self.interactive:
                 from ..systems.window_realtime_system import RealtimeSystem as WindowRealtimeSystem
 
                 realtime_system = WindowRealtimeSystem()
@@ -355,8 +368,8 @@ class _SkirmishAssembler:
                 player.units.add(unit_entity)
 
     def _initialize_unit_spatial_index(self) -> None:
-        """Build the window-only derived unit index before systems consume it."""
-        if self.display != "window":
+        """Build the interactive derived unit index before systems consume it."""
+        if not self.interactive:
             return
         from ..utils.unit_spatial_index import rebuild_unit_spatial_index
 

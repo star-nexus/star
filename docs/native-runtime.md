@@ -4,17 +4,19 @@ Benchmark compatibility differences and historical fixes are tracked in the
 [gameplay and mechanism GAP ledger](native-benchmark-gaps.md). Consult it when
 comparing results across Python oracles and experimental native checkpoints.
 
-The default game remains Python. R0 normalizes its replay ordering; R1 provides
-an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
-**The experimental Rust backend now supports offline local play.** R3 is in progress: native movement,
-resource recovery, combat, Fog, statistics, team state and faction projections
-have differential contract tests. Trusted local registration, ownership checks and
-move/attack/faction-query dispatch, world termination and faction turn handoff
-are connected, including the five non-image observation variants and explicitly
-enabled VLM capture through the Python display adapter. Network post-game
-delivery and BOT integration are still pending. Offline GameScene and settlement now use NativeSession. Local input adapters
-now redirect commands to Rust. A derived battlefield
-presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
+The default ENV is Rust; Python remains an explicit reference/fallback. The
+owned native world provides lifecycle/clock, CPython-compatible random streams,
+movement, resource recovery, combat, Fog, statistics, team state, actions and
+faction projections, with differential contracts. NativeSession owns scene
+lifecycle; NativeHubHost reuses the existing Agent transport and post-game
+delivery. See the current [Hub scope](native-hub-host.md); the local rule BOT
+remains a Python-only explicit choice. There is no silent backend fallback.
+
+Display adapters now select pygame or server-side Rust + Three.js. Web reuses
+the interactive native preparation without an SDL window; headless evaluation
+keeps its existing preparation. Agent non-image observations are unchanged.
+pygame preserves existing VLM capture; Web v1 has no Agent frame provider.
+See [renderer adapters](render-adapters.md) for capture and visual version boundaries.
 
 ## Statistics internal compute: E2
 
@@ -47,7 +49,7 @@ This adapter change reuses the API18 binary. The fixed recorded workload and
 real-window diagnostics are documented in
 [R4d evidence](../../star-lab/experiments/2026-09-rust-5000-agents/README.md).
 Short diagnostics do not establish the 300-second, three-run capacity gate.
-The default backend and native worker count remain Python and one worker.
+The current default backend is Rust and the native worker count remains one.
 
 ## Observation census allocation
 

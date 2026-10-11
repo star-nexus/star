@@ -33,6 +33,7 @@ def launch_command(argv, uv):
   uv run starbench.py --no-hub       Explore offline; no Hub or API key needed
   uv run starbench.py               Open the menu for a connected benchmark
   uv run starbench.py --headless    Run without a window; still connects to Hub
+  uv run starbench.py --renderer web  Rust server with a Three.js browser view
 
 ENV options are forwarded unchanged, for example:
   --env-id env_1                    Environment identity
@@ -50,11 +51,28 @@ See README.md for setup and rotk_env/README.md for more ENV options.
         "--backend", choices=("rust", "python"), default="rust",
         help="ENV implementation (default: rust; python is an explicit fallback)",
     )
+    parser.add_argument('--renderer', choices=('pygame', 'web'), default='pygame',
+                        help='Presentation adapter (default: pygame)')
     options, _ = parser.parse_known_args(args)
+    if options.renderer == 'web' and options.backend != 'rust':
+        parser.error('The Web renderer requires the Rust backend')
     command = [uv, "run"]
     if options.backend == "rust":
         command.extend(["--extra", "native"])
-    command.extend(["rotk_env/main.py", *args])
+    if options.renderer == 'web':
+        command.extend(['python', '-m', 'rotk_env.rendering.web', *args])
+    else:
+        # The legacy ENV parser does not need to know presentation selection.
+        forwarded = []
+        skip = False
+        for arg in args:
+            if skip:
+                skip = False
+            elif arg == '--renderer':
+                skip = True
+            elif not arg.startswith('--renderer='):
+                forwarded.append(arg)
+        command.extend(["rotk_env/main.py", *forwarded])
     return command
 
 

@@ -204,7 +204,12 @@ def prepare_display_world(**kwargs):
     world = World()
     try:
         build_skirmish_world(world=world, **kwargs)
-        initial = export_initial_state(world, display=kwargs.get('display', 'none'))
+        # API18's legacy `display` also selects native interactive movement and
+        # spatial policies. Preserve that ABI, while freeing Python preparation
+        # from creating a renderer/window merely to select those policies.
+        native_profile = ('window' if kwargs.get('simulation_profile') == 'interactive'
+                          else kwargs.get('display', 'none'))
+        initial = export_initial_state(world, display=native_profile)
         # Retire every prepared system, including input/network lifecycle hooks,
         # while its listeners still belong to the isolated preparation bus.
         systems, world.systems = world.systems, []

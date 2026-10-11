@@ -14,12 +14,19 @@ from framework.ecs import profiling
 
 class NativeSession:
     def __init__(self, *, display="none", threads=1, on_events=None,
-                 authority_scheduling=True, ui_context=None, **scene_options):
+                 authority_scheduling=True, ui_context=None, renderer=None, frame_provider=None,
+                 **scene_options):
         self.runtime = None
         self.world = None
         self.closed = False
         self.failure = None
         self.ui_context = None
+        self.renderer = None
+        renderer = renderer or ('pygame' if display == 'window' else 'none')
+        if (display == 'window') != (renderer == 'pygame'):
+            raise ValueError('pygame requires window preparation; other renderers require none/dummy')
+        if renderer == 'web':
+            scene_options.setdefault('simulation_profile', 'interactive')
         if display == "window":
             from ..ui.context import UiContext
             self.ui_context = ui_context or UiContext(backend="rust", controller="none")
@@ -30,25 +37,24 @@ class NativeSession:
                 self.ui_context.unbind()
             self.runtime = RustRuntime(initial, threads=threads)
             self.presentation = WorldPresentation(self.world)
+            from rotk_env.rendering import create_renderer
+            from rotk_env.rendering.adapters import RendererFrameProvider
+            self.renderer = create_renderer(renderer, presentation=self.presentation,
+                update=self._update_systems, capture=self._capture_frame, initial=initial)
+            self.frame_provider = frame_provider or RendererFrameProvider(self.renderer)
+            if renderer == 'web':
+                from rotk_env.rendering.commands import HumanCommandPolicy
+                self.runtime._human_policy = HumanCommandPolicy(initial)
+            self.runtime._frame_capture = self.frame_provider.capture
             if authority_scheduling:
                 self.runtime = AuthorityRuntime(self.runtime,
-                    on_publication=lambda delta: self.presentation.apply(delta),
-                    capture_frame=self._capture_frame)
+                    on_publication=self.renderer.apply,
+                    capture_frame=self.frame_provider.capture)
             self.controls = LocalControls(self.runtime, self.presentation, initial,
-                                          on_events=on_events, on_error=self._fail)
+                on_events=on_events, on_error=self._fail, on_publication=self.renderer.apply)
             self.controls.refresh()
             if display == "window":
-                from .window_presentation import attach_battlefield_renderers
-                from .native_input import InputHandlingSystem, UnitActionButtonSystem, UIButtonSystem
-                from rotk_env.systems.panel_render_system import PanelRenderSystem
-                from rotk_env.systems.ui_render_system import UIRenderSystem
-                from rotk_env.systems.window_minimap_system import MiniMapSystem
-
-                attach_battlefield_renderers(self.presentation)
-                self.ui_context.attach(self.world)
-                for system in (InputHandlingSystem(self.controls), UnitActionButtonSystem(self.controls),
-                               UIButtonSystem(self.controls), PanelRenderSystem(), UIRenderSystem(), MiniMapSystem()):
-                    self._mount(system)
+                self.renderer.mount(self.controls, self.ui_context, self._mount)
             elif display == "dummy":
                 from .native_input import CoordinateInputHandlingSystem
                 self._mount(CoordinateInputHandlingSystem(self.controls))
@@ -93,7 +99,7 @@ class NativeSession:
 
     def update_display(self, dt, *, inputs=True):
         """Run input/panels/rendering over derived data after the simulation step."""
-        self._update_systems(dt, inputs=inputs, rendering=True)
+        self.renderer.render(dt, inputs=inputs)
 
     def _update_systems(self, dt, *, inputs, rendering):
         self._check_open()
@@ -154,10 +160,16 @@ class NativeSession:
             if self.runtime is not None:
                 self.runtime.close()
         finally:
-            if self.ui_context is not None:
-                self.ui_context.close()
-            if self.world is not None:
-                self.world.reset()
+            try:
+                if self.renderer is not None:
+                    self.renderer.close()
+            finally:
+                try:
+                    if self.ui_context is not None:
+                        self.ui_context.close()
+                finally:
+                    if self.world is not None:
+                        self.world.reset()
 
     def __enter__(self):
         return self
