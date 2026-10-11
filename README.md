@@ -84,6 +84,20 @@ For desktop/browser setup and Agent connections, use the
 | **Environment Layer** | *Simulation Logic* | Implements specific ENV rules (e.g., RoTK), physics, and vision systems. |
 | **Framework Layer** | *STAREngine* | Core ECS-based execution framework. |
 
+The source tree follows these four layers:
+
+```text
+framework/   # STAR Engine: reusable ECS and execution primitives
+protocol/    # STAR Protocol: communication contracts and SDK
+rotk_env/    # STARBench ENV: the Three Kingdoms environment
+rotk_agent/  # Reference Agent architecture; participants can supply their own
+```
+
+Each layer owns its private implementation. Python and Rust are implementation
+choices within the Framework and ENV layers, not additional architectural
+layers. Agents connect through STAR Protocol without importing an ENV's
+execution kernel or language bindings.
+
 ---
 
 ## ✨ Key Features

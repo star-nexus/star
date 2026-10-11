@@ -1,6 +1,6 @@
 # Native algorithm notices
 
-`native/core/src/rng.rs` implements the integer seed, MT19937, 53-bit float and
+`framework/native/src/rng.rs` implements the integer seed, MT19937, 53-bit float and
 rejection-sampling algorithms used by CPython 3.13.12. Reference:
 https://github.com/python/cpython/blob/v3.13.12/Modules/_randommodule.c
 

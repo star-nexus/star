@@ -16,7 +16,7 @@ features = ["pyo3/extension-module"]
 exclude = ["**/__pycache__/**", "**/*.pyc"]
 
 [tool.uv]
-# Include the sibling Rust crates: a cached binding must match ENV sources.
+# Include the ENV kernel and framework: cached bindings must match both layers.
 cache-keys = [
     { file = "pyproject.toml" },
     { file = "Cargo.toml" },
@@ -24,8 +24,8 @@ cache-keys = [
     { file = "python/**/*.py" },
     { file = "../rotk/Cargo.toml" },
     { file = "../rotk/src/**/*.rs" },
-    { file = "../core/Cargo.toml" },
-    { file = "../core/src/**/*.rs" },
-    { file = "../../Cargo.toml" },
-    { file = "../../Cargo.lock" },
+    { file = "../../../framework/native/Cargo.toml" },
+    { file = "../../../framework/native/src/**/*.rs" },
+    { file = "../../../Cargo.toml" },
+    { file = "../../../Cargo.lock" },
 ]

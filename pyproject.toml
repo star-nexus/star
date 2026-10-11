@@ -30,7 +30,7 @@ native = ["star-native==0.1.0"]
 pygame = ["pygame>=2.6.1"]
 
 [tool.uv.workspace]
-members = ["native/python"]
+members = ["rotk_env/native/python"]
 
 [tool.uv.sources]
 star-native = { workspace = true }

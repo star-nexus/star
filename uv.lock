@@ -652,7 +652,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=14.0.0" },
-    { name = "star-native", marker = "extra == 'native'", editable = "native/python" },
+    { name = "star-native", marker = "extra == 'native'", editable = "rotk_env/native/python" },
     { name = "toml" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
@@ -668,7 +668,7 @@ dev = [
 [[package]]
 name = "star-native"
 version = "0.1.0"
-source = { editable = "native/python" }
+source = { editable = "rotk_env/native/python" }
 
 [[package]]
 name = "toml"

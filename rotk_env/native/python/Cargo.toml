@@ -10,7 +10,7 @@ name = "_native"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-star-core = { path = "../core" }
+star-core = { path = "../../../framework/native" }
 star-rotk = { path = "../rotk" }
 pyo3.workspace = true
 serde_json.workspace = true

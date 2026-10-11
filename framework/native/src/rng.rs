@@ -1,5 +1,5 @@
 //! CPython integer-seeded MT19937 and its used sampling primitives.
-//! Algorithm provenance and license: native/python/python/star_native/NOTICE.md.
+//! Algorithm provenance and license: framework/native/NOTICE.md.
 use blake2::{Blake2b, Digest, digest::consts::U8};
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};

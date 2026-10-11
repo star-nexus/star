@@ -1,5 +1,5 @@
 [workspace]
-members = ["native/core", "native/rotk", "native/python"]
+members = ["framework/native", "rotk_env/native/rotk", "rotk_env/native/python"]
 resolver = "3"
 
 [workspace.package]
