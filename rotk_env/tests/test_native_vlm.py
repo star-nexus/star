@@ -31,7 +31,7 @@ def make(display='none', mode='real_time', enabled=True):
     world.get_singleton_component(c.GameModeComponent).mode = GameMode(mode)
     if enabled:
         world.add_singleton_component(c.MatchRules(game_actions=('move', 'attack', 'get_faction_state', VLM)))
-    llm = LLMSystem(); world.add_system(llm)
+    llm = LLMSystem(frame_capture=lambda: frame_capture.capture_rendered_frame()); world.add_system(llm)
     return world, ids, llm
 
 
@@ -65,7 +65,7 @@ def test_vlm_permissions_filters_bytes_and_reset_match_python(mode, display, thr
         ('a', VLM, {'faction': 'wei'}),
     ]
     try:
-        with RustRuntime(initial, threads=threads) as runtime:
+        with RustRuntime(initial, threads=threads, frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             expected = []
             for agent, action, params in requests:
                 answer = python_call(llm, agent, action, params); expected.append(answer)
@@ -73,9 +73,9 @@ def test_vlm_permissions_filters_bytes_and_reset_match_python(mode, display, thr
                 assert runtime.export_state() == export_initial_state(world, display=display)
             payload = expected[-1]
             data = base64.b64decode(payload['frame_base64'])
-            assert payload['frame_format'] == 'png'  # Preserved legacy mislabel, not a new encoding claim.
-            assert not data.startswith(b'\x89PNG\r\n\x1a\n')
-            decoded = pygame.image.load(io.BytesIO(data), 'frame.tga')
+            assert payload['frame_format'] == 'png'
+            assert data.startswith(b'\x89PNG\r\n\x1a\n')
+            decoded = pygame.image.load(io.BytesIO(data), 'frame.png')
             assert decoded.get_size() == screen.get_size()
             assert pygame.image.tobytes(decoded, 'RGB') == pygame.image.tobytes(screen, 'RGB')
             runtime.reset(initial)
@@ -94,7 +94,7 @@ def test_rejected_vlm_never_reads_display(enabled, agent, params, monkeypatch, f
     world, _, llm = make(enabled=enabled)
     monkeypatch.setattr(frame_capture, 'capture_rendered_frame', lambda: pytest.fail('unauthorized capture'))
     try:
-        with RustRuntime(export_initial_state(world)) as runtime:
+        with RustRuntime(export_initial_state(world), frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             assert runtime.execute_action('register_agent_info', REG, agent_id='a') == python_call(llm, 'a', 'register_agent_info', REG)
             expected = python_call(llm, agent, VLM, params)
             assert not expected['success']
@@ -124,7 +124,7 @@ def test_capture_error_keeps_successful_state_and_legacy_message(failure, monkey
         def broken(*args): raise RuntimeError('injected')
         monkeypatch.setattr(pygame.image, 'save', broken)
     try:
-        with RustRuntime(export_initial_state(world)) as runtime:
+        with RustRuntime(export_initial_state(world), frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             runtime.execute_action('register_agent_info', REG, agent_id='a'); python_call(llm, 'a', 'register_agent_info', REG)
             expected = python_call(llm, 'a', VLM, {'faction': 'wei'})
             actual = runtime.execute_action(VLM, {'faction': 'wei'}, agent_id='a')
@@ -153,7 +153,7 @@ def test_mixed_batch_captures_before_later_actions_and_preserves_read_segments(t
         for req in requests:
             expected.append(python_call(llm, req.agent_id, req.action, req.parameters))
             if req.action == VLM:states.append(export_initial_state(world)['entities'])
-        with RustRuntime(initial, threads=threads) as runtime:
+        with RustRuntime(initial, threads=threads, frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             captured=[];capture=frame_capture.capture_rendered_frame
             def record():
                 captured.append(runtime.export_state()['entities'])
@@ -177,7 +177,7 @@ def test_mixed_batch_captures_before_later_actions_and_preserves_read_segments(t
 def test_vlm_split_does_not_execute_prefix_of_invalid_envelopes(bad, frozen):
     world, _, _ = make()
     try:
-        with RustRuntime(export_initial_state(world)) as runtime:
+        with RustRuntime(export_initial_state(world), frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             before=runtime.export_state()
             requests=[ActionRequest('a', 'register_agent_info', REG), ActionRequest('a', VLM, {'faction':'wei'}), bad]
             with pytest.raises((RuntimeError, ValueError)):
@@ -191,7 +191,7 @@ def test_vlm_split_does_not_execute_prefix_of_invalid_envelopes(bad, frozen):
 def test_other_runtime_writer_cannot_pass_a_pending_capture(operation, monkeypatch, frozen):
     world, _, _ = make();initial=export_initial_state(world)
     entered=Event();release=Event();started=Event();finished=Event()
-    runtime=RustRuntime(initial)
+    runtime=RustRuntime(initial, frame_capture=lambda: frame_capture.capture_rendered_frame())
     try:
         runtime.execute_action('register_agent_info', REG, agent_id='a')
         def capture():
@@ -225,7 +225,7 @@ def test_plain_queries_do_not_capture_display(monkeypatch, frozen):
     world, _, _ = make()
     monkeypatch.setattr(frame_capture,'capture_rendered_frame',lambda:pytest.fail('plain query captured a frame'))
     try:
-        with RustRuntime(export_initial_state(world)) as runtime:
+        with RustRuntime(export_initial_state(world), frame_capture=lambda: frame_capture.capture_rendered_frame()) as runtime:
             runtime.execute_action('register_agent_info',REG,agent_id='a')
             assert runtime.get_faction_state('wei',agent_id='a')['success']
             assert runtime.execute_actions([ActionRequest('a','get_faction_state',{'faction':'wei'})])[0]['success']

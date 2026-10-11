@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "baseline": "1fc91c4",
+  "native_api": 18,
+  "native_schema": 5,
+  "native_extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+  "native_binary_unchanged": true,
+  "lifecycle_methods_unchanged": 25,
+  "interactive_methods_unchanged": 10,
+  "pygame_damage_drawing_unchanged": true,
+  "web_client_unchanged": true,
+  "web_initial_authority_equal": true,
+  "web_initial_snapshot_equal": true,
+  "web_snapshot_sha256": "d382f2eff3abe6251160cd24bdffda4d74ecbbefc42c61fa9677b5798a2c66ab",
+  "web_client_source_sha256": {
+    "rotk_env/rendering/web/client/app.js": "5266610594f2125cd892aacc99891860f81f4dcc0e4a80ce4b944bcc4d3cfbce",
+    "rotk_env/rendering/web/client/batches.js": "ed311cb194d0718b511613d740c612ee28700740cb1217bb0055951314f36309",
+    "rotk_env/rendering/web/client/hex.js": "8bef5b310bf17bc78ad09a7fc420bf567e51f294dcdb6aca3c7fd9060a3cd310",
+    "rotk_env/rendering/web/client/index.html": "952b68a911f198a6452d99e46631b2810da2396d111134d5b2e139e3130ba337",
+    "rotk_env/rendering/web/client/motion.js": "4ae8376d18a7752168d5cd8349432a79eec734f7c1c7497c2200828848863d01",
+    "rotk_env/rendering/web/client/package-lock.json": "4bfe8a1e167480b65fcd0cdbd46ba3db6d92d891d6461301b9340e3e8678b877",
+    "rotk_env/rendering/web/client/package.json": "605e7239e59905f9fc8fa1e93db20b6ed38792de9b25a1ef2af01a0dc34973a5",
+    "rotk_env/rendering/web/client/performance.js": "1c0c0b0df494a770693cabdb3efb12d1acfd8b709b9e6eb22529d40b8e314702",
+    "rotk_env/rendering/web/client/renderer.js": "35576c84e83a40fc388ed6d1230c8b88e549b535dddcd7f39d0ad1ac51958e8c",
+    "rotk_env/rendering/web/client/state.js": "a88eabcf2f14a8e4e27f3b6c6a3e01673d06200dba6255e85d24461b474626a4",
+    "rotk_env/rendering/web/client/style.css": "9c04726684a8b97d3c704538fafa4def1fae2a2a5c4cc82287a6f79f38387ac8",
+    "rotk_env/rendering/web/client/tests/render-performance.test.js": "348dd7ffaf2e69c264d5e63a69aaea03bce3bd49dd7185c8bd727e52416a0390",
+    "rotk_env/rendering/web/client/tests/state.test.js": "8c0cecb5ad2760597187f269a71932dffcfc9e62b9904a30563dd65dbf51b5ee"
+  }
+}

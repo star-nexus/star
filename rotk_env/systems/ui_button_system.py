@@ -104,8 +104,9 @@ class UIButtonSystem(System):
                 return ctx.layout.footer
         return pygame.Rect(button.x,button.y,button.width,button.height)
 
-    def _create_ui_buttons(self):
+    def _create_ui_buttons(self, *, create_entity=None):
         """Create UI buttons"""
+        create_entity = create_entity or self.world.create_entity
         # Create button collection singleton component
         button_collection = UIButtonCollection()
         self.world.add_singleton_component(button_collection)
@@ -113,7 +114,7 @@ class UIButtonSystem(System):
         print("Creating UI buttons...")  # Debug output
 
         # Create end turn button
-        end_turn_button = self.world.create_entity()
+        end_turn_button = create_entity()
         self.world.add_component(
             end_turn_button,
             UIButton(
@@ -131,7 +132,7 @@ class UIButtonSystem(System):
         print(f"✓ Created End Turn button (Entity ID: {end_turn_button})")
 
         # Create settings button
-        settings_button = self.world.create_entity()
+        settings_button = create_entity()
         self.world.add_component(
             settings_button,
             UIButton(
@@ -149,7 +150,7 @@ class UIButtonSystem(System):
         print(f"✓ Created Settings button (Entity ID: {settings_button})")
 
         # Create help button
-        help_button = self.world.create_entity()
+        help_button = create_entity()
         self.world.add_component(
             help_button,
             UIButton(
@@ -167,7 +168,7 @@ class UIButtonSystem(System):
         print(f"✓ Created Help button (Entity ID: {help_button})")
 
         # Create statistics button
-        stats_button = self.world.create_entity()
+        stats_button = create_entity()
         self.world.add_component(
             stats_button,
             UIButton(

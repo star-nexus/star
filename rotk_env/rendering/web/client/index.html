@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STARBench · Battlefield</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">✦</span><div>STAR<span>Bench</span><small>TACTICAL ENVIRONMENT</small></div></div>
+    <div class="match"><span id="map-name">战场</span><span class="divider"></span><span id="mode">回合制</span></div>
+    <div class="connection"><i id="status-dot"></i><span id="connection">连接中</span></div>
+  </header>
+  <main>
+    <section id="battlefield" aria-label="战场地图">
+      <div class="view-badge"><span id="view">等待视角</span><small id="visual-version"></small></div>
+      <button id="fit" title="完整显示地图 (F)">⌖ <span>适应地图</span></button>
+      <div id="labels" aria-hidden="true"></div>
+      <div id="notice" role="status" aria-live="polite">正在连接战场…</div>
+      <div id="range-legend" hidden><span class="move-key">移动范围</span><span class="attack-key">攻击范围</span><small id="range-count"></small></div>
+      <div class="map-help">选择己方单位 · 点击地格移动 · A 攻击 · 滚轮缩放 · 拖动平移</div>
+    </section>
+    <aside>
+      <div class="section-label">BATTLE STATUS</div>
+      <div class="turn"><span id="turn">回合 —</span><small id="current-player">等待对局</small></div>
+      <div id="factions"></div>
+      <div class="rule"></div>
+      <div class="section-label">SELECTED UNIT</div>
+      <div id="selection-empty">选择一支部队<br><small>点击地图上的己方单位</small></div>
+      <div id="selection" hidden>
+        <div class="unit-title"><img id="unit-art" alt=""><div><strong id="unit-name"></strong><small id="unit-pos"></small></div></div>
+        <div class="resources"><div><small>兵力</small><strong id="count">—</strong></div><div><small>行动点 AP</small><strong id="ap">—</strong></div><div><small>移动点 MP</small><strong id="mp">—</strong></div></div>
+        <div id="actions">
+          <button data-command="move">移动 <kbd>M</kbd></button><button data-command="attack">攻击 <kbd>A</kbd></button>
+          <button data-command="wait">待命</button><button data-command="garrison">驻扎</button>
+          <button data-command="capture">占领</button><button data-command="fortify">筑垒</button>
+        </div>
+      </div>
+      <div class="aside-bottom"><p id="instruction">选择部队，规划行动。视野之外的敌军会被隐藏。</p><button id="end-turn" disabled>结束回合 <kbd>Space</kbd></button><small id="turn-hint">等待同步</small></div>
+    </aside>
+  </main>
+  <dialog id="credential"><form method="dialog"><span class="section-label">JOIN BATTLEFIELD</span><h2>打开战场视角</h2><p>使用启动终端中的阵营或旁观链接，也可以在这里输入该链接的 token。</p><label>视角凭据<input id="token" autocomplete="off" required type="password"></label><button id="join">连接战场</button></form></dialog>
+</body>
+</html>

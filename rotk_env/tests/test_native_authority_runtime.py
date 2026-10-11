@@ -25,7 +25,7 @@ def test_real_owner_keeps_wire_state_batch_order_and_ui_capture(threads, batch, 
         ActionRequest('a', 'get_faction_state', {'faction': 'wei'}),
         ActionRequest('a', VLM, {'faction': 'wei', 'unit_ids': []}),
         ActionRequest('a', 'get_faction_state', {'faction': 'wei'})]
-    left = RustRuntime(initial, threads=threads)
+    left = RustRuntime(initial, threads=threads, frame_capture=capture_rendered_frame)
     packets = []; capture_threads = []
     def capture():
         capture_threads.append(get_ident())

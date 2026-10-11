@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-11",
+  "branch": "codex/render-adapters",
+  "before_commit": "d2a7e21f09102a3841294cca63002a596919c02a",
+  "passed": true,
+  "web_visual_version": "starbench-web-v4",
+  "pygame_visual_version": "starbench-ui-v6",
+  "render_schema": 1,
+  "native_api": 18,
+  "native_schema": 5,
+  "native_extension_sha256": "fe758b178041c0b6149fc06be435e93d702933435982cb2c5a96b78f0e94c8f0",
+  "native_binary_unchanged": true,
+  "rust_protocol_agent_sources_unchanged": true,
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest -q rotk_env/tests/test_render_tactics.py rotk_env/tests/test_web_server.py rotk_env/tests/test_render_projection.py rotk_env/tests/test_web_commands.py rotk_env/tests/test_renderer_dependencies.py rotk_env/tests/test_renderer_adapters.py rotk_env/tests/test_renderer_boundaries.py rotk_env/tests/test_move_rules.py rotk_env/tests/test_hex_in_range_translation.py",
+      "exit_code": 0,
+      "passed": 71,
+      "elapsed_seconds": 8.06
+    },
+    {
+      "command": "npm test --prefix rotk_env/rendering/web/client",
+      "exit_code": 0,
+      "passed": 17,
+      "elapsed_seconds": 0.102
+    },
+    {
+      "command": "/tmp/star-web-isolation-20261011/bin/python -m pytest -q rotk_env/tests/test_render_tactics.py rotk_env/tests/test_web_server.py rotk_env/tests/test_renderer_boundaries.py",
+      "exit_code": 0,
+      "passed": 16,
+      "elapsed_seconds": 4.09,
+      "pygame_installed": false
+    },
+    {
+      "command": "/tmp/star-web-isolation-20261011/bin/python -m rotk_env.tests.renderer_dependency_probe web --output docs/render-adapters-v4/web-dependencies.json",
+      "exit_code": 0,
+      "evidence": "web-dependencies.json"
+    },
+    {
+      "command": ".venv/bin/python -m rotk_env.tests.renderer_dependency_probe pygame --output docs/render-adapters-v4/pygame-dependencies.json",
+      "exit_code": 0,
+      "evidence": "pygame-dependencies.json"
+    }
+  ],
+  "browser": {
+    "selection": {
+      "active": "attack",
+      "fps": "100 FPS",
+      "legend": "移动 33 格 · 攻击 6 格",
+      "legendVisible": true,
+      "position": "坐标 1, 3",
+      "selected": "魏 · 步兵",
+      "viewport": [
+        1280,
+        720
+      ],
+      "visualVersion": "starbench-web-v4"
+    },
+    "clear": {
+      "legendVisible": false,
+      "selectionVisible": false
+    },
+    "mobile": {
+      "fps": "100 FPS",
+      "fpsBounds": {
+        "height": 22.296875,
+        "width": 58.359375,
+        "x": 319.640625,
+        "y": 124
+      },
+      "legend": "移动范围攻击范围移动 33 格 · 攻击 6 格",
+      "legendBounds": {
+        "height": 50,
+        "width": 172,
+        "x": 12,
+        "y": 509
+      },
+      "legendVisible": true,
+      "overlapsFps": false,
+      "viewport": [
+        390,
+        844
+      ],
+      "visualVersion": "starbench-web-v4"
+    },
+    "actual_mouse_selection": true,
+    "attack_hotkey": true,
+    "keyboard_selection": true,
+    "temporary_viewport_reset": true,
+    "test_tab_closed": true,
+    "screenshots": {
+      "attack-range.jpg": "f722839241e9df67426a75c47a8fe8c172557ab763cf66a666a8176f6033e055",
+      "before-selection.jpg": "7835806c9c78c09c507c7e4263045ba7deaf8f39479ffa067feb273f521762f3",
+      "mobile-range.jpg": "fa30d6d1a124079c1ed438b52d7340427d205f314b5982ffa26e57702ee95bbf",
+      "movement-range.jpg": "1556f234edb03266e44e76dc6eddb3f858d1cd31ef4ab90aa096670578de3cab"
+    }
+  },
+  "integration_refs": {
+    "main": "6a970deaee7d9b8d3939edd102973f2377edd6ac",
+    "codex/rust-ecs-parallel": "2598697ed21446c4114ee87d4e671df4fee69e82"
+  }
+}

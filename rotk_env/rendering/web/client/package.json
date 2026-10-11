@@ -1,0 +1,7 @@
+{
+  "name": "starbench-three-renderer",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test tests/*.test.js"},
+  "dependencies": {"three": "0.186.1"}
+}

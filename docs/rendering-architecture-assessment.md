@@ -1,5 +1,9 @@
 # STAR 渲染架构评估
 
+后续实现：顶层建议已确认，第一版在 `codex/render-adapters` 落地，见
+[多渲染器接入与 Web 启动](render-adapters.md)。下文保留评估时的代码快照和判断；
+图中的“当前”指评估时现状，不代替后续实现记录。
+
 评估时间：2026-10-11。对象：`codex/ui-polish`，工作目录 `/Users/liyang/.codex/worktrees/rust-ecs-parallel/star-main`，HEAD `65941ef0bc31016bb610591e95ac0ded4ba03ea7`，包含尚未提交的 UI v6 与回合按钮修复。本文件是评估与建议，不代表新增接口已经实现。
 
 ## 判断

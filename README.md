@@ -89,7 +89,7 @@ and [STARBench UI, previews and visual versions](docs/starbench-ui.md).
 ## ✨ Key Features
 
 - Strategic multi-agent evaluation
-- Real-time and turn-based execution modes. Real-time keeps the world ticking while the model thinks (latency changes outcomes); turn-based is the reproducible bench. The loop is locked at 60 FPS.
+- Real-time and turn-based execution modes. Real-time keeps the world ticking while the model thinks (latency changes outcomes); turn-based is the reproducible bench. The interactive Rust host targets a 60 Hz authority clock; each renderer has an independent display loop.
 - Partial observability environments
 - Extensible environment and agent integration
 - Layered ECS runtime for scalable simulation
@@ -292,6 +292,7 @@ enable_thinking = false
 | --- | --- |
 | Open the configuration menu | `uv run starbench.py` |
 | Explore offline | `uv run starbench.py --no-hub` |
+| Open the Three.js browser renderer | `uv run starbench.py --renderer web --no-hub` |
 | Run a connected, three-faction real-time ENV without a window | `uv run starbench.py --headless --players three_kingdoms --mode real_time --env-id env_1` |
 | Use the Python reference implementation | `uv run starbench.py --backend python` |
 | Show startup help | `uv run starbench.py --help` |
@@ -305,6 +306,19 @@ Further ENV options and the explicit Python-only local BOT demo are documented
 in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and
 `run_headless_env.sh` remain supported.
 
+For Web, install the pinned frontend dependency once with
+`npm ci --prefix rotk_env/rendering/web/client`, then open a faction or spectator
+link printed by the launcher. Rust runs on the server. The Web host prepares
+pure scene data without installing or importing pygame. The desktop launcher
+selects the optional pygame dependency and does not load Three.js assets. See
+[renderer adapters and Web scope](docs/render-adapters.md) for setup, permissions,
+Agent Hub reuse, and the separate visual/capture versions.
+The Web map displays FPS by default, sampled from completed browser render frames
+once per second; `?perf=1` adds local state-update and draw-call diagnostics.
+Selecting a unit shows movement and attack ranges supplied by the authorized
+server view. Each browser keeps its own selection; previewing does not advance
+the game or issue Agent actions.
+
 <details>
 <summary>Advanced ENV settings and developer entry point</summary>
 
@@ -313,9 +327,10 @@ The default worker count is 1. To enable eligible internal parallel tasks, use
 `--native-scheduling threaded` is the default authority/display scheduling policy.
 
 The original developer entry point remains available:
-`uv run --extra native rotk_env/main.py`. The `native` extra belongs only to ENV;
+`uv run --extra native --extra pygame rotk_env/main.py`. The `native` extra belongs only to ENV;
 Agent and protocol SDK dependencies stay independent. Missing or mismatched Rust
 extensions fail explicitly rather than silently changing the backend.
+For the complete test suite, use `uv run --extra native --extra pygame pytest -q`.
 
 See [ENV backend and launch contract](docs/native-hub-host.md) for version checks,
 queue ownership, run manifests, and the validated scope.
@@ -415,7 +430,7 @@ If you find this project useful in your research, please consider citing:
 
 ## Window interface
 
-The pygame menu and battlefield use `starbench-ui-v6`. The default window starts
+The pygame menu and battlefield use `starbench-ui-v7`. The default window starts
 at 1200×900 (800 high on smaller desktops); the opening map fits the area beside
 the sidebar. Toolbar buttons highlight on hover and darken/depress on click.
 See [window layout, controls and VLM visual version](docs/starbench-ui.md).

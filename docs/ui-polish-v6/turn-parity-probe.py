@@ -28,9 +28,10 @@ from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.runtime.session import NativeSession
 from rotk_env.ui.context import VISUAL_VERSION
 from rotk_env.utils.env_events import TurnStartEvent
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 engine = GameEngine(width=1200, height=900, title='STARBench turn parity validation')
-GameConfig.sync_from_display()
+sync_game_config_from_display()
 records = []
 for backend in ('python', 'rust'):
     seen = []

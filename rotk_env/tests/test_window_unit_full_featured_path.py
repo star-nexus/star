@@ -90,6 +90,7 @@ def test_full_featured_occupancy_snapshot_replaces_per_unit_world_scan():
 
 def test_unit_labels_use_prewarmed_quantized_surfaces_without_runtime_render(monkeypatch):
     renderer = optimized.UnitRenderSystem.__new__(optimized.UnitRenderSystem)
+    renderer.world = SimpleNamespace()
     renderer._unit_label_surface_cache = {}
 
     font = _Font()

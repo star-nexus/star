@@ -1,8 +1,6 @@
-"""Capture the existing display buffer with legacy RoTK image/error semantics.
+"""Capture the existing display buffer as PNG, matching the Agent format label.
 
-No rendering, perspective selection, or world access occurs here. The legacy
-encoder has no filename hint (TGA on pygame 2.6.1), despite the historical PNG
-response label. Changing that wire contract is a separate compatibility decision.
+No rendering, perspective selection, or world access occurs here.
 """
 import base64
 import io
@@ -32,7 +30,7 @@ def capture_rendered_frame():
 
     try:
         buf = io.BytesIO()
-        pygame.image.save(surf, buf)
+        pygame.image.save(surf, buf, 'frame.png')
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         return b64, None
     except Exception as e:

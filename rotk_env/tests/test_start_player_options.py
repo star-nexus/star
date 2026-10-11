@@ -1,3 +1,4 @@
+from rotk_env.ui.start_layout import start_panel_layout
 from rotk_env.components.start_menu import (
     CONTROLLER_HUB,
     CONTROLLER_MOCK_AI,
@@ -6,7 +7,6 @@ from rotk_env.components.start_menu import (
     START_PLAYER_OPTIONS,
     StartMenuConfig,
     controller_backend_flags,
-    start_panel_layout,
 )
 from rotk_env.prefabs.config import Faction, PLAYER_PRESETS, PlayerType
 

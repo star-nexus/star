@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "command": "uv run starbench.py --renderer web --no-hub --seed 42 --port 8766",
+  "pygame_installed": false,
+  "pygame_banner": false,
+  "http": true
+}

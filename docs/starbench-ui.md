@@ -1,8 +1,9 @@
 # STARBench window UI
 
-The ordinary Python and Rust pygame window uses visual version `starbench-ui-v6`.
+The ordinary Python and Rust pygame window uses visual version `starbench-ui-v7`.
 Launch commands and Agent access through star-protocol retain their existing
-fields, encoding and permissions. Existing terrain and unit art is retained.
+fields and permissions. Observation frames now contain genuine PNG bytes.
+Existing terrain and unit art is retained.
 
 The menu displays STARBench, game mode, factions, controller and scenario. Static
 slots have no automatic controller. Rust supports the existing External Agent /
@@ -53,15 +54,34 @@ ordered delta consumer are retained.
 
 VLM capture uses the same complete paint path, including toolbar/action controls,
 without admitting input or advancing authority. Its actual picture therefore
-changes with this visual version. The pre-existing global screen/view contract,
-frame encoding and protocol fields are unchanged. Record the visual version when
+changes with visual revisions. The pre-existing global screen/view contract
+and protocol fields are unchanged. Record the visual version when
 comparing image-based benchmark runs. This is not a new per-Agent camera policy.
 
 Finite UI acceptance and raw evidence are recorded in STAR Lab's
 `experiments/2026-10-ui-refresh`; render checks are fixed-projection regressions,
 not a new throughput or capacity claim.
 
-## v6 toolbar press feedback — 2026-10-11
+## v7 PNG observation and independent UI IDs — 2026-10-11
+
+PNG encoding now uses an explicit filename hint, so `frame_format="png"` matches
+the actual observation bytes. Previous captures contained TGA bytes despite the
+PNG label. Consumers should decode according to the declared format; historical
+image benchmark bytes must retain their original visual version. The saved
+1200×900 Rust startup frame is pixel-identical to v6 after PNG decoding.
+
+Rust authority preparation now completes before pygame input and UI are mounted.
+The four desktop toolbar entities use local negative IDs, outside the non-negative
+native ID allocator and initialization payload. This makes native unit IDs and
+Agent state responses identical for pygame, Web and no-display sessions with the
+same simulation profile. Existing desktop observations have different unit IDs
+after this correction; clients must read IDs from the current match rather than
+reuse IDs from an earlier recording. Rules and protocol fields are retained.
+
+[Fix validation, screenshot and compatibility record](render-adapters-fixes/README.md)
+document both changes. Web remains `starbench-web-v4`.
+
+## v6 toolbar press feedback — 2026-10-11 (historical)
 
 End Turn now highlights on hover and darkens/depresses its face and label by
 2 pixels while pressed. A quick down/up pair retains the pressed appearance

@@ -4,17 +4,23 @@ Benchmark compatibility differences and historical fixes are tracked in the
 [gameplay and mechanism GAP ledger](native-benchmark-gaps.md). Consult it when
 comparing results across Python oracles and experimental native checkpoints.
 
-The default game remains Python. R0 normalizes its replay ordering; R1 provides
-an owned Rust scene, lifecycle/clock and CPython-compatible random streams.
-**The experimental Rust backend now supports offline local play.** R3 is in progress: native movement,
-resource recovery, combat, Fog, statistics, team state and faction projections
-have differential contract tests. Trusted local registration, ownership checks and
-move/attack/faction-query dispatch, world termination and faction turn handoff
-are connected, including the five non-image observation variants and explicitly
-enabled VLM capture through the Python display adapter. Network post-game
-delivery and BOT integration are still pending. Offline GameScene and settlement now use NativeSession. Local input adapters
-now redirect commands to Rust. A derived battlefield
-presentation adapter now supports existing Python map, unit and effect renderers. There is no silent backend fallback.
+The default ENV is Rust; Python remains an explicit reference/fallback. The
+owned native world provides lifecycle/clock, CPython-compatible random streams,
+movement, resource recovery, combat, Fog, statistics, team state, actions and
+faction projections, with differential contracts. NativeSession owns scene
+lifecycle; NativeHubHost reuses the existing Agent transport and post-game
+delivery. See the current [Hub scope](native-hub-host.md); the local rule BOT
+remains a Python-only explicit choice. There is no silent backend fallback.
+
+Display adapters now select pygame or server-side Rust + Three.js. Web reuses
+the interactive native preparation without importing pygame or initializing SDL;
+headless evaluation
+keeps its existing preparation. Agent non-image observations are unchanged.
+pygame preserves existing VLM capture; Web has no Agent frame provider.
+Capture is explicitly supplied by the selected host. Bare `RustRuntime`,
+`AuthorityRuntime` and Python action handlers never import a graphics engine
+to fill a missing frame capability.
+See [renderer adapters](render-adapters.md) for capture and visual version boundaries.
 
 ## Statistics internal compute: E2
 
@@ -47,7 +53,7 @@ This adapter change reuses the API18 binary. The fixed recorded workload and
 real-window diagnostics are documented in
 [R4d evidence](../../star-lab/experiments/2026-09-rust-5000-agents/README.md).
 Short diagnostics do not establish the 300-second, three-run capacity gate.
-The default backend and native worker count remain Python and one worker.
+The current default backend is Rust and the native worker count remains one.
 
 ## Observation census allocation
 
@@ -159,14 +165,14 @@ not included. Build/install for development from the repository root:
 
 ```sh
 # Requires the pinned Rust toolchain on PATH for local source builds.
-uv sync --extra native
+uv sync --extra native --extra pygame
 cargo test -p star-core -p star-rotk --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-uv run --extra native pytest -q
+uv run --extra native --extra pygame pytest -q
 ```
 
 After editing Rust files, rebuild explicitly with
-`uv sync --extra native --reinstall-package star-native` to avoid an old extension
+`uv sync --extra native --extra pygame --reinstall-package star-native` to avoid an old extension
 in the active interpreter. Start a fresh Python process after rebuilding.
 Performance measurements must use a release wheel, with its hash recorded in Lab.
 Users of eventual published wheels will not need a Rust compiler. Cross-platform
@@ -566,11 +572,18 @@ faction checks, trusted identity, unit selection and structured observation run
 before any display read. Failed/unsupported queries do not capture a frame.
 
 The Rust kernel returns the authorized structured projection. The public Python
-adapter then copies the existing `RenderEngine.screen` and attaches the legacy
+adapter invokes its supplied frame callback and attaches the legacy
 `frame_base64`, `frame_format`, and optional `frame_error`. A capture failure keeps
 the successful structured query and its normal counters. The low-level
 `star_native.NativeRuntime` JSON methods are the kernel boundary and do not attach
 Python-rendered media; applications use `rotk_env.runtime.native.RustRuntime`.
+The selected desktop host supplies the callback that copies its existing
+`RenderEngine.screen`. Direct runtime callers must pass `frame_capture=...`
+when they need images; without it, the structured query remains successful with
+no image and `frame_error="No Agent observation frame provider configured"`.
+`NativeSession` injects its selected `FrameProvider` automatically. See the
+[current renderer boundary](render-adapters.md); the API11 record below describes
+the preserved desktop capture behavior.
 
 A batch is fully decoded and detached before execution. It splits at each VLM
 request so capture completes before later commands; adjacent ordinary faction

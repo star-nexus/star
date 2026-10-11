@@ -197,3 +197,6 @@ error_log_*
 
 # Local diagram authoring and browser review artifacts
 /.archify/
+
+# Renderer dependencies stay inside the ENV adapter.
+node_modules/

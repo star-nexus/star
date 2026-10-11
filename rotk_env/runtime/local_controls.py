@@ -7,13 +7,15 @@ that may follow a partial write. No Protocol identity or synthetic Agent is used
 
 
 class LocalControls:
-    def __init__(self, runtime, presentation, initial_state, *, on_events=None, on_error=None):
+    def __init__(self, runtime, presentation, initial_state, *, on_events=None, on_error=None,
+                 on_publication=None):
         self.runtime = runtime
         self.presentation = presentation
         self.systems = frozenset(initial_state["systems"])
         self.interface = dict(initial_state["interface"])
         self.on_events = on_events
         self.on_error = on_error
+        self.on_publication = on_publication or presentation.apply
         self.epoch = runtime.diagnostics()["epoch"]
         if presentation.epoch is not None and presentation.epoch != self.epoch:
             raise ValueError("Presentation belongs to a different native epoch")
@@ -29,7 +31,7 @@ class LocalControls:
     def _refresh(self):
         consume = getattr(self.runtime, 'consume_presentation', None)
         if consume is None:
-            events = self.presentation.apply(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
+            events = self.on_publication(self.runtime.take_presentation_delta(expected_epoch=self.epoch))
         else:
             # The authority facade publishes/consumes every intervening delta;
             # the UI must never skip to the newest revision.

@@ -40,7 +40,7 @@ def test_first_gameplay_update_consumes_deferred_profiler_warmup(monkeypatch):
     fake_profiler = _FakeProfiler()
     monkeypatch.setattr(game_scene_module, "profiler", fake_profiler)
     monkeypatch.setattr(
-        game_scene_module.GameConfig, "sync_from_display", staticmethod(lambda: None)
+        game_scene_module, "sync_game_config_from_display", lambda: None
     )
 
     scene.update(1 / 60)

@@ -10,6 +10,7 @@ from copy import deepcopy
 import math
 from threading import Condition, Thread, get_ident
 import time
+from framework.presentation.capture import capture_observation_frame
 
 
 class AuthorityRuntime:
@@ -20,7 +21,7 @@ class AuthorityRuntime:
         'execute_actions_diagnostic', 'get_faction_state', 'get_faction_state_json',
         'finish_human_turn', 'start_capture', 'set_clock', 'export_state',
         'diagnostics', 'take_presentation_delta',
-        'execute_host_action', 'commit_host_action',
+        'execute_host_action', 'commit_host_action', 'execute_human_command',
     })
 
     def __init__(self, runtime, *, on_publication, capture_frame=None,
@@ -139,10 +140,7 @@ class AuthorityRuntime:
             for result in captures:
                 try:
                     capture = self._capture_frame or self._old_capture
-                    if capture is None:
-                        from framework.engine.frame_capture import capture_rendered_frame
-                        capture = capture_rendered_frame
-                    result.set_result(capture())
+                    result.set_result(capture_observation_frame(capture))
                 except BaseException as exc:
                     result.set_exception(exc)
         except BaseException as exc:
@@ -204,6 +202,10 @@ class AuthorityRuntime:
                 if self._publications:
                     raise RuntimeError('consume old-epoch publications before reset')
             return self._runtime.reset(*args, **kwargs)
+        if method == 'execute_human_command':
+            # Refresh permission facts on the owner, then validate and execute
+            # without another admitted command or tick crossing this boundary.
+            self._publish()
         return getattr(self._runtime, method)(*args, **kwargs)
 
     def _run(self):

@@ -4,7 +4,8 @@ import pygame
 from framework import System
 from framework.engine import RMS
 from ..components.start_menu import (StartMenuConfig, StartMenuButtons,
-    START_PLAYER_OPTIONS, START_CONTROLLER_OPTIONS, start_panel_layout, scenario_option_rects)
+    START_PLAYER_OPTIONS, START_CONTROLLER_OPTIONS)
+from ..ui.start_layout import start_panel_layout, scenario_option_rects
 from ..prefabs.config import GameMode
 from ..ui.context import (UiContext, ACCENT, BACKGROUND, BORDER, MUTED, PANEL,
                           RAISED, TEXT, controller_available)

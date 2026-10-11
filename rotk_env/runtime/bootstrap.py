@@ -13,7 +13,7 @@ import random
 SCHEMA_VERSION = 5
 NATIVE_API_VERSION = 18
 ORACLE_VERSION = 'python-r0c-3cc4ffe'
-PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
+PRESENTATION = frozenset('Renderable AnimationState Selected Camera UIState InputState MiniMap UnitActionPanel ActionConfirmDialog UIButton UIButtonCollection UIPanel GameOverButtons DamageNumber AttackAnimation EffectAnimation ProjectileAnimation'.split())
 
 
 def encode(value):
@@ -110,7 +110,11 @@ def export_initial_state(world, *, display='none'):
         if len({t.__name__ for t in components}) != len(components):
             raise ValueError('Ambiguous component names in scene')
         kept = {t.__name__: encode(c) for t, c in components.items() if t.__name__ not in PRESENTATION}
-        # Keep empty IDs too: ID zero and presentation-created gaps are legitimate.
+        if entity < 0:
+            if kept:
+                raise ValueError('Local presentation entity contains authoritative components')
+            continue
+        # Preserve legitimate empty authority IDs, including ID zero.
         entities.append({'id': entity, 'components': kept})
     singletons = {t.__name__: encode(c) for t, c in world._singleton_components.items()
                   if t.__name__ not in PRESENTATION and t is not RngService}
@@ -190,7 +194,7 @@ def prepare_display_world(**kwargs):
     started. Existing event subscriptions are isolated and restored, even on error.
     Returned World has no systems or surviving simulation subscriptions. Its
     components are Python-owned presentation data after the JSON handoff.
-    Rendering resources must already be initialized for window preparation.
+    Window resources and UI entities are mounted by the selected adapter later.
     """
     from framework import World
     from framework.engine.events import EBS
@@ -203,8 +207,18 @@ def prepare_display_world(**kwargs):
     EBS._listeners = {}
     world = World()
     try:
-        build_skirmish_world(world=world, **kwargs)
-        initial = export_initial_state(world, display=kwargs.get('display', 'none'))
+        rules_options = dict(kwargs)
+        if rules_options.get('display') == 'window':
+            rules_options['display'] = 'none'
+            rules_options.setdefault('simulation_profile', 'interactive')
+        rules_options.pop('ui_context', None)
+        build_skirmish_world(world=world, **rules_options)
+        # API18's legacy `display` also selects native interactive movement and
+        # spatial policies. Preserve that ABI, while freeing Python preparation
+        # from creating a renderer/window merely to select those policies.
+        native_profile = ('window' if kwargs.get('simulation_profile') == 'interactive'
+                          else kwargs.get('display', 'none'))
+        initial = export_initial_state(world, display=native_profile)
         # Retire every prepared system, including input/network lifecycle hooks,
         # while its listeners still belong to the isolated preparation bus.
         systems, world.systems = world.systems, []

@@ -15,11 +15,11 @@ from ..components.start_menu import (
     START_PLAYER_OPTIONS,
     START_CONTROLLER_OPTIONS,
     controller_backend_flags,
-    start_panel_layout,
     clamp_scenario_scroll,
-    scenario_option_rects,
 )
+from ..ui.start_layout import start_panel_layout, scenario_option_rects
 from ..systems.start_scene_render_system import StartSceneRenderSystem
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 
 class StartScene(Scene):
@@ -93,7 +93,7 @@ class StartScene(Scene):
 
     def update(self, dt: float) -> None:
         """Update the scene and perform any queued launch at a frame boundary."""
-        GameConfig.sync_from_display()
+        sync_game_config_from_display()
         if self._flush_pending_game_start():
             return
         self._layout_buttons()
@@ -165,7 +165,7 @@ class StartScene(Scene):
         """Handle mouse click."""
         if not self.is_active:
             return
-        GameConfig.sync_from_display()
+        sync_game_config_from_display()
         self._layout_buttons()
         pos = event.pos
 
@@ -209,7 +209,7 @@ class StartScene(Scene):
         config = self.world.get_singleton_component(StartMenuConfig)
         if not config:
             return
-        GameConfig.sync_from_display()
+        sync_game_config_from_display()
         geom = start_panel_layout(len(config.scenario_catalog or []))
         pos = getattr(event, "pos", pygame.mouse.get_pos())
         if not geom["scenario_clip"].collidepoint(pos):

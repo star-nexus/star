@@ -11,7 +11,7 @@ from rotk_env.components import (
     EffectAnimation,
     ProjectileAnimation,
 )
-from rotk_env.systems.animation_system import AnimationSystem
+from rotk_env.systems.animation_lifecycle import AnimationSystem
 
 
 class _RenderMath(AnimationSystem):

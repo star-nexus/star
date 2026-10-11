@@ -1,0 +1,235 @@
+{
+  "passed": true,
+  "seed": 42,
+  "scenario": "chibi-small",
+  "renderers": [
+    "none",
+    "pygame",
+    "web"
+  ],
+  "drawing_preserves_authority": true,
+  "modes": {
+    "turn_based": {
+      "checkpoints": 9,
+      "full_authority_state_equal": true,
+      "agent_responses_equal": true,
+      "none_web_complete_equal": true,
+      "tested_unit_components_equal": true,
+      "initial_identity": {
+        "none": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        },
+        "pygame": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        },
+        "web": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        }
+      },
+      "authority_sha256": {
+        "none": [
+          "b2175a9b135bad71b5c9c93e0c6d53c257308b3764524c0625e46cddfd7aba58",
+          "97427c6cef6a2d886c6fc93015e67b3d53bbc9d2933f874dc237d5bdc1fe500b",
+          "291c2a679578ab1e2c67907177e4d057256fdb6eb7754e1090f42421eba689b9",
+          "a761a9d25d980c1489dd72ad2a9baa297bf5dab020e119f861bd97e7fae09c50",
+          "1041d50c1769cc6d0a2ca712471db68145e5c44a85e79b0d2dbf88edd3702ce3",
+          "3138b2d56223a8aabeb43b5e6a5c0c25df23ca25adbfa33906ad78f36890651c",
+          "3b72ec5931639397d0d38aa6f34a3fa81b2dde33bf5e553eacbdd652caebcfde",
+          "fac3ca50509f0c9ec37a4d2af359f10bf0fce0f07d1b8c555aeec5e325dc1486",
+          "0e881de11cd49a512041f2c4c529f5730d5876e7671ee75ffe94f91180e5d782"
+        ],
+        "pygame": [
+          "b2175a9b135bad71b5c9c93e0c6d53c257308b3764524c0625e46cddfd7aba58",
+          "97427c6cef6a2d886c6fc93015e67b3d53bbc9d2933f874dc237d5bdc1fe500b",
+          "291c2a679578ab1e2c67907177e4d057256fdb6eb7754e1090f42421eba689b9",
+          "a761a9d25d980c1489dd72ad2a9baa297bf5dab020e119f861bd97e7fae09c50",
+          "1041d50c1769cc6d0a2ca712471db68145e5c44a85e79b0d2dbf88edd3702ce3",
+          "3138b2d56223a8aabeb43b5e6a5c0c25df23ca25adbfa33906ad78f36890651c",
+          "3b72ec5931639397d0d38aa6f34a3fa81b2dde33bf5e553eacbdd652caebcfde",
+          "fac3ca50509f0c9ec37a4d2af359f10bf0fce0f07d1b8c555aeec5e325dc1486",
+          "0e881de11cd49a512041f2c4c529f5730d5876e7671ee75ffe94f91180e5d782"
+        ],
+        "web": [
+          "b2175a9b135bad71b5c9c93e0c6d53c257308b3764524c0625e46cddfd7aba58",
+          "97427c6cef6a2d886c6fc93015e67b3d53bbc9d2933f874dc237d5bdc1fe500b",
+          "291c2a679578ab1e2c67907177e4d057256fdb6eb7754e1090f42421eba689b9",
+          "a761a9d25d980c1489dd72ad2a9baa297bf5dab020e119f861bd97e7fae09c50",
+          "1041d50c1769cc6d0a2ca712471db68145e5c44a85e79b0d2dbf88edd3702ce3",
+          "3138b2d56223a8aabeb43b5e6a5c0c25df23ca25adbfa33906ad78f36890651c",
+          "3b72ec5931639397d0d38aa6f34a3fa81b2dde33bf5e553eacbdd652caebcfde",
+          "fac3ca50509f0c9ec37a4d2af359f10bf0fce0f07d1b8c555aeec5e325dc1486",
+          "0e881de11cd49a512041f2c4c529f5730d5876e7671ee75ffe94f91180e5d782"
+        ]
+      },
+      "agent_response_equal_to_none": {
+        "none": [
+          true,
+          true,
+          true
+        ],
+        "pygame": [
+          true,
+          true,
+          true
+        ],
+        "web": [
+          true,
+          true,
+          true
+        ]
+      },
+      "agent_responses_sha256": {
+        "none": "4ca412d457be2e0fb9488f0cbd1410a57dd82c3348a478ebc7367df08c5589b7",
+        "pygame": "4ca412d457be2e0fb9488f0cbd1410a57dd82c3348a478ebc7367df08c5589b7",
+        "web": "4ca412d457be2e0fb9488f0cbd1410a57dd82c3348a478ebc7367df08c5589b7"
+      }
+    },
+    "real_time": {
+      "checkpoints": 7,
+      "full_authority_state_equal": true,
+      "agent_responses_equal": true,
+      "none_web_complete_equal": true,
+      "tested_unit_components_equal": true,
+      "initial_identity": {
+        "none": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        },
+        "pygame": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        },
+        "web": {
+          "entity_counter": 237,
+          "ui_buttons": [],
+          "unit_ids": {
+            "wei_infantry_1": 227,
+            "wei_archer_2": 228,
+            "wei_archer_3": 229,
+            "wei_archer_4": 230,
+            "wei_cavalry_5": 231,
+            "shu_infantry_1": 232,
+            "shu_archer_2": 233,
+            "shu_archer_3": 234,
+            "shu_archer_4": 235,
+            "shu_cavalry_5": 236
+          }
+        }
+      },
+      "authority_sha256": {
+        "none": [
+          "0916548439dfba9e613cbe32a33ed95b012e2e07f90a91ba7afb3d84dbdb3132",
+          "c4f481dbc5c037719c816f6655cfbab2ec81a90a187b47db03421c20f1cb97dc",
+          "59bcedee81bf609e3d4edf5ecb38d10702e1cdf872ba8f7bfc00f073cb2aaef5",
+          "2a0a06c9d7d3339df953d9e283108ae74dffe9036c85aecff856ac8fb9fc474c",
+          "233a3246205ffd52eb11f12fe53dbb0b5406dcd89f47ddc125584dc75a3e61b3",
+          "418fc61824729ca43e2313bc1a587bd3c12b55e7dd27f353d9eb9542d0368e6a",
+          "a62fc06751774525b2e287293b4d83944758a07c667dc7779e743db5d8cac860"
+        ],
+        "pygame": [
+          "0916548439dfba9e613cbe32a33ed95b012e2e07f90a91ba7afb3d84dbdb3132",
+          "c4f481dbc5c037719c816f6655cfbab2ec81a90a187b47db03421c20f1cb97dc",
+          "59bcedee81bf609e3d4edf5ecb38d10702e1cdf872ba8f7bfc00f073cb2aaef5",
+          "2a0a06c9d7d3339df953d9e283108ae74dffe9036c85aecff856ac8fb9fc474c",
+          "233a3246205ffd52eb11f12fe53dbb0b5406dcd89f47ddc125584dc75a3e61b3",
+          "418fc61824729ca43e2313bc1a587bd3c12b55e7dd27f353d9eb9542d0368e6a",
+          "a62fc06751774525b2e287293b4d83944758a07c667dc7779e743db5d8cac860"
+        ],
+        "web": [
+          "0916548439dfba9e613cbe32a33ed95b012e2e07f90a91ba7afb3d84dbdb3132",
+          "c4f481dbc5c037719c816f6655cfbab2ec81a90a187b47db03421c20f1cb97dc",
+          "59bcedee81bf609e3d4edf5ecb38d10702e1cdf872ba8f7bfc00f073cb2aaef5",
+          "2a0a06c9d7d3339df953d9e283108ae74dffe9036c85aecff856ac8fb9fc474c",
+          "233a3246205ffd52eb11f12fe53dbb0b5406dcd89f47ddc125584dc75a3e61b3",
+          "418fc61824729ca43e2313bc1a587bd3c12b55e7dd27f353d9eb9542d0368e6a",
+          "a62fc06751774525b2e287293b4d83944758a07c667dc7779e743db5d8cac860"
+        ]
+      },
+      "agent_response_equal_to_none": {
+        "none": [
+          true,
+          true,
+          true
+        ],
+        "pygame": [
+          true,
+          true,
+          true
+        ],
+        "web": [
+          true,
+          true,
+          true
+        ]
+      },
+      "agent_responses_sha256": {
+        "none": "9a62823270cbb8710a4a46f854e0026ec0b1d5278724d08f40250d9e1a440160",
+        "pygame": "9a62823270cbb8710a4a46f854e0026ec0b1d5278724d08f40250d9e1a440160",
+        "web": "9a62823270cbb8710a4a46f854e0026ec0b1d5278724d08f40250d9e1a440160"
+      }
+    }
+  }
+}

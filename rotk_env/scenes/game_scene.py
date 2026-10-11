@@ -10,6 +10,7 @@ from ..components import GameState, MapData, Unit, UnitCount
 from ..prefabs.config import Faction, GameConfig, PlayerType, GameMode
 from ..prefabs.world_builder import DEFAULT_HUB_URL, build_skirmish_world
 from performance_profiler import profiler
+from rotk_env.rendering.pygame.display import sync_game_config_from_display
 
 
 class GameScene(Scene):
@@ -104,8 +105,10 @@ class GameScene(Scene):
             from ..runtime.session import NativeSession
             from ..runtime.settlement import OfflineSettlementHost
             from ..runtime.hub import NativeHubHost
+            from ..rendering.pygame.frame_capture import PygameFrameProvider
             self.native_session = NativeSession(threads=self.native_threads,
                 authority_scheduling=self.hub_url is not None or self.native_scheduling == "threaded",
+                frame_provider=PygameFrameProvider() if self.headless else None,
                 **dict(options, hub_url=None))
             self.world = self.native_session.world
             try:
@@ -118,7 +121,8 @@ class GameScene(Scene):
             if self.native_session.ui_context:
                 self.native_session.ui_context.controller = 'hub' if self.hub_url is not None else 'none'
         else:
-            build_skirmish_world(world=self.world, **options)
+            from framework.engine.frame_capture import capture_rendered_frame
+            build_skirmish_world(world=self.world, frame_capture=capture_rendered_frame, **options)
 
         # The scale controller is added only after the normal world is fully
         # assembled, so it can reuse the production AnimationSystem and lets
@@ -173,11 +177,12 @@ class GameScene(Scene):
             )
         profiler.set_metadata(**metadata)
         from ..runtime.identity import runtime_identity
+        from ..ui.context import VISUAL_VERSION
         import os
         self.runtime_identity = runtime_identity(self.backend,
             env_id=self.env_id or os.environ.get('ENV_ID', 'env_1'), mode=mode_label,
             scenario=self.scenario, seed=self.seed, scheduling=self.native_scheduling,
-            threads=self.native_threads)
+            threads=self.native_threads, visual_version=VISUAL_VERSION)
         profiler.set_metadata(**self.runtime_identity)
 
         # Drop menu/scene-switch/map-initialization frames. The first complete
@@ -210,7 +215,7 @@ class GameScene(Scene):
                 if profiler.enabled:
                     profiler.reset()
 
-            GameConfig.sync_from_display()
+            sync_game_config_from_display()
             # Quit is handled by GameEngine.InputSystem (QuitEvent).
             # Do not drain pygame.event here — get() empties the queue.
             with profiler.time_system("world_update", category="update"):

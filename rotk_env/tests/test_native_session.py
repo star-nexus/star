@@ -191,3 +191,39 @@ finally:
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
                             env={**os.environ, "HEADLESS": "1", "SDL_VIDEODRIVER": "dummy"}, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.fixture
+def renderer_fonts(fonts):
+    import pygame
+    initialized = pygame.font.get_init()
+    if not initialized:
+        pygame.font.init()
+    try:
+        yield
+    finally:
+        if not initialized:
+            pygame.font.quit()
+
+
+@pytest.mark.parametrize('mode', ['turn_based', 'real_time'])
+@pytest.mark.parametrize('scenario', ['chibi-small', 'river_split'])
+def test_desktop_ui_never_changes_authority_ids_or_agent_observations(mode, scenario, frozen, renderer_fonts, sdl):
+    from rotk_env import components as c
+    states, observations = [], []
+    for renderer in ('none', 'web', 'pygame'):
+        with NativeSession(renderer=renderer, display='window' if renderer == 'pygame' else 'none',
+                           simulation_profile='interactive', mode=mode, scenario=scenario, seed=42) as scene:
+            initial = scene.runtime.export_state()
+            assert not any('UIButton' in row['components'] for row in initial['entities'])
+            assert scene.world.entity_counter == initial['entity_counter']
+            buttons = scene.world.query().with_component(c.UIButton).entities()
+            assert len(buttons) == (4 if renderer == 'pygame' else 0)
+            assert all(uid < 0 for uid in buttons)
+            assert all(row['id'] >= 0 for row in initial['entities'])
+            scene.runtime.execute_action('register_agent_info', dict(faction='wei', provider='synthetic',
+                model_id='fixture', base_url='https://fixture'), agent_id='test')
+            observations.append(scene.runtime.execute_action('get_faction_state', {'faction': 'wei'}, agent_id='test'))
+            states.append(scene.runtime.export_state())
+    assert states[0] == states[1] == states[2]
+    assert observations[0] == observations[1] == observations[2]

@@ -5,9 +5,9 @@ from pathlib import Path
 import subprocess
 
 
-def runtime_identity(backend, *, env_id, mode, scenario, seed, scheduling, threads):
+def runtime_identity(backend, *, env_id, mode, scenario, seed, scheduling, threads,
+                     visual_version='none'):
     from .bootstrap import ORACLE_VERSION, NATIVE_API_VERSION
-    from ..ui.context import VISUAL_VERSION
     root = Path(__file__).resolve().parents[2]
     def git(*args):
         try:
@@ -19,7 +19,7 @@ def runtime_identity(backend, *, env_id, mode, scenario, seed, scheduling, threa
                   oracle=ORACLE_VERSION, mode=mode, scenario=scenario, seed=seed,
                   native_scheduling=scheduling if backend == 'rust' else None,
                   native_threads=threads if backend == 'rust' else None,
-                  visual_version=VISUAL_VERSION)
+                  visual_version=visual_version)
     if backend == 'rust':
         from star_native import _native
         result.update(native_api=NATIVE_API_VERSION, native_schema=5,

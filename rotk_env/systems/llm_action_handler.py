@@ -11,6 +11,7 @@ Designed for clarity and reliability when driven by language models.
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 from framework import World
+from framework.presentation.capture import capture_observation_frame
 from protocol.error_codes import ErrorCode
 from ..components import (
     Unit,
@@ -58,8 +59,10 @@ from .resource_recovery_system import (
 class LLMActionHandler:
     """LLM Action Handler - clean and efficient interface design."""
 
-    def __init__(self, world: World, observation_system: Optional[LLMObservationSystem] = None):
+    def __init__(self, world: World, observation_system: Optional[LLMObservationSystem] = None,
+                 *, frame_capture=None):
         self.world = world
+        self._frame_capture = frame_capture
         self.observation_system = observation_system or LLMObservationSystem(world)
 
         # Implemented game-level verbs. Match subset is also enforced here
@@ -1357,14 +1360,13 @@ class LLMActionHandler:
 
     def _capture_frame_base64(self) -> Tuple[Optional[str], Optional[str]]:
         """
-        Capture the current rendered frame from the display and return as base64 PNG.
+        Capture through the explicitly supplied observation frame capability.
         For VLM: the agent can decode and pass to a vision model.
 
         Returns:
             (base64_str, None) on success; (None, error_message) on failure.
         """
-        from framework.engine.frame_capture import capture_rendered_frame
-        return capture_rendered_frame()
+        return capture_observation_frame(self._frame_capture)
 
     def handle_faction_state_vlm(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Same JSON as ``get_faction_state``, plus a full-board PNG."""
