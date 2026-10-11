@@ -32,6 +32,7 @@ class Viewer:
     replies: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=16))
     wake: asyncio.Event = field(default_factory=asyncio.Event)
     previous: dict | None = None
+    selected_id: str | None = None
 
     def publish(self, snapshot):
         self.mailbox.offer(diff_snapshot(self.previous, snapshot), snapshot)
@@ -95,6 +96,7 @@ class WebHost:
                  '/hex.js': CLIENT / 'hex.js',
                  '/performance.js': CLIENT / 'performance.js',
                  '/batches.js': CLIENT / 'batches.js', '/motion.js': CLIENT / 'motion.js',
+                 '/ranges.js': CLIENT / 'ranges.js',
                  '/vendor/three.module.js': CLIENT / 'node_modules/three/build/three.module.js',
                  '/vendor/three.core.js': CLIENT / 'node_modules/three/build/three.core.js'}
         target = files.get(path)
@@ -148,7 +150,19 @@ class WebHost:
                     raise ValueError('Message must be an object')
                 if request.get('kind') == 'resync':
                     viewer.previous = None
-                    viewer.publish(self.session.renderer.model.snapshot(grant.view))
+                    viewer.publish(self._snapshot(viewer))
+                    continue
+                if request.get('kind') == 'selection':
+                    self.session.refresh()
+                    uid = request.get('unit_id')
+                    if (str(request.get('epoch')) != str(self.session.controls.epoch) or
+                            (uid is not None and (not isinstance(uid, str) or not uid.isascii()
+                            or not uid.isdecimal() or len(uid) > 20 or int(uid) >= 2**64))):
+                        raise ValueError('Invalid display selection')
+                    # Selection is read-only. The projection accepts only units
+                    # visible to this grant and never adds enemy private ranges.
+                    viewer.selected_id = uid
+                    viewer.publish(self._snapshot(viewer))
                     continue
                 if request.get('kind') != 'command' or not isinstance(request.get('id'), str) or len(request['id']) > 64:
                     raise ValueError('Invalid command envelope')
@@ -165,7 +179,7 @@ class WebHost:
                 # Reliable command results are separate from disposable frames.
                 # A slow client is disconnected before this bounded queue fills.
                 viewer.replies.put_nowait(reply)
-                viewer.publish(self.session.renderer.model.snapshot(grant.view))
+                viewer.publish(self._snapshot(viewer))
         except (ConnectionClosed, asyncio.TimeoutError):
             pass
         except (ValueError, TypeError, asyncio.QueueFull):
@@ -194,6 +208,11 @@ class WebHost:
         except (ConnectionClosed, asyncio.TimeoutError):
             await viewer.socket.close(1013, 'Display receiver stalled')
 
+    def _snapshot(self, viewer, baseline=None):
+        model = self.session.renderer.model
+        baseline = baseline if baseline is not None else model.snapshot(viewer.grant.view)
+        return model.with_selection(baseline, viewer.selected_id)
+
     async def _pump(self):
         next_display = 0
         while True:
@@ -206,7 +225,7 @@ class WebHost:
                 views = {v.grant.view for v in self.viewers}
                 snapshots = {view: self.session.renderer.model.snapshot(view) for view in views}
                 for viewer in tuple(self.viewers):
-                    viewer.publish(snapshots[viewer.grant.view])
+                    viewer.publish(self._snapshot(viewer, snapshots[viewer.grant.view]))
                 next_display = now + 1/self.display_hz
             await asyncio.sleep(1/60)
 

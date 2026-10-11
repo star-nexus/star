@@ -2,7 +2,7 @@
 
 2026-10-11，在 `codex/render-adapters` 实现。沿用[已确认的顶层设计](architecture/renderers/proposed.html)：服务端 Rust 执行权威规则，pygame / Three.js 读取展示投影。浏览器不运行 Rust/WASM。
 
-当前 Web 视觉版本为 `starbench-web-v3`。v3 默认显示 FPS，并补齐内核与渲染器的依赖边界；[验收及视觉记录](render-adapters-v3/README.md)包含默认角标、窄屏和依赖检查证据。v2 的单位插值、GPU 对象和侧栏复用继续保留；[性能记录](render-adapters-v2/README.md)包含修复前后对照。pygame 仍为 `starbench-ui-v6`。
+当前 Web 视觉版本为 `starbench-web-v4`。v4 补上选中单位的移动、攻击范围及可见目标提示；[验收及视觉记录](render-adapters-v4/README.md)包含截图与范围隔离检查。v3 的默认 FPS 和[依赖边界检查](render-adapters-v3/README.md)、v2 的插值与[对象复用](render-adapters-v2/README.md)继续保留。pygame 仍为 `starbench-ui-v6`。
 
 ## 启动
 
@@ -32,6 +32,8 @@ Agent 继续通过原来的 Hub 注册、认领单位、提交动作及读取观
 
 浏览器操作：点击己方部队选择，再点击地格移动；`M/A` 切换移动/攻击目标，按钮提供待命、驻扎、占领和筑垒；`1` 步兵、`2` 骑兵、`3/4/5` 弓兵；`Space` 与“结束回合”按钮共用同一个命令函数。滚轮缩放、拖动平移、`F` 适应地图，窗口调整后重新计算正交相机范围。
 
+选中后显示蓝色移动范围、橙色攻击范围轮廓及范围内可见敌军的红色目标圈；切到攻击模式后强调攻击轮廓。`Esc`、单位消失、断线或游戏结束会清除叠层。选中状态属于当前浏览器连接，旁观者也可检查单位范围，不改变任何玩家或 Agent 的选中状态。
+
 ## 目录与职责
 
 四个产品层的顶层目录保持原样。RoTK 专属数据和 Web 服务都在 ENV 内，没有新建顶层前端项目。
@@ -50,12 +52,14 @@ rotk_env/rendering/
   pygame/display.py            pygame 窗口尺寸读取
   pygame/frame_capture.py      桌面与 dummy 窗口的 FrameProvider
   projection.py                RoTK 展示模型、视野过滤与视角增量
+  tactics.py                   无引擎依赖的选中范围查询与有界缓存
   commands.py                  服务端视角授权与人类命令校验
   web/
     __main__.py                Web 对局入口
     server.py                  HTTP 素材与 WebSocket 展示宿主
     client/                    Three.js、HTML/CSS、显示状态、npm 锁文件
       tests/                   浏览器状态与坐标单元测试
+      ranges.js                Three.js 范围填充、轮廓与目标圈，复用实例批次
 rotk_env/runtime/              原有 Rust/PyO3 宿主、权威调度、Hub、生命周期
 rotk_env/prefabs/              场景初始化及模拟策略选择
   controls.py                  通用键名、动作及帮助文案，不导入引擎
@@ -71,6 +75,7 @@ rotk_env/maps/                 原有地图
 docs/render-adapters-v1/       初版历史记录与可复用桌面对照脚本
 docs/render-adapters-v2/       移动/对象复用修复证据、视觉版本、截图
 docs/render-adapters-v3/       默认 FPS、渲染边界补查与视觉记录
+docs/render-adapters-v4/       单位范围高亮与视角/连接隔离验收
 docs/render-adapters-isolation/  依赖隔离、桌面像素对照与验收记录
 ```
 
@@ -121,6 +126,10 @@ Web 不提供 Agent 的图像观测。`get_faction_state_vlm` 返回原有无图
 
 展示包是 ENV 私有的 schema1，和 star-protocol 分开。首包包含场景、完整授权单位、地格、HUD、视觉提示；后续为相同视角的差分。`epoch / revision / tick / entity id` 为十进制字符串，避免 JavaScript 舍入 Rust u64。`sequence / base_sequence` 串接显示包；断线重连、增量缺口或请求 `resync` 使用完整快照重建。
 
+`selection` 为可选范围数据：`unit_id / origin / movement / attack / targets`。浏览器发送只读 `selection` 消息，由连接凭据限定视角；这不是 Agent 动作，不注册 Agent、不消耗 AP/MP 或推进 Rust 时钟。范围查询使用共享的 `MovementPoints.spendable`、加权 `PathFinding` 和 `HexMath`，仅对已知地形及授权单位计算，不读取隐藏敌军的阻挡或私人资源。阵营视角只返回己方范围，旁观视角可以检查全部公开单位。蓝色区域是基于当前已知信息的移动预览，橙色是几何攻击范围；未知阻挡、AP 和实际命令能否执行仍由 Rust 判定。
+
+范围按选中单位、预算、地格与局部占用缓存，最多保留32项，没有单位选中时不计算范围；相同视角的其他连接共享基础投影，各自附加选中数据。Three.js 只消费坐标列表，使用保留的实例批次绘制，不在客户端重写移动或攻击规则，也不逐帧重建范围网格。
+
 阵营视角保留己方部队，仅包含可见敌军；敌军 AP/MP 不发送。未探索地格不发送地形或资源地址。已探索地格只保留最后看见的领土状态，视野外新占领不会泄露。桌面的 Fog 绘制开关不扩大浏览器授权。旁观凭据可查看全图，但不能下命令。
 
 服务端解析白名单人类命令，在权威线程同一次接纳内发布最新权限事实、核验阵营、存活单位、当前回合、目标视野、场景 epoch，然后调用已有 `execute_control / start_capture / finish_human_turn`。按钮与 Space 最终都进入人类 `finish_human_turn`；不会伪造 Agent 注册或绕过 Agent 动作网关。
@@ -144,7 +153,8 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m pytest -q \
   rotk_env/tests/test_renderer_boundaries.py \
   rotk_env/tests/test_renderer_adapters.py rotk_env/tests/test_renderer_dependencies.py \
   rotk_env/tests/test_render_projection.py \
+  rotk_env/tests/test_render_tactics.py \
   rotk_env/tests/test_web_commands.py rotk_env/tests/test_web_server.py
 ```
 
-证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)、[首次依赖隔离](render-adapters-isolation/README.md)与[v3 FPS 及边界补查](render-adapters-v3/README.md)。v3 桌面 RGB 与观测字节对照相同，pygame 保持 `starbench-ui-v6`；Web 加入默认角标后记录为 `starbench-web-v3`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。
+证据见[v1 初版验收](render-adapters-v1/README.md)、[v2 性能及视觉记录](render-adapters-v2/README.md)、[首次依赖隔离](render-adapters-isolation/README.md)、[v3 FPS](render-adapters-v3/README.md)与[v4 范围高亮](render-adapters-v4/README.md)。pygame 保持 `starbench-ui-v6`，Web 当前为 `starbench-web-v4`。Git 集成路径：`codex/ui-polish` 的 `c34fd65` 合入 `codex/rust-ecs-parallel`，合并点 `2598697`；`codex/render-adapters` 从该点创建。`main` 未参与这次集成。

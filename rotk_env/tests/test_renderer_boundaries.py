@@ -61,7 +61,8 @@ def test_core_cannot_reach_renderer_implementation_through_imports():
         p.is_relative_to(ROOT / 'rotk_env/utils') or
         (p.parent == ROOT / 'rotk_env/runtime' and p.stem not in ('session', 'native_input', 'window_presentation')) or
         (p.parent == ROOT / 'rotk_env/systems' and p.stem not in DESKTOP_SYSTEMS) or
-        p == ROOT / 'rotk_env/prefabs/config.py' or p == ROOT / 'rotk_env/prefabs/action_catalog.py')}
+        p == ROOT / 'rotk_env/prefabs/config.py' or p == ROOT / 'rotk_env/prefabs/action_catalog.py' or
+        p in {ROOT / 'rotk_env/rendering' / name for name in ('projection.py', 'tactics.py', 'commands.py')})}
     violations = []
     for source in sorted(protected):
         queue, seen = [(source, [source])], set()

@@ -104,6 +104,7 @@ test('complete resync resets interpolation while retaining scene buffers and the
   const geometry = new THREE.PlaneGeometry(), material = new THREE.MeshBasicMaterial();
   let fits = 0;
   Object.assign(renderer, {tiles: new THREE.Group(), units: new THREE.Group(), territories: new THREE.Group(),
+    tactical: new THREE.Group(),
     effects: new THREE.Group(), effectObjects: new Map(), effectLabels: new Map(), labelNodes: new Map(),
     motion: new UnitMotion(), effectMotion: new UnitMotion(), selection: new THREE.Mesh(),
     metrics: {packets: 0, meshesCreated: 0, motion() {}},
@@ -120,5 +121,6 @@ test('complete resync resets interpolation while retaining scene buffers and the
   assert.equal(fits, 1); assert.equal(renderer.tiles.children[0], mesh);
   assert.equal(renderer.tileGeometry, tileGeometry); assert.equal(mesh.instanceMatrix.version, version);
   renderer.tileBatches.close(); renderer.unitBatches.close(); renderer.territoryBatches.close();
+  renderer.ranges.close();
   renderer.tileGeometry.dispose(); geometry.dispose(); material.dispose();
 });

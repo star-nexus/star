@@ -26,7 +26,7 @@ class ProjectionRenderer:
 
 class WebRenderer(ProjectionRenderer):
     renderer_id = 'threejs'
-    visual_version = 'starbench-web-v3'
+    visual_version = 'starbench-web-v4'
 
     def __init__(self, **context):
         super().__init__(**context)

@@ -10,6 +10,7 @@ from copy import deepcopy
 from rotk_env import components as c
 from rotk_env.prefabs.config import GameConfig, Faction, HexOrientation
 from rotk_env.utils.hex_utils import HexConverter
+from .tactics import TacticalProjection
 
 TERRAIN_ASSETS = {
     'plain': 'texture/terrain/plain/Hex - Plains (lush) 5.png',
@@ -24,6 +25,7 @@ TERRAIN_ASSETS = {
 
 class RenderProjection:
     def __init__(self, world, initial):
+        self.tactics = TacticalProjection(world)
         self.epoch = None
         self.revision = self.tick = 0
         self.sequence = 0
@@ -195,11 +197,15 @@ class RenderProjection:
         clock = self.state.get('GameTime', {})
         return deepcopy(dict(schema=1, kind='snapshot', epoch=str(self.epoch),
             revision=str(self.revision), tick=str(self.tick), sequence=self.sequence,
-            renderer_id='threejs', visual_version='starbench-web-v3', view=view,
+            renderer_id='threejs', visual_version='starbench-web-v4', view=view, selection=None,
             scene=self.scene, units=list(units.values()), tiles=tiles,
             visuals=self._visual_rows(faction, units),
             hud={key: state.get(key) for key in ('current_player', 'turn_number', 'game_over', 'winner', 'end_reason')}
                 | {'mode': state.get('game_mode'), 'elapsed': clock.get('game_elapsed_time', 0)}))
+
+    def with_selection(self, snapshot, unit_id):
+        """Connection-local display selection; never changes ECS/UI/authority."""
+        return {**snapshot, 'selection': deepcopy(self.tactics.selection(snapshot, self.units, unit_id))}
 
 
 def diff_snapshot(previous, current):
@@ -207,7 +213,7 @@ def diff_snapshot(previous, current):
     if previous is None or previous['epoch'] != current['epoch'] or previous['view'] != current['view']:
         return deepcopy(current)
     packet = {key: current[key] for key in ('schema', 'epoch', 'revision', 'tick', 'sequence',
-                                          'renderer_id', 'visual_version', 'view', 'hud', 'visuals')}
+                                          'renderer_id', 'visual_version', 'view', 'hud', 'visuals', 'selection')}
     packet.update(kind='delta', base_sequence=previous['sequence'])
     for key in ('units', 'tiles'):
         before = {row['id']: row for row in previous[key]}

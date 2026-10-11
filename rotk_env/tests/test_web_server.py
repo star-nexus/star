@@ -12,7 +12,7 @@ from rotk_env.rendering.commands import ViewGrant
 from rotk_env.rendering.web.server import WebHost, Viewer, CLIENT
 from rotk_env.runtime.session import NativeSession
 from rotk_env.prefabs.config import Faction, PlayerType
-from rotk_env.tests.test_native_request_batch import frozen
+from rotk_env.tests.render_fixtures import frozen
 
 
 @pytest.fixture
@@ -52,6 +52,7 @@ async def test_http_serves_local_modules_assets_and_rejects_path_escape(host):
         for path, mime in [('/', 'text/html'), ('/app.js', 'javascript'),
                            ('/batches.js', 'javascript'), ('/motion.js', 'javascript'),
                            ('/performance.js', 'javascript'),
+                           ('/ranges.js', 'javascript'),
                            ('/vendor/three.module.js', 'javascript'),
                            ('/vendor/three.core.js', 'javascript'),
                            ('/assets/texture/units/wei/infantry.png', 'image/png')]:
@@ -145,3 +146,48 @@ async def test_viewer_limit_and_command_rate_are_bounded(host):
             while True: await first.recv()
         assert error.value.rcvd.code == 1008
     assert snapshot['view'] == 'wei' and host.session.failure is None
+
+
+async def selected_packet(socket, uid):
+    async with asyncio.timeout(3):
+        while True:
+            packet = json.loads(await socket.recv())
+            if packet.get('kind') in ('snapshot', 'delta') and (packet.get('selection') or {}).get('unit_id') == uid:
+                return packet
+
+
+async def test_display_selection_is_connection_local_read_only_and_refreshes_after_commands(host):
+    before = host.session.runtime.export_state()
+    async with connect(endpoint(host)) as first, connect(endpoint(host)) as second:
+        snapshot = await hello(first, 'wei-test'); await hello(second, 'wei-test')
+        uid = snapshot['units'][0]['id']
+        await first.send(json.dumps(dict(kind='selection', epoch=snapshot['epoch'], unit_id=uid)))
+        packet = await selected_packet(first, uid)
+        assert packet['selection']['movement'] and packet['selection']['attack']
+        assert host.session.runtime.export_state() == before
+        await second.send(json.dumps(dict(kind='resync')))
+        assert (await receive(second, 'snapshot'))['selection'] is None
+        destination = packet['selection']['movement'][0]
+        await first.send(json.dumps(dict(kind='command', id='move', epoch=snapshot['epoch'], command='move',
+                                         parameters={'unit_id': uid, 'position': destination})))
+        assert (await receive(first, 'command_result'))['success']
+        assert (await selected_packet(first, uid))['selection']['movement'] == []
+        await first.send(json.dumps(dict(kind='selection', epoch=snapshot['epoch'], unit_id=None)))
+        assert (await selected_packet(first, None))['selection'] is None
+
+
+async def test_spectator_selection_and_hidden_enemy_or_stale_requests(host):
+    async with connect(endpoint(host)) as socket:
+        snapshot = await hello(socket, 'view-test')
+        enemy = next(u['id'] for u in snapshot['units'] if u['faction'] == 'shu')
+        await socket.send(json.dumps(dict(kind='selection', epoch=snapshot['epoch'], unit_id=enemy)))
+        assert (await selected_packet(socket, enemy))['selection']['attack']
+    async with connect(endpoint(host)) as socket:
+        snapshot = await hello(socket, 'wei-test')
+        await socket.send(json.dumps(dict(kind='selection', epoch=snapshot['epoch'], unit_id=enemy)))
+        assert (await selected_packet(socket, None))['selection'] is None
+        await socket.send(json.dumps(dict(kind='selection', epoch='0', unit_id=snapshot['units'][0]['id'])))
+        with pytest.raises(ConnectionClosed) as error:
+            while True: await socket.recv()
+        assert error.value.rcvd.code == 1008
+    assert host.session.failure is None

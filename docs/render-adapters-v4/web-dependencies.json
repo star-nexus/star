@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "renderer": "web",
+  "pygame_installed": false,
+  "pygame_imported": false,
+  "http_assets": true,
+  "websocket_commands": true,
+  "end_turn_ap_recovered": true,
+  "agent_hub": true,
+  "indexed": true,
+  "vlm_no_fallback": true,
+  "closed": true
+}

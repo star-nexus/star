@@ -14,6 +14,7 @@ const factionNames = {wei: '魏', shu: '蜀', wu: '吴', spectator: '全局旁�
 const unitNames = {infantry: '步兵', cavalry: '骑兵', archer: '弓箭兵'};
 const store = new DisplayState(); const pending = new Map();
 let selectedId = null, active = 'move', socket, reconnect, canControl = false, noticeTimer, renderer;
+let requestedSelection = null;
 let token = new URLSearchParams(location.hash.slice(1)).get('token') || sessionStorage.getItem('star-view-token');
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 
@@ -42,6 +43,10 @@ function updateHud() {
   const s = store.snapshot; if (!s) return;
   const unit = s.units.find(row => row.id === selectedId);
   if (!unit) selectedId = null;
+  if (socket?.readyState === WebSocket.OPEN && selectedId !== requestedSelection) {
+    socket.send(JSON.stringify({kind: 'selection', epoch: s.epoch, unit_id: selectedId}));
+    requestedSelection = selectedId;
+  }
   text('view', `${factionNames[s.view] || s.view}${canControl ? ' · 指挥视角' : ' · 只读视角'}`);
   text('visual-version', s.visual_version);
   text('map-name', s.scene.map_id);
@@ -53,6 +58,9 @@ function updateHud() {
   text('turn-hint', s.hud.game_over ? '对局已结束' : !canControl ? '旁观视角不可操作' : s.hud.mode === 'real_time' ? '实时制无需结束回合'
     : s.hud.current_player === s.view ? '点击或按 Space 结束回合' : '等待己方回合');
   $('selection-empty').hidden = !!unit; $('selection').hidden = !unit;
+  const ranges = s.selection?.unit_id === selectedId ? s.selection : null;
+  $('range-legend').hidden = !ranges;
+  if (ranges) text('range-count', `移动 ${ranges.movement.length} 格 · 攻击 ${ranges.attack.length} 格`);
   if (unit) {
     text('unit-name', `${factionNames[unit.faction]} · ${unitNames[unit.unit_type] || unit.unit_type}`);
     const asset = '/assets/' + unit.asset.split('/').map(encodeURIComponent).join('/');
@@ -84,7 +92,7 @@ function updateHud() {
     if (count.textContent !== value) count.textContent = value;
   }
   for (const [id, node] of factionNodes) if (!ids.has(id)) { node.row.remove(); factionNodes.delete(id); }
-  renderer?.update(s, selectedId);
+  renderer?.update(s, selectedId, active);
   if (s.hud.game_over) notice(s.hud.winner ? `${factionNames[s.hud.winner] || s.hud.winner} 军获胜` : '对局结束 · 平局', false, true);
 }
 
@@ -104,7 +112,8 @@ function pick({unit, tile}) {
 function connect() {
   clearTimeout(reconnect); sessionStorage.setItem('star-view-token', token);
   if (socket) { socket.onclose = null; socket.close(); }
-  pending.clear(); canControl = false; store.clear(); selectedId = null;
+  pending.clear(); canControl = false; store.clear(); selectedId = requestedSelection = null;
+  renderer?.clearSelection();
   $('end-turn').disabled = true;
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/stream`);
   socket.onopen = () => socket.send(JSON.stringify({kind: 'hello', token}));
@@ -123,7 +132,8 @@ function connect() {
     updateHud();
   };
   socket.onclose = event => {
-    pending.clear(); canControl = false; store.clear(); selectedId = null;
+    pending.clear(); canControl = false; store.clear(); selectedId = requestedSelection = null;
+    renderer?.clearSelection(); $('range-legend').hidden = true;
     $('connection').textContent = '连接中断'; $('status-dot').className = '';
     $('end-turn').disabled = true;
     if (event.code === 1008) {
@@ -156,7 +166,7 @@ document.addEventListener('keydown', event => {
   if (slot && store.snapshot) {
     const candidates = store.snapshot.units.filter(u => u.faction === store.snapshot.view && u.unit_type === slot);
     const current = candidates.findIndex(u => u.id === selectedId);
-    selectedId = candidates[(current + 1) % candidates.length]?.id || null; updateHud();
+    selectedId = candidates[(current + 1) % candidates.length]?.id || null; active = 'move'; updateHud();
   }
 });
 $('join').addEventListener('click', event => {

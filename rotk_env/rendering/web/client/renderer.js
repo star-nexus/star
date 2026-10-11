@@ -3,6 +3,7 @@ import {hexToWorld, mapBounds, fitExtent} from './hex.js';
 import {DisplayMetrics} from './performance.js';
 import {InstanceBatches} from './batches.js';
 import {UnitMotion} from './motion.js';
+import {TacticalRanges} from './ranges.js';
 
 function hexGeometry(orientation) {
   const geometry = new THREE.BufferGeometry();
@@ -34,7 +35,8 @@ export class BattlefieldRenderer {
     this.textures = new Map(); this.materials = new Map(); this.tiles = new THREE.Group();
     this.units = new THREE.Group(); this.effects = new THREE.Group();
     this.territories = new THREE.Group();
-    this.scene.add(this.tiles, this.units, this.effects, this.territories);
+    this.tactical = new THREE.Group();
+    this.scene.add(this.tiles, this.units, this.effects, this.territories, this.tactical);
     this.unitGeometry = new THREE.PlaneGeometry(1.65, 1.65);
     this.markerGeometry = new THREE.CircleGeometry(.10, 12);
     this.markerMaterial = new THREE.MeshBasicMaterial({depthTest: false});
@@ -99,9 +101,11 @@ export class BattlefieldRenderer {
     if (mesh.userData.owned) { mesh.geometry.dispose(); mesh.material.dispose(); }
   }); }
 
-  update(snapshot, selectedId) {
+  update(snapshot, selectedId, active = 'move') {
     this.selectedId = selectedId;
-    if (snapshot === this.snapshot) { this.updateSelection(); return; }
+    if (snapshot === this.snapshot) {
+      this.updateSelection(); this.ranges?.update(snapshot, selectedId, active, this.motion.records); return;
+    }
     this.metrics.packets++; this.metrics.motion(snapshot.units, true);
     const previous = this.snapshot;
     const newScene = !previous || previous.epoch !== snapshot.epoch || previous.view !== snapshot.view ||
@@ -112,6 +116,9 @@ export class BattlefieldRenderer {
     this.snapshot = snapshot;
     this.labelsDirty = this.motion.update(snapshot.units, performance.now(), baseline) || this.labelsDirty;
     if (newScene) {
+      this.ranges?.close();
+      this.ranges = new TacticalRanges(this.tactical, snapshot.scene.orientation,
+        () => this.metrics.meshesCreated++);
       this.tileBatches?.close(); this.tileGeometry?.dispose();
       this.tileGeometry = hexGeometry(snapshot.scene.orientation);
       this.tileBatches = new InstanceBatches(this.tiles, this.tileGeometry, asset => this.material(asset),
@@ -146,6 +153,7 @@ export class BattlefieldRenderer {
     }
     // Retargeting can advance a previous interpolation even without membership changes.
     this.unitBatches.move(this.motion.rows, .2);
+    this.ranges.update(snapshot, selectedId, active, this.motion.records);
     this.updateSelection(); this.updateEffects(snapshot.visuals || [], baseline);
   }
 
@@ -153,6 +161,10 @@ export class BattlefieldRenderer {
     const selected = this.motion.records.get(this.selectedId);
     this.selection.visible = !!selected;
     if (selected) this.selection.position.set(...selected.position, .5);
+  }
+
+  clearSelection() {
+    this.selectedId = null; this.selection.visible = false; this.ranges?.clear();
   }
 
   updateEffects(rows, reset = false) {
@@ -243,7 +255,10 @@ export class BattlefieldRenderer {
     if (this.lost) return;
     const time = performance.now(); this.metrics.begin(time);
     const moved = this.motion.step(time);
-    if (moved) { this.unitBatches.move(this.motion.rows, .2); this.updateSelection(); }
+    if (moved) {
+      this.unitBatches.move(this.motion.rows, .2); this.updateSelection();
+      this.ranges?.moveTargets(this.motion.records);
+    }
     if (this.effectMotion.step(time)) for (const row of this.effectMotion.rows) {
       this.effectObjects.get(row.id)?.position.set(...row.position, .7);
     }
@@ -265,6 +280,7 @@ export class BattlefieldRenderer {
   close() {
     this.abort.abort(); this.observer.disconnect(); this.engine.setAnimationLoop(null);
     this.tileBatches?.close(); this.unitBatches.close(); this.territoryBatches.close(); this.clear(this.effects);
+    this.ranges?.close();
     this.tileGeometry?.dispose(); this.unitGeometry.dispose(); this.selection.geometry.dispose();
     this.selection.material.dispose(); this.materials.forEach(m => m.dispose());
     this.markerGeometry.dispose(); this.markerMaterial.dispose();

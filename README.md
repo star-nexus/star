@@ -315,6 +315,9 @@ selects the optional pygame dependency and does not load Three.js assets. See
 Agent Hub reuse, and the separate visual/capture versions.
 The Web map displays FPS by default, sampled from completed browser render frames
 once per second; `?perf=1` adds local state-update and draw-call diagnostics.
+Selecting a unit shows movement and attack ranges supplied by the authorized
+server view. Each browser keeps its own selection; previewing does not advance
+the game or issue Agent actions.
 
 <details>
 <summary>Advanced ENV settings and developer entry point</summary>
