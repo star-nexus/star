@@ -5,6 +5,11 @@ This guide covers desktop/browser play and the existing Agent connection path.
 
 ## Install and start
 
+The standard entry point is `uv run starbench.py`, with Rust selected by default.
+Run it from the repository root; the launcher prepares ENV dependencies without
+requiring a separate native-install command. Agent startup uses the existing
+STAR Protocol connection path.
+
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the
 [Rust toolchain](https://www.rust-lang.org/tools/install). From a terminal:
 

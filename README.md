@@ -148,6 +148,11 @@ Standard Elo Ratings (SER) treat all victories as equal. However, in long-horizo
 <a id="quick-start"></a>
 ## 🛠️ Quick Start
 
+**STARBench uses the Rust ENV by default.** The standard entry point is
+`uv run starbench.py`; the launcher prepares the required ENV dependencies.
+The same default applies to desktop, Web, headless and batch evaluation. Agent
+startup and STAR Protocol connections remain unchanged.
+
 ### 1. Install once
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the
@@ -164,6 +169,8 @@ cd star
 There is no separate dependency-install command. The launcher prepares the
 selected ENV automatically; the first launch includes compilation and may take
 longer. Subsequent launches reuse the build when its inputs are unchanged.
+Run commands from the repository root, rather than an internal implementation
+directory.
 
 ### 2. Explore the battlefield — no API key or Hub needed
 
@@ -315,6 +322,8 @@ Window and headless ENV launchers, and `auto_test.py`, default to **Rust**.
 `--headless` removes the window; `--no-hub` explicitly disables networking.
 The launcher selects dependencies internally. GameServer, star-protocol,
 `env_id` / `agent_id`, and participants' Agent commands remain unchanged.
+Use `--backend python` only when explicitly selecting the reference implementation;
+the launcher does not silently fall back when the Rust ENV cannot start.
 
 Further ENV options and the explicit Python-only local BOT demo are documented
 in [the ENV guide](rotk_env/README.md). Existing `run_env.sh` and

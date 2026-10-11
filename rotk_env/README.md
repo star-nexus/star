@@ -9,6 +9,9 @@
 从仓库根目录启动：
 
 ```bash
+# 标准桌面入口，默认 Rust；联网对局先启动 GameServer
+uv run starbench.py
+
 # 离线桌面体验，无模型调用；AI 槽不会自动行动
 uv run starbench.py --no-hub
 
@@ -20,6 +23,10 @@ uv run starbench.py --renderer web --no-hub
 uv run starbench.py --help
 ```
 
-默认使用 Rust。联网对局需要先启动 GameServer，并让 ENV 和 Agent 使用相同的
+启动器自动准备 ENV 依赖，首次启动会编译 Rust，之后复用构建结果；无需进入内部
+实现目录或手动选择 native 依赖。桌面、Web、无窗口和批量评测默认使用 Rust。
+`--backend python` 显式选择参考实现，不会因 Rust 启动失败自动回退。
+
+联网对局需要先启动 GameServer，并让 ENV 和 Agent 使用相同的
 Hub 地址与 `env_id`。`--headless` 关闭桌面窗口；`--no-hub` 关闭联网。
 本地规则 BOT 仅在显式选择 Python 后端并启用 `--mock-ai` 时运行。
