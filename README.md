@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.13%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
-[Introduction](#introduction) • [Components](#Components) • [Architecture](#System-Architecture) • [Quick Start](#quick-start)
+[Introduction](#-introduction) • [Quick Start](#-quick-start) • [Game Rules](docs/game-rules.md) • [Usage & Agent Integration](docs/integration.md)
 
 </div>
 
@@ -14,7 +14,7 @@
 
 <div align="center">
   <a href="https://www.youtube.com/watch?v=4bSB5S3ixLI">
-    <img src="docs/starbench_rotk.gif" alt="STAR Environment Demo" width="800" />
+    <img src="docs/assets/starbench_rotk.gif" alt="STAR Environment Demo" width="800" />
   </a>
   <br>
   <a href="https://www.youtube.com/watch?v=4bSB5S3ixLI">
@@ -31,7 +31,7 @@ STAR focuses on evaluating how large language models perform under **long-horizo
 ## Overview
 
 <div align="center">
-  <img src="docs/rotk.jpg" alt="STAR Environment Static View" width="800" />
+  <img src="docs/assets/rotk.jpg" alt="STAR Environment Static View" width="800" />
 </div>
 
 Recent advances in language models have demonstrated strong reasoning ability in static settings, yet their behavior in interactive, dynamic environments remains less understood. STAR provides a standardized environment for investigating decision-making under uncertainty, adversarial interaction, and execution latency.
@@ -71,11 +71,11 @@ A modular simulation core built on an Entity–Component–System (ECS) architec
 
 STAR adopts a hierarchical, modular architecture designed for scalability.
 
-![System Architecture](docs/architecture.jpg)
+![System Architecture](docs/assets/architecture.jpg)
 
-Developers working on the interactive renderer can also read the
-[window runtime and rendering architecture](docs/window-runtime-rendering.md)
-and [STARBench UI, previews and visual versions](docs/starbench-ui.md).
+For gameplay and controls, read the [game rules](docs/game-rules.md).
+For desktop/browser setup and Agent connections, use the
+[usage and integration guide](docs/integration.md).
 
 | Layer | Component | Description |
 | :--- | :--- | :--- |
@@ -311,31 +311,13 @@ For Web, install the pinned frontend dependency once with
 link printed by the launcher. Rust runs on the server. The Web host prepares
 pure scene data without installing or importing pygame. The desktop launcher
 selects the optional pygame dependency and does not load Three.js assets. See
-[renderer adapters and Web scope](docs/render-adapters.md) for setup, permissions,
-Agent Hub reuse, and the separate visual/capture versions.
+[browser setup and Agent connections](docs/integration.md#play-in-a-browser)
+for commands, view permissions and Hub access.
 The Web map displays FPS by default, sampled from completed browser render frames
 once per second; `?perf=1` adds local state-update and draw-call diagnostics.
 Selecting a unit shows movement and attack ranges supplied by the authorized
 server view. Each browser keeps its own selection; previewing does not advance
 the game or issue Agent actions.
-
-<details>
-<summary>Advanced ENV settings and developer entry point</summary>
-
-The default worker count is 1. To enable eligible internal parallel tasks, use
-`uv run starbench.py --native-threads 4`; this does not run every System in parallel.
-`--native-scheduling threaded` is the default authority/display scheduling policy.
-
-The original developer entry point remains available:
-`uv run --extra native --extra pygame rotk_env/main.py`. The `native` extra belongs only to ENV;
-Agent and protocol SDK dependencies stay independent. Missing or mismatched Rust
-extensions fail explicitly rather than silently changing the backend.
-For the complete test suite, use `uv run --extra native --extra pygame pytest -q`.
-
-See [ENV backend and launch contract](docs/native-hub-host.md) for version checks,
-queue ownership, run manifests, and the validated scope.
-
-</details>
 
 <details>
 <summary>Troubleshooting: the local Hub cannot be reached</summary>
@@ -405,12 +387,6 @@ uv run python auto_test.py --mode real_time --players ai_vs_ai --report-wait 120
 - [x] Minimal agent–ENV protocol spec for custom architectures (`docs/agent-protocol.md`)
 - [x] Observation + Affordance contract for `get_faction_state` (`docs/observation-affordance.md`)
 
-## Performance measurement
-
-- [Runtime measurement and regression](docs/performance-measurement-and-regression.md)
-- [Production-path movement scale workload](docs/performance-scale-workload.md)
-- [STAR Lab: reproducible performance evidence and engineering records](https://github.com/star-nexus/star-lab)
-
 ## Citation
 
 If you find this project useful in your research, please consider citing:
@@ -428,10 +404,9 @@ If you find this project useful in your research, please consider citing:
 }
 ```
 
-## Window interface
+## Playing STARBench
 
-The pygame menu and battlefield use `starbench-ui-v7`. The default window starts
-at 1200×900 (800 high on smaller desktops); the opening map fits the area beside
-the sidebar. Toolbar buttons highlight on hover and darken/depress on click.
-See [window layout, controls and VLM visual version](docs/starbench-ui.md).
-The CLI and star-protocol Agent integration remain unchanged.
+Select a human-controlled unit to preview movement and attack range. Space and
+End Turn finish the current human turn. Read the [game rules and controls](docs/game-rules.md)
+for terrain, resources, fog and victory conditions; see the [usage guide](docs/integration.md)
+to start desktop/browser play or connect Agents.

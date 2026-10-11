@@ -1,8 +1,0 @@
-{
-  "passed": true,
-  "renderer": "pygame",
-  "web_imported": false,
-  "capture": true,
-  "drawing_preserves_authority": true,
-  "closed": true
-}

@@ -5,10 +5,7 @@ layer; what an agent should *say* is in
 [`agent-protocol.md`](agent-protocol.md), and what it can *see* is in
 [`observation-affordance.md`](observation-affordance.md).
 
-Machine-readable schemas live in [`protocol/schemas/`](../protocol/schemas/) and
-are checked against the SDK by
-[`protocol/tests/test_schemas.py`](../protocol/tests/test_schemas.py), so this
-document and the code cannot drift apart silently.
+Machine-readable schemas are available in [`protocol/schemas/`](../protocol/schemas/).
 
 | | |
 | :--- | :--- |
@@ -29,7 +26,7 @@ Every message in both directions has the same outer shape. The Hub routes on
   "sender":    { "type": "agent", "id": "agent_1" },
   "recipient": { "type": "env",   "id": "env_1" },
   "payload":   { "type": "action", "id": "7", "action": "move",
-                 "parameters": { "unit_id": 3, "target_position": [2, 4] } },
+                 "parameters": { "unit_id": 3, "target_position": {"col": 2, "row": 4} } },
   "timestamp": 1717171717.123
 }
 ```
@@ -65,7 +62,7 @@ unsolicited `turn_start` and `game_end_notification`.
 
 ```json
 { "type": "action", "id": "7", "action": "move",
-  "parameters": { "unit_id": 3, "target_position": [2, 4] } }
+  "parameters": { "unit_id": 3, "target_position": {"col": 2, "row": 4} } }
 ```
 
 `parameters` defaults to `{}`. The legal verb set for a match comes from the
@@ -76,7 +73,7 @@ unsolicited `turn_start` and `game_end_notification`.
 ```json
 { "type": "action_batch", "id": "batch-3",
   "actions": [
-    { "id": "toolcall_a", "action": "move",   "parameters": { "unit_id": 1 } },
+    { "id": "toolcall_a", "action": "move", "parameters": { "unit_id": 1, "target_position": {"col": 2, "row": 4} } },
     { "id": "toolcall_b", "action": "attack", "parameters": { "unit_id": 1, "target_id": 9 } }
   ] }
 ```
@@ -88,7 +85,7 @@ trip, and the SDK preserves any you supply.
 ### `outcome`
 
 ```json
-{ "type": "outcome", "id": "7", "outcome": "{\"success\": true, ...}", "outcome_type": "str" }
+{ "type": "outcome", "id": "7", "outcome": "{\"success\": true}", "outcome_type": "str" }
 ```
 
 When `outcome_type` is `"str"`, `outcome` is a JSON-encoded string the agent
@@ -109,14 +106,12 @@ see duplicates rather than a lost turn.
 **The `id` is the only correlation key.** The ENV echoes back exactly what it
 received.
 
-Three rules, each of which was a real bug:
+For a custom transport implementation:
 
 1. **Compare ids as strings.** The schema allows an int or a string, and JSON
-   layers between agent and ENV may render `7` as `"7"`. An implementation that
-   keyed on the raw value saw no match and reported a timeout instead.
-2. **Keep ids under 2**53.** Anything larger is not guaranteed to survive a
-   JSON round trip. The SDK previously used `uuid.uuid4().int` (128-bit); it now
-   issues short strings.
+   layers between agent and ENV may render `7` as `"7"`.
+2. **Prefer short string ids.** Numeric ids must stay below `2**53` to avoid
+   precision loss when passing through JavaScript. The SDK uses short strings.
 3. **Register before sending.** The ENV can answer faster than the caller gets
    from `send` to `await`. Reserve the slot first, or the reply lands before
    anything is listening for it.
@@ -168,19 +163,7 @@ rest, fix the request or give up; resending only burns turns.
 
 ### 2010 vs 2012
 
-These used to be one code, and the ENV drew a load-bearing conclusion from it:
-a 2010 could not have changed the board, so it skipped invalidating the
-observation cache. That was true for an unknown verb and false for a handler
-that raised halfway through a mutation, which then left the next
-`get_faction_state` answering from a cache describing a board that had already
-changed.
-
-So:
-
 - **2010** — rejected by the action firewall. Nothing ran; the board is
   untouched. Fix the verb name.
 - **2012** — a handler ran and raised. The board **may** be partially modified.
   Re-read state before deciding anything.
-
-`ErrorCode.rejected_before_dispatch` is that distinction, and it is what the
-ENV now branches on.
