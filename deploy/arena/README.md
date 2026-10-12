@@ -1,5 +1,7 @@
 # StarBench Arena 部署与运维
 
+首次部署请从 [MCP 上手指南：部署到 VPS](../../docs/arena.md#vps) 开始，按步骤准备配置、登录并放行首个账号。本页提供部署细节、备份、升级和上线验收。
+
 首版为单台 Linux VPS、一个 Arena 网关、每场一个独立 Rust Worker。原生 WSS 与 MCP 共用身份和执行入口；HUB 和 Worker 控制端口不对公网开放。BOSS 是 **ChatGPT 网页端通过 MCP 控制的选手**，部署包不启动 API BOSS，也不需要 OPENAI_API_KEY。
 
 ## 一键部署
