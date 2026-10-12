@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-native = ["star-rust-runtime==0.1.0"]
+rust-runtime = ["star-rust-runtime==0.1.0"]
 pygame = ["pygame>=2.6.1"]
 arena = [
     "fastapi>=0.115,<1",

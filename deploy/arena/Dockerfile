@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 RUN pip install --no-cache-dir uv==0.12.5
 WORKDIR /app
 COPY . .
-RUN uv sync --frozen --extra native --extra arena --extra arena-hub --no-dev --no-editable
+RUN uv sync --frozen --extra rust-runtime --extra arena --extra arena-hub --no-dev --no-editable
 # Only the private routing application is hosted, not the unrelated public REST APIs.
 RUN git clone https://github.com/Coldmooon/GameServer.git /hub && cd /hub && git checkout --detach 5e26985ee86620e120ef792a2a4c01e63a847e8c && rm -rf .git
 FROM ${PYTHON_IMAGE} AS runtime

@@ -49,7 +49,7 @@
 MCP 与本地接入测试（不需要 pygame）：
 
 ```bash
-uv run --extra native --extra arena pytest tests/arena protocol/tests -q
+uv run --extra rust-runtime --extra arena pytest tests/arena protocol/tests -q
 ```
 
 只有要同时回归原有 pygame 窗口功能时，才额外安装 `--extra pygame` 并运行 `rotk_env/tests`。它是兼容性测试依赖，不是 MCP/Rust 服务依赖。

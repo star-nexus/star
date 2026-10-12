@@ -9,6 +9,6 @@ for ((i=0; i<${#args[@]}; i++)); do
     esac
 done
 if [[ "$env_backend" == rust ]]; then
-    exec uv run --extra native --extra pygame rotk_env/main.py "$@"
+    exec uv run --extra rust-runtime --extra pygame rotk_env/main.py "$@"
 fi
 exec uv run --extra pygame rotk_env/main.py "$@"
