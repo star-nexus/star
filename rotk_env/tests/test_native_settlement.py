@@ -2,7 +2,7 @@
 from copy import deepcopy
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env import components as c
 from rotk_env.components.settlement_report import SettlementReport
 from rotk_env.prefabs.config import Faction

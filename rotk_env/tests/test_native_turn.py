@@ -1,7 +1,7 @@
 """Faction handoff, human turn reset and statistics preserve legacy sequencing."""
 import json
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.components import (Player, GameState, GameTime, GameModeComponent, GameModeStatistics,
                                  MovementPoints, ActionPoints, UnitCount, UnitStatus, BattleLog, UnitObservation, UnitStatistics)
 from rotk_env.prefabs.config import Faction, PlayerType, GameMode, UnitState
@@ -116,7 +116,7 @@ def test_turn_duration_sum_matches_python_with_cancellation(frozen):
 
 
 def test_stale_extension_and_scene_fail_explicitly(frozen,monkeypatch):
-    import star_native
+    import star_rust_runtime
     from rotk_env.runtime.native import load_native
     world,ids,turn,llm=setup('none')
     try:
@@ -127,7 +127,7 @@ def test_stale_extension_and_scene_fail_explicitly(frozen,monkeypatch):
             with pytest.raises(RuntimeError,match='schema or oracle'):
                 runtime.reset(initial)
             assert runtime.export_state()==before
-        monkeypatch.delattr(star_native,'API_VERSION')
+        monkeypatch.delattr(star_rust_runtime,'API_VERSION')
         with pytest.raises(RuntimeError,match='API version mismatch'):
             load_native()
     finally:world.reset()

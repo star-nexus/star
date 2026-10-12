@@ -3,7 +3,7 @@ import datetime
 import json
 import time
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.components import Combat, UnitCount
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.runtime.native import ActionRequest, RustRuntime

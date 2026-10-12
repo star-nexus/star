@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.runtime.bootstrap import export_initial_state, prepare_scene, rng_state
 from rotk_env.runtime.native import RustRuntime
 from rotk_env.components import GameTime

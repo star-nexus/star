@@ -21,7 +21,7 @@ def runtime_identity(backend, *, env_id, mode, scenario, seed, scheduling, threa
                   native_threads=threads if backend == 'rust' else None,
                   visual_version=visual_version)
     if backend == 'rust':
-        from star_native import _native
+        from star_rust_runtime import _native
         result.update(native_api=NATIVE_API_VERSION, native_schema=5,
                       extension_sha256=hashlib.sha256(Path(_native.__file__).read_bytes()).hexdigest())
     return result

@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-native = ["star-native==0.1.0"]
+native = ["star-rust-runtime==0.1.0"]
 pygame = ["pygame>=2.6.1"]
 arena = [
     "fastapi>=0.115,<1",
@@ -44,7 +44,7 @@ arena-hub = [
 members = ["rotk_env/native/python"]
 
 [tool.uv.sources]
-star-native = { workspace = true }
+star-rust-runtime = { workspace = true }
 
 [tool.pytest.ini_options]
 # The project is run as scripts from the repo root, not installed as a package.

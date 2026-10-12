@@ -2,7 +2,7 @@
 from copy import deepcopy
 import time
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from framework import World
 from rotk_env.runtime import session as module
 from rotk_env.runtime.session import NativeSession

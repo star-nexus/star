@@ -29,7 +29,7 @@ def toolbar(request, monkeypatch):
                    players={Faction.WEI: PlayerType.HUMAN, Faction.SHU: PlayerType.AI})
     session = None
     if request.param.startswith('rust'):
-        pytest.importorskip('star_native')
+        pytest.importorskip('star_rust_runtime')
         from rotk_env.runtime.session import NativeSession
         session = NativeSession(authority_scheduling=request.param == 'rust-threaded', **options)
         world = session.world

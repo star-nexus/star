@@ -7,6 +7,7 @@ Arena 是新增的比赛/授权/传输层。Rust ENV 决定合法动作、执行
 本次实现使用 **Rust ECS + Rust ENV**。Arena Worker 显式创建
 `NativeSession(display='none', renderer='web')`，其权威执行器是 `RustRuntime`；
 `web` 对应 Three.js 浏览器展示。Python 负责 MCP、比赛管理与 Rust 绑定调用。
+Rust 运行时安装包名为 `star-rust-runtime`，Python 导入名为 `star_rust_runtime`，源码位于 `rotk_env/native/python`。它将 Rust ECS/ENV 编译为 Python 可以调用的模块。依赖组 `native` 安装的就是这个包，因此现有 `--extra native` 安装命令保持有效。
 MCP 与渲染器独立：MCP 通过 star-protocol/HUB 传递观测和动作，ENV 负责执行；Three.js 或 pygame 只负责展示。下面选择 Three.js 便于浏览器观战，这不是 MCP 的要求。
 
 ## 本机验证：先启动 ENV，再连接 MCP

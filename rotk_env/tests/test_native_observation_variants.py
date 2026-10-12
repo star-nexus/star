@@ -1,6 +1,6 @@
 """All non-frame observation variants use the same trusted request contract."""
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.components import (ActionPoints, Combat, FogOfWar, HexPosition, MapData,
     MatchRules, MovementAnimation, MovementPoints, UnitCount, UnitStatus, Vision,
     TerritoryControl, BattleLog, GameStats, Unit)

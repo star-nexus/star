@@ -10,7 +10,7 @@ from threading import Event
 import pygame
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from framework.engine import frame_capture
 from framework.engine.renders import RenderEngine
 from rotk_env import components as c

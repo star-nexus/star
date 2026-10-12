@@ -4,8 +4,8 @@ import json
 import time
 
 import pytest
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.components import TeamCoordination
 from rotk_env.runtime.bootstrap import encode, export_initial_state
 from rotk_env.tests.test_native_movement import make_world

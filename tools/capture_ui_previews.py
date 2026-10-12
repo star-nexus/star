@@ -117,7 +117,7 @@ def main(argv=None):
                       driver=pygame.display.get_driver(), pure_paint_authority_equal=True,
                       scope='Exact-size raster QA; no real-window, network or capacity claim.', files=captures)
         if session:
-            from star_native import _native
+            from star_rust_runtime import _native
             record['extension_sha256'] = hashlib.sha256(Path(_native.__file__).read_bytes()).hexdigest()
         (output/'result.json').write_text(json.dumps(record, indent=2)+'\n')
         print(json.dumps(record))

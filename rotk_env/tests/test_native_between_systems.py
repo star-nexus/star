@@ -1,8 +1,8 @@
 """E4 negative control preserves whole-step semantics and per-call policy."""
 import json
 import pytest
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.tests.test_native_combat_presentation import make
 from rotk_env.tests.test_native_combat import combat_probe

@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.systems.statistics_system import StatisticsSystem
 from rotk_env.systems.window_statistics_system import StatisticsSystem as WindowStatistics

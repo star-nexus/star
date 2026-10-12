@@ -2,7 +2,7 @@
 import json
 import time
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from framework.engine.events import EBS
 from rotk_env.components import (GameTime, GameState, GameModeComponent, UnitCount, Combat,
                                  HexPosition, UnitObservation, UnitStatistics)

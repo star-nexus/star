@@ -4,7 +4,7 @@ from threading import get_ident
 
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from framework.engine.frame_capture import capture_rendered_frame
 from rotk_env.runtime.authority import AuthorityRuntime
 from rotk_env.runtime.bootstrap import export_initial_state

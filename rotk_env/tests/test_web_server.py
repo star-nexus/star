@@ -4,7 +4,7 @@ import json
 
 import httpx
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 

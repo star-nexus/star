@@ -3,7 +3,7 @@
 import copy
 import pytest
 
-pytest.importorskip("star_native")
+pytest.importorskip("star_rust_runtime")
 from rotk_env.components import Combat, UnitCount, Vision
 from rotk_env.prefabs.config import GameMode
 from rotk_env.runtime.bootstrap import export_initial_state
