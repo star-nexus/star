@@ -5,10 +5,21 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
 import starbench
+
+
+@pytest.mark.parametrize('args', [[], ['--renderer', 'web'], ['--backend', 'python']])
+def test_launcher_extras_exist_in_project_metadata(args):
+    metadata = tomllib.loads((starbench.ROOT / 'pyproject.toml').read_text())
+    declared = metadata['project']['optional-dependencies']
+    command = starbench.launch_command(args, 'uv')
+    for index, value in enumerate(command):
+        if value == '--extra':
+            assert command[index + 1] in declared
 
 
 def test_help_needs_no_env_dependencies_or_uv(monkeypatch, capsys):
@@ -63,7 +74,7 @@ def test_real_entrypoint_preserves_args_cwd_and_exit_status(args, native, tmp_pa
     assert result.returncode == 7, result.stderr
     launched = json.loads(result.stdout.splitlines()[-1])
     original_args = args[1:] if args[:1] == ["env"] else args
-    expected = ["run", *( ["--extra", "native"] if native else []),
+    expected = ["run", *( ["--extra", "rust-runtime"] if native else []),
                 '--extra', 'pygame', "rotk_env/main.py", *original_args]
     assert launched == {"args": expected, "cwd": str(starbench.ROOT), 'venv': None}
 
@@ -92,8 +103,8 @@ def test_web_entrypoint_identifies_renderer_without_pygame_support_banner():
 def test_renderer_launcher_uses_env_owned_module_without_changing_default():
     args = ['--renderer', 'web', '--no-hub', '--scenario', 'chibi-small']
     assert starbench.launch_command(args, 'uv') == [
-        'uv', 'run', '--extra', 'native', 'python', '-m', 'rotk_env.rendering.web', *args]
+        'uv', 'run', '--extra', 'rust-runtime', 'python', '-m', 'rotk_env.rendering.web', *args]
     assert starbench.launch_command(['--renderer=pygame', '--no-hub'], 'uv') == [
-        'uv', 'run', '--extra', 'native', '--extra', 'pygame', 'rotk_env/main.py', '--no-hub']
+        'uv', 'run', '--extra', 'rust-runtime', '--extra', 'pygame', 'rotk_env/main.py', '--no-hub']
     with pytest.raises(SystemExit):
         starbench.launch_command(['--renderer=web', '--backend=python'], 'uv')

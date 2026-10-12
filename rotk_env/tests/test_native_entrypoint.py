@@ -46,6 +46,6 @@ def test_shell_launchers_load_native_only_for_env(script,args,uses_native,tmp_pa
     import os
     root=Path(__file__).resolve().parents[2]
     result=subprocess.check_output(['bash',str(root/script),*args],env={**os.environ,'PATH':str(tmp_path)+':'+os.environ['PATH']},text=True).splitlines()
-    assert ('native' in result) is uses_native
+    assert ('rust-runtime' in result) is uses_native
     assert '--backend' not in result or result[-len(args):]==args
     assert '--headless' in result if script=='run_headless_env.sh' else '--headless' not in result
