@@ -58,7 +58,7 @@ See README.md for setup and rotk_env/README.md for more ENV options.
         parser.error('The Web renderer requires the Rust backend')
     command = [uv, "run"]
     if options.backend == "rust":
-        command.extend(["--extra", "native"])
+        command.extend(["--extra", "rust-runtime"])
     if options.renderer == 'web':
         command.extend(['python', '-m', 'rotk_env.rendering.web', *args])
     else:
@@ -87,7 +87,7 @@ def main(argv=None):
               "and run this command again.", file=sys.stderr)
         return 127
     command[0] = uv
-    backend = "Rust" if "native" in command[:6] else "Python"
+    backend = "Rust" if "rust-runtime" in command[:6] else "Python"
     print(f"Preparing STARBench ENV ({backend}). "
           "Dependencies are prepared automatically; the first launch may take longer.",
           flush=True)
