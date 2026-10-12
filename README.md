@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.13%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-success)]()
 
-[Introduction](#-introduction) • [Quick Start](#-quick-start) • [Game Rules](docs/game-rules.md) • [Usage & Agent Integration](docs/integration.md)
+[Introduction](#-introduction) • [Quick Start](#-quick-start) • [Game Rules](docs/game-rules.md) • [Usage & Agent Integration](docs/integration.md) • [MCP Arena](docs/arena.md) • [VPS Deployment](deploy/arena/README.md)
 
 </div>
 

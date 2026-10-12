@@ -38,6 +38,7 @@ subscriptions = Table('arena_subscriptions', metadata,
     Column('id', String, primary_key=True), Column('owner', String, nullable=False),
     Column('match_id', String, nullable=False), Column('event', String, nullable=False),
     Column('url', String, nullable=False), Column('secret', String, nullable=False),
+    Column('previous_secret', String), Column('rotation_until', Float), Column('pending_event', Integer),
     Column('cursor', Integer, nullable=False, default=0),
     Column('expires', Float, nullable=False), Column('next_attempt', Float, nullable=False, default=0),
     Column('failures', Integer, nullable=False, default=0))

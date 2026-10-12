@@ -46,10 +46,10 @@ def test_callback_cannot_reach_private_addresses(url):
 def test_mcp_event_discovery_and_authentication():
     app=create_app(Settings(development=True), Store('sqlite:///:memory:'), Workers())
     with TestClient(app,base_url='http://127.0.0.1:8780') as client:
-        def rpc(method, token='dev:a'):
+        def rpc(method, token='dev:a', params=None):
             return client.post('/mcp',headers={'Authorization':'Bearer '+token,'Accept':'application/json, text/event-stream',
                 'MCP-Protocol-Version':'2026-07-28','Mcp-Method':method},json={'jsonrpc':'2.0','id':1,'method':method,
-                'params':{'_meta':{'io.modelcontextprotocol/protocolVersion':'2026-07-28',
+                'params':{**(params or {}), '_meta':{'io.modelcontextprotocol/protocolVersion':'2026-07-28',
                                   'io.modelcontextprotocol/clientCapabilities':{}}}})
         discovery=rpc('server/discover')
         assert discovery.status_code==200, discovery.text
@@ -58,3 +58,39 @@ def test_mcp_event_discovery_and_authentication():
         assert events.status_code==200, events.text
         assert 'turn_start' in [e['name'] for e in events.json()['result']['events']]
         assert rpc('events/list','invalid').status_code==401
+        app.state.events.sender=lambda url,secret,sid,eid,body: {'challenge':body['challenge']}
+        params={'name':'match_invitation','arguments':{},'delivery':{'mode':'webhook','url':'https://example.org/events',
+            'secret':'whsec_'+base64.b64encode(b'z'*32).decode()}}
+        subscribed=rpc('events/subscribe',params=params).json()
+        assert 'refreshBefore' in subscribed['result'], subscribed
+        del params['delivery']['secret']
+        from starbench_arena import store as db
+        rpc('events/unsubscribe',token='dev:b',params=params)
+        assert len(app.state.arena.store.all(db.subscriptions))==1
+        removed=rpc('events/unsubscribe',params=params).json()
+        assert 'error' not in removed
+        assert not app.state.arena.store.all(db.subscriptions)
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotation_ttl_and_permanent_rejection(arena):
+    from starbench_arena import store as db
+    from starbench_arena.events import PermanentCallbackError
+    import time
+    a,b,mid,*_=await pair(arena)
+    sent=[]
+    def sender(url,secret,sub,eid,body):
+        if body.get('type')=='verification': return {'challenge':body['challenge']}
+        sent.append(secret)
+        raise PermanentCallbackError('410')
+    service=EventService(arena,sender)
+    def params(secret):return SubscribeParams(name='turn_start',arguments={'match_id':mid},ttlMs=10000,
+        delivery={'mode':'webhook','url':'https://example.org/','secret':'whsec_'+base64.b64encode(secret*32).decode()})
+    before=time.time();sub=await service.subscribe(a,params(b'a'))
+    await service.subscribe(a,params(b'b'))
+    row=arena.store.one(db.subscriptions,id=sub.id)
+    assert before+9<row['expires']<time.time()+11 and row['previous_secret']
+    arena.emit(mid,'turn_start',{'faction':'wei'},a.subject)
+    await service.tick();await service.tick()
+    assert len(sent)==1 and len(sent[0])==2
+    assert arena.store.one(db.subscriptions,id=sub.id)['expires']==0

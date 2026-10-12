@@ -44,6 +44,7 @@ def create_app(settings=None, store=None, workers=None):
     app = FastAPI(title='StarBench Arena', lifespan=lifespan)
     app.state.arena = arena
     app.state.mcp = mcp
+    app.state.events = events_service
 
     async def authenticate(header):
         if not header.startswith('Bearer '):
@@ -81,7 +82,9 @@ def create_app(settings=None, store=None, workers=None):
     @app.websocket('/ws/metaverse/env/{match_id}/agent/{agent_id}')
     async def native_socket(ws: WebSocket, match_id: str, agent_id: str):
         try:
-            who = await authenticate(ws.headers.get('authorization', ''))
+            bearer = ws.headers.get('authorization', '')
+            who = await authenticate(bearer)
+            expires_at = (await arena.auth.claims(bearer[7:]))['exp']
             agent, match = arena.agent_for(who, agent_id)
             if match['id'] != match_id:
                 raise PermissionError('Wrong match')
@@ -101,7 +104,7 @@ def create_app(settings=None, store=None, workers=None):
         async def push_events():
             nonlocal cursor
             while True:
-                if store.one(db.agents, id=agent_id)['generation'] != generation:
+                if time.time() >= expires_at or store.one(db.agents, id=agent_id)['generation'] != generation:
                     await ws.close(code=1008)
                     return
                 data = arena.read_events(who, match_id, cursor)
@@ -114,7 +117,7 @@ def create_app(settings=None, store=None, workers=None):
         try:
             while True:
                 message = await ws.receive_json()
-                if store.one(db.agents, id=agent_id)['generation'] != generation:
+                if time.time() >= expires_at or store.one(db.agents, id=agent_id)['generation'] != generation:
                     await ws.close(code=1008)
                     return
                 if not isinstance(message, dict) or not isinstance(message.get('payload', {}), (dict, type(None))):
