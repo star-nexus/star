@@ -15,12 +15,16 @@ from .api import build_tools, http_principal
 
 log = logging.getLogger('starbench.arena')
 
-def create_app(settings=None, store=None, workers=None):
+def create_app(settings=None, store=None, workers=None, *, arena_factory=Arena, managed=True, tools_allowed=None):
     settings = (settings or Settings()).validate()
     store = store or Store(settings.database_url)
     store.initialize()
-    arena = Arena(settings, store, workers or Workers(settings))
+    arena = arena_factory(settings, store, workers or Workers(settings))
     mcp, registry = build_tools(arena)
+    if tools_allowed is not None:
+        for name in set(registry) - set(tools_allowed):
+            mcp.remove_tool(name)
+            del registry[name]
     from .events import EventService
     events_service = EventService(arena)
     events_service.install(mcp)
@@ -31,7 +35,7 @@ def create_app(settings=None, store=None, workers=None):
     async def lifespan(app):
         with store.gateway_lease():
             from .policy import monitor
-            task = asyncio.create_task(monitor(arena))
+            task = asyncio.create_task(monitor(arena) if managed else arena.watch())
             event_task = asyncio.create_task(events_service.run())
             async with mcp_app.router.lifespan_context(mcp_app):
                 try:
@@ -176,6 +180,7 @@ def create_app(settings=None, store=None, workers=None):
             raise HTTPException(400, str(exc)) from None
 
     from .viewer import install_viewer
-    install_viewer(app, arena)
+    if managed:
+        install_viewer(app, arena)
     app.mount('/', mcp_app)
     return app

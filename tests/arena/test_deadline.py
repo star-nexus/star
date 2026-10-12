@@ -4,7 +4,24 @@ pytest.importorskip('star_native')
 from starbench_arena.worker import ArenaHost
 from rotk_env.runtime.session import NativeSession
 from rotk_env.prefabs.config import PLAYER_PRESETS
-from rotk_env.tests.test_native_hub import Client, REG
+from rotk_env.systems.llm_system import SyncEnvClient
+
+REG = dict(faction='wei', provider='synthetic', model_id='fixture', base_url='https://host')
+
+
+class Client(SyncEnvClient):
+    """Transport stub without importing the legacy pygame comparison fixtures."""
+    def connect(self):
+        self.connected = True
+        for callback in self.hub_event_handlers['connect']:
+            callback({'env_id': self.client_info.id})
+        return True
+
+    def disconnect(self):
+        self.connected = False
+
+    def send_message(self, instruction, data=None, target=None):
+        return True
 
 
 def test_deadline_uses_ingress_and_ack_does_not_reset_it():
