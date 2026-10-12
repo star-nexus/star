@@ -1,6 +1,8 @@
 """Worker supervision and persistent STAR client connections (no simulation code)."""
 import asyncio
 import json
+import logging
+import time
 import os
 from pathlib import Path
 import secrets
@@ -15,7 +17,7 @@ class Workers:
         self.settings = settings
         self.clients = {}
         self.locks = {}
-        self.http = httpx.AsyncClient(timeout=15)
+        self.http = httpx.AsyncClient(timeout=5, trust_env=False)
         self.on_event = None
 
     async def launch(self, match):
@@ -34,13 +36,15 @@ class Workers:
         process.stdin.write((json.dumps(config) + '\n').encode())
         process.stdin.close()
         worker = {'url': f'http://{self.settings.worker_host}:{port}', 'token': token, 'pid': process.pid}
-        for _ in range(200):
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError('Worker exited during preparation; inspect match log')
             try:
                 await self.control(worker, 'status')
                 return worker
-            except (httpx.HTTPError, OSError):
+            except (httpx.HTTPError, OSError) as exc:
+                logging.getLogger('starbench.arena').debug('Worker readiness: %s', type(exc).__name__)
                 await asyncio.sleep(.1)
         process.terminate()
         await asyncio.to_thread(process.wait, 10)
