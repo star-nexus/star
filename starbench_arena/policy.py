@@ -45,6 +45,14 @@ async def check_matches(arena, now=None):
         try:
             status = await arena.workers.control(match['worker'], 'status')
             arena.failures.pop(match['id'], None)
+            # Recover turn reminders without waiting for a sleeping MCP client to
+            # make its first post-restart call and reopen its private HUB socket.
+            state = status.get('state', {})
+            if status['running'] and match['mode'] == 'turn_based' and state.get('current_player') in match['players']:
+                faction = state['current_player']
+                await arena.receive_event({'match_id': match['id'], 'owner': match['players'][faction]['owner']},
+                    {'type': 'turn_start', 'faction': faction, 'turn_number': state['turn_number']})
+
             if status['result']:
                 # Recover the narrow start/DB-commit race after gateway restart.
                 if match['status'] == 'preparing':

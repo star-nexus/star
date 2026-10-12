@@ -61,7 +61,7 @@ class Arena:
         # Persist first; the backend sends the transport ACK after this returns.
         if payload['type'] == 'turn_start':
             previous = self.store.all(db.events, match_id=agent['match_id'], owner=agent['owner'], kind='turn_start')
-            if previous and previous[-1]['body'].get('turn_number') == payload.get('turn_number') and previous[-1]['body'].get('faction') == payload.get('faction'):
+            if any(e['body'].get('turn_number') == payload.get('turn_number') and e['body'].get('faction') == payload.get('faction') for e in previous):
                 return
         self.emit(agent['match_id'], payload['type'], payload, agent['owner'])
 

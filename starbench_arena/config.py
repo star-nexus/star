@@ -13,7 +13,7 @@ class Settings:
     open_registration: bool = field(default_factory=lambda: os.getenv('ARENA_OPEN_REGISTRATION') == '1')
     development: bool = field(default_factory=lambda: os.getenv('ARENA_DEV') == '1')
     boss_subjects: frozenset[str] = field(default_factory=lambda: frozenset(filter(None, os.getenv('ARENA_BOSS_SUBJECTS', '').split(','))))
-    season: str = 's1'
+    season: str = field(default_factory=lambda: os.getenv('ARENA_SEASON', 's1'))
     scenario: str = 'chibi-small'
     prepare_seconds: float = 300
     turn_seconds: float = 300

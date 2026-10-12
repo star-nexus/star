@@ -205,3 +205,7 @@ node_modules/
 .arena/
 arena.db*
 deploy/arena/.env
+/deploy/arena/generated/
+/deploy/arena/backups/
+*.gateway.lock
+/examples/arena/token.json
