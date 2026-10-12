@@ -23,10 +23,39 @@ class ArenaHost(NativeHubHost):
         self.admission = threading.RLock()
         self.running = False
         self.final_result = None
+        self.started_at = None
+        self.turn_seconds = 300
+        self.turn_key = None
+        self.turn_deadline = None
+        self.turn_based = False
         super().__init__(*args, **kwargs)
+
+    def _enqueue(self, kind, data):
+        if kind == 'message':
+            data = dict(data, _arena_received_at=time.monotonic())
+        return super()._enqueue(kind, data)
+
+    def check_deadline(self, at):
+        if self.running and self.turn_deadline is not None and at >= self.turn_deadline:
+            state = self.runtime.host_status()
+            if state['game_over']:
+                self.finish(state['winner'], 'env')
+            else:
+                faction = self.turn_key[1]
+                self.finish('shu' if faction == 'wei' else 'wei', 'turn_timeout')
+
+    def track_turn(self):
+        if not self.running or not self.turn_based:
+            return
+        state = self.runtime.host_status()
+        key = (state['turn_number'], state['current_player'])
+        if key != self.turn_key:
+            self.turn_key = key
+            self.turn_deadline = time.monotonic() + self.turn_seconds
 
     def on_message(self, envelope):
         with self.admission:
+            self.check_deadline(envelope.get('_arena_received_at', time.monotonic()))
             return super().on_message(envelope)
 
     def _process_action_request(self, agent_id, action_id, action, params, *, send_response):
@@ -35,7 +64,9 @@ class ArenaHost(NativeHubHost):
             if send_response:
                 self.client.response_to_agent(agent_id, action_id, result, 'json')
             return result
-        return super()._process_action_request(agent_id, action_id, action, params, send_response=send_response)
+        result = super()._process_action_request(agent_id, action_id, action, params, send_response=send_response)
+        self.track_turn()
+        return result
 
     def _service(self, wall_time):
         # Arena consumes authoritative results directly; no paper/report wait.
@@ -45,6 +76,10 @@ class ArenaHost(NativeHubHost):
             state = self.runtime.host_status()
             if state['game_over']:
                 self.finish(state['winner'], 'env')
+            elif self._inbox.empty():
+                self.check_deadline(time.monotonic())
+            if self.running:
+                super()._service(wall_time)
 
     def finish(self, winner, source):
         if self.final_result:
@@ -52,7 +87,7 @@ class ArenaHost(NativeHubHost):
         self.runtime.stop_clock()
         snapshot = self.runtime.export_state()
         counts = Counter(e['components']['Unit']['faction'] for e in snapshot['entities']
-                         if 'Unit' in e['components'] and e['components']['Unit'].get('count', 0) > 0)
+                         if 'Unit' in e['components'] and e['components'].get('UnitCount', {}).get('current_count', 0) > 0)
         stats = snapshot['singletons']['GameStats']
         self.final_result = {'winner': winner, 'is_tie': winner is None, 'source': source,
             'game_duration_seconds': snapshot['clock']['elapsed'],
@@ -67,6 +102,8 @@ class ArenaHost(NativeHubHost):
             if self.running or self.final_result:
                 return
             self.running = True
+            self.started_at = time.time()
+            self.track_turn()
             self.runtime.start_clock(1 / 60)
             state = self.runtime.host_status()
             snapshot = self.runtime.export_state()
@@ -78,11 +115,15 @@ class ArenaHost(NativeHubHost):
 
 
 def main():
+    import faulthandler, signal
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
     config = json.loads(sys.stdin.readline())
     token = config['token']
     session = NativeSession(display='none', mode=config['mode'], scenario=config['scenario'],
                             seed=config['seed'], players=PLAYER_PRESETS['ai_vs_ai'])
     host = ArenaHost(session, config['hub_url'], config['match_id'])
+    host.turn_seconds = config.get('turn_seconds', 300)
+    host.turn_based = config['mode'] == 'turn_based'
     server = None
     async def pump():
         while True:
@@ -109,7 +150,7 @@ def main():
         authorize(authorization)
         if host.snapshot()['failure']:
             raise HTTPException(503, 'ENV host failed')
-        return {'running': host.running, 'result': host.final_result,
+        return {'running': host.running, 'result': host.final_result, 'started_at': host.started_at,
                 'state': session.runtime.host_status()}
     @app.post('/start')
     async def start(authorization: str = Header(default='')):
