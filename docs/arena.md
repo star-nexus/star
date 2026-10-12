@@ -35,11 +35,11 @@
 **在本项目根目录**执行一次：
 
 ```bash
-uv sync --extra native --extra arena
+uv sync --extra rust-runtime --extra arena
 npm ci --prefix rotk_env/rendering/web/client
 ```
 
-第一条安装运行依赖，首次运行会编译 Rust。`native` 对应 Rust 运行时包 `star-rust-runtime`，`arena` 对应 MCP 和赛事服务依赖。安装完成后，日常启动命令无需重复写这两个选项。如还使用 pygame 窗口，在同步命令末尾加 `--extra pygame` 保留其依赖。
+第一条安装运行依赖，首次运行会编译 Rust。`rust-runtime` 对应 Rust 运行时包 `star-rust-runtime`，`arena` 对应 MCP 和赛事服务依赖。安装完成后，日常启动命令无需重复写这两个选项。如还使用 pygame 窗口，在同步命令末尾加 `--extra pygame` 保留其依赖。
 
 ### 1.2 创建本局配置
 
@@ -279,7 +279,7 @@ Client secret 仅填入客户端的认证设置，不发到对话中。项目采
 
 | 现象 | 处理方式 |
 |---|---|
-| 提示 Rust backend 或 MCP 模块缺失 | 在本项目根目录重新执行 `uv sync --extra native --extra arena`；检查 Rust 编译是否成功 |
+| 提示 Rust backend 或 MCP 模块缺失 | 在本项目根目录重新执行 `uv sync --extra rust-runtime --extra arena`；检查 Rust 编译是否成功 |
 | 提示 `Install Web assets first` | 在本项目根目录执行 `npm ci --prefix rotk_env/rendering/web/client` |
 | 8765 端口被占用 | ENV 改用 `--port 8766`，打开新输出的链接；MCP 配置不变 |
 | 8780 端口被占用 | 停止同端口旧服务，或初始化新配置时用 `--port 8781`；客户端 URL 同步改为该端口 |

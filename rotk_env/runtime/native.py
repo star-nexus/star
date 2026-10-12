@@ -19,7 +19,7 @@ def load_native():
         import star_rust_runtime
         from star_rust_runtime import NativeRuntime, RULES_VERSION
     except ImportError as exc:
-        raise RuntimeError('Rust backend is unavailable. Install star-rust-runtime (developer: uv sync --extra native).') from exc
+        raise RuntimeError('Rust backend is unavailable. Install star-rust-runtime (developer: uv sync --extra rust-runtime).') from exc
     if RULES_VERSION != ORACLE_VERSION:
         raise RuntimeError(f'Rust rules version mismatch: {RULES_VERSION}; expected {ORACLE_VERSION}')
     actual_api = getattr(star_rust_runtime, 'API_VERSION', None)

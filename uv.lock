@@ -1200,11 +1200,11 @@ arena = [
 arena-hub = [
     { name = "python-jose", extra = ["cryptography"] },
 ]
-native = [
-    { name = "star-rust-runtime" },
-]
 pygame = [
     { name = "pygame" },
+]
+rust-runtime = [
+    { name = "star-rust-runtime" },
 ]
 
 [package.dev-dependencies]
@@ -1232,12 +1232,12 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "sqlalchemy", marker = "extra == 'arena'", specifier = ">=2,<3" },
-    { name = "star-rust-runtime", marker = "extra == 'native'", editable = "rotk_env/native/python" },
+    { name = "star-rust-runtime", marker = "extra == 'rust-runtime'", editable = "rotk_env/native/python" },
     { name = "toml" },
     { name = "uvicorn", marker = "extra == 'arena'", specifier = ">=0.34,<1" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["native", "pygame", "arena", "arena-hub"]
+provides-extras = ["rust-runtime", "pygame", "arena", "arena-hub"]
 
 [package.metadata.requires-dev]
 dev = [
