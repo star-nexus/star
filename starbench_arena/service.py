@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import secrets
 import subprocess
 import time
@@ -33,7 +34,8 @@ class Arena:
         self.catalogs = {}
         self.failures = {}
         self.workers.on_event = self.receive_event
-        self.env_revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+        self.workers.on_spawn = lambda mid, worker: self.store.update(db.matches, {'id': mid}, worker=worker)
+        self.env_revision = os.getenv('ARENA_ENV_REVISION') or subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
 
     def match_for(self, principal, match_id):
         self.auth.invited(principal)
@@ -183,6 +185,7 @@ class Arena:
                 response = await self.workers.call(row, 'register_agent_info', params, 'arena-registration-v1')
                 if not response.get('success'):
                     raise RuntimeError('ENV refused registration: ' + json.dumps(response))
+                self.store.update(db.agents, {'id': row['id']}, registered=True)
                 registered.append({'agent_handle': row['id'], 'name': name, 'faction': faction, 'registration': response})
             return registered
 
@@ -193,7 +196,7 @@ class Arena:
                 return self.public_match(match)
             if match['status'] != 'preparing':
                 raise ValueError('Match is not preparing')
-            if not self.store.all(db.agents, match_id=match_id, owner=principal.subject):
+            if not self.store.all(db.agents, match_id=match_id, owner=principal.subject, registered=True):
                 raise ValueError('Register at least one Agent before becoming ready')
             players = match['players']
             for player in players.values():
@@ -289,12 +292,24 @@ class Arena:
         body = {'source': 'self_reported' if metrics else 'unavailable', 'metrics': metrics}
         if len(json.dumps(body)) > 65536:
             raise ValueError('Usage payload is too large')
-        result = await self.action(principal, agent_handle, 'report_llm_stats',
-            {'api_stats': metrics or {}, 'faction': agent['faction']}, operation_id)
-        with self.store.transaction() as c:
-            c.execute(db.usage.delete().where(db.usage.c.agent_id == agent_handle))
-            c.execute(db.usage.insert().values(agent_id=agent_handle, body=body))
-        return result
+        if not isinstance(operation_id, str) or not 1 <= len(operation_id) <= 128:
+            raise ValueError('A stable operation_id is required')
+        fingerprint = hashlib.sha256(json.dumps(['arena_report_usage', body], sort_keys=True, allow_nan=False).encode()).hexdigest()
+        async with self.operation_locks.setdefault((agent_handle, operation_id), asyncio.Lock()):
+            old = self.store.one(db.operations, agent_id=agent_handle, id=operation_id)
+            if old:
+                if old['fingerprint'] != fingerprint:
+                    raise ValueError('operation_conflict')
+                return old['result']
+            result = {'success': True, **body}
+            # Usage is ancillary Arena metadata, including after the Worker has
+            # exited. It never delays or changes authoritative settlement.
+            with self.store.transaction() as c:
+                c.execute(db.usage.delete().where(db.usage.c.agent_id == agent_handle))
+                c.execute(db.usage.insert().values(agent_id=agent_handle, body=body))
+                c.execute(db.operations.insert().values(agent_id=agent_handle, id=operation_id,
+                    fingerprint=fingerprint, state='completed', result=result, received=time.time(), completed=time.time()))
+            return result
 
     async def resume_agent(self, principal, agent_handle):
         agent, match = self.agent_for(principal, agent_handle)

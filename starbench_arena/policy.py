@@ -30,7 +30,17 @@ async def check_matches(arena, now=None):
     now = time.time() if now is None else now
     for row in arena.store.all(db.matches):
         match = dict(row)
-        if match['status'] not in ('preparing', 'running', 'settling') or not match['worker']:
+        if not match['worker']:
+            if match['status'] == 'preparing' and now - match['prepared'] > 30:
+                arena.store.update(db.matches, {'id': match['id']}, status='aborted')
+                arena.emit(match['id'], 'match_aborted', {'reason': 'worker_launch_interrupted'})
+            continue
+        if match['status'] in ('finished', 'cancelled', 'aborted'):
+            try:
+                await arena.workers.close_match(match)
+                arena.store.update(db.matches, {'id': match['id']}, worker=None)
+            except Exception:
+                log.exception('Worker cleanup will retry: %s', match['id'])
             continue
         try:
             status = await arena.workers.control(match['worker'], 'status')

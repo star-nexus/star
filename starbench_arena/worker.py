@@ -119,12 +119,18 @@ def main():
     faulthandler.register(signal.SIGUSR1, all_threads=True)
     config = json.loads(sys.stdin.readline())
     token = config['token']
-    session = NativeSession(display='none', mode=config['mode'], scenario=config['scenario'],
+    session = NativeSession(display='none', renderer='web', mode=config['mode'], scenario=config['scenario'],
                             seed=config['seed'], players=PLAYER_PRESETS['ai_vs_ai'])
     host = ArenaHost(session, config['hub_url'], config['match_id'])
     host.turn_seconds = config.get('turn_seconds', 300)
     host.turn_based = config['mode'] == 'turn_based'
+    from rotk_env.rendering.web.server import WebHost
+    from rotk_env.rendering.commands import ViewGrant
+    view_tokens = {f: secrets.token_urlsafe(32) for f in ('wei', 'shu')}
+    web = WebHost(session, host='127.0.0.1', port=0,
+                  grants={token: ViewGrant(faction, False) for faction, token in view_tokens.items()})
     server = None
+    pump_task = None
     async def pump():
         while True:
             session.runtime.pump()
@@ -133,14 +139,16 @@ def main():
             await asyncio.sleep(1 / 60)
     @asynccontextmanager
     async def lifespan(app):
-        task = asyncio.create_task(pump())
+        nonlocal pump_task
+        await web.start(clock=False)
+        task = pump_task = asyncio.create_task(pump())
         try:
             yield
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
             host.close()
-            session.close()
+            await web.close()
     app = FastAPI(lifespan=lifespan)
     def authorize(authorization):
         if not authorization or not secrets.compare_digest(authorization, 'Bearer ' + token):
@@ -148,10 +156,17 @@ def main():
     @app.get('/status')
     async def status(authorization: str = Header(default='')):
         authorize(authorization)
-        if host.snapshot()['failure']:
+        if host.snapshot()['failure'] or (pump_task is not None and pump_task.done()):
             raise HTTPException(503, 'ENV host failed')
         return {'running': host.running, 'result': host.final_result, 'started_at': host.started_at,
                 'state': session.runtime.host_status()}
+    @app.post('/view/{faction}')
+    async def view(faction: str, authorization: str = Header(default='')):
+        authorize(authorization)
+        if faction not in view_tokens:
+            raise HTTPException(403)
+        return {'url': f'ws://127.0.0.1:{web.port}/stream', 'token': view_tokens[faction]}
+
     @app.post('/start')
     async def start(authorization: str = Header(default='')):
         authorize(authorization)

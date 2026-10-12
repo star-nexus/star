@@ -21,20 +21,26 @@ def create_app(settings=None, store=None, workers=None):
     store.initialize()
     arena = Arena(settings, store, workers or Workers(settings))
     mcp, registry = build_tools(arena)
+    from .events import EventService
+    events_service = EventService(arena)
+    events_service.install(mcp)
     mcp_app = mcp.streamable_http_app(stateless_http=True, json_response=True,
         host=settings.public_url.split('://')[-1].split('/')[0].split(':')[0])
 
     @asynccontextmanager
     async def lifespan(app):
-        from .policy import monitor
-        task = asyncio.create_task(monitor(arena))
-        async with mcp_app.router.lifespan_context(mcp_app):
-            try:
-                yield
-            finally:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
-                await arena.workers.close()
+        with store.gateway_lease():
+            from .policy import monitor
+            task = asyncio.create_task(monitor(arena))
+            event_task = asyncio.create_task(events_service.run())
+            async with mcp_app.router.lifespan_context(mcp_app):
+                try:
+                    yield
+                finally:
+                    task.cancel()
+                    event_task.cancel()
+                    await asyncio.gather(task, event_task, return_exceptions=True)
+                    await arena.workers.close()
     app = FastAPI(title='StarBench Arena', lifespan=lifespan)
     app.state.arena = arena
     app.state.mcp = mcp
@@ -95,9 +101,13 @@ def create_app(settings=None, store=None, workers=None):
         async def push_events():
             nonlocal cursor
             while True:
+                if store.one(db.agents, id=agent_id)['generation'] != generation:
+                    await ws.close(code=1008)
+                    return
                 data = arena.read_events(who, match_id, cursor)
                 for event in data['events']:
-                    await send('message', {'type': event['kind'], **event['body']})
+                    kind = 'game_end_notification' if event['kind'] == 'game_finished' else event['kind']
+                    await send('message', {**event['body'], 'type': kind})
                 cursor = data['cursor']
                 await asyncio.sleep(.25)
         events_task = asyncio.create_task(push_events())
@@ -107,6 +117,9 @@ def create_app(settings=None, store=None, workers=None):
                 if store.one(db.agents, id=agent_id)['generation'] != generation:
                     await ws.close(code=1008)
                     return
+                if not isinstance(message, dict) or not isinstance(message.get('payload', {}), (dict, type(None))):
+                    await ws.close(code=1008)
+                    return
                 sender = message.get('sender', {})
                 if sender != {'type': 'agent', 'id': agent_id}:
                     await ws.close(code=1008)
@@ -114,6 +127,9 @@ def create_app(settings=None, store=None, workers=None):
                 if message.get('type') == 'heartbeat':
                     await send('heartbeat', {})
                     continue
+                if message.get('recipient') != {'type': 'env', 'id': match_id}:
+                    await ws.close(code=1008)
+                    return
                 payload = message.get('payload') or {}
                 request_id = payload.get('id')
                 try:
@@ -123,6 +139,11 @@ def create_app(settings=None, store=None, workers=None):
                         action = payload.get('action')
                         if action == 'turn_start_ack':
                             result = {'success': True}
+                        elif action == 'register_agent_info':
+                            params = payload.get('parameters') or {}
+                            if params.get('faction', agent['faction']) != agent['faction'] or params.get('agent_id', agent_id) != agent_id:
+                                raise PermissionError('Registration identity conflicts with assigned seat')
+                            result = (await arena.register_agents(who, match_id, [agent['name']]))[0]['registration']
                         elif action == 'get_operation':
                             result = await arena.get_operation(who, agent_id, payload.get('parameters', {}).get('operation_id'))
                         else:
@@ -132,7 +153,7 @@ def create_app(settings=None, store=None, workers=None):
                 except (ValueError, PermissionError) as exc:
                     result = {'success': False, 'error': str(exc)}
                 await send('message', {'type': 'outcome', 'id': request_id, 'outcome': result, 'outcome_type': 'json'})
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, ValueError):
             pass
         finally:
             events_task.cancel()
@@ -151,5 +172,7 @@ def create_app(settings=None, store=None, workers=None):
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 
+    from .viewer import install_viewer
+    install_viewer(app, arena)
     app.mount('/', mcp_app)
     return app

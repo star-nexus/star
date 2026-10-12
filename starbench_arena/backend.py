@@ -19,6 +19,8 @@ class Workers:
         self.locks = {}
         self.http = httpx.AsyncClient(timeout=5, trust_env=False)
         self.on_event = None
+        self.on_spawn = None
+        self.processes = {}
 
     async def launch(self, match):
         with socket.socket() as sock:
@@ -36,6 +38,9 @@ class Workers:
         process.stdin.write((json.dumps(config) + '\n').encode())
         process.stdin.close()
         worker = {'url': f'http://{self.settings.worker_host}:{port}', 'token': token, 'pid': process.pid}
+        self.processes[match['id']] = process
+        if self.on_spawn:
+            self.on_spawn(match['id'], worker)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -64,7 +69,7 @@ class Workers:
                 return client
             if client:
                 await client.disconnect()
-            client = AgentClient(self.settings.hub_url, agent['match_id'], key)
+            client = AgentClient(self.settings.hub_url, agent['match_id'], key, connection_options={'proxy': None})
             async def event(envelope):
                 payload = envelope.get('payload') or {}
                 if payload.get('type') in ('turn_start', 'game_end_notification'):
@@ -87,7 +92,19 @@ class Workers:
                 await client.disconnect()
                 del self.clients[key]
         if match.get('worker'):
-            await self.control(match['worker'], 'stop')
+            try:
+                await self.control(match['worker'], 'stop')
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                # The private loopback endpoint no longer exists. Never signal a
+                # persisted PID: after restart that PID could belong to another app.
+                pass
+        process = self.processes.pop(match['id'], None)
+        if process is not None:
+            try:
+                await asyncio.to_thread(process.wait, 5)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                await asyncio.to_thread(process.wait, 5)
 
     async def close(self):
         for client in self.clients.values():

@@ -57,6 +57,15 @@ def test_live_match_mcp_and_native(hub, mode, tmp_path):
             messages = call('a', 'read_team_messages', agent_handle=scout, operation_id='drain')
             assert messages['count'] == 1
             assert call('a', 'read_team_messages', agent_handle=scout, operation_id='drain') == messages
+            link = call('a', 'get_view_link', match_id=match)
+            assert link['faction'] == 'wei' and link['can_control'] is False
+            assert client.get('/watch/').status_code == 200
+            with client.websocket_connect('/watch/stream') as view:
+                view.send_json({'kind': 'hello', 'token': link['url'].split('token=')[1]})
+                welcome = view.receive_json()
+                assert welcome['can_control'] is False and welcome['view'] == 'wei', welcome
+                snapshot = view.receive_json()
+                assert snapshot['kind'] == 'snapshot', snapshot
             call('a', 'ready_match', match_id=match); call('b', 'ready_match', match_id=match)
             assert call('a', 'get_match_status', match_id=match)['status'] == 'running'
             meta = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -87,6 +96,7 @@ def test_live_match_mcp_and_native(hub, mode, tmp_path):
                 time.sleep(.1)
             assert result['status'] == 'finished', result
             assert result['result']['source'] == 'resignation'
+            assert call('a', 'report_usage', agent_handle=ah, operation_id='usage', metrics=None)['source'] == 'unavailable'
             board = client.get('/leaderboard/' + mode).json()
             assert len(board['rows']) == 2
             assert board['rows'][0]['elo'] == 1016
@@ -96,3 +106,38 @@ def test_live_match_mcp_and_native(hub, mode, tmp_path):
                 try:
                     urllib.request.urlopen(urllib.request.Request(row['worker']['url'] + '/stop', data=b'', headers={'Authorization': 'Bearer ' + row['worker']['token']}), timeout=2).close()
                 except OSError: pass
+
+
+def test_gateway_restart_recovers_same_worker_and_operations(hub, tmp_path):
+    settings = Settings(development=True, hub_url=hub)
+    database = 'sqlite:///' + str(tmp_path / 'recover.db')
+    headers = {'Authorization': 'Bearer dev:a'}
+    app = create_app(settings, Store(database))
+    def invoke(client, owner, tool, **args):
+        response = client.post('/api/' + tool, headers={'Authorization': 'Bearer dev:' + owner}, json=args)
+        assert response.status_code == 200, response.text
+        return response.json()
+    with TestClient(app, base_url=settings.public_url) as client:
+        a = invoke(client, 'a', 'register_entry', name='a', version='v')['id']
+        b = invoke(client, 'b', 'register_entry', name='b', version='v')['id']
+        mid = invoke(client, 'a', 'request_match', entry_id=a, mode='real_time')['id']
+        invoke(client, 'b', 'request_match', entry_id=b, mode='real_time')
+        ah = invoke(client, 'a', 'register_agents', match_id=mid, names=['commander'])[0]['agent_handle']
+        invoke(client, 'b', 'register_agents', match_id=mid, names=['commander'])
+        invoke(client, 'a', 'ready_match', match_id=mid); invoke(client, 'b', 'ready_match', match_id=mid)
+        original = invoke(client, 'a', 'broadcast_team_message', agent_handle=ah, text='before restart', operation_id='message')
+        from starbench_arena import store as db
+        pid = app.state.arena.store.one(db.matches, id=mid)['worker']['pid']
+    resumed = create_app(settings, Store(database))
+    with TestClient(resumed, base_url=settings.public_url) as client:
+        assert resumed.state.arena.store.one(db.matches, id=mid)['worker']['pid'] == pid
+        assert invoke(client, 'a', 'get_observation', agent_handle=ah)['success']
+        assert invoke(client, 'a', 'broadcast_team_message', agent_handle=ah, text='before restart', operation_id='message') == original
+        invoke(client, 'a', 'resign_match', match_id=mid)
+        for _ in range(100):
+            if invoke(client, 'a', 'get_result', match_id=mid)['status'] == 'finished': break
+            time.sleep(.1)
+        assert invoke(client, 'a', 'get_result', match_id=mid)['status'] == 'finished'
+    # Reap the original child after the recovered gateway stopped it.
+    for process in app.state.arena.workers.processes.values():
+        process.wait(timeout=10)

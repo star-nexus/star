@@ -29,11 +29,14 @@ class AgentClient(AsyncWebSocketClient):
         env_id: str,
         agent_id: str,
         action_timeout: float = DEFAULT_ACTION_TIMEOUT,
+        *,
+        connection_options: Optional[Dict[str, Any]] = None,
     ):
         client_info = ClientInfo(type=ClientType.AGENT, id=agent_id)
         super().__init__(server_url, client_info)
         self.env_id = env_id
         self.action_timeout = action_timeout
+        self.connection_options = dict(connection_options or {})
         self._correlator = Correlator()
 
         # Registered here rather than left to the application: correlation is

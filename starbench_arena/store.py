@@ -1,6 +1,6 @@
 """Durable application identities, operations, events and ordered settlements."""
 from contextlib import contextmanager
-from sqlalchemy import JSON, Column, Float, Integer, MetaData, String, Table, UniqueConstraint, create_engine, select
+from sqlalchemy import Boolean, JSON, Column, Float, Integer, MetaData, String, Table, UniqueConstraint, create_engine, select
 from sqlalchemy.pool import StaticPool
 
 metadata = MetaData()
@@ -18,6 +18,7 @@ matches = Table('arena_matches', metadata,
 agents = Table('arena_agents', metadata,
     Column('id', String, primary_key=True), Column('match_id', String, nullable=False),
     Column('owner', String, nullable=False), Column('faction', String, nullable=False),
+    Column('registered', Boolean, nullable=False, default=False),
     Column('name', String, nullable=False), Column('generation', Integer, nullable=False, default=0),
     UniqueConstraint('match_id', 'owner', 'name'))
 operations = Table('arena_operations', metadata,
@@ -37,7 +38,9 @@ subscriptions = Table('arena_subscriptions', metadata,
     Column('id', String, primary_key=True), Column('owner', String, nullable=False),
     Column('match_id', String, nullable=False), Column('event', String, nullable=False),
     Column('url', String, nullable=False), Column('secret', String, nullable=False),
-    Column('cursor', Integer, nullable=False, default=0))
+    Column('cursor', Integer, nullable=False, default=0),
+    Column('expires', Float, nullable=False), Column('next_attempt', Float, nullable=False, default=0),
+    Column('failures', Integer, nullable=False, default=0))
 
 class Store:
     def __init__(self, url):
@@ -71,3 +74,40 @@ class Store:
     def update(self, table, where, **values):
         with self.transaction() as c:
             c.execute(table.update().filter_by(**where).values(**values))
+
+    @contextmanager
+    def gateway_lease(self):
+        """Single scheduler/writer per database; workers survive gateway restarts."""
+        if self.engine.dialect.name == 'postgresql':
+            from sqlalchemy import text
+            connection = self.engine.connect()
+            try:
+                acquired = connection.execute(text('SELECT pg_try_advisory_lock(1937006962)')).scalar()
+                connection.commit()
+                if not acquired:
+                    raise RuntimeError('Another Arena gateway owns this database')
+                yield
+            finally:
+                connection.execute(text('SELECT pg_advisory_unlock(1937006962)'))
+                connection.commit()
+                connection.close()
+        elif self.engine.url.database not in (None, ':memory:'):
+            import fcntl
+            from pathlib import Path
+            with Path(self.engine.url.database + '.gateway.lock').open('a') as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise RuntimeError('Another Arena gateway owns this database') from None
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+        else:
+            yield
+
+# Opaque, expiring readonly browser tickets. Only hashes are stored.
+view_tickets = Table('arena_view_tickets', metadata,
+    Column('id', String, primary_key=True), Column('owner', String, nullable=False),
+    Column('match_id', String, nullable=False), Column('faction', String, nullable=False),
+    Column('expires', Float, nullable=False))

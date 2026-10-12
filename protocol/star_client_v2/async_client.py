@@ -27,7 +27,7 @@ class AsyncWebSocketClient(BaseWebSocketClient):
         """Connect to the WebSocket server."""
         try:
             url = self.url()
-            self.websocket = await websockets.connect(url)
+            self.websocket = await websockets.connect(url, **getattr(self, 'connection_options', {}))
 
             # Start message listener and heartbeat tasks
             self._message_task = asyncio.create_task(self._message_loop())

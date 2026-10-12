@@ -1,12 +1,16 @@
 """One typed tool registry shared by authenticated HTTP and MCP."""
 from contextvars import ContextVar
-from pydantic import validate_call
+from pydantic import validate_call, BaseModel
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.types import ToolAnnotations
 from .auth import Principal
 from . import store as db
+
+class Profile(BaseModel):
+    id: str
+    name: str | None = None
 
 http_principal = ContextVar('arena_principal', default=None)
 
@@ -38,10 +42,10 @@ def build_tools(arena):
         return register
 
     @tool(read=True, profile=True)
-    async def get_profile() -> dict:
+    async def get_profile() -> Profile:
         """Return the authenticated account's stable identity; use it for invitation enrollment."""
         p = principal()
-        return {'id': p.subject, **({'name': p.name} if p.name else {})}
+        return Profile(id=p.subject, name=p.name)
 
     @tool()
     async def register_entry(name: str, version: str, details: dict | None = None) -> dict:
@@ -143,6 +147,12 @@ def build_tools(arena):
     async def report_usage(agent_handle: str, operation_id: str, metrics: dict | None = None) -> dict:
         """Optionally report measured usage; omit metrics when unavailable (e.g. webpage ChatGPT)."""
         return await arena.report_usage(principal(), agent_handle, metrics, operation_id)
+
+    @tool()
+    async def get_view_link(match_id: str) -> dict:
+        """Issue a one-hour readonly browser link showing only your assigned faction."""
+        from .viewer import issue_ticket
+        return issue_ticket(arena, principal(), match_id)
 
     @tool(read=True)
     async def get_result(match_id: str) -> dict:
