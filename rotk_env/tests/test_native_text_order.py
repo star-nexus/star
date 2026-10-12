@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.runtime.bootstrap import export_initial_state
 from rotk_env.runtime.native import ActionRequest, RustRuntime
 from rotk_env.systems.llm_system import LLMSystem

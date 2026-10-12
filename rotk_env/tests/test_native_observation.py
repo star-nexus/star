@@ -1,8 +1,8 @@
 """Read-only native faction projection, exact decoded responses and cache scope."""
 import json
 import pytest
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.components import (ActionPoints, Combat, FogOfWar, GameStats, GameState,
                                  TeamCoordination, UnitCount, UnitSkills)
 from rotk_env.prefabs.config import Faction

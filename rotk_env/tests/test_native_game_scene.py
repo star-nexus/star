@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env import components as c
 from rotk_env.main import parse_arguments, game_scene_kwargs_from_args
 from rotk_env.scenes.game_scene import GameScene

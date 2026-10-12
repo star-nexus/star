@@ -46,7 +46,7 @@ fn check_control_epoch(runtime: &Runtime, expected: Option<u64>) -> Result<(), S
 
 /// Owned Rust world. The lock is always acquired after detaching from Python.
 /// A poisoned instance errors permanently; no recovery into a different world.
-#[pyclass(frozen, module = "star_native._native")]
+#[pyclass(frozen, module = "star_rust_runtime._native")]
 struct NativeRuntime {
     inner: Mutex<NativeState>,
 }

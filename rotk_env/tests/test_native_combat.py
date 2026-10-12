@@ -2,8 +2,8 @@
 import json
 
 import pytest
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from framework.engine.events import EBS
 from rotk_env.components import Combat, Unit, UnitCount, UnitStatus, HexPosition, GameTime, ActionPoints, RngService
 from rotk_env.prefabs.config import UnitType, UnitState, TerrainType

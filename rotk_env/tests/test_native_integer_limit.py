@@ -2,7 +2,7 @@
 import sys
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.runtime.native import ActionRequest
 from rotk_env.systems.llm_system import _LLM_STATS_ADD_KEYS
 from rotk_env.tests.test_native_telemetry import pair

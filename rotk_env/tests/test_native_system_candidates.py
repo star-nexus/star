@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.components import HexPosition, Vision
 from rotk_env.prefabs.config import GameMode
 from rotk_env.runtime.bootstrap import export_initial_state

@@ -2,7 +2,7 @@
 import json
 
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env.components import (ActionPoints, ConstructionPoints, SkillPoints, UnitSkills,
     UnitStatus, MatchRules, GameModeComponent, GameState, GameTime, HexPosition, Player, MapData, TerritoryControl)
 from rotk_env.prefabs.config import Faction, GameMode, PlayerType, UnitState, TerrainType

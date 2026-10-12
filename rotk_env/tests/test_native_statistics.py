@@ -3,8 +3,8 @@ import json
 import time
 
 import pytest
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.components import BattleLog, Combat, FogOfWar, GameTime, UnitCount, UnitStatistics, UnitObservation
 from rotk_env.prefabs.config import GameMode
 from rotk_env.runtime.bootstrap import export_initial_state

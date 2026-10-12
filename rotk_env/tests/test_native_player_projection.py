@@ -1,7 +1,7 @@
 """Benchmark GAP G004: Player membership is part of the derived view contract."""
 from copy import deepcopy
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from rotk_env import components as c
 from rotk_env.prefabs.config import Faction, GameMode, PlayerType
 from rotk_env.runtime.bootstrap import export_initial_state,encode

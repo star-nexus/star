@@ -9,7 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "star",
-    "star-native",
+    "star-rust-runtime",
 ]
 
 [[package]]
@@ -1201,7 +1201,7 @@ arena-hub = [
     { name = "python-jose", extra = ["cryptography"] },
 ]
 native = [
-    { name = "star-native" },
+    { name = "star-rust-runtime" },
 ]
 pygame = [
     { name = "pygame" },
@@ -1232,7 +1232,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "sqlalchemy", marker = "extra == 'arena'", specifier = ">=2,<3" },
-    { name = "star-native", marker = "extra == 'native'", editable = "rotk_env/native/python" },
+    { name = "star-rust-runtime", marker = "extra == 'native'", editable = "rotk_env/native/python" },
     { name = "toml" },
     { name = "uvicorn", marker = "extra == 'arena'", specifier = ">=0.34,<1" },
     { name = "websockets", specifier = ">=15.0.1" },
@@ -1247,7 +1247,7 @@ dev = [
 ]
 
 [[package]]
-name = "star-native"
+name = "star-rust-runtime"
 version = "0.1.0"
 source = { editable = "rotk_env/native/python" }
 

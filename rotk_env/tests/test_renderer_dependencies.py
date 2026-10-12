@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 
 
 @pytest.mark.parametrize('renderer', ['web', 'pygame'])

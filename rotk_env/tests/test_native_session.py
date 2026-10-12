@@ -7,7 +7,7 @@ import sys
 import pygame
 import pytest
 
-pytest.importorskip("star_native")
+pytest.importorskip("star_rust_runtime")
 from framework.engine.events import EBS, Event
 from framework.engine.engine_event import KeyDownEvent
 from rotk_env import components as c

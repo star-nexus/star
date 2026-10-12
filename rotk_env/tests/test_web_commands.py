@@ -1,5 +1,5 @@
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 
 from rotk_env.rendering.commands import CommandGateway, ViewGrant
 from rotk_env.runtime.session import NativeSession

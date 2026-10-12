@@ -2,7 +2,7 @@
 
 import pytest
 
-pytest.importorskip("star_native")
+pytest.importorskip("star_rust_runtime")
 from rotk_env.components import (
     ActionPoints, ConstructionPoints, FogOfWar, GameState, MapData, Player,
     TerritoryControl, TurnManager, UnitStatus,

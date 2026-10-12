@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env.tests.test_native_statistics_compute import initial_statistics
 
 

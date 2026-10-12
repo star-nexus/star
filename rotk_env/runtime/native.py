@@ -16,18 +16,18 @@ _UNSET = object()
 
 def load_native():
     try:
-        import star_native
-        from star_native import NativeRuntime, RULES_VERSION
+        import star_rust_runtime
+        from star_rust_runtime import NativeRuntime, RULES_VERSION
     except ImportError as exc:
-        raise RuntimeError('Rust backend is unavailable. Install star-native (developer: uv sync --extra native).') from exc
+        raise RuntimeError('Rust backend is unavailable. Install star-rust-runtime (developer: uv sync --extra native).') from exc
     if RULES_VERSION != ORACLE_VERSION:
         raise RuntimeError(f'Rust rules version mismatch: {RULES_VERSION}; expected {ORACLE_VERSION}')
-    actual_api = getattr(star_native, 'API_VERSION', None)
+    actual_api = getattr(star_rust_runtime, 'API_VERSION', None)
     if actual_api != NATIVE_API_VERSION:
-        raise RuntimeError(f'Rust API version mismatch: {actual_api}; expected {NATIVE_API_VERSION}. Rebuild/install the matching star-native wheel.')
+        raise RuntimeError(f'Rust API version mismatch: {actual_api}; expected {NATIVE_API_VERSION}. Rebuild/install the matching star-rust-runtime wheel.')
     if not all(hasattr(NativeRuntime, name) for name in
                ('_execute_host_action_json', '_commit_host_action_json')):
-        raise RuntimeError('Rust ENV host extension mismatch. Rebuild/install the matching star-native wheel.')
+        raise RuntimeError('Rust ENV host extension mismatch. Rebuild/install the matching star-rust-runtime wheel.')
     return NativeRuntime
 
 

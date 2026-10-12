@@ -2,8 +2,8 @@
 import json
 import pytest
 
-pytest.importorskip('star_native')
-from star_native import NativeRuntime
+pytest.importorskip('star_rust_runtime')
+from star_rust_runtime import NativeRuntime
 from rotk_env import components as c
 from rotk_env.prefabs.config import Faction
 from rotk_env.runtime.bootstrap import export_initial_state

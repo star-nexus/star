@@ -1,6 +1,6 @@
 import time
 import pytest
-pytest.importorskip('star_native')
+pytest.importorskip('star_rust_runtime')
 from starbench_arena.worker import ArenaHost
 from rotk_env.runtime.session import NativeSession
 from rotk_env.prefabs.config import PLAYER_PRESETS
