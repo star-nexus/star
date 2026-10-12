@@ -7,7 +7,7 @@ Arena 是新增的比赛/授权/传输层。Rust ENV 决定合法动作、执行
 本次实现使用 **Rust ECS + Rust ENV**。Arena Worker 显式创建
 `NativeSession(display='none', renderer='web')`，其权威执行器是 `RustRuntime`；
 `web` 对应 Three.js 浏览器展示。Python 负责 MCP、比赛管理与 Rust 绑定调用。
-pygame 是原项目可选的本地窗口渲染器，不是本次 MCP 的执行后端，也不是下面本地 MCP 流程的依赖。
+MCP 与渲染器独立：MCP 通过 star-protocol/HUB 传递观测和动作，ENV 负责执行；Three.js 或 pygame 只负责展示。下面选择 Three.js 便于浏览器观战，这不是 MCP 的要求。
 
 ## 本机验证：先启动 ENV，再连接 MCP
 
@@ -26,18 +26,22 @@ MCP 只连接指定 `env_id`，不会另开、重置或关闭 ENV。两方使用
 ```bash
 uv sync --extra native --extra arena
 npm ci --prefix rotk_env/rendering/web/client
-uv run --extra native --extra arena python -m starbench_arena.local init \
+uv run python -m starbench_arena.local init \
   --config .arena/local.json --env-id local-env --mode turn_based
 ```
 
-配置文件权限为 0600，保存两方随机凭据和独立 SQLite 数据库地址；不会打印凭据。默认 HUB 为 8000 端口、MCP 为 8780。需要更换时，在 init 指定 `--hub-url` / `--port`。
+`uv sync` 是依赖安装/同步步骤，不启动任何服务。`native` 是 Rust Python 绑定依赖组，`arena` 是 MCP、HTTP、认证和存储依赖组，均定义在 `pyproject.toml`。这里一次安装完整本机验证所需依赖；安装后，日常 `uv run` 无需重复添加这两个选项。默认 `uv sync` 会精确同步环境；若还要保留 pygame 窗口依赖，安装时加 `--extra pygame`。
+
+`init` 仅生成本次本地连接配置，不会启动 ENV 或 MCP。配置文件权限为 0600，保存两方随机凭据和独立 SQLite 数据库地址；不会打印凭据。默认 HUB 为 8000 端口、MCP 为 8780。需要更换时，在 init 指定 `--hub-url` / `--port`。
 
 **终端 1：启动 GameServer HUB。**
 
 ```bash
 cd /Users/liyang/Developer/GameServer
-uv run uvicorn gameserver.main:app --host 127.0.0.1 --port 8000
+make dev
 ```
+
+`make dev` 沿用 HUB 自己的 Makefile，实际运行 `uv run fastapi dev gameserver/main.py`，带开发热重载。启动日志应显示本地 8000 端口，与本次 MCP 配置一致。
 
 **终端 2：启动 Rust ENV 与 Three.js。**
 
@@ -54,7 +58,7 @@ uv run starbench.py --backend rust --renderer web --players ai_vs_ai \
 
 ```bash
 cd /Users/liyang/Developer/star-main
-uv run --extra native --extra arena python -m starbench_arena.local serve --config .arena/local.json
+uv run python -m starbench_arena.local serve --config .arena/local.json
 ```
 
 Streamable HTTP 地址为 `http://127.0.0.1:8780/mcp`。本地工具调用从 `list_matches → register_agents → get_action_list → get_observation → claim_units/submit_actions` 开始，不需要 register_entry/request_match/ready_match。这些公网生命周期工具在此模式不会被暴露。
@@ -63,9 +67,11 @@ Streamable HTTP 地址为 `http://127.0.0.1:8780/mcp`。本地工具调用从 `l
 
 ```bash
 cd /Users/liyang/Developer/star-main
-uv run --extra native --extra arena python examples/arena/local_agent.py \
+uv run python examples/arena/local_agent.py \
   --config .arena/local.json --faction shu --once
 ```
+
+这个文件是新增的 MCP 网关调用示例，不是 `rotk_agent` baseline 的替代入口。原 baseline 仍使用 `uv run rotk_agent/main.py`，按其原有配置连接同一个 HUB/ENV；无需为了使用 baseline 启动 MCP。
 
 示例注册 commander/scout 两个 Agent 并读取真实观测；去掉 `--once` 持续观测，在其循环中接入自己的策略。可加 `--units 具体单位ID ...` 验证单位认领。示例用 MCP 网关的同一工具服务；现有 `rotk_agent` 也可按原有 star-protocol 方式直连本地 HUB。直连 HUB 是本机可信研究通道，不经过公网身份隔离，不应对公网开放。
 
@@ -78,7 +84,7 @@ uv run --extra native --extra arena python examples/arena/local_agent.py \
 为了沿用 Desktop Commander 一类本地 MCP 的接入方式，另提供 **stdio 接入进程**。它转发到终端 3 的 MCP 服务，共享同一组 Agent 与去重记录，不会创建第二个 ENV：
 
 ```bash
-uv run --extra native --extra arena python -m starbench_arena.local client-config \
+uv run python -m starbench_arena.local client-config \
   --config .arena/local.json --faction wei
 ```
 
@@ -100,14 +106,14 @@ stdio 的目标命令由 `client-config` 返回。先确认原生本地客户端
 如果要在上线前验证正式匹配、双方 ready、300 秒回合期限和两张榜单，使用已有完整 Arena 模式。此模式由 Arena 创建 Rust ENV Worker，因此只需先启动 HUB，**不再手动启动第二个 ENV**：
 
 ```bash
-ARENA_DEV=1 uv run --extra native --extra arena python -m starbench_arena
+ARENA_DEV=1 uv run python -m starbench_arena
 ```
 
 不要与上面的 local serve 同时占用 8780。完整 Arena 开发令牌为 `dev:alice`、`dev:bob`，两个终端运行：
 
 ```bash
-uv run --extra native --extra arena python examples/arena/harness.py http://127.0.0.1:8780 --name alice --dev-token dev:alice --mode turn_based
-uv run --extra native --extra arena python examples/arena/harness.py http://127.0.0.1:8780 --name bob --dev-token dev:bob --mode turn_based
+uv run python examples/arena/harness.py http://127.0.0.1:8780 --name alice --dev-token dev:alice --mode turn_based
+uv run python examples/arena/harness.py http://127.0.0.1:8780 --name bob --dev-token dev:bob --mode turn_based
 ```
 
 正式生产部署使用相同 Arena 与 Rust Worker，改用 PostgreSQL、GitHub OAuth 和 HTTPS，见 [VPS 一键部署指南](../deploy/arena/README.md)。本机验证无误后填写该部署包参数即可部署。以下各节描述完整 Arena 的公网生命周期与规则。
