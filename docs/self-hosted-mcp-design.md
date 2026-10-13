@@ -147,6 +147,14 @@ StarBench 已经有 MCP SDK、Agent 身份和动作去重。优先复用现有�
 - [OpenAI：连接和测试 MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 - [OpenAI：OAuth 认证](https://developers.openai.com/plugins/build/auth)
 
+## 本次首次部署的选择
+
+运营者已确认：Mac 使用家庭宽带，具有公网 IPv4 和 IPv6，并可配置路由器端口转发。因此第一轮选 direct：域名解析到家庭公网地址，路由器将所需 HTTPS 流量转发到 Mac 上的 Caddy，MCP/HUB/ENV 全部运行在 Mac。无需等待 VPS、无需反向隧道、无需 Desktop Commander。
+
+实施时仍需验证公网地址实际可达、运营商端口限制、防火墙、DNS 与证书；IPv4 优先完成验收，IPv6 验证通过后再发布 AAAA 记录，避免客户端选到不可用地址。Mac 内网地址应固定或设 DHCP 保留；公网地址会变化时配置域名提供商支持的 DDNS。证书签发方式按 80/443 可达性选择；DNS 验证能签发证书，但不能解决 443 被阻断的问题。
+
+公开的是 Caddy 的 HTTPS 入口，HUB 8000、MCP 内部 8780、数据库和 Worker 控制端口保持私有。域名和 OAuth 配置确定后按此路径执行真实 ChatGPT 接入验收。
+
 ## 10. 实施与验收顺序
 
 1. **统一自托管配置与 OAuth attach。** 先保留手动启动的 Mac ENV，验证不同账号只能使用被分配的阵营，重连不会重置比赛，旧本地令牌不能绕过公网认证。
