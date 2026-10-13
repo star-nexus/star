@@ -79,9 +79,10 @@ class ExternalWorkers(Workers):
                 await client.disconnect()
                 del self.clients[key]
 
-    async def client(self, agent):
+    async def client(self, agent, *, verify=True):
+        previous = self.clients.get(agent['id'])
         client = await super().client(agent)
-        if agent.get('registered'):
+        if agent.get('registered') and (verify or client is not previous):
             # Reusing the config after replacing/resetting its ENV would make
             # persisted operation results belong to another world. Fail closed.
             record = await client.call('get_operation', {'operation_id': 'arena-registration-v1'})
@@ -137,7 +138,10 @@ class LocalArena(Arena):
                 if self.store.one(db.matches, id=agent['match_id'])['status'] != 'running':
                     continue
                 try:
-                    await self.workers.client(agent)
+                    # Healthy idle sockets need no application-level query.
+                    # Reconnects still verify identity; real calls also verify
+                    # because the ENV can reset while the HUB socket stays open.
+                    await self.workers.client(agent, verify=False)
                 except RuntimeError as exc:
                     self.store.update(db.matches, {'id': agent['match_id']}, status='aborted')
                     self.emit(agent['match_id'], 'match_aborted', {'reason': str(exc)})

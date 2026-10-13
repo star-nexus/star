@@ -4,6 +4,7 @@ import socket
 import subprocess
 import time
 import urllib.request
+from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 from starbench_arena.local import initialize, load_config, make_app
@@ -68,6 +69,14 @@ def test_attach_existing_rust_web_env(hub, mode, tmp_path):
                     'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':tool,'arguments':params,
                     '_meta':{'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{}}}})
                 assert response.status_code==200 and not response.json()['result'].get('isError'),response.text
+            # Two background maintenance cycles must not fetch registration
+            # results (including the whole action catalog) on healthy sockets.
+            tracked = []
+            for connection in app.state.arena.workers.clients.values():
+                connection.call = AsyncMock(wraps=connection.call)
+                tracked.append(connection.call)
+            time.sleep(2.2)
+            assert all(not call.await_args_list for call in tracked)
         assert env.poll() is None, 'Closing MCP must not stop the external ENV'
         # Restarting the bridge reuses Agent handles and the same operation cache.
         with TestClient(make_app(config),base_url=config['public_url']) as client:
@@ -78,6 +87,50 @@ def test_attach_existing_rust_web_env(hub, mode, tmp_path):
         assert env.poll() is None
     finally:
         env.terminate(); env.wait(timeout=10)
+
+
+@pytest.mark.asyncio
+async def test_idle_maintenance_verifies_reconnect_and_checks_reset_before_use(monkeypatch):
+    from types import SimpleNamespace
+    from starbench_arena import backend
+    from starbench_arena.local import ExternalWorkers
+    from starbench_arena.config import Settings
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            self.websocket = None
+            self.call = AsyncMock(return_value={'state': 'completed'})
+
+        def add_hub_listener(self, *args):
+            pass
+
+        async def connect(self):
+            self.websocket = SimpleNamespace(close_code=None)
+
+        async def disconnect(self):
+            self.websocket.close_code = 1000
+
+    monkeypatch.setattr(backend, 'AgentClient', Connection)
+    workers = ExternalWorkers(Settings(development=True))
+    agent = {'id': 'test-agent', 'match_id': 'test-env', 'registered': True}
+    try:
+        first = await workers.client(agent, verify=False)
+        assert first.call.await_count == 1
+        for _ in range(10):
+            assert await workers.client(agent, verify=False) is first
+        assert first.call.await_count == 1
+        await first.disconnect()
+        second = await workers.client(agent, verify=False)
+        assert second is not first and second.call.await_count == 1
+        # ENV replacement need not close the Agent-to-HUB socket. A real tool
+        # call must detect loss even after quiet idle maintenance.
+        second.call.return_value = {'state': 'not_found'}
+        with pytest.raises(RuntimeError, match='ENV identity was lost'):
+            await workers.call(agent, 'move', {'unit_id': 1}, 'move-once')
+        assert [args.args[0] for args in second.call.await_args_list] == ['get_operation', 'get_operation']
+        assert second.websocket.close_code == 1000
+    finally:
+        await workers.close()
 
 
 def test_stdio_relay_has_faction_identity_and_no_lifecycle_tools(tmp_path):
