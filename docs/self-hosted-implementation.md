@@ -11,7 +11,7 @@
 - 运营者已将 `auth.starverse.chat` 专门分配给 STAR；本轮准备 `https://auth.starverse.chat:10000/mcp`，实例目录 `.arena/deployments/star-direct/`。只读探针不连接 HUB 或游戏数据库。
 - STAR 使用自身存储为新域名申请的证书已成功签发，TLS 本机校验通过，到期时间为 2027-02-02 20:42:21 UTC。没有使用另一项目的证书。
 - 运营者更新 AAAA 后，Google DNS-over-HTTPS 返回 `2408:8207:1901:c050::4`；本机常规解析仍一度返回旧 `::2`。两种证据分开记录，未改写系统 DNS 或代理配置。
-- ChatGPT 原生验收尚待客户端返回 `connectivity_probe` 回执，并与 STAR 日志核对；证书签发不等于这项通过。
+- ChatGPT 经官方 Tunnel 原生调用 `connectivity_probe` 已返回回执，且与 STAR 服务端日志核对一致；证据保存在本实例 `probe-evidence.json`。此结果不代表直接 HTTPS 外网或 OAuth/游戏控制已经通过。
 
 当前官方文档仍支持 HTTPS Streamable HTTP 和静态预注册 OAuth 客户端。实际接入时从管理页复制精确回调；生产 Realm 显式提供 `profile`、`email` 与 `arena:play` scope，避免客户端请求已公布的 OIDC scope 时登录失败。[ChatGPT 接入说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)、[认证契约](https://developers.openai.com/plugins/build/auth)。
 
@@ -32,13 +32,12 @@ Linux 镜像已在本轮构建成功，Compose 启动、健康接口、认证拒
 
 本机只有一个已配置 Tunnel ID。经运营者明确授权，已保存原路由配置，再将原本面向 `18893/mcp` 的 tunnel-client 切到 `8781/mcp`。starmux 应用本身未停止、代码和启动配置未改动；但使用同一个 Tunnel 的旧插件现在会到达 STAR，必须刷新工具。原路由可恢复，独立长期运行建议为两套应用分配不同 Tunnel ID，不能让同一 ID 的两个客户端同时转发到不同应用。
 
-网络子项目 0.1.1 提供可选 `python -m star_network.tunnel start/status/stop`。本实例配置、私密运行凭据和原路由保存在 `.arena/deployments/star-direct/`，均不进入 Git。直接 HTTPS 部署无需安装 tunnel-client。Tunnel 的 `healthz/readyz` 已通过，客户端原生工具回执仍需单独核对。
+网络子项目 0.1.1 提供可选 `python -m star_network.tunnel start/status/stop`。本实例配置、私密运行凭据和原路由保存在 `.arena/deployments/star-direct/`，均不进入 Git。直接 HTTPS 部署无需安装 tunnel-client。Tunnel 的 `healthz/readyz` 已通过，客户端原生工具回执已与日志核对。其他 AI 客户端的直接 HTTPS 调用仍待单独验收。
 
 ```sh
-# 从 STAR 根目录运行，网络仓库随发行包放在相邻目录。
-PYTHONPATH=../star-network uv run python -m star_network.tunnel status \
-  --config .arena/deployments/star-direct/tunnel.json \
-  --state-dir .arena/deployments/star-direct/tunnel
+# 从 STAR 根目录运行；部署命令内部调用随包交付的网络组件。
+uv run python -m deploy.arena.self_hosted tunnel-status \
+  --config .arena/deployments/star-direct/deployment.json
 
 # 如需恢复原 Tunnel 上游：先停止 STAR 转发，再启动保存的原路由。
 PYTHONPATH=../star-network uv run python -m star_network.tunnel stop \
@@ -51,7 +50,7 @@ PYTHONPATH=../star-network uv run python -m star_network.tunnel start \
 
 OAuth discovery 可以走 Tunnel，但浏览器登录和授权服务并不会因此自动全部可达；登录、令牌兑换、刷新仍需实际验收。[官方 Tunnel 文档](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。
 
-本轮检查：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
+本轮主要回归：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
 
 ## 上轮记录（2026-10-15）
 

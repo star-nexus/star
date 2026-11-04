@@ -114,3 +114,22 @@ def test_source_bundle_omits_untracked_files_and_rejects_modified_source(tmp_pat
     with pytest.raises(ValueError,match='Commit source changes'):
         bundle(config,tmp_path/'rejected.tar.gz')
     assert not (tmp_path/'rejected.tar.gz').exists()
+
+
+def test_optional_tunnel_uses_network_cli_without_application_tokens(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from deploy.arena.self_hosted import tunnel_control
+    config={'network_source':'/independent/network'}
+    with pytest.raises(ValueError,match='Configure this instance tunnel.json'):
+        tunnel_control(config,tmp_path,'status')
+    (tmp_path/'tunnel.json').write_text('{}')
+    captured={}
+    def run(args,**kwargs):
+        captured.update(args=args,**kwargs)
+        return SimpleNamespace(returncode=0,stdout='{"owned_process": true}',stderr='')
+    monkeypatch.setattr('deploy.arena.self_hosted.subprocess.run',run)
+    assert tunnel_control(config,tmp_path,'status')['owned_process']
+    assert captured['args'][1:4]==['-m','star_network.tunnel','status']
+    assert captured['env']['PYTHONPATH']=='/independent/network'
+    assert str(tmp_path/'tunnel.json') in captured['args']
+    assert not any('Bearer' in str(item) for item in captured['args'])

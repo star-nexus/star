@@ -132,6 +132,19 @@ def network(config, state, command, *, probe=False):
     return result
 
 
+def tunnel_control(config, state, command):
+    """Optional transport stays behind the independent network project's CLI."""
+    path=state/'tunnel.json'
+    if not path.exists():
+        raise ValueError('Configure this instance tunnel.json before using the optional tunnel')
+    env={**os.environ,'PYTHONPATH':config['network_source']}
+    result=subprocess.run([sys.executable,'-m','star_network.tunnel',command,
+        '--config',str(path),'--state-dir',str(state/'tunnel')],env=env,capture_output=True,text=True)
+    if result.returncode:
+        raise RuntimeError('Tunnel operation failed: '+result.stderr[-1200:])
+    return json.loads(result.stdout)
+
+
 def generated(config, state, *, require_oauth=True):
     from deploy.arena.deploy import make_realm, read_env
     credentials = private(config['secrets_file'])
@@ -323,7 +336,7 @@ def check_disk(config, state):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['init','plan','prepare','probe','up','status','diagnose','stop','down','backup','restore','bundle','grant','revoke'])
+    p.add_argument('command',choices=['init','plan','prepare','probe','up','status','diagnose','stop','down','backup','restore','bundle','grant','revoke','tunnel-start','tunnel-status','tunnel-stop'])
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--public-url',help='Explicit HTTPS origin for a new deployment')
     p.add_argument('--platform',choices=['macos','linux'],default='macos')
@@ -340,7 +353,9 @@ def main():
     # All deployment mutations are serialized independently of the network process lock.
     with (state/'deployment.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        if a.command=='plan':
+        if a.command.startswith('tunnel-'):
+            print(json.dumps(tunnel_control(config,state,a.command.removeprefix('tunnel-')),indent=2))
+        elif a.command=='plan':
             print(json.dumps(network(config,state,'plan'),indent=2))
         elif a.command=='probe':
             if config['platform']!='macos':raise ValueError('Probe orchestration is currently a Mac host command')
