@@ -2,7 +2,58 @@
 
 面向研发与部署维护者。本文区分可执行的本地流程、已验证能力和尚未完成的外部验收，不替代社区快速上手指南。
 
-## 当前边界
+## 2026-11-04 恢复开发
+
+部署继续采用 STAR 自身的 HTTPS MCP、Keycloak、Arena、私有 HUB 与 Rust ENV，不引入 starmux、Desktop Commander 或 Gateway 依赖。网络子项目随源码部署包一起交付；维护者使用一个 STAR 部署入口。其他项目现役服务和证书保持独立。
+
+- 源工作区沿用 `codex/self-hosted-mcp`，积压实现已提交为 `9890c3d`，没有增加 worktree。
+- 新实例必须显式提供 `--public-url`，不再默认占用 `mcp.starverse.chat`。
+- 运营者已将 `auth.starverse.chat` 专门分配给 STAR；本轮准备 `https://auth.starverse.chat:10000/mcp`，实例目录 `.arena/deployments/star-direct/`。只读探针不连接 HUB 或游戏数据库。
+- STAR 使用自身存储为新域名申请的证书已成功签发，TLS 本机校验通过，到期时间为 2027-02-02 20:42:21 UTC。没有使用另一项目的证书。
+- 运营者更新 AAAA 后，Google DNS-over-HTTPS 返回 `2408:8207:1901:c050::4`；本机常规解析仍一度返回旧 `::2`。两种证据分开记录，未改写系统 DNS 或代理配置。
+- ChatGPT 原生验收尚待客户端返回 `connectivity_probe` 回执，并与 STAR 日志核对；证书签发不等于这项通过。
+
+当前官方文档仍支持 HTTPS Streamable HTTP 和静态预注册 OAuth 客户端。实际接入时从管理页复制精确回调；生产 Realm 显式提供 `profile`、`email` 与 `arena:play` scope，避免客户端请求已公布的 OIDC scope 时登录失败。[ChatGPT 接入说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)、[认证契约](https://developers.openai.com/plugins/build/auth)。
+
+认证服务放在 VM 时，本轮观察到约 3 秒签发时钟差。Arena 只对 `iat` 的未来时间容许最多 5 秒；签名、issuer、audience、scope、`exp` 和 `nbf` 仍严格校验。该容差不改变 ENV 时钟或回合规则。
+
+Linux 镜像已在本轮构建成功，Compose 启动、健康接口、认证拒绝和 MCP 资源元数据检查通过。`tests/arena/container_smoke.py` 在 Arena 容器内连接独立私有 HUB，实际运行两种模式的 Rust Worker，验证注册、多 Agent、动作目录、观测、消息消费去重、回合结束重试、投降结算和 Elo。测试 API 仅存在于进程内，不公开开发认证端口，也不使用生产游戏数据库；这不替代真实玩家完整对局或 VPS 外网验收。
+
+发行包使用两个仓库的提交源码和版本标识；未跟踪的私人文件、媒体和运行配置不打包，已跟踪源码有未提交更改时拒绝打包。项目中新出现的 `.tmp/`、`prepared-media/` 和 `videos/` 未修改或删除。
+
+### ChatGPT 可选 Tunnel（2026-11-04 运营者调整）
+
+运营者说明当前 ChatGPT 网络条件只能使用 Tunnel，其他客户端仍需 HTTPS。因此两条入口并存：
+
+- 通用客户端 → `https://auth.starverse.chat:10000/mcp` → STAR。
+- ChatGPT → OpenAI Secure MCP Tunnel → 官方 `tunnel-client` → `http://127.0.0.1:8781/mcp` → STAR。
+
+两条路径最终调用同一 MCP 服务，OAuth 与席位权限由 STAR 验证。Tunnel 运行凭据不是游戏控制令牌；没有安装固定 Bearer、共享阵营 token 或终端工具。上游仍是只读探针，正式游戏入口需后续 OAuth 验收。
+
+本机只有一个已配置 Tunnel ID。经运营者明确授权，已保存原路由配置，再将原本面向 `18893/mcp` 的 tunnel-client 切到 `8781/mcp`。starmux 应用本身未停止、代码和启动配置未改动；但使用同一个 Tunnel 的旧插件现在会到达 STAR，必须刷新工具。原路由可恢复，独立长期运行建议为两套应用分配不同 Tunnel ID，不能让同一 ID 的两个客户端同时转发到不同应用。
+
+网络子项目 0.1.1 提供可选 `python -m star_network.tunnel start/status/stop`。本实例配置、私密运行凭据和原路由保存在 `.arena/deployments/star-direct/`，均不进入 Git。直接 HTTPS 部署无需安装 tunnel-client。Tunnel 的 `healthz/readyz` 已通过，客户端原生工具回执仍需单独核对。
+
+```sh
+# 从 STAR 根目录运行，网络仓库随发行包放在相邻目录。
+PYTHONPATH=../star-network uv run python -m star_network.tunnel status \
+  --config .arena/deployments/star-direct/tunnel.json \
+  --state-dir .arena/deployments/star-direct/tunnel
+
+# 如需恢复原 Tunnel 上游：先停止 STAR 转发，再启动保存的原路由。
+PYTHONPATH=../star-network uv run python -m star_network.tunnel stop \
+  --config .arena/deployments/star-direct/tunnel.json \
+  --state-dir .arena/deployments/star-direct/tunnel
+PYTHONPATH=../star-network uv run python -m star_network.tunnel start \
+  --config .arena/deployments/star-direct/tunnel.previous.json \
+  --state-dir .arena/deployments/star-direct/tunnel
+```
+
+OAuth discovery 可以走 Tunnel，但浏览器登录和授权服务并不会因此自动全部可达；登录、令牌兑换、刷新仍需实际验收。[官方 Tunnel 文档](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。
+
+本轮检查：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
+
+## 上轮记录（2026-10-15）
 
 2026-10-15：STAR 在源工作区的 `codex/self-hosted-mcp` 分支实施；网络项目位于相邻的 `star-network` 独立仓库。本机配置目录为 `.arena/deployments/mac-direct/`，历史目录名保留，但入口已切换为 **existing**。
 
@@ -89,7 +140,7 @@ uv run python -m deploy.arena.self_hosted restore --config .arena/deployments/my
 
 Linux VPS 使用 `init --platform linux --lifecycle managed`，选择 direct 或 existing。existing 仅将 Arena/Keycloak 映射到 VPS 回环地址；HUB/数据库无公网端口。direct 的 Caddy 由本实例 Compose 管理。Linux Compose 配置已通过解析；本次镜像构建在复制 Rust 工具链时因主机磁盘耗尽失败，未启动 Linux Arena/HUB。完整 Linux 容器与 VPS 外网仍需分别验收。
 
-两个仓库提交后可生成不含运行配置和凭据的源码部署包：
+两个仓库提交后可生成不含运行配置和凭据的源码部署包（仅包含已提交文件）：
 
 ```sh
 uv run python -m deploy.arena.self_hosted bundle --config .arena/deployments/my-server/deployment.json \

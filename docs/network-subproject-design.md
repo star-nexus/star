@@ -156,3 +156,10 @@ Desktop Commander 的源码可用于理解就绪检查、凭据更新、退避�
 当前 Mac 的 STAR 配置使用 existing；不对 mcp.starverse.chat 重复发起 ACME、不读取独立 Mac MCP Gateway 的证书目录、不修改其启动配置，也不启动公网 Caddy。独立主机的 direct/DNS-01 和外部证书文件模式继续保留。
 
 existing 不读取 DNS 凭据，不启动或重载外部代理。它只给出路由要求和检查结果；运营者实际添加路由是单独的集成步骤。网络健康报告不能替代 OAuth 和模型客户端验收。
+
+
+## 2026-11-04：可选客户端 Tunnel 适配器
+
+在运营者明确选择下，0.1.1 提供独立 `star_network.tunnel` 进程适配器，可与 direct/existing 并用。它使用运营者提供的官方 tunnel-client、Tunnel ID 和私密运行凭据；不创建远程 Tunnel，不改其他项目配置，不安装应用 Authorization 头。管理接口只监听回环，停止操作校验 PID 身份。原 v1 HTTPS 契约保持兼容，无需 Tunnel 的用户不增加安装步骤。
+
+适配器不将进程就绪标为客户端工具调用通过。不同应用应使用不同 Tunnel ID；临时重定向必须先停止旧转发并保存恢复配置。应用仍负责 OAuth 和用户权限，网络组件不签发游戏令牌。

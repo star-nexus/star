@@ -20,3 +20,17 @@ async def test_jwt_resource_issuer_expiry_scope_and_invitation():
     auth.invited(Principal('alice'))
     with pytest.raises(PermissionError): auth.invited(Principal('bob'))
     assert await auth.verify_token('dev:alice') is None
+
+
+@pytest.mark.asyncio
+async def test_small_issuance_clock_skew_does_not_extend_expiry():
+    key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
+    auth=Auth(Settings(issuer='https://identity.test',audience='arena'))
+    auth.keys=SimpleNamespace(get_signing_key_from_jwt=lambda token:SimpleNamespace(key=key.public_key()))
+    now=time.time()
+    claims={'sub':'alice','iss':auth.settings.issuer,'aud':'arena','iat':now+3,'exp':now+60,'scope':'arena:play'}
+    def token(**changes):return jwt.encode({**claims,**changes},key,algorithm='RS256')
+    assert (await auth.principal(token())).subject=='alice'
+    for changes in ({'iat':now+60},{'iat':'invalid'},{'iat':True},{'iat':None},{'iat':float('inf')},
+                    {'exp':now-1},{'nbf':now+60}):
+        with pytest.raises(jwt.PyJWTError):await auth.principal(token(**changes))

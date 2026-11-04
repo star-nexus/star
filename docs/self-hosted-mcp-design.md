@@ -178,3 +178,10 @@ Mac MCP Gateway 是独立项目，不是 STAR 的必需运行依赖。其现役 
 只有 Gateway 能逐调用转发经 STAR 验证的用户令牌，或双方另外实现并验证明确的身份交换协议，才能开放游戏写操作。当前版本不实现 token exchange，也不自动配置 Gateway；若缺少身份传递能力，只能先接只读探针，不能降级为共享游戏控制令牌。
 
 验收必须独立记录：①公网 HTTPS 可达；②OAuth 身份及席位绑定；③ChatGPT 原生工具发现和调用。私人 Tunnel 成功不等于公网 HTTPS 成功，Caddy/本机 MCP 测试通过也不等于 ChatGPT 已接通。
+
+
+## 13. 2026-11-04 接入方式调整
+
+运营者明确要求保留 HTTPS + 域名 + IPv6，同时允许 ChatGPT 使用官方 tunnel-client。直接 HTTPS 仍是通用客户端的独立路径；OpenAI Secure MCP Tunnel 只作为部分客户端的可选入口，不是 STAR 的默认依赖，也不引入 starmux 或 Desktop Commander。该调整替代第 12 节中本机 Tunnel 不由本轮操作的限制：本次获准重定向现有 tunnel-client 上游，未修改其他应用的服务、源码和证书。控制权仍逐用户绑定，传输凭据不代表游戏身份。
+
+当前域名为 `auth.starverse.chat`，端口 10000；既有 `mcp.starverse.chat` 归其他项目，不作为 STAR 默认值。公开 HTTPS、Tunnel 原生调用、OAuth 身份绑定分别验收，任何一路通过都不冒充其他路径通过。

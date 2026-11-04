@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import asyncio
+import math
+import time
 import jwt
 from mcp.server.auth.provider import AccessToken
 
@@ -21,7 +23,14 @@ class Auth:
             raise ValueError('Authentication is not configured')
         key = await asyncio.to_thread(self.keys.get_signing_key_from_jwt, token)
         claims = jwt.decode(token, key.key, algorithms=['RS256'], audience=self.settings.audience,
-                            issuer=self.settings.issuer, options={'require': ['sub', 'exp', 'iat']})
+                            issuer=self.settings.issuer, options={'require': ['sub', 'exp', 'iat'], 'verify_iat': False})
+        # The identity service may run in a VM with a slightly different clock.
+        # Tolerate only a small future issuance time; exp and nbf remain strict.
+        issued = claims['iat']
+        if isinstance(issued, bool) or not isinstance(issued, (int, float)) or not math.isfinite(issued):
+            raise jwt.InvalidIssuedAtError('iat must be a finite NumericDate')
+        if issued > time.time() + 5:
+            raise jwt.ImmatureSignatureError('Token issuance is more than 5 seconds in the future')
         if not isinstance(claims['sub'], str) or not claims['sub']:
             raise ValueError('Invalid subject')
         return claims
