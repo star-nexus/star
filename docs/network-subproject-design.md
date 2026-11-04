@@ -1,6 +1,6 @@
 # star-network：自托管网络接入子项目技术设计
 
-状态：接口草案，尚未实现或发布。暂名 `star-network`，与 [StarBench 主设计](self-hosted-mcp-design.md) 配套。它是可独立发行的部署基础设施，不是新增游戏层或另一套 MCP 业务服务。
+状态：首版已在独立仓库实现；尚未宣称完成公网或 ChatGPT 验收。暂名 `star-network`，与 [StarBench 主设计](self-hosted-mcp-design.md) 配套。它是可独立发行的部署基础设施，不是新增游戏层或另一套 MCP 业务服务。
 
 ## 1. 职责与交付边界
 
@@ -61,7 +61,7 @@ SSH 主机指纹必须验证，转发目标及监听范围固定，凭据专用�
 <a id="contract"></a>
 ## 5. 版本化接口契约
 
-以下定义接口语义，字段仍需在实现阶段形成 schema；不是现有 CLI 命令。
+首版契约为 schema_version 1；独立仓库提供 schema/deployment-v1.schema.json、Python 校验和 JSON CLI。
 
 ### 输入：DeploymentSpec
 
@@ -85,7 +85,7 @@ StarBench 部署层读取 EndpointSet 后配置 Arena 的公开 URL 和 Keycloak
 
 ### 生命周期操作
 
-语义操作为 `validate → plan → apply → status`，另有 `diagnose`、`stop` 和受控回滚。实际命令名由子项目实现确定。
+语义操作为 `validate → plan → apply → status`，另有 `diagnose`、`stop` 和受控回滚。首版 CLI 已采用这些命令名，详情见独立项目 README。
 
 - 同一配置重复 apply 应幂等，不创建重复隧道/服务；同实例并发 apply 必须互斥。
 - 配置写入尽量原子；应用失败保留最后已知配置和诊断，不部分覆盖后声称成功。
@@ -150,3 +150,9 @@ Desktop Commander 的源码可用于理解就绪检查、凭据更新、退避�
 - 不含第三方托管中转的默认依赖；无网络子项目时 Arena 本机测试仍可运行。
 
 网络层保证的是明确配置下的传输能力和可观测状态，不保证上层模型一定行动、游戏公平性、比赛不中断或任何硬件容量。
+
+## 10. 当前研发实例覆盖规则（2026-10-15）
+
+当前 Mac 的 STAR 配置使用 existing；不对 mcp.starverse.chat 重复发起 ACME、不读取独立 Mac MCP Gateway 的证书目录、不修改其启动配置，也不启动公网 Caddy。独立主机的 direct/DNS-01 和外部证书文件模式继续保留。
+
+existing 不读取 DNS 凭据，不启动或重载外部代理。它只给出路由要求和检查结果；运营者实际添加路由是单独的集成步骤。网络健康报告不能替代 OAuth 和模型客户端验收。

@@ -21,7 +21,7 @@ def principal():
     token = get_access_token()
     if token is None or not token.subject:
         raise PermissionError('Authenticated user identity is required')
-    return Principal(token.subject)
+    return Principal(token.subject, issuer=(token.claims or {}).get('iss', ''))
 
 def build_tools(arena):
     settings = arena.settings

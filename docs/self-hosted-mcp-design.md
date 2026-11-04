@@ -1,6 +1,6 @@
 # StarBench 自托管 MCP：统一部署技术设计
 
-状态：研发设计，包含尚未实施的能力。本文面向开发者、架构评审和测试人员，不是玩家操作手册。现有可运行流程见 [MCP 上手指南](arena.md)；网络子项目的接口和验收见 [网络接入子项目设计](network-subproject-design.md)。
+状态：研发设计与实现约束；2026-10-15 更新本机接入边界，当前实现与验证状态见 [实施记录](self-hosted-implementation.md)。本文面向开发者、架构评审和测试人员，不是玩家操作手册。现有可运行流程见 [MCP 上手指南](arena.md)；网络子项目的接口和验收见 [网络接入子项目设计](network-subproject-design.md)。
 
 ## 1. 问题与目标
 
@@ -31,7 +31,7 @@ ChatGPT / 其他 MCP 客户端 → StarBench MCP → 私有 HUB → Rust ENV
 
 以下是部署前提，不是软件能够自动保证的事实：域名控制权、可用证书、外部可达地址、路由器/防火墙权限、运营商允许的入站连接、目标客户端的网络能力和账号权限。
 
-已知首个部署条件由运营者提供：Mac 位于家庭宽带，有公网 IPv4/IPv6，可配置端口转发。它支持优先选择直接入站，但仍需外网实测。此条件只写入首个部署实例，不成为核心代码默认假设。
+当前实例条件：家庭 Mac，DNS 曾实测仅发布 AAAA，已配置 10000–11000 入站范围。2026-10-15 运营者说明：独立 Mac MCP Gateway 项目已有 mcp.starverse.chat 的有效证书，公网 Caddy 故意停用，现役链路使用私人 OpenAI Secure MCP Tunnel。STAR 的本机实例因此使用 existing 入口模式，不重复申请证书、不扩大 DNS 权限、不修改 Gateway 的服务、证书存储或启动配置。独立主机仍支持 direct。以上都是实例条件，不成为核心代码的默认网络假设。
 
 ## 3. 必须保留的设计约束
 
@@ -57,7 +57,7 @@ ChatGPT / 其他 MCP 客户端 → StarBench MCP → 私有 HUB → Rust ENV
 
 ## 4. 项目边界与依赖方向
 
-新增独立网络子项目，暂名 **star-network**。首选独立仓库、独立版本和测试；StarBench 部署层固定其发行版本并调用。本文仅定义设计，不代表已创建该仓库。它应能服务一个普通 HTTP/WebSocket 应用，不以游戏代码为前提。
+新增独立网络子项目，暂名 **star-network**。首选独立仓库、独立版本和测试；StarBench 部署层固定其发行版本并调用。独立仓库现已建立，StarBench 通过部署层调用其 JSON CLI。它应能服务一个普通 HTTP/WebSocket 应用，不以游戏代码为前提。
 
 ```text
 部署层：StarBench 部署配置/启动编排
@@ -111,9 +111,9 @@ StarBench 部署层从结果中提取并校验：
 
 ## 7. 首次部署与迁移策略
 
-首个实例选 direct：域名指向家庭公网地址，由路由器转发到 Mac 上的 HTTPS 入口。无需 VPS、反向隧道或 Desktop Commander。Mac 的 LAN 地址应稳定，动态公网地址由网络子项目的可选 DNS 适配器维护。
+独立部署可选 direct：域名指向运营者主机，由自管入口发布 HTTPS。当前研发 Mac 选择 existing，只导出 STAR 的路由要求与状态，不管理现有 Gateway 入口。动态地址检测与可选 DDNS 是网络适配器职责，首版仅检测，不自动修改 A/AAAA。
 
-首次先验证 IPv4；IPv6 的外部连通性验证通过后才发布 AAAA，防止客户端优先选择不可用地址。确认 443 入站可用，再选择 HTTP-01/DNS-01 等证书获取方式；拿到证书不能证明服务可达。
+分别验证实际发布的 A/AAAA 和公开端口，不强制先 IPv4 或必须使用 443。高位 HTTPS 端口仍需目标客户端实测；DNS-01 可用于无需 80/443 入站的证书签发。已有入口模式不参与证书签发或续期。拿到证书不能证明服务可达。
 
 Mac 优先在主机进程运行 Arena/HUB/Rust ENV，身份/数据库等基础设施可容器化；Linux VPS 沿用 Compose。两者共用核心配置和网络契约，差异由部署适配层处理。HUB、数据库和 Worker 管理接口不发布为公网路由。
 
@@ -126,7 +126,7 @@ Mac 优先在主机进程运行 Arena/HUB/Rust ENV，身份/数据库等基础�
 | Rust ENV/HUB、MCP/原生工具、动作去重 | 已实现，已做本地验证 | 保持语义，补直连验收 |
 | 本机 attach | 已实现，固定本地凭据 | 分离生命周期与认证，接入 OAuth 席位授权 |
 | 生产 OAuth、Compose 配置生成 | 已有代码，公网联合验收未完成 | 验证发现、回调、PKCE、资源身份与续期 |
-| 网络管理 | 现有部署脚本内有 Caddy 配置，尚非独立子项目 | 提取通用网络计划/适配/诊断，不在 Arena 增加环境判断 |
+| 网络管理 | 独立 star-network 首版已实现 direct/existing、配置契约及 Caddy 实测 | 完成各运营者的独立外网验收，不在 Arena 增加环境判断 |
 | 自托管发行与 Mac 安装编排 | 未统一 | 共用配置契约，分别提供主机进程和 Compose 驱动 |
 | 官服与社区服独立运营 | 设计目标 | 独立域名、issuer、数据库、席位管理和第二部署者验收 |
 
@@ -168,3 +168,13 @@ Desktop Commander 仓库采用 MIT 许可证。若复用具体代码，应固定
 - [remote-channel.ts](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/main/src/remote-device/remote-channel.ts)
 - [OpenAI：连接和测试 MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 - [OpenAI：OAuth 认证](https://developers.openai.com/plugins/build/auth)
+
+## 12. 与 Mac MCP Gateway 的可选集成边界
+
+Mac MCP Gateway 是独立项目，不是 STAR 的必需运行依赖。其现役 OpenAI Secure MCP Tunnel 链路和证书不由本项目管理。现有证书到期日由运营者报告为 2027-01-11，本轮未读取或修改该项目证书存储。
+
+若将 STAR 加为第二个 MCP 上游，必须先确定独立路由及资源身份，避免覆盖 Gateway 的 `/mcp`。上游仍使用 STAR OAuth 服务，保留每位调用者的身份绑定和 audience 校验。不能将本机 `local:wei`/`local:shu` token、管理员 token 或某个选手的 token 配成所有 Gateway 用户共用的凭据。
+
+只有 Gateway 能逐调用转发经 STAR 验证的用户令牌，或双方另外实现并验证明确的身份交换协议，才能开放游戏写操作。当前版本不实现 token exchange，也不自动配置 Gateway；若缺少身份传递能力，只能先接只读探针，不能降级为共享游戏控制令牌。
+
+验收必须独立记录：①公网 HTTPS 可达；②OAuth 身份及席位绑定；③ChatGPT 原生工具发现和调用。私人 Tunnel 成功不等于公网 HTTPS 成功，Caddy/本机 MCP 测试通过也不等于 ChatGPT 已接通。

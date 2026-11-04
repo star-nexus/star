@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "package": "star-network",
+  "version": "0.1.0",
+  "source_revision": "dc5cd0d4e8639e6f7173b43a442baea673e6b6f5",
+  "contract_version": 1,
+  "artifacts": {
+    "star_network-0.1.0-py3-none-any.whl": "b3c80e6bbc0321c04450c553e97dbe3892c287b98e65c898cd5a510e0fc50329",
+    "star_network-0.1.0.tar.gz": "17d6459f9f08a3ca98bb58aa7b46c0a278547746debb1094cbe75c10a0289b5c"
+  }
+}

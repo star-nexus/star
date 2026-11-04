@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import json
 import logging
 import time
+from urllib.parse import urlsplit
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
@@ -19,6 +20,14 @@ def create_app(settings=None, store=None, workers=None, *, arena_factory=Arena, 
     settings = (settings or Settings()).validate()
     store = store or Store(settings.database_url)
     store.initialize()
+    if not settings.development:
+        with store.transaction() as connection:
+            from sqlalchemy import select
+            binding = connection.execute(select(db.identity_binding).filter_by(id='oauth')).mappings().first()
+            if binding and binding['issuer'] != settings.issuer:
+                raise ValueError('Database belongs to another OAuth issuer; explicit identity migration required')
+            if not binding:
+                connection.execute(db.identity_binding.insert().values(id='oauth', issuer=settings.issuer))
     arena = arena_factory(settings, store, workers or Workers(settings))
     mcp, registry = build_tools(arena)
     if tools_allowed is not None:
@@ -29,7 +38,7 @@ def create_app(settings=None, store=None, workers=None, *, arena_factory=Arena, 
     events_service = EventService(arena)
     events_service.install(mcp)
     mcp_app = mcp.streamable_http_app(stateless_http=True, json_response=True,
-        host=settings.public_url.split('://')[-1].split('/')[0].split(':')[0])
+        host=urlsplit(settings.public_url).hostname)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -111,7 +120,11 @@ def create_app(settings=None, store=None, workers=None, *, arena_factory=Arena, 
                 if time.time() >= expires_at or store.one(db.agents, id=agent_id)['generation'] != generation:
                     await ws.close(code=1008)
                     return
-                data = arena.read_events(who, match_id, cursor)
+                try:
+                    data = arena.read_events(who, match_id, cursor)
+                except PermissionError:
+                    await ws.close(code=1008)
+                    return
                 for event in data['events']:
                     kind = 'game_end_notification' if event['kind'] == 'game_finished' else event['kind']
                     await send('message', {**event['body'], 'type': kind})
@@ -122,6 +135,11 @@ def create_app(settings=None, store=None, workers=None, *, arena_factory=Arena, 
             while True:
                 message = await ws.receive_json()
                 if time.time() >= expires_at or store.one(db.agents, id=agent_id)['generation'] != generation:
+                    await ws.close(code=1008)
+                    return
+                try:
+                    arena.agent_for(who, agent_id)
+                except PermissionError:
                     await ws.close(code=1008)
                     return
                 if not isinstance(message, dict) or not isinstance(message.get('payload', {}), (dict, type(None))):

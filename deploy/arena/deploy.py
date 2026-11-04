@@ -11,6 +11,26 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 
+def public_urls(config):
+    """Canonical URLs, with legacy domain-only inputs kept as aliases."""
+    resolved = []
+    for key, legacy in (('ARENA_PUBLIC_URL', 'ARENA_DOMAIN'), ('AUTH_PUBLIC_URL', 'AUTH_DOMAIN')):
+        value = config.get(key) or ('https://' + config[legacy] if config.get(legacy) else '')
+        url = urlsplit(value)
+        if (url.scheme != 'https' or not url.hostname or '.' not in url.hostname or
+                url.username or url.password or url.query or url.fragment or
+                url.hostname.endswith('.example.com') or any(c.isspace() for c in value)):
+            raise ValueError('Set a valid HTTPS ' + key)
+        _ = url.port
+        if key == 'ARENA_PUBLIC_URL' and url.path not in ('', '/'):
+            raise ValueError('Arena public URL must be an origin')
+        if config.get(key) and config.get(legacy) and value.rstrip('/') != 'https://' + config[legacy]:
+            raise ValueError('Conflicting URL and legacy domain: ' + key)
+        resolved.append(value.rstrip('/'))
+    if resolved[0] == resolved[1]:
+        raise ValueError('Arena and auth require distinct public routes')
+    return tuple(resolved)
+
 def read_env(path):
     values = {}
     for line in path.read_text().splitlines():
@@ -27,23 +47,34 @@ def read_env(path):
     return values
 
 def make_realm(config, credentials):
-    audience = 'https://' + config['ARENA_DOMAIN'] + '/mcp'
+    audience = public_urls(config)[0] + '/mcp'
     scope = {'name':'arena:play', 'protocol':'openid-connect',
         'attributes':{'include.in.token.scope':'true','display.on.consent.screen':'true'},
         'protocolMappers':[{'name':'arena-audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper',
             'config':{'included.custom.audience':audience,'access.token.claim':'true','id.token.claim':'false'}},
             {'name':'subject','protocol':'openid-connect','protocolMapper':'oidc-sub-mapper',
              'config':{'access.token.claim':'true','introspection.token.claim':'true'}}]}
+    # Keep advertised OIDC scopes usable by ChatGPT's authorization request.
+    # Define them explicitly so an imported realm doesn't depend on server defaults.
+    def claim(name, attribute, kind='String'):
+        return {'name':name, 'protocol':'openid-connect', 'protocolMapper':'oidc-usermodel-property-mapper',
+            'config':{'user.attribute':attribute, 'claim.name':name, 'jsonType.label':kind,
+                'access.token.claim':'true', 'id.token.claim':'true', 'userinfo.token.claim':'true'}}
+    identity_scopes = [
+        {'name':'profile','protocol':'openid-connect','attributes':{'include.in.token.scope':'true'},
+         'protocolMappers':[claim('preferred_username','username')]},
+        {'name':'email','protocol':'openid-connect','attributes':{'include.in.token.scope':'true'},
+         'protocolMappers':[claim('email','email'),claim('email_verified','emailVerified','boolean')]}]
     def client(cid, public, redirects):
         return {'clientId':cid,'enabled':True,'protocol':'openid-connect','publicClient':public,
             'secret':credentials['CHATGPT_CLIENT_SECRET'] if not public else None,
             'standardFlowEnabled':True,'directAccessGrantsEnabled':False,'implicitFlowEnabled':False,
             'serviceAccountsEnabled':False,'redirectUris':redirects,'webOrigins':[],
             'fullScopeAllowed':False,'attributes':{'pkce.code.challenge.method':'S256'},
-            'defaultClientScopes':['arena:play']}
+            'defaultClientScopes':['arena:play','profile','email']}
     return {'realm':'starbench','enabled':True,'sslRequired':'external','registrationAllowed':False,
         'resetPasswordAllowed':False,'accessTokenLifespan':600,'ssoSessionIdleTimeout':28800,
-        'clientScopes':[scope],
+        'clientScopes':[scope,*identity_scopes],
         'clients':[client('starbench-chatgpt',False,config['CHATGPT_REDIRECT_URIS'].split(',')),
                    client('starbench-harness',True,['http://127.0.0.1:8769/callback'])],
         'identityProviders':[{'alias':'github','providerId':'github','enabled':True,'trustEmail':False,
@@ -131,6 +162,11 @@ def compose(*args):
         '-f',str(ROOT/'generated/config.json'), *args], cwd=ROOT, check=True)
 
 def main():
+    import sys
+    if '--config' in sys.argv[1:]:
+        sys.path.insert(0, str(ROOT.parents[1]))
+        from deploy.arena.self_hosted import main as hosted_main
+        return hosted_main()
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['prepare','up','status','logs','backup','stop'])
     args=parser.parse_args()

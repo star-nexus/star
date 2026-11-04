@@ -16,3 +16,9 @@ deploy/arena/generated
 deploy/arena/backups
 logs
 results
+
+# Local media and scratch files are not application build inputs.
+.tmp
+prepared-media
+videos
+**/.DS_Store

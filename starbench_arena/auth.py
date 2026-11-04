@@ -7,6 +7,7 @@ from mcp.server.auth.provider import AccessToken
 class Principal:
     subject: str
     name: str = ''
+    issuer: str = ''
 
 class Auth:
     def __init__(self, settings):
@@ -29,7 +30,7 @@ class Auth:
         claims = await self.claims(token)
         if 'arena:play' not in claims.get('scope', '').split():
             raise ValueError('Missing arena:play scope')
-        return Principal(claims['sub'], claims.get('name', ''))
+        return Principal(claims['sub'], claims.get('name') or '', claims.get('iss', ''))
 
     def invited(self, principal):
         if not (self.settings.development or self.settings.open_registration or principal.subject in self.settings.allowed_subjects):

@@ -4,6 +4,13 @@ from sqlalchemy import Boolean, JSON, Column, Float, Integer, MetaData, String, 
 from sqlalchemy.pool import StaticPool
 
 metadata = MetaData()
+identity_binding = Table('arena_identity_binding', metadata,
+    Column('id', String, primary_key=True), Column('issuer', String, nullable=False))
+seat_grants = Table('arena_seat_grants', metadata,
+    Column('match_id', String, primary_key=True), Column('faction', String, primary_key=True),
+    Column('issuer', String, nullable=False), Column('subject', String, nullable=False),
+    Column('active', Boolean, nullable=False),
+    UniqueConstraint('match_id', 'issuer', 'subject'))
 entries = Table('arena_entries', metadata,
     Column('id', String, primary_key=True), Column('owner', String, nullable=False),
     Column('name', String, nullable=False), Column('version', String, nullable=False),
