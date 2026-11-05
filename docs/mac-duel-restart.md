@@ -1,5 +1,8 @@
 # Mac 重启后，恢复两个 ChatGPT 插件对战
 
+**先选客户端。** 同机的两个 AI 客户端对战，按[本机 MCP 指南第 1、2 节](arena.md#local)启动 HUB、Rust ENV 和本机 MCP 网关即可。下面的四终端流程专用于通过 Tunnel 接入的 ChatGPT 网页插件。
+
+
 本页用于已经配好 GitHub、Keycloak、HTTPS 和两条 Tunnel 的 `star-direct` 实例。**整机重启后能恢复账号、插件连接配置和比赛记录；Rust ENV 战场在内存里，重新启动 ENV 就是新局。** 如果只是浏览器关闭或 Tunnel 断线，ENV 仍在运行，直接重新连接，继续用原比赛 ID。正在对局时请勿执行下面的新局流程。
 
 ## 一次性安装和需要保留的东西

@@ -21,6 +21,10 @@
 
 **完成后：** 本机有一个可观战的战场，MCP 可以读取它的真实观测。此流程不计入公网榜单。
 
+本地调用路径为 **AI 客户端 → 本机 MCP 网关 → HUB → Rust ENV**。两个客户端共享网关和战场，分别使用魏、蜀凭据。本地网关使用 SQLite 保存身份和操作记录，整个流程无需 Tunnel、域名、Keycloak 或 PostgreSQL。支持 HTTP 的客户端直接连接网关；选择 stdio 时由客户端启动一个转发进程，仍连接同一个网关。
+
+已有 HUB 可以复用：将它的 WebSocket 地址同时用于下文 `local init` 和 ENV 启动命令的 `--hub-url`。例如这台 Mac 的私有 HUB 是 `ws://127.0.0.1:18000/ws/metaverse`。两处 `--env-id` 和模式也应一致。与现有对局并行开新局时，给新局使用独立的 ENV ID、本地配置文件和空闲的战场网页端口；本机网关端口如已占用，可在 `local init` 时指定 `--port`。
+
 ### 1.1 准备环境
 
 以下命令适用于 macOS/Linux。准备好本项目源码，以及独立的 [GameServer HUB](https://github.com/Coldmooon/GameServer)。已有 HUB 的用户直接使用原目录。
