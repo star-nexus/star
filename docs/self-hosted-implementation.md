@@ -30,9 +30,9 @@ Linux 镜像已在本轮构建成功，Compose 启动、健康接口、认证拒
 运营者说明当前 ChatGPT 网络条件只能使用 Tunnel，其他客户端仍需 HTTPS。因此两条入口并存：
 
 - 通用客户端 → `https://auth.starverse.chat:10000/mcp` → STAR。
-- ChatGPT → OpenAI Secure MCP Tunnel → 官方 `tunnel-client` → `http://127.0.0.1:8781/mcp` → STAR。
+- ChatGPT → OpenAI Secure MCP Tunnel → Mac 主动连接的官方 `tunnel-client` → 本机 Caddy（`https://auth.starverse.chat:10000/mcp` 在 Mac 解析到 `::1`）→ Arena。
 
-两条路径最终调用同一 MCP 服务，OAuth 与席位权限由 STAR 验证。Tunnel 运行凭据不是游戏控制令牌；没有安装固定 Bearer、共享阵营 token 或终端工具。上游仍是只读探针，正式游戏入口需后续 OAuth 验收。
+两条路径最终调用同一 MCP 服务，OAuth 与席位权限由 STAR 验证。Tunnel 运行凭据不是游戏控制令牌；没有安装固定 Bearer、共享阵营 token 或终端工具。现役上游为正式 OAuth Arena，真实账号换令牌和游戏操作分别验收。
 
 本机只有一个已配置 Tunnel ID。经运营者明确授权，已保存原路由配置，再将原本面向 `18893/mcp` 的 tunnel-client 切到 `8781/mcp`。starmux 应用本身未停止、代码和启动配置未改动；但使用同一个 Tunnel 的旧插件现在会到达 STAR，必须刷新工具。原路由可恢复，独立长期运行建议为两套应用分配不同 Tunnel ID，不能让同一 ID 的两个客户端同时转发到不同应用。
 
@@ -54,7 +54,9 @@ PYTHONPATH=../star-network uv run python -m star_network.tunnel start \
 
 OAuth discovery 可以走 Tunnel，但浏览器登录和授权服务并不会因此自动全部可达；登录、令牌兑换、刷新仍需实际验收。[官方 Tunnel 文档](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。
 
-本机首次 GitHub 账号绑定已经落库。首次登录期间 Keycloak 另有 `already_logged_in` 回调错误，Tunnel 也曾报告 `unsupported channel "harpoon"`，当时转发目标数为 0。两项记录分开诊断。网络组件 0.1.2 支持在本实例的 `tunnel.json` 中设置 `"relay_oauth_endpoints": true`，并通过 `oauth_trusted_origins` 列出 STAR 自己的 HTTPS 入口。重新启动本实例 Tunnel 后，已确认它加载 1 个目标 `https://auth.starverse.chat:10000`。该设置允许客户端请求该入口公开的路径。认证码兑换是否完成，以 Keycloak 的 `CODE_TO_TOKEN` 事件和客户端连接结果核实。
+本机 GitHub 首次绑定已落库。网络组件 0.1.2 支持在实例 `tunnel.json` 设置 `"relay_oauth_endpoints": true`，用 `oauth_trusted_origins` 指定运营者控制的 HTTPS 入口。本实例使用 tunnel-client 0.0.18。隔离测试保留相同认证服务和转发配置，仅替换 MCP 上游地址：使用 `http://127.0.0.1:8781/mcp` 时只有 1 个通用目标；将 `upstream` 设置为 `https://auth.starverse.chat:10000/mcp` 后有 11 个目标，含明确标记的 token endpoint 和 JWKS。现役 Tunnel 已应用后一配置，`/readyz` 返回 200。可在本机 Tunnel 管理接口 `/api/harpoon/targets` 核对目标角色；实际令牌兑换仍以 Keycloak 的 `CODE_TO_TOKEN` 和客户端结果为准。
+
+2026-11-04 21:13 PST，东京与休斯顿的独立 IPv6 HTTPS 测试均在 TCP 建连阶段超时（15 秒）。同期 Mac 的 en1 抓到两端发来的 SYN 和本机发出的 SYN-ACK，以及多次重传。该抓包规则只选带 SYN 标志的包。现有证据不能定位到具体丢包设备。这一结果属于公网直连验收，ChatGPT 的 Tunnel 入口另行验收。
 
 本轮主要回归：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
 
