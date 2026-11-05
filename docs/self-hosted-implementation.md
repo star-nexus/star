@@ -58,6 +58,8 @@ OAuth discovery 可以走 Tunnel，但浏览器登录和授权服务并不会因
 
 2026-11-04 21:13 PST，东京与休斯顿的独立 IPv6 HTTPS 测试均在 TCP 建连阶段超时（15 秒）。同期 Mac 的 en1 抓到两端发来的 SYN 和本机发出的 SYN-ACK，以及多次重传。该抓包规则只选带 SYN 标志的包。现有证据不能定位到具体丢包设备。这一结果属于公网直连验收，ChatGPT 的 Tunnel 入口另行验收。
 
+**2026-11-05，Mac 上 ChatGPT 原生 OAuth 验收通过。** 网页插件 `STARBench 探针 OAuth 2` 保留 Tunnel 自动发现的端点。浏览器访问 Keycloak 登录，Token URL 使用 Tunnel 改写后的地址，Resource 与 Arena 配置的公开 MCP URL 一致。Keycloak 在 01:52:25 PST 记录 `LOGIN`，01:52:46 记录 `CODE_TO_TOKEN`；本机 Tunnel 记录 `POST oauth-token-endpoint-0` 返回 200。网页端调用 `get_profile` 返回的 ID 与已绑定 GitHub 的 Keycloak 用户匹配。运营者已将该身份授权给回合制测试局的魏国。网页没有显示 PKCE 选项，Keycloak 客户端要求 S256。接下来的验收项是由网页端下达单位指令并用后续观测确认状态变化。
+
 本轮主要回归：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
 
 ## 上轮记录（2026-10-15）
