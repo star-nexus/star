@@ -22,6 +22,13 @@ GameServer 使用自己的 Python 环境。Mac 还需准备 Colima、Docker CLI�
 
 每个终端先执行 `cd /Users/liyang/Developer/star-main`。先启动日常使用的网络代理，让 tunnel-client 能从 Mac 连接 OpenAI。以下按顺序执行。
 
+| 终端 | 看到什么再继续 | 使用期间 |
+|---|---|---|
+| 1 · HUB | 在另一终端运行 `curl --fail http://127.0.0.1:18000/health` 返回 ok | 保持运行 |
+| 2 · Rust ENV | 输出 HUB 已连接，记下**新比赛 ID**和观战链接 | 保持运行 |
+| 3 · MCP 入口 | Caddy 启动成功并持续运行 | 保持运行 |
+| 4 · Arena 和 Tunnel | 下方四个健康检查通过，双方插件都能列出新局 | 启动命令执行完即可 |
+
 **终端 1 · 私有 HUB**（保持运行）
 
 ```sh
