@@ -160,6 +160,32 @@ uv run python -m deploy.arena.self_hosted bundle --config .arena/deployments/my-
 
 解压后保留 `star-main`、`star-network` 相邻目录，按目标实例重新初始化配置。不要复制本机旧的绝对路径配置到另一台机器。
 
+## Mac 上给两个 ChatGPT 插件各接一条 Tunnel
+
+两个插件可以连接同一个 Arena 和同一场比赛。每条 Tunnel 有独立的 ID、配置、状态目录和回环管理端口。阵营授权仍然看登录后的 `issuer + subject`；两条 Tunnel 或两个聊天窗口不能把一个账号变成两名对手。
+
+本实例在 `deployment.json` 使用 `"tunnel_mcp_ports": {"one": 10001, "two": 10002}`。两个回环监听器仅转发 `/mcp`，共享原有 Arena。它们不启动第二个 ENV，也不注入令牌。未启用这项配置时，普通 HTTPS 部署不需要额外监听器。
+
+| Tunnel 的 MCP 上游（同一个 HTTPS 域名和端口） | 本地转发到 | Tunnel 本机管理端口 |
+|---|---|---|
+| `https://auth.starverse.chat:10000/tunnels/one/mcp` | `127.0.0.1:10001/mcp` | `20001` |
+| `https://auth.starverse.chat:10000/tunnels/two/mcp` | `127.0.0.1:10002/mcp` | `20002` |
+
+Mac 将上述域名解析到本机。两个路径都使用同一个 OAuth Resource（`https://auth.starverse.chat:10000/mcp`）。实测 tunnel-client 0.0.19 显式登记了两个入口各自的 token 和 JWKS 转发目标；只填回环 HTTP 地址的对照测试没有登记这两个目标。不要把本机管理端口填进 ChatGPT。
+
+如需在本机服务重启后恢复两个监听器，在 StarBench 根目录运行以下命令并保持该终端运行（现役进程正常时不要重复启动）：
+
+```sh
+state="$PWD/.arena/deployments/star-direct/tunnel-ports"
+mkdir -p -m 700 "$state"
+XDG_DATA_HOME="$state/data" XDG_CONFIG_HOME="$state/config" \
+  ../star-network/bin/caddy run --adapter caddyfile --config deploy/arena/Caddyfile.tunnel-ports
+```
+
+该文件支持 `MCP_PORT_ONE`、`MCP_PORT_TWO`、`ARENA_PORT`，默认分别为 10001、10002、8781。实例生成网络路由后，两条 Tunnel 各用自己的配置调用 `star_network.tunnel start`。本机第一条使用 `tunnel.json` 和状态目录 `tunnel/`；第二条使用 `second-tunnel/config.json` 和 `second-tunnel/state/`。配置文件中的 `upstream` 填表中的 HTTPS URL；登录服务仍是原有 Keycloak。
+
+2026-11-05：两条 Tunnel 的 `readyz` 均为 200；第一条迁移后经旧插件实际调用 `get_profile`，返回原账号。第二条仍需用新插件完成浏览器授权并调用 `get_profile`；当前未记录双账号对战结果。
+
 ## 验收记录分层
 
 | 层级 | 证据与限制 |

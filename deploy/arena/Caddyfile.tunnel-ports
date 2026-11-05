@@ -1,0 +1,19 @@
+# Optional Mac loopback listeners. The main HTTPS ingress owns TLS and OAuth.
+# Use private, instance-specific XDG directories when starting this process.
+{
+	admin off
+	persist_config off
+	auto_https off
+}
+
+http://:{$MCP_PORT_ONE:10001}, http://:{$MCP_PORT_TWO:10002} {
+	bind 127.0.0.1
+	handle /mcp {
+		reverse_proxy 127.0.0.1:{$ARENA_PORT:8781} {
+			flush_interval -1
+		}
+	}
+	handle {
+		respond 404
+	}
+}

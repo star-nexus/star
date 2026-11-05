@@ -79,7 +79,7 @@ def routes(config):
     auth = f'127.0.0.1:{config["auth_port"]}' if host else 'keycloak:8080'
     prefix = urlsplit(config['auth_public_url']).path.rstrip('/')
     discovery = prefix+'/realms/starbench/.well-known/openid-configuration'
-    return [
+    services = [
         {'id':'identity', 'public_url':config['auth_public_url'], 'upstream':'http://'+auth,
          'routes':[{'path':prefix+'/realms/starbench/*'}, {'path':prefix+'/resources/*'},
             {'path':'/.well-known/oauth-authorization-server'+prefix+'/realms/starbench', 'rewrite':discovery},
@@ -88,6 +88,16 @@ def routes(config):
          'routes':[{'path':p} for p in ('/mcp', '/.well-known/oauth-protected-resource',
              '/.well-known/oauth-protected-resource/mcp', '/api/*', '/ws/metaverse/env/*',
              '/', '/leaderboard/*', '/watch/*')]}]
+    # Operator-provided loopback MCP listeners share the canonical OAuth resource.
+    # These routes select a transport only; Arena still validates every token.
+    for name, port in config.get('tunnel_mcp_ports', {}).items():
+        if (config['platform'] != 'macos' or not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', name)
+                or type(port) is not int or not 1 <= port <= 65535):
+            raise ValueError('Invalid local tunnel MCP listener')
+        path = '/tunnels/' + name + '/mcp'
+        services.append({'id': 'tunnel-' + name, 'public_url': config['public_url'] + path,
+            'upstream': f'http://127.0.0.1:{port}', 'routes': [{'path': path, 'rewrite': '/mcp'}]})
+    return services
 
 
 def load(path):
