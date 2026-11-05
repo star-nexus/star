@@ -54,6 +54,8 @@ PYTHONPATH=../star-network uv run python -m star_network.tunnel start \
 
 OAuth discovery 可以走 Tunnel，但浏览器登录和授权服务并不会因此自动全部可达；登录、令牌兑换、刷新仍需实际验收。[官方 Tunnel 文档](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。
 
+本机首次 GitHub 账号绑定已经落库。首次登录期间 Keycloak 另有 `already_logged_in` 回调错误，Tunnel 也曾报告 `unsupported channel "harpoon"`，当时转发目标数为 0。两项记录分开诊断。网络组件 0.1.2 支持在本实例的 `tunnel.json` 中设置 `"relay_oauth_endpoints": true`，并通过 `oauth_trusted_origins` 列出 STAR 自己的 HTTPS 入口。重新启动本实例 Tunnel 后，已确认它加载 1 个目标 `https://auth.starverse.chat:10000`。该设置允许客户端请求该入口公开的路径。认证码兑换是否完成，以 Keycloak 的 `CODE_TO_TOKEN` 事件和客户端连接结果核实。
+
 本轮主要回归：55 项 STAR 测试通过（包含真实 Keycloak），7 项独立网络测试通过，Linux 容器内两种模式测试通过。证据分别属于本地功能、容器运行和网络传输，不等同于公网比赛通过。
 
 ## 上轮记录（2026-10-15）

@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "package": "star-network",
-  "version": "0.1.1",
-  "source_revision": "5eb95725de343f4f82ded8c7a9ca346c380b34eb",
+  "version": "0.1.2",
+  "source_revision": "8d92251d6c81276fa18264fd45642e38cabb8245",
   "contract_version": 1,
   "artifacts": {
-    "star_network-0.1.1-py3-none-any.whl": "88f283c8b13471cb1edf769240c6fba45338bb8e39d11ad303c4b7df89bd50a8",
-    "star_network-0.1.1.tar.gz": "b8b7cba471b4de297da01f3549932e37b8104220e92deda2ad658c5eefcb1b09"
+    "star_network-0.1.2-py3-none-any.whl": "aedabc0592ea50e137abc04eee6e8426110336b403e47f993a7a590a20d2632a",
+    "star_network-0.1.2.tar.gz": "1e447d6d3ad740ff60a23ad07a58e0b84224b5c41e23c63b33a99ed63792a0e2"
   }
 }
