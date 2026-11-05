@@ -13,6 +13,10 @@
 - 运营者更新 AAAA 后，Google DNS-over-HTTPS 返回 `2408:8207:1901:c050::4`；本机常规解析仍一度返回旧 `::2`。两种证据分开记录，未改写系统 DNS 或代理配置。
 - ChatGPT 经官方 Tunnel 原生调用 `connectivity_probe` 已返回回执，且与 STAR 服务端日志核对一致；证据保存在本实例 `probe-evidence.json`。此结果不代表直接 HTTPS 外网或 OAuth/游戏控制已经通过。
 
+本机现已切换到 OAuth Arena。该 Mac 的 VPN DNS 对专用域名返回空记录，运营者已将本机解析设为 IPv6 回环地址 `::1`。从 Mac 访问同名 HTTPS 已验证证书、资源元数据、OIDC discovery 和签名公钥。若本机系统代理也会截获签名公钥请求，可在 Mac 实例的 `deployment.json` 设置 `"direct_local_auth": true`，重启本实例 Arena。该选项仅为 Arena 子进程添加本机与认证域名的代理例外。
+
+此实例的私有 HUB 使用回环端口 18000，8000 由其他应用占用。HUB 已接受回合制 Rust ENV 的连接。Arena 数据库健康检查通过，匿名 MCP 请求返回 401。使用预注册客户端、精确 ChatGPT 回调和 S256 发起授权已跳转到 GitHub。真实账号登录、席位绑定、网页端游戏操作和独立客户端外网 HTTPS 分项验收。
+
 当前官方文档仍支持 HTTPS Streamable HTTP 和静态预注册 OAuth 客户端。实际接入时从管理页复制精确回调；生产 Realm 显式提供 `profile`、`email` 与 `arena:play` scope，避免客户端请求已公布的 OIDC scope 时登录失败。[ChatGPT 接入说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)、[认证契约](https://developers.openai.com/plugins/build/auth)。
 
 认证服务放在 VM 时，本轮观察到约 3 秒签发时钟差。Arena 只对 `iat` 的未来时间容许最多 5 秒；签名、issuer、audience、scope、`exp` 和 `nbf` 仍严格校验。该容差不改变 ENV 时钟或回合规则。
@@ -137,7 +141,7 @@ uv run python -m deploy.arena.self_hosted restore --config .arena/deployments/my
 
 迁移前停止接收新局并等待现有比赛结束。备份不包含运行中的 Rust 世界，不承诺迁移活动比赛。配置变更后重新运行 `up`；现有主机 Gateway 若配置发生变化，需要先 `stop` 再 `up`，避免仍运行旧配置。
 
-Linux VPS 使用 `init --platform linux --lifecycle managed`，选择 direct 或 existing。existing 仅将 Arena/Keycloak 映射到 VPS 回环地址；HUB/数据库无公网端口。direct 的 Caddy 由本实例 Compose 管理。Linux Compose 配置已通过解析；本次镜像构建在复制 Rust 工具链时因主机磁盘耗尽失败，未启动 Linux Arena/HUB。完整 Linux 容器与 VPS 外网仍需分别验收。
+Linux VPS 使用 `init --platform linux --lifecycle managed`，选择 direct 或 existing。existing 将 Arena 和 Keycloak 映射到 VPS 回环地址。direct 的 Caddy 由本实例 Compose 管理。Linux 容器内两种模式的 Rust Worker 与私有 HUB 已完成联测，真实 VPS 外网验收待进行。
 
 两个仓库提交后可生成不含运行配置和凭据的源码部署包（仅包含已提交文件）：
 

@@ -27,6 +27,7 @@ def test_mac_template_private_loopback_and_oauth_metadata(tmp_path,monkeypatch):
     assert compose['services']['keycloak']['environment']['KC_HTTP_RELATIVE_PATH']=='/auth'
     assert compose['services']['keycloak']['ports']==['127.0.0.1:8081:8080']
     assert compose['services']['postgres']['ports']==['127.0.0.1:15432:5432']
+    assert 'edge' in compose['services']['postgres']['networks']
     runtime=json.loads((tmp_path/'runtime.json').read_text())
     assert runtime['issuer']=='https://mcp.test.org:10000/auth/realms/starbench'
     assert runtime['development'] is False

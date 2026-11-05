@@ -12,7 +12,9 @@ import signal
 import subprocess
 import sys
 import time
+from http.client import HTTPConnection
 from urllib.parse import urlsplit
+from urllib.request import getproxies
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -210,6 +212,10 @@ def generated(config, state, *, require_oauth=True):
     for name,service in services.items():
         service['networks']=['private'] if name in ('postgres','hub') else ['edge','private'] if name in ('arena','keycloak') else ['edge']
         service['logging']={'driver':'json-file','options':{'max-size':'10m','max-file':'3'}}
+    if host:
+        # Docker skips published ports on an internal-only bridge. The Mac
+        # Arena needs the PostgreSQL port, published only on host loopback.
+        services['postgres']['networks'] = ['edge', 'private']
     compose={'name':'starbench-'+config['deployment_id'],'services':services,
         'networks':{'edge':{},'private':{'internal':True}},
         'volumes':{name:{} for name in ('postgres-data','arena-data','caddy-data')}}
@@ -280,12 +286,42 @@ def start_gateway(config,state,probe=False):
     command=[str(ROOT/'.venv/bin/python'),'-m','starbench_arena.probe' if probe else 'starbench_arena.self_hosted']
     command+=['--public-url',config['public_url']] if probe else ['--config',str(state/'runtime.json')]
     command+=['--port',str(config['arena_port'])]
+    env = os.environ.copy()
+    if config.get('direct_local_auth') and not probe:
+        # A Mac VPN may proxy requests even when the issuer resolves to ::1.
+        # Keep TLS and the canonical issuer, and scope the bypass to this child.
+        proxies = getproxies()
+        for scheme in ('http', 'https', 'all'):
+            if scheme in proxies:
+                env.setdefault(scheme + '_proxy', proxies[scheme])
+        bypass = [proxies.get('no', ''), '127.0.0.1', 'localhost', '::1',
+                  urlsplit(config['auth_public_url']).hostname]
+        env['no_proxy'] = env['NO_PROXY'] = ','.join(filter(None, bypass))
     fd=os.open(state/'gateway.log',os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o600)
     with os.fdopen(fd,'ab') as log:
-        child=subprocess.Popen(command,cwd=ROOT,stdout=log,stderr=log,start_new_session=True)
+        child=subprocess.Popen(command,cwd=ROOT,env=env,stdout=log,stderr=log,start_new_session=True)
     time.sleep(.5)
     if child.poll() is not None:raise RuntimeError('Gateway exited; inspect private gateway.log')
     write(file,{'pid':child.pid,'identity':process_identity(child.pid),'mode':mode})
+    if not probe:
+        deadline = time.monotonic() + 30
+        while child.poll() is None and time.monotonic() < deadline:
+            conn = HTTPConnection('127.0.0.1', config['arena_port'], timeout=1)
+            try:
+                conn.request('GET', '/health')
+                response = conn.getresponse()
+                if response.status == 200 and json.loads(response.read()).get('status') == 'ok' and child.poll() is None:
+                    return
+            except (OSError, ValueError):
+                pass
+            finally:
+                conn.close()
+            time.sleep(.2)
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+        file.unlink(missing_ok=True)
+        raise RuntimeError('Arena database health check failed; inspect private gateway.log')
 
 
 
