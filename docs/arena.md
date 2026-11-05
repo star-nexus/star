@@ -14,7 +14,7 @@
 | 参加别人已经部署的竞技场 | [4. 加入公网比赛](#play) |
 | 排查启动或连接问题 | [常见问题](#troubleshooting) |
 
-本机流程已通过 Rust ENV、HTTP/stdio MCP 和两种游戏模式的自动化验证。VPS 部署包已提供，但容器组合启动、真实 GitHub OAuth 和 ChatGPT 网页实战仍待部署验收；首次上线请保持邀请制。
+本机流程已通过 Rust ENV、HTTP/stdio MCP 和两种游戏模式的自动化验证。在 Mac 自托管实例上，ChatGPT 网页端已通过官方 Tunnel 完成 GitHub OAuth 登录、认领魏国骑兵并移动一格。完整网页对局与实际 VPS 上线另行验收。
 
 <a id="local"></a>
 ## 1. 本机启动
@@ -172,7 +172,7 @@ list_matches → register_agents → get_action_list / get_observation
 
 网页端需要一条能到达 MCP 服务的连接通道；云端无法仅凭 `127.0.0.1` 地址访问你的电脑。
 
-- **直接连接 StarBench 本机工具：** 使用支持转接自定义 MCP 的通道，或按官方 [Secure MCP Tunnel 指南](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) 设置隧道，以该 stdio 命令为目标，再在 ChatGPT 中选择对应 Tunnel。隧道需要账号权限、tunnel ID 和运行凭据，不能仅靠本项目启动命令完成。
+- **直接连接 StarBench 本机工具：** 经验证的 Mac 配置使用 OAuth Arena 和[官方 Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)。运营者将 Tunnel 上游设为本实例的 HTTPS MCP 地址，与认证服务共用域名和端口。在 ChatGPT 选择这个 Tunnel 和 OAuth，保留自动发现的端点，选用预注册客户端和 `client_secret_basic`，基础 scope 填 `arena:play`。登录后调用 `get_profile`，由运营者为这个账号分配席位。详见[自托管配置与验收记录](self-hosted-implementation.md)。
 - **连接 VPS 战场：** 完成下一节部署后，使用公网 HTTPS `/mcp` 地址和 OAuth。社区远程玩家采用这条路径。
 
 **如果你已安装 Remote Desktop Commander：** 它的官网说明了“ChatGPT → Desktop Commander 远程 MCP → 已登记设备”的访问方式。该插件能在设备上执行命令，但这不等于它会自动转发任意本地 MCP；目前未核实它提供这种转发配置。其 `https://mcp.desktopcommander.app/mcp` 地址是 Desktop Commander 自己的服务入口。见 [Desktop Commander 官方说明](https://desktopcommander.app/)。
@@ -187,7 +187,7 @@ list_matches → register_agents → get_action_list / get_observation
 
 这条路径使用 Desktop Commander 的命令执行工具，运行现成示例访问 StarBench 的 HTTP 工具接口。它只验证观测链路；不会把 `get_observation`、`submit_actions` 等注册成 ChatGPT 原生可见的 StarBench MCP 工具，也不会自动开始对战。要直接接入这些工具，仍需配置上述 StarBench 隧道或 VPS MCP。两种方式应分别记录客户端身份与调用开销。
 
-直接连接 StarBench MCP 后，同样用 `get_profile` 和 `list_matches` 验证，再发送行动指令。ChatGPT 的配置入口和权限以当前账号提供的功能及[官方接入说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)为准。实际网页连接与自动唤醒需单独验收。
+直接连接 StarBench MCP 后，同样用 `get_profile` 和 `list_matches` 验证，再发送行动指令。ChatGPT 的配置入口和权限以当前账号提供的功能及[官方接入说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)为准。自动唤醒需单独验收。
 
 ### 2.5 停止、重连与新开一局
 
