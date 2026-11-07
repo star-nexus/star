@@ -209,3 +209,4 @@ deploy/arena/.env
 /deploy/arena/backups/
 *.gateway.lock
 /examples/arena/token.json
+.tmp
